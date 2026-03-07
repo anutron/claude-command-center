@@ -1,0 +1,26 @@
+# Binary
+ccc
+*.exe
+
+# Go
+vendor/
+
+# Node (MCP servers)
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Credentials (never commit)
+credentials/
+
+# Config (user-specific)
+config.yaml
