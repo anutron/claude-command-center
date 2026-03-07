@@ -1,0 +1,291 @@
+package tui
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/anutron/claude-command-center/internal/db"
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+type claudeEditFinishedMsg struct {
+	todoID string
+	output string
+	err    error
+}
+
+type claudeEnrichFinishedMsg struct {
+	output string
+	err    error
+}
+
+type claudeCommandFinishedMsg struct {
+	output string
+	err    error
+}
+
+type claudeFocusFinishedMsg struct {
+	output string
+	err    error
+}
+
+func claudeEditCmd(prompt, todoID string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("claude", "-p", prompt)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		err := cmd.Run()
+		return claudeEditFinishedMsg{
+			todoID: todoID,
+			output: buf.String(),
+			err:    err,
+		}
+	}
+}
+
+func claudeEnrichCmd(prompt string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("claude", "-p", prompt)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		err := cmd.Run()
+		return claudeEnrichFinishedMsg{
+			output: buf.String(),
+			err:    err,
+		}
+	}
+}
+
+func claudeCommandCmd(prompt, projectDir string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("claude", "-p", prompt)
+		if projectDir != "" {
+			cmd.Dir = projectDir
+		}
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		err := cmd.Run()
+		return claudeCommandFinishedMsg{
+			output: buf.String(),
+			err:    err,
+		}
+	}
+}
+
+func claudeFocusCmd(prompt string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("claude", "-p", prompt)
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		err := cmd.Run()
+		return claudeFocusFinishedMsg{
+			output: buf.String(),
+			err:    err,
+		}
+	}
+}
+
+func buildCommandPromptWithHistory(cc *db.CommandCenter, name string, conversation []commandTurn) string {
+	ccJSON, _ := json.MarshalIndent(cc, "", "  ")
+
+	var convoSection string
+	if len(conversation) > 1 {
+		var sb strings.Builder
+		sb.WriteString("\n## Conversation So Far\n")
+		for _, turn := range conversation[:len(conversation)-1] {
+			if turn.role == "user" {
+				sb.WriteString(fmt.Sprintf("**User:** %s\n", turn.text))
+			} else {
+				sb.WriteString(fmt.Sprintf("**You asked:** %s\n", turn.text))
+			}
+		}
+		convoSection = sb.String()
+	}
+
+	instruction := conversation[len(conversation)-1].text
+	return fmt.Sprintf(`You are %s, a command center assistant inside a terminal dashboard. The user is giving you a short instruction.
+
+## Your ONLY allowed actions
+
+You can ONLY do these things:
+1. **Create todos** -- extract action items from what the user says
+2. **Complete todos** -- mark existing todos as done
+3. **Answer quick questions** -- about the current state (calendar, todos, threads)
+4. **Calendar actions** -- decline/accept events, only when explicitly asked
+5. **Slack/Gmail actions** -- send messages, only when explicitly asked
+
+## What you must NEVER do
+
+- Do NOT perform the work described in a todo
+- Do NOT research, investigate, or explore topics
+- Do NOT use tools unless the user explicitly asks you to take an external action
+- Your job is to CAPTURE work, not DO work
+
+## Decision logic
+
+1. If the user describes something they need to do -> create a todo for it
+2. If the user says "done with X" or "finished X" -> complete the matching todo
+3. If the user explicitly says "decline", "accept", "send", "message" -> take that action
+4. If the user asks a question about their state -> answer from the command center data below
+5. Otherwise -> create a todo
+
+When in doubt, CREATE A TODO.
+
+## Asking for Clarification
+
+If the user's instruction is genuinely ambiguous, you may ask ONE short question.
+
+## Current Command Center State
+%s
+
+## Current Time
+%s
+%s
+## User Instruction
+%q
+
+## Response Format
+Return ONLY a JSON object (no markdown fences, no explanation):
+{
+  "message": "Brief summary of what you did",
+  "ask": "",
+  "todos": [],
+  "complete_todo_ids": []
+}
+
+- "message": Brief human-readable summary (empty string if asking a question)
+- "ask": A short clarifying question if genuinely needed.
+- "todos": Array of new todo items. Each: {"title": "...", "due": "", "who_waiting": "", "effort": "", "context": "", "detail": "", "project_dir": ""}
+- "complete_todo_ids": Array of existing todo IDs to mark as completed
+
+Output ONLY the JSON object.`, name, string(ccJSON), time.Now().Format(time.RFC3339), convoSection, instruction)
+}
+
+func buildFocusPrompt(cc *db.CommandCenter) string {
+	var todoItems []string
+	for _, t := range cc.ActiveTodos() {
+		item := fmt.Sprintf("- %s", t.Title)
+		if t.Due != "" {
+			item += fmt.Sprintf(" (due: %s)", t.Due)
+		}
+		if t.WhoWaiting != "" {
+			item += fmt.Sprintf(" [%s waiting]", t.WhoWaiting)
+		}
+		if t.Effort != "" {
+			item += fmt.Sprintf(" (~%s)", t.Effort)
+		}
+		todoItems = append(todoItems, item)
+	}
+
+	var calItems []string
+	now := time.Now()
+	for _, e := range cc.Calendar.Today {
+		if e.Declined || e.End.Before(now) {
+			continue
+		}
+		calItems = append(calItems, fmt.Sprintf("- %s (%s-%s)",
+			e.Title, e.Start.Format("3:04pm"), e.End.Format("3:04pm")))
+	}
+
+	var sb strings.Builder
+	if len(calItems) > 0 {
+		sb.WriteString("Remaining calendar today:\n")
+		sb.WriteString(strings.Join(calItems, "\n"))
+		sb.WriteString("\n\n")
+	}
+	sb.WriteString("Active todos:\n")
+	sb.WriteString(strings.Join(todoItems, "\n"))
+
+	return fmt.Sprintf(`Given my current state:
+
+%s
+
+Write a 1-2 sentence recommendation of what to focus on next and why. Consider: deadlines, who's waiting, available time between meetings, effort required, and momentum. Be direct and specific.
+
+Output ONLY the recommendation text, no quotes, no JSON, no explanation.`, sb.String())
+}
+
+func buildEditPrompt(todo db.Todo, instruction string) string {
+	todoJSON, _ := json.MarshalIndent(todo, "", "  ")
+	return fmt.Sprintf(`You are updating a todo item. Here is the current todo:
+
+%s
+
+The user says: %q
+
+Update the todo based on the instruction. Return the COMPLETE updated todo as a JSON object.
+Output ONLY the JSON object, no markdown code fences, no explanation, no other text. Just raw JSON.`, string(todoJSON), instruction)
+}
+
+func buildEnrichPrompt(rawText string) string {
+	return fmt.Sprintf(`Extract a todo item from the following text. Return a JSON object with these fields:
+- title: concise action item (string, max ~80 chars)
+- due: date in YYYY-MM-DD format if mentioned, otherwise empty string
+- who_waiting: person name if someone is waiting on this, otherwise empty string
+- effort: estimated effort like "30m", "2h", "1d" if you can infer it, otherwise empty string
+- context: short categorization/label (string, max ~30 chars)
+- detail: comprehensive background
+- project_dir: relevant project directory path if mentioned, otherwise empty string
+
+Text:
+"""
+%s
+"""
+
+Output ONLY the JSON object, no markdown code fences, no explanation, no other text. Just raw JSON.`, rawText)
+}
+
+// extractJSON finds JSON object in a string, stripping markdown fences if present.
+func extractJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "```") {
+		lines := strings.Split(s, "\n")
+		var inner []string
+		inBlock := false
+		for _, line := range lines {
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				inBlock = !inBlock
+				continue
+			}
+			if inBlock {
+				inner = append(inner, line)
+			}
+		}
+		s = strings.Join(inner, "\n")
+	}
+	start := strings.Index(s, "{")
+	end := strings.LastIndex(s, "}")
+	if start >= 0 && end > start {
+		return s[start : end+1]
+	}
+	return s
+}
+
+func formatTodoContext(todo db.Todo) string {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("## Task: %s\n", todo.Title))
+	if todo.Context != "" {
+		parts = append(parts, fmt.Sprintf("**Context:** %s", todo.Context))
+	}
+	if todo.WhoWaiting != "" {
+		parts = append(parts, fmt.Sprintf("**Who's waiting:** %s", todo.WhoWaiting))
+	}
+	if todo.Due != "" {
+		label := db.FormatDueLabel(todo.Due)
+		parts = append(parts, fmt.Sprintf("**Due:** %s (%s)", todo.Due, label))
+	}
+	if todo.Effort != "" {
+		parts = append(parts, fmt.Sprintf("**Effort:** %s", todo.Effort))
+	}
+	if todo.Source != "" && todo.Source != "manual" {
+		parts = append(parts, fmt.Sprintf("**Source:** %s", todo.Source))
+	}
+	if todo.Detail != "" {
+		parts = append(parts, fmt.Sprintf("\n### Detail\n%s", todo.Detail))
+	}
+	return strings.Join(parts, "\n")
+}

@@ -1,0 +1,810 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// formatDuration renders a time.Duration as a compact string like "30m", "1h", "1h30m".
+func formatDuration(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	switch {
+	case h > 0 && m > 0:
+		return fmt.Sprintf("%dh%dm", h, m)
+	case h > 0:
+		return fmt.Sprintf("%dh", h)
+	default:
+		return fmt.Sprintf("%dm", m)
+	}
+}
+
+// renderCommandCenterView is the main entry point for the command center tab.
+func renderCommandCenterView(s *Styles, g *GradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool) string {
+	if cc == nil {
+		empty := lipgloss.NewStyle().
+			Foreground(s.ColorMuted).
+			Width(width).
+			Align(lipgloss.Center).
+			Render("No data yet. Run refresh or wait for next refresh.")
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, empty)
+	}
+
+	warningBanner := renderWarningBanner(s, cc.Warnings, width)
+
+	colWidth := width/2 - 2
+
+	usedHeight := 2
+	if warningBanner != "" {
+		usedHeight += lipgloss.Height(warningBanner) + 1
+	}
+	suggestion := renderSuggestionBanner(s, &cc.Suggestions, width)
+	if suggestion != "" {
+		usedHeight += lipgloss.Height(suggestion) + 1
+	}
+	usedHeight += 2
+
+	panelHeight := height - usedHeight
+	if panelHeight < 10 {
+		panelHeight = 10
+	}
+
+	calCol := renderCalendarColumn(s, calendars, &cc.Calendar, colWidth, panelHeight)
+	var completed []db.Todo
+	if showBacklog {
+		completed = cc.CompletedTodos()
+	}
+	maxVisibleTodos := (panelHeight - 3) / 2
+	if maxVisibleTodos < 5 {
+		maxVisibleTodos = 5
+	}
+	todoCol := renderTodoPanel(s, g, cc.ActiveTodos(), completed, todoCursor, scrollOffset, maxVisibleTodos, colWidth, frame, loadingTodoID)
+
+	calPanel := s.PanelBorder.Width(colWidth).Render(calCol)
+	todoPanel := s.PanelBorder.Width(colWidth).Render(todoCol)
+
+	columns := lipgloss.JoinHorizontal(lipgloss.Top, calPanel, " ", todoPanel)
+
+	footer := renderCCFooter(s, cc.GeneratedAt, width, refreshing, frame)
+
+	var parts []string
+	if warningBanner != "" {
+		parts = append(parts, warningBanner, "")
+	}
+	parts = append(parts, columns)
+	if suggestion != "" {
+		parts = append(parts, "", suggestion)
+	}
+	parts = append(parts, "", footer)
+
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// renderCalendarColumn renders today (and optionally tomorrow) sections.
+func renderCalendarColumn(s *Styles, calendars []config.CalendarEntry, cal *db.CalendarData, width, maxHeight int) string {
+	now := time.Now()
+	afternoon := now.Hour() >= 12
+
+	todayEvents := visibleEvents(cal.Today)
+	if afternoon {
+		todayEvents = upcomingEvents(todayEvents, now)
+	}
+
+	todayLabel := fmt.Sprintf("TODAY (%s)", strings.ToUpper(now.Format("Mon Jan 2")))
+
+	parts := []string{}
+	usedLines := 2
+
+	if afternoon {
+		todayMax := (maxHeight - usedLines - 2) * 3 / 5
+		tomorrowMax := maxHeight - usedLines - todayMax - 2
+		if todayMax < 3 {
+			todayMax = 3
+		}
+		if tomorrowMax < 3 {
+			tomorrowMax = 3
+		}
+
+		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, todayMax)
+		parts = append(parts, todaySection)
+
+		tomorrow := now.AddDate(0, 0, 1)
+		tomorrowLabel := fmt.Sprintf("TOMORROW (%s)", strings.ToUpper(tomorrow.Format("Mon Jan 2")))
+		tomorrowSection := renderCalendarPanelCapped(s, calendars, visibleEvents(cal.Tomorrow), tomorrowLabel, width, tomorrowMax)
+		parts = append(parts, "", tomorrowSection)
+	} else {
+		calMax := maxHeight - usedLines
+		if calMax < 5 {
+			calMax = 5
+		}
+		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, calMax)
+		parts = append(parts, todaySection)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func upcomingEvents(events []db.CalendarEvent, now time.Time) []db.CalendarEvent {
+	var out []db.CalendarEvent
+	for _, ev := range events {
+		if ev.End.After(now) {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func visibleEvents(events []db.CalendarEvent) []db.CalendarEvent {
+	var out []db.CalendarEvent
+	for _, ev := range events {
+		if !ev.Declined {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+func renderCalendarPanelCapped(s *Styles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width, maxLines int) string {
+	availableForEvents := maxLines - 1
+	if availableForEvents < 1 {
+		availableForEvents = 1
+	}
+	if len(events) > availableForEvents {
+		events = events[:availableForEvents]
+	}
+	return renderCalendarPanel(s, calendars, events, label, width)
+}
+
+type conflictPos int
+
+const (
+	posNone conflictPos = iota
+	posFirst
+	posMiddle
+	posLast
+)
+
+func computeConflictPositions(events []db.CalendarEvent) ([]conflictPos, []time.Time) {
+	n := len(events)
+	pos := make([]conflictPos, n)
+	groupEnd := make([]time.Time, n)
+
+	i := 0
+	for i < n {
+		if events[i].AllDay {
+			i++
+			continue
+		}
+		maxEnd := events[i].End
+		j := i + 1
+		for j < n && !events[j].AllDay && events[j].Start.Before(maxEnd) {
+			if events[j].End.After(maxEnd) {
+				maxEnd = events[j].End
+			}
+			j++
+		}
+		if j-i > 1 {
+			pos[i] = posFirst
+			for k := i + 1; k < j-1; k++ {
+				pos[k] = posMiddle
+			}
+			pos[j-1] = posLast
+			for k := i; k < j; k++ {
+				groupEnd[k] = maxEnd
+			}
+		}
+		i = j
+	}
+
+	return pos, groupEnd
+}
+
+// calendarColorMap builds a lookup from calendar ID to color string.
+func calendarColorMap(calendars []config.CalendarEntry) map[string]string {
+	m := make(map[string]string, len(calendars))
+	for _, c := range calendars {
+		if c.Color != "" {
+			m[c.ID] = c.Color
+		}
+	}
+	return m
+}
+
+func calendarEventStyle(s *Styles, calendars []config.CalendarEntry, calendarID string) lipgloss.Style {
+	colorMap := calendarColorMap(calendars)
+	if color, ok := colorMap[calendarID]; ok {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	}
+	return lipgloss.NewStyle()
+}
+
+func renderCalendarPanel(s *Styles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width int) string {
+	var lines []string
+	lines = append(lines, s.SectionHeader.Render(label))
+
+	if len(events) == 0 {
+		lines = append(lines, s.CalendarFree.Render("  No events"))
+		return strings.Join(lines, "\n")
+	}
+
+	positions, groupEnds := computeConflictPositions(events)
+	var maxEndSoFar time.Time
+
+	for i, ev := range events {
+		if i > 0 && !maxEndSoFar.IsZero() {
+			gap := ev.Start.Sub(maxEndSoFar)
+			if gap > 30*time.Minute {
+				freeTime := s.CalendarTime.Render(maxEndSoFar.Format("3:04pm"))
+				freeLine := fmt.Sprintf("  %s  %s", freeTime, s.CalendarFree.Render("---- free ----"))
+				lines = append(lines, freeLine)
+			}
+		}
+
+		if ev.End.After(maxEndSoFar) {
+			maxEndSoFar = ev.End
+		}
+
+		isConflict := positions[i] != posNone
+
+		var connector string
+		switch positions[i] {
+		case posFirst:
+			connector = s.DueOverdue.Render("\u256d")
+		case posMiddle, posLast:
+			connector = s.DueOverdue.Render("\u2502")
+		default:
+			connector = " "
+		}
+
+		timeStyle := s.CalendarTime
+		if isConflict {
+			timeStyle = s.DueOverdue
+		}
+
+		timeFmt := ev.Start.Format("3:04pm")
+		timeStr := timeStyle.Render(timeFmt)
+		dur := ev.End.Sub(ev.Start)
+		durStr := timeStyle.Render(formatDuration(dur))
+
+		titleMaxWidth := width - 7 - len(timeFmt) - len(formatDuration(dur))
+		title := ev.Title
+		if len(title) > titleMaxWidth && titleMaxWidth > 0 {
+			title = title[:titleMaxWidth-1] + "~"
+		}
+
+		padding := ""
+		if titleMaxWidth > len(title) {
+			padding = strings.Repeat(" ", titleMaxWidth-len(title))
+		}
+
+		if isConflict {
+			title = s.DueOverdue.Render(title)
+		} else if ev.CalendarID != "" {
+			title = calendarEventStyle(s, calendars, ev.CalendarID).Render(title)
+		}
+
+		line := fmt.Sprintf("%s %s  %s%s %s", connector, timeStr, title, padding, durStr)
+		lines = append(lines, line)
+
+		if positions[i] == posLast {
+			endStr := groupEnds[i].Format("3:04pm")
+			prefix := "\u2570\u2500\u2500\u2500 " + endStr + " "
+			fillLen := width - len([]rune(prefix))
+			if fillLen < 1 {
+				fillLen = 1
+			}
+			closer := s.DueOverdue.Render(prefix + strings.Repeat("\u2500", fillLen))
+			lines = append(lines, closer)
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func renderTodoPanel(s *Styles, g *GradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string) string {
+	var lines []string
+
+	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active)", len(todos)))
+	lines = append(lines, header)
+	lines = append(lines, "")
+
+	if len(todos) == 0 {
+		lines = append(lines, s.CalendarFree.Render("  No active todos"))
+	}
+
+	visStart := scrollOffset
+	visEnd := scrollOffset + maxVisible
+	if visStart < 0 {
+		visStart = 0
+	}
+	if visEnd > len(todos) {
+		visEnd = len(todos)
+	}
+
+	if visStart > 0 {
+		lines = append(lines, s.CalendarTime.Render(fmt.Sprintf("  \u25b2 %d more above", visStart)))
+	}
+
+	titleMaxWidth := width - 8
+	if titleMaxWidth < 20 {
+		titleMaxWidth = 20
+	}
+
+	for i := visStart; i < visEnd; i++ {
+		todo := todos[i]
+		num := i + 1
+
+		isLoading := loadingTodoID != "" && todo.ID == loadingTodoID
+
+		title := truncateToWidth(flattenTitle(todo.Title), titleMaxWidth)
+		numStr := fmt.Sprintf("%d", num)
+		if isLoading {
+			numStr = loadingSpinnerChar(frame)
+		}
+		var line1 string
+		if i == cursor {
+			pointer := pulsingPointerStyle(g, frame).Render("> ")
+			styledNum := lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(numStr + ". " + title)
+			if isLoading {
+				styledNum = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(numStr) +
+					lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(". "+title)
+			}
+			line1 = pointer + styledNum
+		} else {
+			if isLoading {
+				line1 = "  " + lipgloss.NewStyle().Foreground(s.ColorCyan).Render(numStr) + ". " + title
+			} else {
+				line1 = fmt.Sprintf("  %s. %s", numStr, title)
+			}
+		}
+		lines = append(lines, line1)
+
+		var details []string
+		if todo.Due != "" {
+			urgency := db.DueUrgency(todo.Due)
+			label := db.FormatDueLabel(todo.Due)
+			details = append(details, s.DueStyle(urgency).Render(label))
+		}
+		if todo.WhoWaiting != "" {
+			details = append(details, s.CalendarTime.Render(todo.WhoWaiting+" waiting"))
+		} else {
+			details = append(details, s.CalendarTime.Render("no blocker"))
+		}
+		if todo.Effort != "" {
+			details = append(details, s.CalendarTime.Render("~"+todo.Effort))
+		}
+		if len(details) > 0 {
+			detailStr := strings.Join(details, s.CalendarTime.Render(" \u00b7 "))
+			lines = append(lines, "     "+detailStr)
+		}
+	}
+
+	if visEnd < len(todos) {
+		lines = append(lines, s.CalendarTime.Render(fmt.Sprintf("  \u25bc %d more below", len(todos)-visEnd)))
+	}
+
+	if len(completed) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, s.CalendarTime.Render(fmt.Sprintf("  COMPLETED (%d)", len(completed))))
+		for _, todo := range completed {
+			title := s.CalendarFree.Render("  \u2713 " + todo.Title)
+			lines = append(lines, title)
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func renderWarningBanner(s *Styles, warnings []db.Warning, width int) string {
+	if len(warnings) == 0 {
+		return ""
+	}
+
+	warningHeaderStyle := lipgloss.NewStyle().Foreground(s.ColorYellow).Bold(true)
+	warningBorderStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(s.ColorYellow)
+	warningMsgStyle := lipgloss.NewStyle().Foreground(s.ColorYellow)
+
+	header := warningHeaderStyle.Render(fmt.Sprintf("\u26a0 DATA SOURCE WARNINGS (%d)", len(warnings)))
+	var wLines []string
+	for _, w := range warnings {
+		line := fmt.Sprintf("  %s: %s",
+			warningMsgStyle.Bold(true).Render(w.Source),
+			warningMsgStyle.Render(w.Message),
+		)
+		wLines = append(wLines, line)
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, append([]string{header}, wLines...)...)
+	return warningBorderStyle.Width(width - 2).Render(content)
+}
+
+func renderSuggestionBanner(s *Styles, suggestions *db.Suggestions, width int) string {
+	if suggestions == nil || suggestions.Focus == "" {
+		return ""
+	}
+
+	header := s.SectionHeader.Render("SUGGESTED FOCUS")
+	body := s.Suggestion.Render(fmt.Sprintf("%q", suggestions.Focus))
+
+	content := lipgloss.JoinVertical(lipgloss.Left, header, body)
+	return s.PanelBorder.Width(width - 2).Render(content)
+}
+
+func wrapText(text string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return text
+	}
+	var lines []string
+	for _, paragraph := range strings.Split(text, "\n") {
+		if paragraph == "" {
+			lines = append(lines, "")
+			continue
+		}
+		words := strings.Fields(paragraph)
+		if len(words) == 0 {
+			lines = append(lines, "")
+			continue
+		}
+		current := words[0]
+		for _, word := range words[1:] {
+			if len(current)+1+len(word) > maxWidth {
+				lines = append(lines, current)
+				current = word
+			} else {
+				current += " " + word
+			}
+		}
+		lines = append(lines, current)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderDetailView(s *Styles, todo db.Todo, inputView string, width int) string {
+	innerWidth := width - 4
+	if innerWidth < 40 {
+		innerWidth = 40
+	}
+
+	title := s.SectionHeader.Render("TODO DETAIL")
+	todoTitle := lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(todo.Title)
+
+	var fields []string
+	addField := func(label, value string) {
+		if value != "" {
+			styled := fmt.Sprintf("  %-14s %s", s.SectionHeader.Render(label+":"), value)
+			fields = append(fields, styled)
+		}
+	}
+
+	addField("Status", todo.Status)
+	addField("Source", todo.Source)
+	addField("Context", todo.Context)
+	addField("Who waiting", todo.WhoWaiting)
+	if todo.Due != "" {
+		urgency := db.DueUrgency(todo.Due)
+		label := db.FormatDueLabel(todo.Due)
+		addField("Due", s.DueStyle(urgency).Render(todo.Due+" ("+label+")"))
+	}
+	addField("Effort", todo.Effort)
+	addField("Project", todo.ProjectDir)
+	if todo.SessionID != "" {
+		addField("Session", todo.SessionID[:8]+"... (enter to resume)")
+	}
+	addField("Source ref", todo.SourceRef)
+	addField("Created", todo.CreatedAt.Format("Jan 2, 2006 15:04"))
+	if todo.CompletedAt != nil {
+		addField("Completed", todo.CompletedAt.Format("Jan 2, 2006 15:04"))
+	}
+
+	fieldStr := strings.Join(fields, "\n")
+	divider := s.DescMuted.Render(strings.Repeat("\u2500", innerWidth-2))
+
+	var detailSection string
+	if todo.Detail != "" {
+		detailHeader := s.SectionHeader.Render("  DETAIL")
+		wrapped := wrapText(todo.Detail, innerWidth-6)
+		var detailLines []string
+		for _, line := range strings.Split(wrapped, "\n") {
+			detailLines = append(detailLines, "   "+line)
+		}
+		detailBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(detailLines, "\n"))
+		detailSection = lipgloss.JoinVertical(lipgloss.Left, "", detailHeader, "", detailBody)
+	}
+
+	inputLabel := s.DescMuted.Render("Tell me what changed:")
+	hints := s.Hint.Render("enter submit to AI -- esc back")
+
+	parts := []string{
+		title,
+		"",
+		"  " + todoTitle,
+		"",
+		fieldStr,
+	}
+	if detailSection != "" {
+		parts = append(parts, detailSection)
+	}
+	parts = append(parts,
+		"",
+		"  "+divider,
+		"  "+inputLabel,
+		"  "+inputView,
+		"",
+		"  "+hints,
+	)
+
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return s.PanelBorder.Width(innerWidth).Render(content)
+}
+
+func renderCCFooter(s *Styles, generatedAt time.Time, width int, refreshing bool, frame int) string {
+	var left string
+	if refreshing {
+		dots := strings.Repeat(".", (frame/6)%4)
+		left = lipgloss.NewStyle().Foreground(s.ColorCyan).Render("refreshing" + dots)
+	} else {
+		left = s.RefreshInfo.Render("refreshed " + db.RelativeTime(generatedAt))
+	}
+	right := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 c create \u00b7 ? help")
+
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 2 {
+		gap = 2
+	}
+
+	return left + strings.Repeat(" ", gap) + right
+}
+
+func loadingSpinnerChar(frame int) string {
+	chars := []string{"\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"}
+	return chars[(frame/2)%len(chars)]
+}
+
+func truncateToWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= maxWidth {
+		return s
+	}
+	return string(runes[:maxWidth-1]) + "~"
+}
+
+func flattenTitle(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	return strings.TrimSpace(s)
+}
+
+func renderExpandedTodoItem(s *Styles, g *GradientColors, todo db.Todo, num int, isCursor bool, maxWidth int, frame int, isLoading bool) string {
+	prefix := fmt.Sprintf("%d. ", num)
+	prefixWidth := 2 + len(prefix)
+	titleMax := maxWidth - prefixWidth
+	if titleMax < 10 {
+		titleMax = 10
+	}
+
+	title := flattenTitle(todo.Title)
+	if title == "" {
+		title = "(untitled)"
+	}
+	title = truncateToWidth(title, titleMax)
+
+	numStr := fmt.Sprintf("%d", num)
+	if isLoading {
+		numStr = loadingSpinnerChar(frame)
+	}
+	var line1 string
+	if isCursor {
+		pointer := pulsingPointerStyle(g, frame).Render("> ")
+		if isLoading {
+			line1 = pointer + lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(numStr) +
+				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(". "+title)
+		} else {
+			line1 = pointer + lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(numStr+". "+title)
+		}
+	} else {
+		if isLoading {
+			line1 = "  " + lipgloss.NewStyle().Foreground(s.ColorCyan).Render(numStr) + ". " + title
+		} else {
+			line1 = "  " + numStr + ". " + title
+		}
+	}
+
+	indent := strings.Repeat(" ", prefixWidth)
+	detailMax := maxWidth - prefixWidth
+	var detailParts []string
+	if todo.Due != "" {
+		detailParts = append(detailParts, db.FormatDueLabel(todo.Due))
+	}
+	if todo.WhoWaiting != "" {
+		detailParts = append(detailParts, todo.WhoWaiting+" waiting")
+	}
+	if todo.Effort != "" {
+		detailParts = append(detailParts, "~"+todo.Effort)
+	}
+
+	var line2 string
+	if len(detailParts) > 0 {
+		remaining := detailMax
+		var styledParts []string
+		for j, part := range detailParts {
+			if remaining <= 0 {
+				break
+			}
+			if j > 0 {
+				remaining -= 3
+			}
+			display := truncateToWidth(part, remaining)
+			remaining -= len([]rune(display))
+
+			if j == 0 && todo.Due != "" {
+				urgency := db.DueUrgency(todo.Due)
+				styledParts = append(styledParts, s.DueStyle(urgency).Render(display))
+			} else {
+				styledParts = append(styledParts, s.CalendarTime.Render(display))
+			}
+		}
+		line2 = indent + strings.Join(styledParts, s.CalendarTime.Render(" \u00b7 "))
+	} else {
+		line2 = " "
+	}
+
+	return line1 + "\n" + line2
+}
+
+func renderExpandedTodoView(s *Styles, g *GradientColors, todos []db.Todo, cursor, offset, rowsPerCol, numCols, width, height int, frame int, loadingTodoID string, refreshing bool) string {
+	pageSize := rowsPerCol * numCols
+	totalPages := (len(todos) + pageSize - 1) / pageSize
+	currentPage := offset/pageSize + 1
+
+	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active) -- page %d/%d", len(todos), currentPage, totalPages))
+	hints := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 \u2190\u2192 columns \u00b7 esc collapse \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 c create \u00b7 ? help")
+
+	if len(todos) == 0 {
+		return lipgloss.JoinVertical(lipgloss.Left, header, "", s.CalendarFree.Render("  No active todos"), "", hints)
+	}
+
+	sepWidth := 3
+	colWidth := (width - sepWidth*(numCols-1)) / numCols
+	if colWidth < 30 {
+		colWidth = 30
+	}
+
+	colStyle := lipgloss.NewStyle().Width(colWidth).MaxWidth(colWidth)
+	colHeight := rowsPerCol * 2
+
+	var columns []string
+	for col := 0; col < numCols; col++ {
+		startIdx := offset + col*rowsPerCol
+		endIdx := startIdx + rowsPerCol
+		if startIdx >= len(todos) {
+			columns = append(columns, colStyle.Height(colHeight).Render(""))
+			continue
+		}
+		if endIdx > len(todos) {
+			endIdx = len(todos)
+		}
+
+		var items []string
+		for i := startIdx; i < endIdx; i++ {
+			isLoading := loadingTodoID != "" && todos[i].ID == loadingTodoID
+			item := renderExpandedTodoItem(s, g, todos[i], i+1, i == cursor, colWidth, frame, isLoading)
+			items = append(items, item)
+		}
+
+		colContent := strings.Join(items, "\n")
+		columns = append(columns, colStyle.Height(colHeight).Render(colContent))
+	}
+
+	sep := s.CalendarTime.Render(" \u2502 ")
+	joined := lipgloss.JoinHorizontal(lipgloss.Top, columns[0])
+	for i := 1; i < len(columns); i++ {
+		joined = lipgloss.JoinHorizontal(lipgloss.Top, joined, sep, columns[i])
+	}
+
+	var footerParts []string
+	if refreshing {
+		dots := strings.Repeat(".", (frame/6)%4)
+		footerParts = append(footerParts, lipgloss.NewStyle().Foreground(s.ColorCyan).Render("refreshing"+dots))
+	}
+	footerParts = append(footerParts, s.RefreshInfo.Render(fmt.Sprintf("page %d/%d", currentPage, totalPages)))
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", joined, "", hints, strings.Join(footerParts, "  "))
+}
+
+func renderHelpOverlay(s *Styles, activeTab tab, width, height int) string {
+	title := s.SectionHeader.Render("KEYBOARD SHORTCUTS")
+	dismiss := s.CalendarTime.Render("Press any key to dismiss")
+
+	var sections []string
+	sections = append(sections, title, "", dismiss, "")
+
+	global := []struct{ key, desc string }{
+		{"tab / shift+tab", "Switch tabs"},
+		{"esc", "Quit / cancel"},
+		{"?", "Toggle this help"},
+	}
+	sections = append(sections, s.SectionHeader.Render("  Global"), "")
+	for _, sh := range global {
+		sections = append(sections, fmt.Sprintf("    %-20s %s",
+			lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
+			s.CalendarTime.Render(sh.desc)))
+	}
+
+	switch activeTab {
+	case tabCommand:
+		cmds := []struct{ key, desc string }{
+			{"\u2191\u2193 / k j", "Navigate todos"},
+			{"space", "View todo detail"},
+			{"enter", "Launch Claude session for todo"},
+			{"x", "Mark todo done"},
+			{"X", "Dismiss todo (won't come back)"},
+			{"u", "Undo last done/dismiss"},
+			{"d", "Defer todo to bottom of list"},
+			{"p", "Promote todo to top of list"},
+			{"c", "Create new todo"},
+			{"s", "Schedule time block for todo"},
+			{"b", "Toggle completed backlog"},
+			{"r", "Refresh from all sources"},
+		}
+		sections = append(sections, "", s.SectionHeader.Render("  Command Center"), "")
+		for _, sh := range cmds {
+			sections = append(sections, fmt.Sprintf("    %-20s %s",
+				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
+				s.CalendarTime.Render(sh.desc)))
+		}
+
+	case tabThreads:
+		cmds := []struct{ key, desc string }{
+			{"\u2191\u2193 / k j", "Navigate threads"},
+			{"enter", "Launch Claude session for thread"},
+			{"a", "Add new thread"},
+			{"p", "Pause active thread"},
+			{"s", "Start paused thread"},
+			{"x", "Close thread"},
+		}
+		sections = append(sections, "", s.SectionHeader.Render("  Threads"), "")
+		for _, sh := range cmds {
+			sections = append(sections, fmt.Sprintf("    %-20s %s",
+				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
+				s.CalendarTime.Render(sh.desc)))
+		}
+
+	case tabNew, tabResume:
+		cmds := []struct{ key, desc string }{
+			{"\u2191\u2193", "Navigate list"},
+			{"enter", "Launch session"},
+			{"/", "Filter list"},
+			{"del / backspace", "Remove from list"},
+		}
+		tabName := "New Session"
+		if activeTab == tabResume {
+			tabName = "Resume"
+		}
+		sections = append(sections, "", s.SectionHeader.Render("  "+tabName), "")
+		for _, sh := range cmds {
+			sections = append(sections, fmt.Sprintf("    %-20s %s",
+				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
+				s.CalendarTime.Render(sh.desc)))
+		}
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
+	box := s.PanelBorder.Width(50).Padding(1, 2).Render(content)
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}

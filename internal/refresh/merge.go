@@ -1,0 +1,150 @@
+package refresh
+
+import "time"
+
+// Merge combines fresh data with existing command center state.
+// Rules:
+//   - Calendar: replaced entirely (always fresh)
+//   - Todos: merge by source_ref; dismissed = tombstone (never recreate);
+//     update existing (preserve ID/status/created_at, update detail);
+//     add new with generated UUID; preserve source:"manual" untouched
+//   - Threads: same logic; preserve pause/complete states
+func Merge(existing *CommandCenter, fresh *FreshData) *CommandCenter {
+	if existing == nil {
+		existing = &CommandCenter{}
+	}
+
+	cc := &CommandCenter{
+		GeneratedAt:    time.Now(),
+		Calendar:       fresh.Calendar,
+		PendingActions: existing.PendingActions,
+	}
+
+	cc.Todos = mergeTodos(existing.Todos, fresh.Todos)
+	cc.Threads = mergeThreads(existing.Threads, fresh.Threads)
+
+	return cc
+}
+
+func mergeTodos(existing, fresh []Todo) []Todo {
+	byRef := make(map[string]int)
+	for i, t := range existing {
+		if t.SourceRef != "" {
+			byRef[t.SourceRef] = i
+		}
+	}
+
+	matched := make(map[int]bool)
+
+	var merged []Todo
+	for _, ft := range fresh {
+		if ft.SourceRef == "" {
+			if ft.ID == "" {
+				ft.ID = genID()
+			}
+			if ft.CreatedAt.IsZero() {
+				ft.CreatedAt = time.Now()
+			}
+			merged = append(merged, ft)
+			continue
+		}
+
+		if idx, ok := byRef[ft.SourceRef]; ok {
+			et := existing[idx]
+			matched[idx] = true
+
+			if et.Status == "dismissed" {
+				continue
+			}
+
+			et.Title = ft.Title
+			et.Detail = ft.Detail
+			et.Context = ft.Context
+			et.WhoWaiting = ft.WhoWaiting
+			if ft.Due != "" {
+				et.Due = ft.Due
+			}
+			if ft.Effort != "" {
+				et.Effort = ft.Effort
+			}
+			merged = append(merged, et)
+		} else {
+			if ft.ID == "" {
+				ft.ID = genID()
+			}
+			if ft.CreatedAt.IsZero() {
+				ft.CreatedAt = time.Now()
+			}
+			if ft.Status == "" {
+				ft.Status = "active"
+			}
+			merged = append(merged, ft)
+		}
+	}
+
+	for i, t := range existing {
+		if !matched[i] {
+			merged = append(merged, t)
+		}
+	}
+
+	return merged
+}
+
+func mergeThreads(existing, fresh []Thread) []Thread {
+	byRef := make(map[string]int)
+	for i, t := range existing {
+		if t.URL != "" {
+			byRef[t.URL] = i
+		}
+	}
+
+	matched := make(map[int]bool)
+	var merged []Thread
+
+	for _, ft := range fresh {
+		if ft.URL == "" {
+			if ft.ID == "" {
+				ft.ID = genID()
+			}
+			if ft.CreatedAt.IsZero() {
+				ft.CreatedAt = time.Now()
+			}
+			merged = append(merged, ft)
+			continue
+		}
+
+		if idx, ok := byRef[ft.URL]; ok {
+			et := existing[idx]
+			matched[idx] = true
+
+			if et.Status == "completed" || et.Status == "dismissed" {
+				continue
+			}
+
+			et.Title = ft.Title
+			et.Summary = ft.Summary
+			et.Repo = ft.Repo
+			merged = append(merged, et)
+		} else {
+			if ft.ID == "" {
+				ft.ID = genID()
+			}
+			if ft.CreatedAt.IsZero() {
+				ft.CreatedAt = time.Now()
+			}
+			if ft.Status == "" {
+				ft.Status = "active"
+			}
+			merged = append(merged, ft)
+		}
+	}
+
+	for i, t := range existing {
+		if !matched[i] {
+			merged = append(merged, t)
+		}
+	}
+
+	return merged
+}
