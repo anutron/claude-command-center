@@ -1,4 +1,4 @@
-package tui
+package commandcenter
 
 import (
 	"bytes"
@@ -11,6 +11,8 @@ import (
 	"github.com/anutron/claude-command-center/internal/db"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// Message types for Claude AI results.
 
 type claudeEditFinishedMsg struct {
 	todoID string

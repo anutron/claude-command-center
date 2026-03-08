@@ -1,4 +1,4 @@
-package tui
+package commandcenter
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ func formatDuration(d time.Duration) string {
 }
 
 // renderCommandCenterView is the main entry point for the command center tab.
-func renderCommandCenterView(s *Styles, g *GradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool) string {
+func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool) string {
 	if cc == nil {
 		empty := lipgloss.NewStyle().
 			Foreground(s.ColorMuted).
@@ -89,7 +89,7 @@ func renderCommandCenterView(s *Styles, g *GradientColors, cc *db.CommandCenter,
 }
 
 // renderCalendarColumn renders today (and optionally tomorrow) sections.
-func renderCalendarColumn(s *Styles, calendars []config.CalendarEntry, cal *db.CalendarData, width, maxHeight int) string {
+func renderCalendarColumn(s *ccStyles, calendars []config.CalendarEntry, cal *db.CalendarData, width, maxHeight int) string {
 	now := time.Now()
 	afternoon := now.Hour() >= 12
 
@@ -152,7 +152,7 @@ func visibleEvents(events []db.CalendarEvent) []db.CalendarEvent {
 	return out
 }
 
-func renderCalendarPanelCapped(s *Styles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width, maxLines int) string {
+func renderCalendarPanelCapped(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width, maxLines int) string {
 	availableForEvents := maxLines - 1
 	if availableForEvents < 1 {
 		availableForEvents = 1
@@ -218,7 +218,7 @@ func calendarColorMap(calendars []config.CalendarEntry) map[string]string {
 	return m
 }
 
-func calendarEventStyle(s *Styles, calendars []config.CalendarEntry, calendarID string) lipgloss.Style {
+func calendarEventStyle(calendars []config.CalendarEntry, calendarID string) lipgloss.Style {
 	colorMap := calendarColorMap(calendars)
 	if color, ok := colorMap[calendarID]; ok {
 		return lipgloss.NewStyle().Foreground(lipgloss.Color(color))
@@ -226,7 +226,7 @@ func calendarEventStyle(s *Styles, calendars []config.CalendarEntry, calendarID 
 	return lipgloss.NewStyle()
 }
 
-func renderCalendarPanel(s *Styles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width int) string {
+func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width int) string {
 	var lines []string
 	lines = append(lines, s.SectionHeader.Render(label))
 
@@ -288,7 +288,7 @@ func renderCalendarPanel(s *Styles, calendars []config.CalendarEntry, events []d
 		if isConflict {
 			title = s.DueOverdue.Render(title)
 		} else if ev.CalendarID != "" {
-			title = calendarEventStyle(s, calendars, ev.CalendarID).Render(title)
+			title = calendarEventStyle(calendars, ev.CalendarID).Render(title)
 		}
 
 		line := fmt.Sprintf("%s %s  %s%s %s", connector, timeStr, title, padding, durStr)
@@ -309,7 +309,7 @@ func renderCalendarPanel(s *Styles, calendars []config.CalendarEntry, events []d
 	return strings.Join(lines, "\n")
 }
 
-func renderTodoPanel(s *Styles, g *GradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string) string {
+func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string) string {
 	var lines []string
 
 	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active)", len(todos)))
@@ -403,7 +403,7 @@ func renderTodoPanel(s *Styles, g *GradientColors, todos []db.Todo, completed []
 	return strings.Join(lines, "\n")
 }
 
-func renderWarningBanner(s *Styles, warnings []db.Warning, width int) string {
+func renderWarningBanner(s *ccStyles, warnings []db.Warning, width int) string {
 	if len(warnings) == 0 {
 		return ""
 	}
@@ -428,7 +428,7 @@ func renderWarningBanner(s *Styles, warnings []db.Warning, width int) string {
 	return warningBorderStyle.Width(width - 2).Render(content)
 }
 
-func renderSuggestionBanner(s *Styles, suggestions *db.Suggestions, width int) string {
+func renderSuggestionBanner(s *ccStyles, suggestions *db.Suggestions, width int) string {
 	if suggestions == nil || suggestions.Focus == "" {
 		return ""
 	}
@@ -469,7 +469,7 @@ func wrapText(text string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderDetailView(s *Styles, todo db.Todo, inputView string, width int) string {
+func renderDetailView(s *ccStyles, todo db.Todo, inputView string, width int) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -547,7 +547,7 @@ func renderDetailView(s *Styles, todo db.Todo, inputView string, width int) stri
 	return s.PanelBorder.Width(innerWidth).Render(content)
 }
 
-func renderCCFooter(s *Styles, generatedAt time.Time, width int, refreshing bool, frame int) string {
+func renderCCFooter(s *ccStyles, generatedAt time.Time, width int, refreshing bool, frame int) string {
 	var left string
 	if refreshing {
 		dots := strings.Repeat(".", (frame/6)%4)
@@ -563,11 +563,6 @@ func renderCCFooter(s *Styles, generatedAt time.Time, width int, refreshing bool
 	}
 
 	return left + strings.Repeat(" ", gap) + right
-}
-
-func loadingSpinnerChar(frame int) string {
-	chars := []string{"\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"}
-	return chars[(frame/2)%len(chars)]
 }
 
 func truncateToWidth(s string, maxWidth int) string {
@@ -590,7 +585,7 @@ func flattenTitle(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func renderExpandedTodoItem(s *Styles, g *GradientColors, todo db.Todo, num int, isCursor bool, maxWidth int, frame int, isLoading bool) string {
+func renderExpandedTodoItem(s *ccStyles, g *gradientColors, todo db.Todo, num int, isCursor bool, maxWidth int, frame int, isLoading bool) string {
 	prefix := fmt.Sprintf("%d. ", num)
 	prefixWidth := 2 + len(prefix)
 	titleMax := maxWidth - prefixWidth
@@ -667,7 +662,7 @@ func renderExpandedTodoItem(s *Styles, g *GradientColors, todo db.Todo, num int,
 	return line1 + "\n" + line2
 }
 
-func renderExpandedTodoView(s *Styles, g *GradientColors, todos []db.Todo, cursor, offset, rowsPerCol, numCols, width, height int, frame int, loadingTodoID string, refreshing bool) string {
+func renderExpandedTodoView(s *ccStyles, g *gradientColors, todos []db.Todo, cursor, offset, rowsPerCol, numCols, width, height int, frame int, loadingTodoID string, refreshing bool) string {
 	pageSize := rowsPerCol * numCols
 	totalPages := (len(todos) + pageSize - 1) / pageSize
 	currentPage := offset/pageSize + 1
@@ -727,7 +722,7 @@ func renderExpandedTodoView(s *Styles, g *GradientColors, todos []db.Todo, curso
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", joined, "", hints, strings.Join(footerParts, "  "))
 }
 
-func renderHelpOverlay(s *Styles, activeTab tab, width, height int) string {
+func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 	title := s.SectionHeader.Render("KEYBOARD SHORTCUTS")
 	dismiss := s.CalendarTime.Render("Press any key to dismiss")
 
@@ -746,8 +741,8 @@ func renderHelpOverlay(s *Styles, activeTab tab, width, height int) string {
 			s.CalendarTime.Render(sh.desc)))
 	}
 
-	switch activeTab {
-	case tabCommand:
+	switch subView {
+	case "command":
 		cmds := []struct{ key, desc string }{
 			{"\u2191\u2193 / k j", "Navigate todos"},
 			{"space", "View todo detail"},
@@ -769,7 +764,7 @@ func renderHelpOverlay(s *Styles, activeTab tab, width, height int) string {
 				s.CalendarTime.Render(sh.desc)))
 		}
 
-	case tabThreads:
+	case "threads":
 		cmds := []struct{ key, desc string }{
 			{"\u2191\u2193 / k j", "Navigate threads"},
 			{"enter", "Launch Claude session for thread"},
@@ -779,24 +774,6 @@ func renderHelpOverlay(s *Styles, activeTab tab, width, height int) string {
 			{"x", "Close thread"},
 		}
 		sections = append(sections, "", s.SectionHeader.Render("  Threads"), "")
-		for _, sh := range cmds {
-			sections = append(sections, fmt.Sprintf("    %-20s %s",
-				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
-				s.CalendarTime.Render(sh.desc)))
-		}
-
-	case tabNew, tabResume:
-		cmds := []struct{ key, desc string }{
-			{"\u2191\u2193", "Navigate list"},
-			{"enter", "Launch session"},
-			{"/", "Filter list"},
-			{"del / backspace", "Remove from list"},
-		}
-		tabName := "New Session"
-		if activeTab == tabResume {
-			tabName = "Resume"
-		}
-		sections = append(sections, "", s.SectionHeader.Render("  "+tabName), "")
 		for _, sh := range cmds {
 			sections = append(sections, fmt.Sprintf("    %-20s %s",
 				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),

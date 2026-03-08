@@ -1,4 +1,4 @@
-package tui
+package commandcenter
 
 import (
 	"bytes"
@@ -18,8 +18,6 @@ type ccRefreshFinishedMsg struct {
 }
 
 // refreshCCCmd spawns the ccc-refresh binary to gather data from APIs.
-// It looks for the binary next to the running executable, then falls back
-// to $PATH.
 func refreshCCCmd() tea.Cmd {
 	return func() tea.Msg {
 		binary := findRefreshBinary()
@@ -28,7 +26,6 @@ func refreshCCCmd() tea.Cmd {
 		if binary != "" {
 			cmd = exec.Command(binary)
 		} else {
-			// Fallback: try ccc-refresh on PATH
 			cmd = exec.Command("ccc-refresh")
 		}
 

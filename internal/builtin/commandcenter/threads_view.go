@@ -1,4 +1,4 @@
-package tui
+package commandcenter
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 )
 
 // renderThreadsView renders the full Threads tab content.
-func renderThreadsView(s *Styles, g *GradientColors, cc *db.CommandCenter, width, height, cursor, frame int) string {
+func renderThreadsView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, width, height, cursor, frame int) string {
 	if cc == nil {
 		return lipgloss.PlaceHorizontal(width, lipgloss.Center,
 			s.DescMuted.Render("No data yet."))
@@ -32,7 +32,7 @@ func renderThreadsView(s *Styles, g *GradientColors, cc *db.CommandCenter, width
 	return strings.Join(sections, "\n\n")
 }
 
-func renderThreadSection(s *Styles, g *GradientColors, title string, threads []db.Thread, cursor int, cursorOffset int, width, frame int) string {
+func renderThreadSection(s *ccStyles, g *gradientColors, title string, threads []db.Thread, cursor int, cursorOffset int, width, frame int) string {
 	innerWidth := width - 4
 	if innerWidth < 20 {
 		innerWidth = 20
@@ -118,12 +118,12 @@ func renderThreadSection(s *Styles, g *GradientColors, title string, threads []d
 	return strings.Join(boxLines, "\n")
 }
 
-func renderThreadsFooter(s *Styles, width int) string {
+func renderThreadsFooter(s *ccStyles, width int) string {
 	hints := s.DescMuted.Render("  \u2191\u2193 navigate \u00b7 enter open \u00b7 p pause \u00b7 s start \u00b7 x close \u00b7 a add")
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, hints)
 }
 
-func threadTypePrefix(s *Styles, t string) string {
+func threadTypePrefix(s *ccStyles, t string) string {
 	switch t {
 	case "pr":
 		return lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("PR")

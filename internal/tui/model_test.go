@@ -2,7 +2,6 @@ package tui
 
 import (
 	"testing"
-	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
@@ -14,26 +13,6 @@ func testConfig() *config.Config {
 		Name:    "Test Center",
 		Palette: "aurora",
 		Todos:   config.TodosConfig{Enabled: true},
-	}
-}
-
-func testCC() *db.CommandCenter {
-	return &db.CommandCenter{
-		GeneratedAt: time.Now(),
-		Todos: []db.Todo{
-			{ID: "t1", Title: "First todo", Status: "active", Source: "manual", CreatedAt: time.Now()},
-			{ID: "t2", Title: "Second todo", Status: "active", Source: "manual", Due: "2025-01-01", CreatedAt: time.Now()},
-			{ID: "t3", Title: "Third todo", Status: "completed", Source: "manual", CreatedAt: time.Now()},
-		},
-		Threads: []db.Thread{
-			{ID: "th1", Title: "Active thread", Status: "active", Type: "manual", CreatedAt: time.Now()},
-			{ID: "th2", Title: "Paused thread", Status: "paused", Type: "pr", CreatedAt: time.Now()},
-		},
-		Calendar: db.CalendarData{
-			Today: []db.CalendarEvent{
-				{Title: "Standup", Start: time.Now(), End: time.Now().Add(30 * time.Minute)},
-			},
-		},
 	}
 }
 
@@ -56,21 +35,9 @@ func TestNewModel(t *testing.T) {
 	if m.Launch != nil {
 		t.Error("expected Launch to be nil initially")
 	}
-}
-
-func TestTabNavigation(t *testing.T) {
-	database, err := db.OpenDB(t.TempDir() + "/test.db")
-	if err != nil {
-		t.Fatal(err)
+	if len(m.tabs) != 4 {
+		t.Errorf("expected 4 tabs, got %d", len(m.tabs))
 	}
-	defer database.Close()
-
-	m := NewModel(database, testConfig())
-
-	// Tab forward
-	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
-	m = result.(Model)
-	// Note: "tab" key in bubbletea is tea.KeyTab, not runes. Use proper key type.
 }
 
 func TestTabNavigationWithKeyTab(t *testing.T) {
@@ -135,15 +102,15 @@ func TestViewDoesNotPanic(t *testing.T) {
 	m.width = 120
 	m.height = 40
 
-	// View with nil cc
+	// View with default tab (New Session)
 	v := m.View()
 	if v == "" {
 		t.Error("expected non-empty view")
 	}
 
-	// View with cc loaded
-	m.cc = testCC()
+	// Command Center tab
 	m.activeTab = tabCommand
+	m.activateTab()
 	v = m.View()
 	if v == "" {
 		t.Error("expected non-empty view for command tab")
@@ -151,29 +118,10 @@ func TestViewDoesNotPanic(t *testing.T) {
 
 	// Threads tab
 	m.activeTab = tabThreads
+	m.activateTab()
 	v = m.View()
 	if v == "" {
 		t.Error("expected non-empty view for threads tab")
-	}
-}
-
-func TestCCLoadedMsg(t *testing.T) {
-	database, err := db.OpenDB(t.TempDir() + "/test.db")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer database.Close()
-
-	m := NewModel(database, testConfig())
-	cc := testCC()
-
-	result, _ := m.Update(ccLoadedMsg{cc: cc})
-	m = result.(Model)
-	if m.cc == nil {
-		t.Error("expected cc to be loaded")
-	}
-	if len(m.cc.ActiveTodos()) != 2 {
-		t.Errorf("expected 2 active todos, got %d", len(m.cc.ActiveTodos()))
 	}
 }
 
@@ -190,28 +138,10 @@ func TestStylesFromPalette(t *testing.T) {
 func TestGradientColorsFromPalette(t *testing.T) {
 	pal := config.GetPalette("aurora", nil)
 	g := NewGradientColors(pal)
-	// Just make sure it doesn't panic and produces valid colors
 	c := gradientColor(&g, 0.5)
 	hex := c.Hex()
 	if hex == "" {
 		t.Error("expected non-empty hex color")
-	}
-}
-
-func TestExtractJSON(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{`{"foo": "bar"}`, `{"foo": "bar"}`},
-		{"```json\n{\"foo\": \"bar\"}\n```", `{"foo": "bar"}`},
-		{`some text {"a": 1} more`, `{"a": 1}`},
-	}
-	for _, tt := range tests {
-		got := extractJSON(tt.input)
-		if got != tt.want {
-			t.Errorf("extractJSON(%q) = %q, want %q", tt.input, got, tt.want)
-		}
 	}
 }
 
@@ -227,52 +157,41 @@ func TestSubtitleFromName(t *testing.T) {
 	}
 }
 
-func TestFormatDuration(t *testing.T) {
-	tests := []struct {
-		d    time.Duration
-		want string
-	}{
-		{30 * time.Minute, "30m"},
-		{time.Hour, "1h"},
-		{90 * time.Minute, "1h30m"},
-		{0, ""},
+func TestEscQuits(t *testing.T) {
+	database, err := db.OpenDB(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		got := formatDuration(tt.d)
-		if got != tt.want {
-			t.Errorf("formatDuration(%v) = %q, want %q", tt.d, got, tt.want)
-		}
+	defer database.Close()
+
+	m := NewModel(database, testConfig())
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Error("expected non-nil cmd (tea.Quit) on esc")
 	}
 }
 
-func TestTruncateToWidth(t *testing.T) {
-	got := truncateToWidth("hello world", 5)
-	if got != "hell~" {
-		t.Errorf("expected 'hell~', got %q", got)
+func TestPluginTabMapping(t *testing.T) {
+	database, err := db.OpenDB(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatal(err)
 	}
-	got = truncateToWidth("hi", 5)
-	if got != "hi" {
-		t.Errorf("expected 'hi', got %q", got)
-	}
-}
+	defer database.Close()
 
-func TestFlattenTitle(t *testing.T) {
-	got := flattenTitle("hello\nworld  foo")
-	if got != "hello world foo" {
-		t.Errorf("expected 'hello world foo', got %q", got)
-	}
-}
+	m := NewModel(database, testConfig())
 
-func TestCalendarColorMap(t *testing.T) {
-	calendars := []config.CalendarEntry{
-		{ID: "cal1", Label: "Personal", Color: "#00ff00"},
-		{ID: "cal2", Label: "Work", Color: ""},
+	// First two tabs should be sessions plugin
+	if m.tabs[0].plugin.Slug() != "sessions" {
+		t.Errorf("expected tab 0 to be sessions, got %s", m.tabs[0].plugin.Slug())
 	}
-	m := calendarColorMap(calendars)
-	if m["cal1"] != "#00ff00" {
-		t.Errorf("expected #00ff00, got %q", m["cal1"])
+	if m.tabs[1].plugin.Slug() != "sessions" {
+		t.Errorf("expected tab 1 to be sessions, got %s", m.tabs[1].plugin.Slug())
 	}
-	if _, ok := m["cal2"]; ok {
-		t.Error("expected cal2 to be absent (empty color)")
+	// Last two should be commandcenter
+	if m.tabs[2].plugin.Slug() != "commandcenter" {
+		t.Errorf("expected tab 2 to be commandcenter, got %s", m.tabs[2].plugin.Slug())
+	}
+	if m.tabs[3].plugin.Slug() != "commandcenter" {
+		t.Errorf("expected tab 3 to be commandcenter, got %s", m.tabs[3].plugin.Slug())
 	}
 }
