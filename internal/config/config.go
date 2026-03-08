@@ -51,8 +51,9 @@ type GranolaConfig struct {
 }
 
 type ExternalPluginConfig struct {
-	Path    string `yaml:"path"`
-	TabName string `yaml:"tab_name"`
+	Name    string `yaml:"name"`
+	Command string `yaml:"command"`
+	Enabled bool   `yaml:"enabled"`
 }
 
 // DefaultConfig returns a Config with sensible defaults.

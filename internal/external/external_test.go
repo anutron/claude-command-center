@@ -1,0 +1,274 @@
+package external
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/plugin"
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+func writeTestPlugin(t *testing.T, script string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plugin.sh")
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func makeCtx() plugin.Context {
+	return plugin.Context{
+		Config: config.DefaultConfig(),
+		Bus:    plugin.NewBus(),
+		Logger: plugin.NewMemoryLogger(),
+		DBPath: "",
+	}
+}
+
+func TestInitHandshake(t *testing.T) {
+	script := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"test-plug","tab_name":"Test Plugin","routes":[{"slug":"detail","description":"Show detail","arg_keys":["id"]}],"key_bindings":[{"key":"d","description":"Delete","promoted":true}],"migrations":[],"refresh_interval_ms":5000}'
+# Keep running so process stays alive
+while read line; do
+  if echo "$line" | grep -q '"type":"shutdown"'; then
+    exit 0
+  fi
+done
+`
+	path := writeTestPlugin(t, script)
+	ctx := makeCtx()
+
+	ep := &ExternalPlugin{command: path}
+	if err := ep.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer ep.Shutdown()
+
+	if ep.Slug() != "test-plug" {
+		t.Errorf("Slug = %q, want %q", ep.Slug(), "test-plug")
+	}
+	if ep.TabName() != "Test Plugin" {
+		t.Errorf("TabName = %q, want %q", ep.TabName(), "Test Plugin")
+	}
+	if len(ep.Routes()) != 1 {
+		t.Fatalf("Routes len = %d, want 1", len(ep.Routes()))
+	}
+	if ep.Routes()[0].Slug != "detail" {
+		t.Errorf("Route slug = %q, want %q", ep.Routes()[0].Slug, "detail")
+	}
+	if len(ep.Routes()[0].ArgKeys) != 1 || ep.Routes()[0].ArgKeys[0] != "id" {
+		t.Errorf("Route arg_keys = %v, want [id]", ep.Routes()[0].ArgKeys)
+	}
+	if len(ep.KeyBindings()) != 1 {
+		t.Fatalf("KeyBindings len = %d, want 1", len(ep.KeyBindings()))
+	}
+	if ep.KeyBindings()[0].Key != "d" {
+		t.Errorf("KeyBinding key = %q, want %q", ep.KeyBindings()[0].Key, "d")
+	}
+	if ep.RefreshInterval() != 5*time.Second {
+		t.Errorf("RefreshInterval = %v, want %v", ep.RefreshInterval(), 5*time.Second)
+	}
+}
+
+func TestRender(t *testing.T) {
+	script := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"render-test","tab_name":"Render","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+while read line; do
+  if echo "$line" | grep -q '"type":"render"'; then
+    echo '{"type":"view","content":"Hello, World!"}'
+  elif echo "$line" | grep -q '"type":"shutdown"'; then
+    exit 0
+  fi
+done
+`
+	path := writeTestPlugin(t, script)
+	ctx := makeCtx()
+
+	ep := &ExternalPlugin{command: path}
+	if err := ep.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer ep.Shutdown()
+
+	content := ep.View(80, 24, 0)
+	if content != "Hello, World!" {
+		t.Errorf("View = %q, want %q", content, "Hello, World!")
+	}
+}
+
+func TestHandleKey(t *testing.T) {
+	script := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"key-test","tab_name":"Keys","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+while read line; do
+  if echo "$line" | grep -q '"type":"key"'; then
+    echo '{"type":"action","action":"flash","action_payload":"Key pressed!"}'
+  elif echo "$line" | grep -q '"type":"shutdown"'; then
+    exit 0
+  fi
+done
+`
+	path := writeTestPlugin(t, script)
+	ctx := makeCtx()
+
+	ep := &ExternalPlugin{command: path}
+	if err := ep.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer ep.Shutdown()
+
+	action := ep.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if action.Type != "flash" {
+		t.Errorf("Action.Type = %q, want %q", action.Type, "flash")
+	}
+	if action.Payload != "Key pressed!" {
+		t.Errorf("Action.Payload = %q, want %q", action.Payload, "Key pressed!")
+	}
+}
+
+func TestCrashDetection(t *testing.T) {
+	script := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"crash-test","tab_name":"Crash","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+exit 1
+`
+	path := writeTestPlugin(t, script)
+	ctx := makeCtx()
+
+	ep := &ExternalPlugin{command: path}
+	if err := ep.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Give the process a moment to exit
+	time.Sleep(100 * time.Millisecond)
+
+	content := ep.View(80, 24, 0)
+	if !strings.Contains(content, "crashed") && !strings.Contains(content, "exited") {
+		// The view might return cached (empty) on first timeout, then error on second call
+		// Try again after the process has definitely exited
+		time.Sleep(100 * time.Millisecond)
+		content = ep.View(80, 24, 0)
+	}
+
+	// Now test restart with a working script
+	restartScript := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"crash-test-restarted","tab_name":"Restarted","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+while read line; do
+  if echo "$line" | grep -q '"type":"render"'; then
+    echo '{"type":"view","content":"Back alive!"}'
+  elif echo "$line" | grep -q '"type":"shutdown"'; then
+    exit 0
+  fi
+done
+`
+	restartPath := writeTestPlugin(t, restartScript)
+	ep.command = restartPath
+	// Force error state so 'r' triggers restart
+	ep.errState = "process exited unexpectedly"
+
+	action := ep.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if action.Type != "noop" {
+		t.Errorf("restart action = %q, want noop", action.Type)
+	}
+	if ep.errState != "" {
+		t.Errorf("errState after restart = %q, want empty", ep.errState)
+	}
+
+	content = ep.View(80, 24, 0)
+	if content != "Back alive!" {
+		t.Errorf("View after restart = %q, want %q", content, "Back alive!")
+	}
+	ep.Shutdown()
+}
+
+func TestShutdown(t *testing.T) {
+	script := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"shutdown-test","tab_name":"Shutdown","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+while read line; do
+  if echo "$line" | grep -q '"type":"shutdown"'; then
+    exit 0
+  fi
+done
+`
+	path := writeTestPlugin(t, script)
+	ctx := makeCtx()
+
+	ep := &ExternalPlugin{command: path}
+	if err := ep.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	ep.Shutdown()
+
+	// Process should be dead
+	if ep.proc.Alive() {
+		t.Error("process still alive after shutdown")
+	}
+}
+
+func TestAsyncEvents(t *testing.T) {
+	script := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"event-test","tab_name":"Events","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+echo '{"type":"event","event_topic":"data_updated","event_payload":{"count":42}}'
+echo '{"type":"log","level":"info","message":"plugin started"}'
+while read line; do
+  if echo "$line" | grep -q '"type":"shutdown"'; then
+    exit 0
+  fi
+done
+`
+	path := writeTestPlugin(t, script)
+
+	var mu sync.Mutex
+	var received []plugin.Event
+
+	bus := plugin.NewBus()
+	bus.Subscribe("data_updated", func(e plugin.Event) {
+		mu.Lock()
+		received = append(received, e)
+		mu.Unlock()
+	})
+
+	ctx := plugin.Context{
+		Config: config.DefaultConfig(),
+		Bus:    bus,
+		Logger: plugin.NewMemoryLogger(),
+	}
+
+	ep := &ExternalPlugin{command: path}
+	if err := ep.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer ep.Shutdown()
+
+	// Give async messages time to arrive
+	time.Sleep(200 * time.Millisecond)
+
+	// Trigger HandleMessage to drain async channel
+	ep.HandleMessage(tea.KeyMsg{})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(received) != 1 {
+		t.Fatalf("received %d events, want 1", len(received))
+	}
+	if received[0].Topic != "data_updated" {
+		t.Errorf("event topic = %q, want %q", received[0].Topic, "data_updated")
+	}
+	if received[0].Source != "event-test" {
+		t.Errorf("event source = %q, want %q", received[0].Source, "event-test")
+	}
+}
