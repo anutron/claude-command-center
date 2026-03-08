@@ -45,11 +45,15 @@ type Model struct {
 	sessionsPlugin      *sessions.Plugin
 	commandCenterPlugin *commandcenter.Plugin
 
+	// allPlugins holds every unique plugin for lifecycle management.
+	allPlugins []plugin.Plugin
+
 	db *sql.DB
 }
 
 // NewModel creates the main TUI model with plugins.
-func NewModel(database *sql.DB, cfg *config.Config) Model {
+// Optional extPlugins are appended as additional tabs.
+func NewModel(database *sql.DB, cfg *config.Config, extPlugins ...plugin.Plugin) Model {
 	pal := config.GetPalette(cfg.Palette, cfg.Colors)
 	styles := NewStyles(pal)
 	grad := NewGradientColors(pal)
@@ -77,6 +81,22 @@ func NewModel(database *sql.DB, cfg *config.Config) Model {
 		{label: "Threads", plugin: ccPlug, route: "commandcenter/threads"},
 	}
 
+	// Append tabs for external plugins.
+	for _, ep := range extPlugins {
+		routes := ep.Routes()
+		if len(routes) > 0 {
+			for _, r := range routes {
+				tabs = append(tabs, tabEntry{label: r.Description, plugin: ep, route: r.Slug})
+			}
+		} else {
+			tabs = append(tabs, tabEntry{label: ep.TabName(), plugin: ep, route: ep.Slug()})
+		}
+	}
+
+	// Collect all unique plugins for shutdown.
+	allPlugins := []plugin.Plugin{sessPlug, ccPlug}
+	allPlugins = append(allPlugins, extPlugins...)
+
 	return Model{
 		cfg:                 cfg,
 		styles:              styles,
@@ -85,12 +105,24 @@ func NewModel(database *sql.DB, cfg *config.Config) Model {
 		activeTab:           tabNew,
 		sessionsPlugin:      sessPlug,
 		commandCenterPlugin: ccPlug,
+		allPlugins:          allPlugins,
 		db:                  database,
 	}
 }
 
 func (m Model) activePlugin() plugin.Plugin {
 	return m.tabs[m.activeTab].plugin
+}
+
+// Shutdown calls Shutdown on every unique plugin.
+func (m Model) Shutdown() {
+	seen := map[string]bool{}
+	for _, p := range m.allPlugins {
+		if !seen[p.Slug()] {
+			seen[p.Slug()] = true
+			p.Shutdown()
+		}
+	}
 }
 
 func (m Model) Init() tea.Cmd {

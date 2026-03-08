@@ -3,11 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/external"
+	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/tui"
 )
 
@@ -49,9 +52,39 @@ func main() {
 		defer database.Close()
 	}
 
+	// Load external plugins (persist across TUI loop iterations).
+	bus := plugin.NewBus()
+	logPath := filepath.Join(config.DataDir(), "ccc.log")
+	logger, err := plugin.NewFileLogger(logPath)
+	if err != nil {
+		logger = plugin.NewMemoryLogger()
+	}
+	defer logger.Close()
+
+	extCtx := plugin.Context{
+		DB:     database,
+		Config: cfg,
+		Bus:    bus,
+		Logger: logger,
+		DBPath: config.DBPath(),
+	}
+	extPlugins, err := external.LoadExternalPlugins(cfg, extCtx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not load external plugins: %v\n", err)
+	}
+	var pluginInterfaces []plugin.Plugin
+	for _, ep := range extPlugins {
+		pluginInterfaces = append(pluginInterfaces, ep)
+	}
+	defer func() {
+		for _, ep := range pluginInterfaces {
+			ep.Shutdown()
+		}
+	}()
+
 	// TUI loop: launch TUI, optionally exec claude, return to TUI
 	for {
-		m := tui.NewModel(database, cfg)
+		m := tui.NewModel(database, cfg, pluginInterfaces...)
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		finalModel, err := p.Run()
 		if err != nil {
