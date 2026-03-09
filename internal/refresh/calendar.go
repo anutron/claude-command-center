@@ -2,6 +2,7 @@ package refresh
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -11,6 +12,54 @@ import (
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 )
+
+// CalendarSource fetches today/tomorrow calendar events from Google Calendar.
+type CalendarSource struct {
+	CalendarIDs       []string
+	AutoAcceptDomains []string
+	enabled           bool
+}
+
+// NewCalendarSource creates a CalendarSource with the given config.
+func NewCalendarSource(enabled bool, calendarIDs, autoAcceptDomains []string) *CalendarSource {
+	return &CalendarSource{
+		CalendarIDs:       calendarIDs,
+		AutoAcceptDomains: autoAcceptDomains,
+		enabled:           enabled,
+	}
+}
+
+func (s *CalendarSource) Name() string    { return "calendar" }
+func (s *CalendarSource) Enabled() bool   { return s.enabled }
+
+func (s *CalendarSource) Fetch(ctx context.Context) (*SourceResult, error) {
+	ts, err := loadCalendarAuth()
+	if err != nil {
+		return nil, fmt.Errorf("calendar auth: %w", err)
+	}
+
+	calendarIDs := s.CalendarIDs
+	if len(calendarIDs) == 0 {
+		calendarIDs = []string{"primary"}
+	}
+
+	data, err := fetchCalendarEvents(ctx, ts, calendarIDs)
+	if err != nil {
+		return nil, fmt.Errorf("fetch failed: %w", err)
+	}
+
+	if len(s.AutoAcceptDomains) > 0 {
+		autoAccept(ctx, ts, s.AutoAcceptDomains)
+	}
+
+	return &SourceResult{Calendar: data}, nil
+}
+
+// calendarTokenSource returns the calendar token source if available.
+// Used by executePendingActions which needs calendar auth separately.
+func calendarTokenSource() (oauth2.TokenSource, error) {
+	return loadCalendarAuth()
+}
 
 func fetchCalendarEvents(ctx context.Context, ts oauth2.TokenSource, calendarIDs []string) (*db.CalendarData, error) {
 	srv, err := calendar.NewService(ctx, option.WithTokenSource(ts))

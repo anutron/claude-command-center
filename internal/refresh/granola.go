@@ -10,7 +10,53 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 )
+
+// GranolaSource fetches meeting transcripts from Granola and uses LLM to extract commitments.
+type GranolaSource struct {
+	LLM     llm.LLM
+	enabled bool
+}
+
+// NewGranolaSource creates a GranolaSource with the given config.
+func NewGranolaSource(enabled bool, l llm.LLM) *GranolaSource {
+	return &GranolaSource{
+		LLM:     l,
+		enabled: enabled,
+	}
+}
+
+func (s *GranolaSource) Name() string  { return "granola" }
+func (s *GranolaSource) Enabled() bool { return s.enabled }
+
+func (s *GranolaSource) Fetch(ctx context.Context) (*SourceResult, error) {
+	token, err := loadGranolaAuth()
+	if err != nil {
+		return nil, fmt.Errorf("granola auth: %w", err)
+	}
+
+	meetings, err := fetchGranolaMeetings(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("fetch failed: %w", err)
+	}
+
+	// Extract commitments via LLM if we have meetings and a real LLM
+	var todos []db.Todo
+	if len(meetings) > 0 && s.LLM != nil {
+		todos, err = extractCommitments(ctx, s.LLM, meetings)
+		if err != nil {
+			// LLM extraction failure is non-fatal; return without todos
+			return &SourceResult{
+				Warnings: []db.Warning{{Source: "granola", Message: fmt.Sprintf("LLM extraction failed: %v", err)}},
+			}, nil
+		}
+	}
+
+	return &SourceResult{Todos: todos}, nil
+}
 
 const granolaAPI = "https://api.granola.ai"
 

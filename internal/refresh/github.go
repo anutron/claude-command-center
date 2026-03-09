@@ -10,6 +10,34 @@ import (
 	"github.com/anutron/claude-command-center/internal/db"
 )
 
+// GitHubSource fetches open PRs authored by the user from configured repos.
+type GitHubSource struct {
+	Repos    []string
+	Username string
+	enabled  bool
+}
+
+// NewGitHubSource creates a GitHubSource with the given config.
+func NewGitHubSource(enabled bool, repos []string, username string) *GitHubSource {
+	return &GitHubSource{
+		Repos:    repos,
+		Username: username,
+		enabled:  enabled,
+	}
+}
+
+func (s *GitHubSource) Name() string  { return "github" }
+func (s *GitHubSource) Enabled() bool { return s.enabled }
+
+func (s *GitHubSource) Fetch(ctx context.Context) (*SourceResult, error) {
+	threads, err := fetchGitHubThreads(ctx, s.Repos)
+	if err != nil {
+		return nil, fmt.Errorf("fetch failed: %w", err)
+	}
+
+	return &SourceResult{Threads: threads}, nil
+}
+
 type ghPR struct {
 	Number    int    `json:"number"`
 	Title     string `json:"title"`

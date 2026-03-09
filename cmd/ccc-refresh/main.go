@@ -40,12 +40,6 @@ func main() {
 	}
 	defer release()
 
-	// Build calendar IDs from config
-	var calendarIDs []string
-	for _, cal := range cfg.Calendar.Calendars {
-		calendarIDs = append(calendarIDs, cal.ID)
-	}
-
 	// Construct LLM implementation
 	var l llm.LLM
 	if !*noLLM && llm.Available() {
@@ -54,18 +48,27 @@ func main() {
 		l = llm.NoopLLM{}
 	}
 
+	// Build calendar IDs from config
+	var calendarIDs []string
+	for _, cal := range cfg.Calendar.Calendars {
+		calendarIDs = append(calendarIDs, cal.ID)
+	}
+
+	// Build DataSources from config
+	sources := []refresh.DataSource{
+		refresh.NewCalendarSource(cfg.Calendar.Enabled, calendarIDs, nil),
+		refresh.NewGmailSource(),
+		refresh.NewGitHubSource(cfg.GitHub.Enabled, cfg.GitHub.Repos, cfg.GitHub.Username),
+		refresh.NewSlackSource(l),
+		refresh.NewGranolaSource(cfg.Granola.Enabled, l),
+	}
+
 	opts := refresh.Options{
-		Verbose:         *verbose,
-		NoLLM:           *noLLM,
-		DryRun:          *dryRun,
-		DB:              database,
-		LLM:             l,
-		CalendarEnabled: cfg.Calendar.Enabled,
-		GitHubEnabled:   cfg.GitHub.Enabled,
-		GranolaEnabled:  cfg.Granola.Enabled,
-		GitHubRepos:     cfg.GitHub.Repos,
-		GitHubUsername:  cfg.GitHub.Username,
-		CalendarIDs:     calendarIDs,
+		Verbose: *verbose,
+		DryRun:  *dryRun,
+		DB:      database,
+		Sources: sources,
+		LLM:     l,
 	}
 
 	if err := refresh.Run(opts); err != nil {

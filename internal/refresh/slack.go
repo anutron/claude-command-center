@@ -13,6 +13,45 @@ import (
 	"github.com/anutron/claude-command-center/internal/llm"
 )
 
+// SlackSource fetches Slack messages with commitment language and uses LLM to extract todos.
+type SlackSource struct {
+	LLM llm.LLM
+}
+
+// NewSlackSource creates a SlackSource with the given LLM.
+func NewSlackSource(l llm.LLM) *SlackSource {
+	return &SlackSource{LLM: l}
+}
+
+func (s *SlackSource) Name() string  { return "slack" }
+func (s *SlackSource) Enabled() bool { return true } // always enabled; auth check in Fetch
+
+func (s *SlackSource) Fetch(ctx context.Context) (*SourceResult, error) {
+	token, err := loadSlackToken()
+	if err != nil {
+		return nil, fmt.Errorf("slack auth: %w", err)
+	}
+
+	candidates, err := fetchSlackCandidates(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("fetch failed: %w", err)
+	}
+
+	// Extract commitments via LLM if we have candidates and a real LLM
+	var todos []db.Todo
+	if len(candidates) > 0 && s.LLM != nil {
+		todos, err = extractSlackCommitments(ctx, s.LLM, candidates)
+		if err != nil {
+			// LLM extraction failure is non-fatal; return raw data without todos
+			return &SourceResult{
+				Warnings: []db.Warning{{Source: "slack", Message: fmt.Sprintf("LLM extraction failed: %v", err)}},
+			}, nil
+		}
+	}
+
+	return &SourceResult{Todos: todos}, nil
+}
+
 var commitmentPhrases = []string{
 	"i'll", "i will", "i need to", "let me", "i'm going to",
 	"action item", "i committed", "i promised", "follow up",

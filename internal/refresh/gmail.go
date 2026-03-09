@@ -11,6 +11,28 @@ import (
 	"google.golang.org/api/option"
 )
 
+// GmailSource fetches unread actionable emails from Gmail.
+type GmailSource struct{}
+
+func NewGmailSource() *GmailSource { return &GmailSource{} }
+
+func (s *GmailSource) Name() string  { return "gmail" }
+func (s *GmailSource) Enabled() bool { return true } // always enabled; auth check in Fetch
+
+func (s *GmailSource) Fetch(ctx context.Context) (*SourceResult, error) {
+	ts, err := loadGmailAuth()
+	if err != nil {
+		return nil, fmt.Errorf("gmail auth: %w", err)
+	}
+
+	threads, err := fetchActionableEmails(ctx, ts)
+	if err != nil {
+		return nil, fmt.Errorf("fetch failed: %w", err)
+	}
+
+	return &SourceResult{Threads: threads}, nil
+}
+
 func fetchActionableEmails(ctx context.Context, ts oauth2.TokenSource) ([]db.Thread, error) {
 	srv, err := gmail.NewService(ctx, option.WithTokenSource(ts))
 	if err != nil {
