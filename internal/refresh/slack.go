@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 )
 
 var commitmentPhrases = []string{
@@ -162,7 +163,7 @@ func hasCommitmentLanguage(text string) bool {
 	return false
 }
 
-func extractSlackCommitments(ctx context.Context, candidates []slackCandidate) ([]db.Todo, error) {
+func extractSlackCommitments(ctx context.Context, l llm.LLM, candidates []slackCandidate) ([]db.Todo, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
@@ -206,7 +207,7 @@ Return ONLY a JSON array. Return [] if no real commitments found. Expect 0-3 res
 Messages:
 %s`, len(candidates), sb.String())
 
-	text, err := callClaude(ctx, prompt)
+	text, err := l.Complete(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("slack commitment extraction: %w", err)
 	}

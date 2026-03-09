@@ -1,14 +1,14 @@
 package commandcenter
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -35,57 +35,42 @@ type claudeFocusFinishedMsg struct {
 	err    error
 }
 
-func claudeEditCmd(prompt, todoID string) tea.Cmd {
+func claudeEditCmd(l llm.LLM, prompt, todoID string) tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("claude", "-p", prompt)
-		var buf bytes.Buffer
-		cmd.Stdout = &buf
-		err := cmd.Run()
+		out, err := l.Complete(context.Background(), prompt)
 		return claudeEditFinishedMsg{
 			todoID: todoID,
-			output: buf.String(),
+			output: out,
 			err:    err,
 		}
 	}
 }
 
-func claudeEnrichCmd(prompt string) tea.Cmd {
+func claudeEnrichCmd(l llm.LLM, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("claude", "-p", prompt)
-		var buf bytes.Buffer
-		cmd.Stdout = &buf
-		err := cmd.Run()
+		out, err := l.Complete(context.Background(), prompt)
 		return claudeEnrichFinishedMsg{
-			output: buf.String(),
+			output: out,
 			err:    err,
 		}
 	}
 }
 
-func claudeCommandCmd(prompt, projectDir string) tea.Cmd {
+func claudeCommandCmd(l llm.LLM, prompt, projectDir string) tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("claude", "-p", prompt)
-		if projectDir != "" {
-			cmd.Dir = projectDir
-		}
-		var buf bytes.Buffer
-		cmd.Stdout = &buf
-		err := cmd.Run()
+		out, err := l.Complete(context.Background(), prompt)
 		return claudeCommandFinishedMsg{
-			output: buf.String(),
+			output: out,
 			err:    err,
 		}
 	}
 }
 
-func claudeFocusCmd(prompt string) tea.Cmd {
+func claudeFocusCmd(l llm.LLM, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("claude", "-p", prompt)
-		var buf bytes.Buffer
-		cmd.Stdout = &buf
-		err := cmd.Run()
+		out, err := l.Complete(context.Background(), prompt)
 		return claudeFocusFinishedMsg{
-			output: buf.String(),
+			output: out,
 			err:    err,
 		}
 	}

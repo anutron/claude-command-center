@@ -7,6 +7,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/refresh"
 )
 
@@ -45,11 +46,20 @@ func main() {
 		calendarIDs = append(calendarIDs, cal.ID)
 	}
 
+	// Construct LLM implementation
+	var l llm.LLM
+	if !*noLLM && llm.Available() {
+		l = llm.ClaudeCLI{}
+	} else {
+		l = llm.NoopLLM{}
+	}
+
 	opts := refresh.Options{
 		Verbose:         *verbose,
 		NoLLM:           *noLLM,
 		DryRun:          *dryRun,
 		DB:              database,
+		LLM:             l,
 		CalendarEnabled: cfg.Calendar.Enabled,
 		GitHubEnabled:   cfg.GitHub.Enabled,
 		GranolaEnabled:  cfg.Granola.Enabled,

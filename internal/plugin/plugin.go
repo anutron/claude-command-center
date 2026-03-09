@@ -17,6 +17,7 @@ type Context struct {
 	Bus    EventBus
 	Logger Logger
 	DBPath string
+	LLM    interface{} // llm.LLM — interface to avoid circular import
 }
 
 // Action is returned by HandleKey/HandleMessage to tell the host what to do.

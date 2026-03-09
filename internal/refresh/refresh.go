@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"golang.org/x/oauth2"
 )
 
@@ -25,6 +25,7 @@ type Options struct {
 	CalendarIDs       []string
 	AutoAcceptDomains []string
 	DB                *sql.DB
+	LLM               llm.LLM
 	CalendarEnabled   bool
 	GitHubEnabled     bool
 	GranolaEnabled    bool
@@ -83,11 +84,9 @@ func Run(opts Options) error {
 		warnings = append(warnings, db.Warning{Source: "granola", Message: err.Error(), At: time.Now()})
 	}
 
-	if !opts.NoLLM {
-		if _, err := exec.LookPath("claude"); err != nil {
-			log.Printf("claude CLI not found — LLM features disabled")
-			opts.NoLLM = true
-		}
+	// If no LLM was provided, disable LLM features
+	if opts.LLM == nil {
+		opts.NoLLM = true
 	}
 
 	var (
@@ -223,7 +222,7 @@ func Run(opts Options) error {
 			llmWg.Add(1)
 			go func() {
 				defer llmWg.Done()
-				todos, err := extractCommitments(ctx, meetings)
+				todos, err := extractCommitments(ctx, opts.LLM, meetings)
 				if err != nil {
 					log.Printf("commitment extraction: %v", err)
 					return
@@ -240,7 +239,7 @@ func Run(opts Options) error {
 			llmWg.Add(1)
 			go func() {
 				defer llmWg.Done()
-				todos, err := extractSlackCommitments(ctx, slackCandidates)
+				todos, err := extractSlackCommitments(ctx, opts.LLM, slackCandidates)
 				if err != nil {
 					log.Printf("slack commitment extraction: %v", err)
 					return
@@ -278,7 +277,7 @@ func Run(opts Options) error {
 	}
 
 	if !opts.NoLLM && (len(merged.Todos) > 0 || len(merged.Threads) > 0) {
-		suggestions, err := generateSuggestions(ctx, merged)
+		suggestions, err := generateSuggestions(ctx, opts.LLM, merged)
 		if err != nil {
 			log.Printf("suggestion generation: %v", err)
 		} else {

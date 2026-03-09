@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 )
 
-func extractCommitments(ctx context.Context, meetings []RawMeeting) ([]db.Todo, error) {
+func extractCommitments(ctx context.Context, l llm.LLM, meetings []RawMeeting) ([]db.Todo, error) {
 	if len(meetings) == 0 {
 		return nil, nil
 	}
@@ -50,7 +50,7 @@ Return ONLY a JSON array of objects with these fields. No other text. Return [] 
 Meetings:
 %s`, sb.String())
 
-	text, err := callClaude(ctx, prompt)
+	text, err := l.Complete(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("commitment extraction: %w", err)
 	}
@@ -86,7 +86,7 @@ Meetings:
 	return todos, nil
 }
 
-func generateSuggestions(ctx context.Context, cc *db.CommandCenter) (*db.Suggestions, error) {
+func generateSuggestions(ctx context.Context, l llm.LLM, cc *db.CommandCenter) (*db.Suggestions, error) {
 	state, _ := json.Marshal(struct {
 		Calendar db.CalendarData `json:"calendar"`
 		Todos    []db.Todo       `json:"todos"`
@@ -109,7 +109,7 @@ Return ONLY JSON with this exact structure, no other text:
 Current state:
 %s`, string(state))
 
-	text, err := callClaude(ctx, prompt)
+	text, err := l.Complete(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("suggestion generation: %w", err)
 	}
@@ -122,21 +122,6 @@ Current state:
 	}
 
 	return &suggestions, nil
-}
-
-func callClaude(ctx context.Context, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "claude",
-		"-p", prompt,
-		"--output-format", "text",
-	)
-	out, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("claude exited %d: %s", exitErr.ExitCode(), string(exitErr.Stderr))
-		}
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 func cleanJSON(s string) string {
