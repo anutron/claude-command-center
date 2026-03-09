@@ -1,7 +1,6 @@
 package db
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -314,6 +313,182 @@ func TestMigrateFromJSON(t *testing.T) {
 	}
 }
 
+func TestDBSaveRefreshResult(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now()
+	cc := &CommandCenter{
+		GeneratedAt: now,
+		Calendar: CalendarData{
+			Today: []CalendarEvent{
+				{Title: "Standup", Start: now, End: now.Add(30 * time.Minute), CalendarID: "primary"},
+			},
+			Tomorrow: []CalendarEvent{
+				{Title: "Review", Start: now.Add(24 * time.Hour), End: now.Add(25 * time.Hour), AllDay: false},
+			},
+		},
+		Todos: []Todo{
+			{ID: "t1", Title: "Fix bug", Status: "active", Source: "github", CreatedAt: now},
+			{ID: "t2", Title: "Done task", Status: "completed", Source: "manual", CreatedAt: now, CompletedAt: &now},
+		},
+		Threads: []Thread{
+			{ID: "th1", Type: "pr", Title: "PR #42", URL: "https://github.com/repo/42", Status: "active", CreatedAt: now},
+		},
+		Suggestions: Suggestions{
+			Focus:        "Fix the bug first",
+			RankedTodoIDs: []string{"t1", "t2"},
+			Reasons:      map[string]string{"t1": "blocking release"},
+		},
+		PendingActions: []PendingAction{
+			{Type: "book", TodoID: "t1", DurationMinutes: 60, RequestedAt: now},
+		},
+	}
+
+	if err := DBSaveRefreshResult(db, cc); err != nil {
+		t.Fatalf("DBSaveRefreshResult: %v", err)
+	}
+
+	loaded, err := LoadCommandCenterFromDB(db)
+	if err != nil {
+		t.Fatalf("LoadCommandCenterFromDB: %v", err)
+	}
+
+	// Todos
+	if len(loaded.Todos) != 2 {
+		t.Fatalf("expected 2 todos, got %d", len(loaded.Todos))
+	}
+	if loaded.Todos[0].ID != "t1" || loaded.Todos[1].ID != "t2" {
+		t.Fatalf("todo order mismatch: %s, %s", loaded.Todos[0].ID, loaded.Todos[1].ID)
+	}
+	if loaded.Todos[1].CompletedAt == nil {
+		t.Fatal("expected completed_at to be preserved")
+	}
+
+	// Threads
+	if len(loaded.Threads) != 1 || loaded.Threads[0].URL != "https://github.com/repo/42" {
+		t.Fatalf("thread mismatch")
+	}
+
+	// Calendar
+	if len(loaded.Calendar.Today) != 1 || loaded.Calendar.Today[0].Title != "Standup" {
+		t.Fatalf("calendar today mismatch")
+	}
+	if len(loaded.Calendar.Tomorrow) != 1 {
+		t.Fatalf("expected 1 tomorrow event, got %d", len(loaded.Calendar.Tomorrow))
+	}
+
+	// Suggestions
+	if loaded.Suggestions.Focus != "Fix the bug first" {
+		t.Fatalf("suggestions focus mismatch: %q", loaded.Suggestions.Focus)
+	}
+	if len(loaded.Suggestions.RankedTodoIDs) != 2 {
+		t.Fatalf("expected 2 ranked IDs, got %d", len(loaded.Suggestions.RankedTodoIDs))
+	}
+
+	// Pending actions
+	if len(loaded.PendingActions) != 1 || loaded.PendingActions[0].TodoID != "t1" {
+		t.Fatalf("pending actions mismatch")
+	}
+
+	// Overwrite with new data — verify replace-all behavior
+	cc.Todos = []Todo{{ID: "t3", Title: "New only", Status: "active", Source: "manual", CreatedAt: now}}
+	cc.PendingActions = nil
+	if err := DBSaveRefreshResult(db, cc); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+	loaded, _ = LoadCommandCenterFromDB(db)
+	if len(loaded.Todos) != 1 || loaded.Todos[0].ID != "t3" {
+		t.Fatalf("expected only t3 after overwrite, got %d todos", len(loaded.Todos))
+	}
+	if len(loaded.PendingActions) != 0 {
+		t.Fatalf("expected 0 pending actions after overwrite, got %d", len(loaded.PendingActions))
+	}
+}
+
+func TestDBSaveSuggestions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	s := Suggestions{
+		Focus:         "Ship the feature",
+		RankedTodoIDs: []string{"a", "b"},
+		Reasons:       map[string]string{"a": "deadline tomorrow"},
+	}
+	if err := DBSaveSuggestions(db, s); err != nil {
+		t.Fatalf("DBSaveSuggestions: %v", err)
+	}
+
+	cc, _ := LoadCommandCenterFromDB(db)
+	if cc.Suggestions.Focus != "Ship the feature" {
+		t.Fatalf("expected focus, got %q", cc.Suggestions.Focus)
+	}
+	if len(cc.Suggestions.Reasons) != 1 {
+		t.Fatalf("expected 1 reason, got %d", len(cc.Suggestions.Reasons))
+	}
+}
+
+func TestDBSetMeta(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	if err := DBSetMeta(db, "version", "2.0"); err != nil {
+		t.Fatalf("DBSetMeta: %v", err)
+	}
+
+	var value string
+	db.QueryRow(`SELECT value FROM cc_meta WHERE key = ?`, "version").Scan(&value)
+	if value != "2.0" {
+		t.Fatalf("expected '2.0', got %q", value)
+	}
+
+	// Upsert
+	DBSetMeta(db, "version", "3.0")
+	db.QueryRow(`SELECT value FROM cc_meta WHERE key = ?`, "version").Scan(&value)
+	if value != "3.0" {
+		t.Fatalf("expected '3.0' after upsert, got %q", value)
+	}
+}
+
+func TestDBClearPendingActions(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now()
+	cc := &CommandCenter{
+		PendingActions: []PendingAction{
+			{Type: "book", TodoID: "t1", DurationMinutes: 30, RequestedAt: now},
+			{Type: "book", TodoID: "t2", DurationMinutes: 60, RequestedAt: now},
+		},
+	}
+	DBSaveRefreshResult(db, cc)
+
+	if err := DBClearPendingActions(db); err != nil {
+		t.Fatalf("DBClearPendingActions: %v", err)
+	}
+
+	loaded, _ := LoadCommandCenterFromDB(db)
+	if len(loaded.PendingActions) != 0 {
+		t.Fatalf("expected 0 pending actions, got %d", len(loaded.PendingActions))
+	}
+}
+
 func TestDBIsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
@@ -335,96 +510,6 @@ func TestDBIsEmpty(t *testing.T) {
 // ---------------------------------------------------------------------------
 // CommandCenter type tests (from original command_center_test.go)
 // ---------------------------------------------------------------------------
-
-func TestLoadCommandCenter_ValidJSON(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "cc.json")
-
-	cc := &CommandCenter{
-		GeneratedAt: time.Now(),
-		Calendar: CalendarData{
-			Today: []CalendarEvent{
-				{Title: "Standup", Start: time.Now(), End: time.Now().Add(15 * time.Minute)},
-			},
-		},
-		Todos: []Todo{
-			{ID: "abc123", Title: "Deploy", Status: "active", Source: "manual"},
-		},
-		Threads: []Thread{
-			{ID: "thr1", Type: "pr", Title: "Fix bug", Status: "active"},
-		},
-	}
-	data, _ := json.MarshalIndent(cc, "", "  ")
-	os.WriteFile(path, data, 0o644)
-
-	loaded, err := LoadCommandCenter(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if loaded == nil {
-		t.Fatal("expected non-nil CommandCenter")
-	}
-	if len(loaded.Calendar.Today) != 1 {
-		t.Errorf("expected 1 today event, got %d", len(loaded.Calendar.Today))
-	}
-	if len(loaded.Todos) != 1 {
-		t.Errorf("expected 1 todo, got %d", len(loaded.Todos))
-	}
-	if len(loaded.Threads) != 1 {
-		t.Errorf("expected 1 thread, got %d", len(loaded.Threads))
-	}
-}
-
-func TestLoadCommandCenter_MissingFile(t *testing.T) {
-	cc, err := LoadCommandCenter("/nonexistent/path/cc.json")
-	if err != nil {
-		t.Fatalf("expected nil error for missing file, got: %v", err)
-	}
-	if cc != nil {
-		t.Fatal("expected nil CommandCenter for missing file")
-	}
-}
-
-func TestLoadCommandCenter_MalformedJSON(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "cc.json")
-	os.WriteFile(path, []byte("{bad json"), 0o644)
-
-	cc, err := LoadCommandCenter(path)
-	if err == nil {
-		t.Fatal("expected error for malformed JSON")
-	}
-	if cc != nil {
-		t.Fatal("expected nil CommandCenter for malformed JSON")
-	}
-}
-
-func TestSaveCommandCenter_AtomicWrite(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "sub", "cc.json")
-
-	cc := &CommandCenter{
-		GeneratedAt: time.Now(),
-		Todos:       []Todo{{ID: "a", Title: "Test", Status: "active"}},
-	}
-
-	err := SaveCommandCenter(path, cc)
-	if err != nil {
-		t.Fatalf("save failed: %v", err)
-	}
-
-	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
-		t.Error(".tmp file should not exist after save")
-	}
-
-	loaded, err := LoadCommandCenter(path)
-	if err != nil {
-		t.Fatalf("reload failed: %v", err)
-	}
-	if len(loaded.Todos) != 1 || loaded.Todos[0].ID != "a" {
-		t.Error("round-trip failed")
-	}
-}
 
 func TestCompleteTodo(t *testing.T) {
 	cc := &CommandCenter{
@@ -725,71 +810,6 @@ func TestFindConflicts_NoOverlap(t *testing.T) {
 	conflicts := cal.FindConflicts()
 	if len(conflicts) != 0 {
 		t.Fatalf("expected 0 conflicts, got %d", len(conflicts))
-	}
-}
-
-func TestEnforceDismissed(t *testing.T) {
-	cc := &CommandCenter{
-		Todos: []Todo{
-			{ID: "1", Title: "Legit", Status: "active", SourceRef: "ref-a"},
-			{ID: "2", Title: "Garbage", Status: "active", SourceRef: "ref-b"},
-			{ID: "3", Title: "Garbage tombstone", Status: "dismissed", SourceRef: "ref-b"},
-			{ID: "4", Title: "No ref", Status: "active", SourceRef: ""},
-			{ID: "5", Title: "Also garbage", Status: "active", SourceRef: "ref-c"},
-			{ID: "6", Title: "Dismissed ref-c", Status: "dismissed", SourceRef: "ref-c"},
-		},
-	}
-
-	cc.EnforceDismissed()
-
-	if cc.Todos[0].Status != "active" {
-		t.Errorf("todo 1: expected active, got %s", cc.Todos[0].Status)
-	}
-	if cc.Todos[1].Status != "dismissed" {
-		t.Errorf("todo 2: expected dismissed, got %s", cc.Todos[1].Status)
-	}
-	if cc.Todos[3].Status != "active" {
-		t.Errorf("todo 4: expected active, got %s", cc.Todos[3].Status)
-	}
-	if cc.Todos[4].Status != "dismissed" {
-		t.Errorf("todo 5: expected dismissed, got %s", cc.Todos[4].Status)
-	}
-}
-
-func TestEnforceDismissed_NoDismissed(t *testing.T) {
-	cc := &CommandCenter{
-		Todos: []Todo{
-			{ID: "1", Title: "Active", Status: "active", SourceRef: "ref-a"},
-		},
-	}
-
-	cc.EnforceDismissed()
-
-	if cc.Todos[0].Status != "active" {
-		t.Errorf("expected active, got %s", cc.Todos[0].Status)
-	}
-}
-
-func TestEnforceDismissed_ViaLoad(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "cc.json")
-
-	cc := &CommandCenter{
-		GeneratedAt: time.Now(),
-		Todos: []Todo{
-			{ID: "1", Title: "Active dupe", Status: "active", SourceRef: "slack-123"},
-			{ID: "2", Title: "Dismissed original", Status: "dismissed", SourceRef: "slack-123"},
-		},
-	}
-	data, _ := json.MarshalIndent(cc, "", "  ")
-	os.WriteFile(path, data, 0o644)
-
-	loaded, err := LoadCommandCenter(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if loaded.Todos[0].Status != "dismissed" {
-		t.Errorf("expected auto-dismissed on load, got %s", loaded.Todos[0].Status)
 	}
 }
 

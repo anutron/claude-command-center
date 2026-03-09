@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/anutron/claude-command-center/internal/db"
 )
 
 var commitmentPhrases = []string{
@@ -160,7 +162,7 @@ func hasCommitmentLanguage(text string) bool {
 	return false
 }
 
-func extractSlackCommitments(ctx context.Context, candidates []slackCandidate) ([]Todo, error) {
+func extractSlackCommitments(ctx context.Context, candidates []slackCandidate) ([]db.Todo, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
@@ -223,9 +225,9 @@ Messages:
 		return nil, fmt.Errorf("parsing slack commitment response: %w (raw: %s)", err, text[:min(200, len(text))])
 	}
 
-	var todos []Todo
+	var todos []db.Todo
 	for _, item := range items {
-		todos = append(todos, Todo{
+		todos = append(todos, db.Todo{
 			Title:      item.Title,
 			Source:     "slack",
 			SourceRef:  item.SourceRef,

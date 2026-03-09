@@ -8,6 +8,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/refresh"
 )
 
 const ccRefreshInterval = 5 * time.Minute
@@ -18,8 +21,14 @@ type ccRefreshFinishedMsg struct {
 }
 
 // refreshCCCmd spawns the ccc-refresh binary to gather data from APIs.
+// Skips if another refresh process already holds the lock.
 func refreshCCCmd() tea.Cmd {
 	return func() tea.Msg {
+		stateDir := config.DataDir()
+		if refresh.IsLocked(stateDir) {
+			return ccRefreshFinishedMsg{err: nil}
+		}
+
 		binary := findRefreshBinary()
 
 		var cmd *exec.Cmd

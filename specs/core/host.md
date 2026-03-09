@@ -6,9 +6,9 @@ The thin host shell for the Claude Command Center. Manages the Bubbletea applica
 
 ## Interface
 
-- **Inputs**: `*sql.DB` and `*config.Config` (passed to `NewModel`)
+- **Inputs**: `*sql.DB`, `*config.Config`, `plugin.EventBus`, `plugin.Logger` (passed to `NewModel`); optional external plugins
 - **Outputs**: `Model` implementing `tea.Model` (Init/Update/View); `LaunchAction` set when a plugin requests a session launch
-- **Dependencies**: `internal/config`, `internal/plugin`, `internal/builtin/sessions`, `internal/builtin/commandcenter`, Bubbletea framework
+- **Dependencies**: `internal/config`, `internal/plugin`, `internal/builtin/sessions`, `internal/builtin/commandcenter`, `internal/builtin/settings`, Bubbletea framework
 
 ## Architecture
 
@@ -48,6 +48,8 @@ Each tab maps a label to a plugin and a route within that plugin. Multiple tabs 
 | Resume | sessions | `resume` |
 | Command Center | commandcenter | `commandcenter` |
 | Threads | commandcenter | `commandcenter/threads` |
+| *(external plugin tabs)* | *(external)* | *(plugin-defined)* |
+| Settings | settings | `settings` |
 
 ## Behavior
 
@@ -55,10 +57,12 @@ Each tab maps a label to a plugin and a route within that plugin. Multiple tabs 
 
 1. Build styles and gradient colors from the config palette
 2. Create plugin instances (sessions, command center)
-3. Create shared event bus and plugin context
-4. Call `Init(ctx)` on each plugin
-5. Wire tab entries to plugins and routes
-6. In `Init()`, start animation tick and plugin startup commands
+3. Build a `plugin.Registry` with all plugins (built-in + external + settings)
+4. Create settings plugin with registry reference: `settings.New(registry)`
+5. Create shared plugin context with the **shared bus and logger from main.go** (not a local bus — this ensures all plugins communicate via the same event bus)
+6. Call `Init(ctx)` on each plugin
+7. Wire tab entries to plugins and routes (settings tab at the end)
+8. In `Init()`, start animation tick and plugin startup commands
 
 ### Input Dispatch
 

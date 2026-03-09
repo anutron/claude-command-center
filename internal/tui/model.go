@@ -6,6 +6,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/builtin/commandcenter"
 	"github.com/anutron/claude-command-center/internal/builtin/sessions"
+	"github.com/anutron/claude-command-center/internal/builtin/settings"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
@@ -52,8 +53,9 @@ type Model struct {
 }
 
 // NewModel creates the main TUI model with plugins.
+// bus and logger are owned by main.go and shared across all plugins.
 // Optional extPlugins are appended as additional tabs.
-func NewModel(database *sql.DB, cfg *config.Config, extPlugins ...plugin.Plugin) Model {
+func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger plugin.Logger, extPlugins ...plugin.Plugin) Model {
 	pal := config.GetPalette(cfg.Palette, cfg.Colors)
 	styles := NewStyles(pal)
 	grad := NewGradientColors(pal)
@@ -61,18 +63,30 @@ func NewModel(database *sql.DB, cfg *config.Config, extPlugins ...plugin.Plugin)
 	sessPlug := &sessions.Plugin{}
 	ccPlug := commandcenter.New()
 
-	bus := plugin.NewBus()
+	// Build registry with all plugins.
+	registry := plugin.NewRegistry()
+	registry.Register(sessPlug)
+	registry.Register(ccPlug)
+	for _, ep := range extPlugins {
+		registry.Register(ep)
+	}
+
+	settingsPlug := settings.New(registry)
+	registry.Register(settingsPlug)
+
 	ctx := plugin.Context{
 		DB:     database,
 		Config: cfg,
 		Styles: &styles,
 		Grad:   &grad,
 		Bus:    bus,
+		Logger: logger,
 		DBPath: config.DBPath(),
 	}
 
 	_ = sessPlug.Init(ctx)
 	_ = ccPlug.Init(ctx)
+	_ = settingsPlug.Init(ctx)
 
 	tabs := []tabEntry{
 		{label: "New Session", plugin: sessPlug, route: "new"},
@@ -93,8 +107,11 @@ func NewModel(database *sql.DB, cfg *config.Config, extPlugins ...plugin.Plugin)
 		}
 	}
 
+	// Settings tab at the end.
+	tabs = append(tabs, tabEntry{label: "Settings", plugin: settingsPlug, route: "settings"})
+
 	// Collect all unique plugins for shutdown.
-	allPlugins := []plugin.Plugin{sessPlug, ccPlug}
+	allPlugins := []plugin.Plugin{sessPlug, ccPlug, settingsPlug}
 	allPlugins = append(allPlugins, extPlugins...)
 
 	return Model{

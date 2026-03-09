@@ -6,12 +6,13 @@ import (
 	"log"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/db"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 )
 
-func executePendingActions(ctx context.Context, ts oauth2.TokenSource, cc *CommandCenter) {
+func executePendingActions(ctx context.Context, ts oauth2.TokenSource, cc *db.CommandCenter) {
 	if len(cc.PendingActions) == 0 {
 		return
 	}
@@ -22,7 +23,7 @@ func executePendingActions(ctx context.Context, ts oauth2.TokenSource, cc *Comma
 		return
 	}
 
-	var remaining []PendingAction
+	var remaining []db.PendingAction
 	for _, action := range cc.PendingActions {
 		if action.Type != "booking" {
 			remaining = append(remaining, action)

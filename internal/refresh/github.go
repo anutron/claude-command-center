@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/anutron/claude-command-center/internal/db"
 )
 
 type ghPR struct {
@@ -27,8 +29,8 @@ type ghComment struct {
 	Position int    `json:"position"`
 }
 
-func fetchGitHubThreads(ctx context.Context, repos []string) ([]Thread, error) {
-	var threads []Thread
+func fetchGitHubThreads(ctx context.Context, repos []string) ([]db.Thread, error) {
+	var threads []db.Thread
 
 	for _, repo := range repos {
 		prs, err := listMyPRs(ctx, repo)
@@ -44,7 +46,7 @@ func fetchGitHubThreads(ctx context.Context, repos []string) ([]Thread, error) {
 
 			summary := summarizePR(ctx, repo, pr)
 
-			threads = append(threads, Thread{
+			threads = append(threads, db.Thread{
 				Type:    "pr",
 				Title:   fmt.Sprintf("#%d %s", pr.Number, pr.Title),
 				URL:     pr.URL,

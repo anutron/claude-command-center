@@ -2,28 +2,32 @@ package refresh
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/db"
 	"golang.org/x/oauth2"
 )
 
 // Options configures a refresh run.
 type Options struct {
-	Verbose            bool
-	NoLLM              bool
-	DryRun             bool
-	GitHubRepos        []string
-	GitHubUsername     string
-	CalendarIDs        []string
-	AutoAcceptDomains  []string
-	StateDir           string
+	Verbose           bool
+	NoLLM             bool
+	DryRun            bool
+	GitHubRepos       []string
+	GitHubUsername    string
+	CalendarIDs       []string
+	AutoAcceptDomains []string
+	DB                *sql.DB
+	CalendarEnabled   bool
+	GitHubEnabled     bool
+	GranolaEnabled    bool
 }
 
 // Run performs a full data refresh: loads auth, fetches data in parallel,
@@ -38,15 +42,7 @@ func Run(opts Options) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	stateDir := opts.StateDir
-	if stateDir == "" {
-		home, _ := os.UserHomeDir()
-		stateDir = filepath.Join(home, ".config", "ccc", "data")
-	}
-	ccPath := filepath.Join(stateDir, "command-center.json")
-	os.MkdirAll(stateDir, 0o755)
-
-	existing, err := LoadCommandCenter(ccPath)
+	existing, err := db.LoadCommandCenterFromDB(opts.DB)
 	if err != nil {
 		log.Printf("warning: loading existing state: %v", err)
 	}
@@ -60,31 +56,31 @@ func Run(opts Options) error {
 		gmailTS      oauth2.TokenSource
 		slackToken   string
 		granolaToken string
-		warnings     []Warning
+		warnings     []db.Warning
 	)
 
 	calTS, err = loadCalendarAuth()
 	if err != nil {
 		log.Printf("calendar auth: %v", err)
-		warnings = append(warnings, Warning{Source: "calendar", Message: err.Error(), At: time.Now()})
+		warnings = append(warnings, db.Warning{Source: "calendar", Message: err.Error(), At: time.Now()})
 	}
 
 	gmailTS, err = loadGmailAuth()
 	if err != nil {
 		log.Printf("gmail auth: %v", err)
-		warnings = append(warnings, Warning{Source: "gmail", Message: err.Error(), At: time.Now()})
+		warnings = append(warnings, db.Warning{Source: "gmail", Message: err.Error(), At: time.Now()})
 	}
 
 	slackToken, err = loadSlackToken()
 	if err != nil {
 		log.Printf("slack auth: %v", err)
-		warnings = append(warnings, Warning{Source: "slack", Message: err.Error(), At: time.Now()})
+		warnings = append(warnings, db.Warning{Source: "slack", Message: err.Error(), At: time.Now()})
 	}
 
 	granolaToken, err = loadGranolaAuth()
 	if err != nil {
 		log.Printf("granola auth: %v", err)
-		warnings = append(warnings, Warning{Source: "granola", Message: err.Error(), At: time.Now()})
+		warnings = append(warnings, db.Warning{Source: "granola", Message: err.Error(), At: time.Now()})
 	}
 
 	if !opts.NoLLM {
@@ -96,16 +92,16 @@ func Run(opts Options) error {
 
 	var (
 		mu              sync.Mutex
-		calData         *CalendarData
-		gmailThreads    []Thread
-		ghThreads       []Thread
+		calData         *db.CalendarData
+		gmailThreads    []db.Thread
+		ghThreads       []db.Thread
 		slackCandidates []slackCandidate
 		meetings        []RawMeeting
 	)
 
 	var wg sync.WaitGroup
 
-	if calTS != nil {
+	if calTS != nil && opts.CalendarEnabled {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -117,7 +113,7 @@ func Run(opts Options) error {
 			if err != nil {
 				log.Printf("calendar fetch: %v", err)
 				mu.Lock()
-				warnings = append(warnings, Warning{Source: "calendar", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
+				warnings = append(warnings, db.Warning{Source: "calendar", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
 				mu.Unlock()
 				return
 			}
@@ -141,7 +137,7 @@ func Run(opts Options) error {
 			if err != nil {
 				log.Printf("gmail fetch: %v", err)
 				mu.Lock()
-				warnings = append(warnings, Warning{Source: "gmail", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
+				warnings = append(warnings, db.Warning{Source: "gmail", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
 				mu.Unlock()
 				return
 			}
@@ -154,14 +150,15 @@ func Run(opts Options) error {
 		}()
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		threads, err := fetchGitHubThreads(ctx, opts.GitHubRepos)
+	if opts.GitHubEnabled {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			threads, err := fetchGitHubThreads(ctx, opts.GitHubRepos)
 		if err != nil {
 			log.Printf("github fetch: %v", err)
 			mu.Lock()
-			warnings = append(warnings, Warning{Source: "github", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
+			warnings = append(warnings, db.Warning{Source: "github", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
 			mu.Unlock()
 			return
 		}
@@ -169,9 +166,10 @@ func Run(opts Options) error {
 		ghThreads = threads
 		mu.Unlock()
 		if opts.Verbose {
-			log.Printf("github: %d PR threads", len(threads))
-		}
-	}()
+				log.Printf("github: %d PR threads", len(threads))
+			}
+		}()
+	}
 
 	if slackToken != "" {
 		wg.Add(1)
@@ -181,7 +179,7 @@ func Run(opts Options) error {
 			if err != nil {
 				log.Printf("slack fetch: %v", err)
 				mu.Lock()
-				warnings = append(warnings, Warning{Source: "slack", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
+				warnings = append(warnings, db.Warning{Source: "slack", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
 				mu.Unlock()
 				return
 			}
@@ -194,7 +192,7 @@ func Run(opts Options) error {
 		}()
 	}
 
-	if granolaToken != "" {
+	if granolaToken != "" && opts.GranolaEnabled {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -202,7 +200,7 @@ func Run(opts Options) error {
 			if err != nil {
 				log.Printf("granola fetch: %v", err)
 				mu.Lock()
-				warnings = append(warnings, Warning{Source: "granola", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
+				warnings = append(warnings, db.Warning{Source: "granola", Message: fmt.Sprintf("fetch failed: %v", err), At: time.Now()})
 				mu.Unlock()
 				return
 			}
@@ -217,7 +215,7 @@ func Run(opts Options) error {
 
 	wg.Wait()
 
-	var granolaTodos, slackTodos []Todo
+	var granolaTodos, slackTodos []db.Todo
 	if !opts.NoLLM {
 		var llmWg sync.WaitGroup
 
@@ -260,9 +258,9 @@ func Run(opts Options) error {
 	}
 
 	if calData == nil {
-		calData = &CalendarData{}
+		calData = &db.CalendarData{}
 	}
-	var allTodos []Todo
+	var allTodos []db.Todo
 	allTodos = append(allTodos, granolaTodos...)
 	allTodos = append(allTodos, slackTodos...)
 	allThreads := append(gmailThreads, ghThreads...)
@@ -297,13 +295,13 @@ func Run(opts Options) error {
 		return nil
 	}
 
-	if err := SaveCommandCenter(ccPath, merged); err != nil {
+	if err := db.DBSaveRefreshResult(opts.DB, merged); err != nil {
 		return fmt.Errorf("saving command center: %w", err)
 	}
 
 	if opts.Verbose {
-		log.Printf("wrote %s (todos=%d, threads=%d, warnings=%d)",
-			ccPath, len(merged.Todos), len(merged.Threads), len(warnings))
+		log.Printf("saved to db (todos=%d, threads=%d, warnings=%d)",
+			len(merged.Todos), len(merged.Threads), len(warnings))
 	}
 
 	return nil

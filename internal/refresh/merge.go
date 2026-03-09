@@ -1,6 +1,10 @@
 package refresh
 
-import "time"
+import (
+	"time"
+
+	"github.com/anutron/claude-command-center/internal/db"
+)
 
 // Merge combines fresh data with existing command center state.
 // Rules:
@@ -9,12 +13,12 @@ import "time"
 //     update existing (preserve ID/status/created_at, update detail);
 //     add new with generated UUID; preserve source:"manual" untouched
 //   - Threads: same logic; preserve pause/complete states
-func Merge(existing *CommandCenter, fresh *FreshData) *CommandCenter {
+func Merge(existing *db.CommandCenter, fresh *FreshData) *db.CommandCenter {
 	if existing == nil {
-		existing = &CommandCenter{}
+		existing = &db.CommandCenter{}
 	}
 
-	cc := &CommandCenter{
+	cc := &db.CommandCenter{
 		GeneratedAt:    time.Now(),
 		Calendar:       fresh.Calendar,
 		PendingActions: existing.PendingActions,
@@ -26,7 +30,7 @@ func Merge(existing *CommandCenter, fresh *FreshData) *CommandCenter {
 	return cc
 }
 
-func mergeTodos(existing, fresh []Todo) []Todo {
+func mergeTodos(existing, fresh []db.Todo) []db.Todo {
 	byRef := make(map[string]int)
 	for i, t := range existing {
 		if t.SourceRef != "" {
@@ -36,11 +40,11 @@ func mergeTodos(existing, fresh []Todo) []Todo {
 
 	matched := make(map[int]bool)
 
-	var merged []Todo
+	var merged []db.Todo
 	for _, ft := range fresh {
 		if ft.SourceRef == "" {
 			if ft.ID == "" {
-				ft.ID = genID()
+				ft.ID = db.GenID()
 			}
 			if ft.CreatedAt.IsZero() {
 				ft.CreatedAt = time.Now()
@@ -70,7 +74,7 @@ func mergeTodos(existing, fresh []Todo) []Todo {
 			merged = append(merged, et)
 		} else {
 			if ft.ID == "" {
-				ft.ID = genID()
+				ft.ID = db.GenID()
 			}
 			if ft.CreatedAt.IsZero() {
 				ft.CreatedAt = time.Now()
@@ -91,7 +95,7 @@ func mergeTodos(existing, fresh []Todo) []Todo {
 	return merged
 }
 
-func mergeThreads(existing, fresh []Thread) []Thread {
+func mergeThreads(existing, fresh []db.Thread) []db.Thread {
 	byRef := make(map[string]int)
 	for i, t := range existing {
 		if t.URL != "" {
@@ -100,12 +104,12 @@ func mergeThreads(existing, fresh []Thread) []Thread {
 	}
 
 	matched := make(map[int]bool)
-	var merged []Thread
+	var merged []db.Thread
 
 	for _, ft := range fresh {
 		if ft.URL == "" {
 			if ft.ID == "" {
-				ft.ID = genID()
+				ft.ID = db.GenID()
 			}
 			if ft.CreatedAt.IsZero() {
 				ft.CreatedAt = time.Now()
@@ -128,7 +132,7 @@ func mergeThreads(existing, fresh []Thread) []Thread {
 			merged = append(merged, et)
 		} else {
 			if ft.ID == "" {
-				ft.ID = genID()
+				ft.ID = db.GenID()
 			}
 			if ft.CreatedAt.IsZero() {
 				ft.CreatedAt = time.Now()

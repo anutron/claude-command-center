@@ -6,12 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/db"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 )
 
-func fetchCalendarEvents(ctx context.Context, ts oauth2.TokenSource, calendarIDs []string) (*CalendarData, error) {
+func fetchCalendarEvents(ctx context.Context, ts oauth2.TokenSource, calendarIDs []string) (*db.CalendarData, error) {
 	srv, err := calendar.NewService(ctx, option.WithTokenSource(ts))
 	if err != nil {
 		return nil, err
@@ -22,7 +23,7 @@ func fetchCalendarEvents(ctx context.Context, ts oauth2.TokenSource, calendarIDs
 	todayEnd := todayStart.Add(24 * time.Hour)
 	tomorrowEnd := todayEnd.Add(24 * time.Hour)
 
-	var todayEvents, tomorrowEvents []CalendarEvent
+	var todayEvents, tomorrowEvents []db.CalendarEvent
 
 	for _, calID := range calendarIDs {
 		today, err := listEvents(ctx, srv, calID, todayStart, todayEnd)
@@ -40,13 +41,13 @@ func fetchCalendarEvents(ctx context.Context, ts oauth2.TokenSource, calendarIDs
 		tomorrowEvents = append(tomorrowEvents, tomorrow...)
 	}
 
-	return &CalendarData{
+	return &db.CalendarData{
 		Today:    todayEvents,
 		Tomorrow: tomorrowEvents,
 	}, nil
 }
 
-func listEvents(ctx context.Context, srv *calendar.Service, calendarID string, timeMin, timeMax time.Time) ([]CalendarEvent, error) {
+func listEvents(ctx context.Context, srv *calendar.Service, calendarID string, timeMin, timeMax time.Time) ([]db.CalendarEvent, error) {
 	events, err := srv.Events.List(calendarID).
 		TimeMin(timeMin.Format(time.RFC3339)).
 		TimeMax(timeMax.Format(time.RFC3339)).
@@ -58,13 +59,13 @@ func listEvents(ctx context.Context, srv *calendar.Service, calendarID string, t
 		return nil, err
 	}
 
-	var result []CalendarEvent
+	var result []db.CalendarEvent
 	for _, item := range events.Items {
 		if item.EventType == "workingLocation" {
 			continue
 		}
 
-		ev := CalendarEvent{
+		ev := db.CalendarEvent{
 			Title:      item.Summary,
 			CalendarID: calendarID,
 		}

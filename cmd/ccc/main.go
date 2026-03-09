@@ -84,7 +84,7 @@ func main() {
 
 	// TUI loop: launch TUI, optionally exec claude, return to TUI
 	for {
-		m := tui.NewModel(database, cfg, pluginInterfaces...)
+		m := tui.NewModel(database, cfg, bus, logger, pluginInterfaces...)
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		finalModel, err := p.Run()
 		if err != nil {

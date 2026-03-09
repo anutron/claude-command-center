@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/anutron/claude-command-center/internal/db"
 )
 
-func extractCommitments(ctx context.Context, meetings []RawMeeting) ([]Todo, error) {
+func extractCommitments(ctx context.Context, meetings []RawMeeting) ([]db.Todo, error) {
 	if len(meetings) == 0 {
 		return nil, nil
 	}
@@ -67,9 +69,9 @@ Meetings:
 		return nil, fmt.Errorf("parsing commitment response: %w (raw: %s)", err, text[:min(200, len(text))])
 	}
 
-	var todos []Todo
+	var todos []db.Todo
 	for _, item := range items {
-		todos = append(todos, Todo{
+		todos = append(todos, db.Todo{
 			Title:      item.Title,
 			Source:     "granola",
 			SourceRef:  item.SourceRef,
@@ -84,11 +86,11 @@ Meetings:
 	return todos, nil
 }
 
-func generateSuggestions(ctx context.Context, cc *CommandCenter) (*Suggestions, error) {
+func generateSuggestions(ctx context.Context, cc *db.CommandCenter) (*db.Suggestions, error) {
 	state, _ := json.Marshal(struct {
-		Calendar CalendarData `json:"calendar"`
-		Todos    []Todo       `json:"todos"`
-		Threads  []Thread     `json:"threads"`
+		Calendar db.CalendarData `json:"calendar"`
+		Todos    []db.Todo       `json:"todos"`
+		Threads  []db.Thread     `json:"threads"`
 	}{
 		Calendar: cc.Calendar,
 		Todos:    activeTodos(cc.Todos),
@@ -114,7 +116,7 @@ Current state:
 
 	text = cleanJSON(text)
 
-	var suggestions Suggestions
+	var suggestions db.Suggestions
 	if err := json.Unmarshal([]byte(text), &suggestions); err != nil {
 		return nil, fmt.Errorf("parsing suggestions: %w (raw: %s)", err, text[:min(200, len(text))])
 	}
@@ -145,8 +147,8 @@ func cleanJSON(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func activeTodos(todos []Todo) []Todo {
-	var out []Todo
+func activeTodos(todos []db.Todo) []db.Todo {
+	var out []db.Todo
 	for _, t := range todos {
 		if t.Status == "active" {
 			out = append(out, t)
@@ -155,8 +157,8 @@ func activeTodos(todos []Todo) []Todo {
 	return out
 }
 
-func activeThreads(threads []Thread) []Thread {
-	var out []Thread
+func activeThreads(threads []db.Thread) []db.Thread {
+	var out []db.Thread
 	for _, t := range threads {
 		if t.Status == "active" {
 			out = append(out, t)

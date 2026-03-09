@@ -3,17 +3,19 @@ package refresh
 import (
 	"testing"
 	"time"
+
+	"github.com/anutron/claude-command-center/internal/db"
 )
 
 func TestMerge_CalendarReplacedEntirely(t *testing.T) {
-	existing := &CommandCenter{
-		Calendar: CalendarData{
-			Today: []CalendarEvent{{Title: "Old Meeting"}},
+	existing := &db.CommandCenter{
+		Calendar: db.CalendarData{
+			Today: []db.CalendarEvent{{Title: "Old Meeting"}},
 		},
 	}
 	fresh := &FreshData{
-		Calendar: CalendarData{
-			Today: []CalendarEvent{{Title: "New Meeting"}},
+		Calendar: db.CalendarData{
+			Today: []db.CalendarEvent{{Title: "New Meeting"}},
 		},
 	}
 
@@ -24,13 +26,13 @@ func TestMerge_CalendarReplacedEntirely(t *testing.T) {
 }
 
 func TestMerge_DismissedTodoNeverRecreated(t *testing.T) {
-	existing := &CommandCenter{
-		Todos: []Todo{
+	existing := &db.CommandCenter{
+		Todos: []db.Todo{
 			{ID: "abc", Title: "Old", Status: "dismissed", SourceRef: "granola-123"},
 		},
 	}
 	fresh := &FreshData{
-		Todos: []Todo{
+		Todos: []db.Todo{
 			{Title: "Old Recreated", Source: "granola", SourceRef: "granola-123"},
 		},
 	}
@@ -48,14 +50,14 @@ func TestMerge_DismissedTodoNeverRecreated(t *testing.T) {
 }
 
 func TestMerge_ExistingTodoUpdated(t *testing.T) {
-	existing := &CommandCenter{
-		Todos: []Todo{
+	existing := &db.CommandCenter{
+		Todos: []db.Todo{
 			{ID: "abc", Title: "Old Title", Status: "active", SourceRef: "ref-1",
 				Detail: "old detail", CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
 		},
 	}
 	fresh := &FreshData{
-		Todos: []Todo{
+		Todos: []db.Todo{
 			{Title: "New Title", SourceRef: "ref-1", Detail: "new detail", WhoWaiting: "Bob"},
 		},
 	}
@@ -88,9 +90,9 @@ func TestMerge_ExistingTodoUpdated(t *testing.T) {
 }
 
 func TestMerge_NewTodoGetsID(t *testing.T) {
-	existing := &CommandCenter{}
+	existing := &db.CommandCenter{}
 	fresh := &FreshData{
-		Todos: []Todo{
+		Todos: []db.Todo{
 			{Title: "Brand New", Source: "slack", SourceRef: "slack-456"},
 		},
 	}
@@ -108,13 +110,13 @@ func TestMerge_NewTodoGetsID(t *testing.T) {
 }
 
 func TestMerge_ManualTodosPreserved(t *testing.T) {
-	existing := &CommandCenter{
-		Todos: []Todo{
+	existing := &db.CommandCenter{
+		Todos: []db.Todo{
 			{ID: "manual-1", Title: "My Task", Status: "active", Source: "manual"},
 		},
 	}
 	fresh := &FreshData{
-		Todos: []Todo{
+		Todos: []db.Todo{
 			{Title: "From Granola", Source: "granola", SourceRef: "g-1"},
 		},
 	}
@@ -132,13 +134,13 @@ func TestMerge_ManualTodosPreserved(t *testing.T) {
 }
 
 func TestMerge_ThreadDismissedNotRecreated(t *testing.T) {
-	existing := &CommandCenter{
-		Threads: []Thread{
+	existing := &db.CommandCenter{
+		Threads: []db.Thread{
 			{ID: "t1", Title: "Old PR", Status: "dismissed", URL: "https://github.com/pr/1"},
 		},
 	}
 	fresh := &FreshData{
-		Threads: []Thread{
+		Threads: []db.Thread{
 			{Title: "Old PR Updated", URL: "https://github.com/pr/1", Type: "pr"},
 		},
 	}
@@ -157,14 +159,14 @@ func TestMerge_ThreadDismissedNotRecreated(t *testing.T) {
 
 func TestMerge_ThreadPauseStatePreserved(t *testing.T) {
 	pausedAt := time.Now()
-	existing := &CommandCenter{
-		Threads: []Thread{
+	existing := &db.CommandCenter{
+		Threads: []db.Thread{
 			{ID: "t1", Title: "PR", Status: "paused", URL: "https://github.com/pr/2",
 				PausedAt: &pausedAt},
 		},
 	}
 	fresh := &FreshData{
-		Threads: []Thread{
+		Threads: []db.Thread{
 			{Title: "PR Updated", URL: "https://github.com/pr/2", Summary: "3 comments"},
 		},
 	}
@@ -188,8 +190,8 @@ func TestMerge_ThreadPauseStatePreserved(t *testing.T) {
 }
 
 func TestMerge_PendingActionsPreserved(t *testing.T) {
-	existing := &CommandCenter{
-		PendingActions: []PendingAction{
+	existing := &db.CommandCenter{
+		PendingActions: []db.PendingAction{
 			{Type: "booking", TodoID: "abc", DurationMinutes: 30},
 		},
 	}
@@ -203,10 +205,10 @@ func TestMerge_PendingActionsPreserved(t *testing.T) {
 
 func TestMerge_NilExisting(t *testing.T) {
 	fresh := &FreshData{
-		Calendar: CalendarData{
-			Today: []CalendarEvent{{Title: "Meeting"}},
+		Calendar: db.CalendarData{
+			Today: []db.CalendarEvent{{Title: "Meeting"}},
 		},
-		Todos: []Todo{
+		Todos: []db.Todo{
 			{Title: "Task", Source: "granola", SourceRef: "g-1"},
 		},
 	}

@@ -1173,7 +1173,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		return view
 	}
 
-	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing)
+	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing)
 
 	if p.claudeLoading {
 		loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg

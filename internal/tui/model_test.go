@@ -5,6 +5,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -24,7 +25,7 @@ func TestNewModel(t *testing.T) {
 	defer database.Close()
 
 	cfg := testConfig()
-	m := NewModel(database, cfg)
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger())
 
 	if m.cfg.Name != "Test Center" {
 		t.Errorf("expected name 'Test Center', got %q", m.cfg.Name)
@@ -35,8 +36,8 @@ func TestNewModel(t *testing.T) {
 	if m.Launch != nil {
 		t.Error("expected Launch to be nil initially")
 	}
-	if len(m.tabs) != 4 {
-		t.Errorf("expected 4 tabs, got %d", len(m.tabs))
+	if len(m.tabs) != 5 {
+		t.Errorf("expected 5 tabs, got %d", len(m.tabs))
 	}
 }
 
@@ -47,7 +48,7 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
 
 	// Tab forward
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -68,10 +69,18 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 		t.Errorf("expected tabThreads after three tabs, got %d", m.activeTab)
 	}
 
+	// Settings tab (index 4)
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = result.(Model)
+	if m.activeTab != 4 {
+		t.Errorf("expected tab 4 (Settings) after four tabs, got %d", m.activeTab)
+	}
+
+	// Wrap back to tabNew
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
 	if m.activeTab != tabNew {
-		t.Errorf("expected tabNew after four tabs (wrap), got %d", m.activeTab)
+		t.Errorf("expected tabNew after five tabs (wrap), got %d", m.activeTab)
 	}
 }
 
@@ -82,7 +91,7 @@ func TestWindowResize(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
 
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = result.(Model)
@@ -98,7 +107,7 @@ func TestViewDoesNotPanic(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
 	m.width = 120
 	m.height = 40
 
@@ -164,7 +173,7 @@ func TestEscQuits(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Error("expected non-nil cmd (tea.Quit) on esc")
@@ -178,7 +187,7 @@ func TestPluginTabMapping(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
 
 	// First two tabs should be sessions plugin
 	if m.tabs[0].plugin.Slug() != "sessions" {
@@ -187,11 +196,15 @@ func TestPluginTabMapping(t *testing.T) {
 	if m.tabs[1].plugin.Slug() != "sessions" {
 		t.Errorf("expected tab 1 to be sessions, got %s", m.tabs[1].plugin.Slug())
 	}
-	// Last two should be commandcenter
+	// Next two should be commandcenter
 	if m.tabs[2].plugin.Slug() != "commandcenter" {
 		t.Errorf("expected tab 2 to be commandcenter, got %s", m.tabs[2].plugin.Slug())
 	}
 	if m.tabs[3].plugin.Slug() != "commandcenter" {
 		t.Errorf("expected tab 3 to be commandcenter, got %s", m.tabs[3].plugin.Slug())
+	}
+	// Last tab should be settings
+	if m.tabs[4].plugin.Slug() != "settings" {
+		t.Errorf("expected tab 4 to be settings, got %s", m.tabs[4].plugin.Slug())
 	}
 }

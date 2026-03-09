@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/anutron/claude-command-center/internal/db"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 )
 
-func fetchActionableEmails(ctx context.Context, ts oauth2.TokenSource) ([]Thread, error) {
+func fetchActionableEmails(ctx context.Context, ts oauth2.TokenSource) ([]db.Thread, error) {
 	srv, err := gmail.NewService(ctx, option.WithTokenSource(ts))
 	if err != nil {
 		return nil, err
@@ -25,7 +26,7 @@ func fetchActionableEmails(ctx context.Context, ts oauth2.TokenSource) ([]Thread
 		return nil, err
 	}
 
-	var threads []Thread
+	var threads []db.Thread
 	for _, msg := range resp.Messages {
 		detail, err := srv.Users.Messages.Get("me", msg.Id).
 			Format("metadata").
@@ -57,7 +58,7 @@ func fetchActionableEmails(ctx context.Context, ts oauth2.TokenSource) ([]Thread
 			senderName = strings.TrimSpace(from[:idx])
 		}
 
-		threads = append(threads, Thread{
+		threads = append(threads, db.Thread{
 			Type:    "email",
 			Title:   subject,
 			URL:     url,
