@@ -36,7 +36,7 @@ Extract the Command Center TUI from AI-RON into a standalone, installable projec
 
 ## Remaining Work
 
-### Sprint 3+4: Polish, Hardening, MCP Consolidation (in progress)
+### Sprint 3+4: Polish, Hardening, MCP Consolidation (done)
 
 **Goal:** Make CCC reliable enough to use every day. Fix bugs, smooth rough edges, consolidate MCP servers, add operational infrastructure.
 
@@ -52,14 +52,37 @@ Extract the Command Center TUI from AI-RON into a standalone, installable projec
 - [x] Cross-instance notification (`ccc notify`) via unix sockets
 - [x] Audit for personal content / hardcoded references — clean
 
-### Sprint 5: Architecture Evolution
+### Sprint 5: Messaging Architecture & Plugin Lifecycle
 
-**Goal:** Evolve the plugin architecture to support third-party data sources and richer plugin capabilities.
+**Goal:** Unify the three messaging layers, add plugin lifecycle events, and clean up large files. CCC currently has three overlapping messaging systems that need to be rationalized before adding more features.
 
+**Study area: messaging layer unification.** Today there are three layers:
+
+1. **Event Bus (`plugin.EventBus`)** — intra-process pub/sub between plugins. Topic-based, synchronous handlers. Defined in Sprint 2 but currently unused by any plugin. Best suited for plugin-to-plugin async signals where the publisher doesn't care about the response ("todo completed", "config changed").
+
+2. **Bubbletea message broadcast** — the host's `broadcastMessage()` sends every `tea.Msg` to every plugin's `HandleMessage()`. This is how plugins learn about ticks, window resizes, refresh completions, and cross-instance notifications. Noisy — plugins ignore 95% of messages. But it supports returning `tea.Cmd`, which the event bus cannot.
+
+3. **Cross-instance notification** — unix socket per PID, `ccc notify` sends a string, listener injects `plugin.NotifyMsg` into bubbletea. Currently only triggers DB reload in CC plugin.
+
+**Target architecture** — three layers forming a clean stack:
+
+```
+External (unix socket)  →  NotifyMsg into bubbletea
+Host lifecycle          →  tea.Msg types (TabViewMsg, LaunchMsg, ReturnMsg)
+Plugin-to-plugin        →  EventBus topics
+```
+
+Key insight: lifecycle events should be `tea.Msg` types (not event bus topics) because they need to return `tea.Cmd` (e.g., "I just became visible, kick off a data fetch"). The event bus stays reserved for fire-and-forget plugin-to-plugin signals.
+
+**Work items:**
+
+- [ ] Define lifecycle `tea.Msg` types: `TabViewMsg{Slug}`, `TabLeaveMsg{Slug}`, `LaunchMsg{Dir, Args}`, `ReturnMsg`
+- [ ] Host fires lifecycle messages at tab switch (replacing bare `NavigateTo` call), before/after Claude launch
+- [ ] CC plugin uses `TabViewMsg` for lazy reload instead of polling on tick
 - [ ] Data Source Plugins — extract fetchers into `DataSource` interface, enable third-party data sources
 - [ ] SettingsProvider Interface — plugins own their settings UI
-- [ ] Plugin Lifecycle Events — onTabView, onLaunch, onReturn for lazy loading and analytics
-- [ ] Multi-agent codebase review for large files
+- [ ] First real EventBus usage — CC publishes "todo.completed" / "todo.created", other plugins can subscribe
+- [ ] Multi-agent codebase review — break up `commandcenter.go` (1200+ lines) into focused files
 
 ### Sprint 6: Distribution & Onboarding
 
