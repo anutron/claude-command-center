@@ -103,9 +103,20 @@ Each plugin defines local style and gradient structs populated from the shared `
 - Focus suggestion auto-refreshes after todo mutations
 - All Claude calls run as background `tea.Cmd` (non-blocking)
 
-### Refresh
+### Data Loading (Lifecycle Messages)
 
-- Auto-refresh triggers when data is older than 5 minutes
+Instead of polling on a 60-second timer, the command center uses lifecycle messages
+to reload data from the DB at the right moments:
+
+- **TabViewMsg:** Reload from DB if stale (>2s since last read). This covers tab switches.
+- **ReturnMsg:** Always reload from DB. This covers returning from a Claude session.
+- **NotifyMsg:** Reload from DB. This covers cross-instance notifications.
+
+The 60-second tick-based DB reload has been removed.
+
+### Refresh (ccc-refresh)
+
+- Auto-refresh triggers when data is older than 5 minutes (tick-based, preserved)
 - Manual refresh via `r` key
 - Spawns `ccc-refresh` binary, then reloads from DB
 - Refresh binary located next to running executable, then falls back to PATH

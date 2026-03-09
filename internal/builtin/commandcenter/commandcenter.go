@@ -10,6 +10,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -19,8 +20,8 @@ import (
 )
 
 const (
-	contentMaxWidth  = 120
-	ccReloadInterval = 60 * time.Second
+	contentMaxWidth       = 120
+	ccStaleThreshold      = 2 * time.Second
 )
 
 var bookingDurations = []int{15, 30, 60, 120, 240}
@@ -57,6 +58,7 @@ type Plugin struct {
 	cfg      *config.Config
 	bus      plugin.EventBus
 	logger   plugin.Logger
+	llm      llm.LLM
 	styles   ccStyles
 	grad     gradientColors
 
@@ -218,6 +220,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.cfg = ctx.Config
 	p.bus = ctx.Bus
 	p.logger = ctx.Logger
+	if l, ok := ctx.LLM.(llm.LLM); ok {
+		p.llm = l
+	} else {
+		p.llm = llm.NoopLLM{}
+	}
 
 	// Set refresh interval from config
 	ccRefreshInterval = ctx.Config.ParseRefreshInterval()
@@ -337,7 +344,7 @@ func (p *Plugin) triggerFocusRefresh() tea.Cmd {
 	}
 	p.claudeLoading = true
 	p.claudeLoadingMsg = "Updating focus..."
-	return claudeFocusCmd(buildFocusPrompt(p.cc))
+	return claudeFocusCmd(p.llm, buildFocusPrompt(p.cc))
 }
 
 func (p *Plugin) threadAtCursor(active, paused []db.Thread) *db.Thread {
@@ -724,7 +731,7 @@ func (p *Plugin) handleDetailView(msg tea.KeyMsg) plugin.Action {
 		p.claudeLoading = true
 		p.claudeLoadingMsg = "Updating todo..."
 		p.claudeLoadingTodo = todo.ID
-		return plugin.Action{Type: "noop", TeaCmd: claudeEditCmd(prompt, todo.ID)}
+		return plugin.Action{Type: "noop", TeaCmd: claudeEditCmd(p.llm, prompt, todo.ID)}
 
 	case "esc":
 		p.detailView = false
@@ -754,7 +761,7 @@ func (p *Plugin) handleAddingTodoRich(msg tea.KeyMsg) plugin.Action {
 		p.todoTextArea.Blur()
 		p.claudeLoading = true
 		p.claudeLoadingMsg = "Processing..."
-		return plugin.Action{Type: "noop", TeaCmd: claudeCommandCmd(prompt, "")}
+		return plugin.Action{Type: "noop", TeaCmd: claudeCommandCmd(p.llm, prompt, "")}
 
 	case "esc":
 		p.addingTodoRich = false
@@ -1100,6 +1107,20 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		p.height = msg.Height
 		return false, plugin.NoopAction() // Let host also handle this
 
+	case plugin.TabViewMsg:
+		// Reload from DB if data is stale (>2s since last read).
+		if p.database != nil && time.Since(p.ccLastRead) > ccStaleThreshold {
+			return true, plugin.Action{Type: "noop", TeaCmd: p.loadCCFromDBCmd()}
+		}
+		return true, plugin.NoopAction()
+
+	case plugin.ReturnMsg:
+		// Always reload from DB when returning from a Claude session.
+		if p.database != nil {
+			return true, plugin.Action{Type: "noop", TeaCmd: p.loadCCFromDBCmd()}
+		}
+		return true, plugin.NoopAction()
+
 	// Handle external notifications by reloading from DB
 	default:
 		if _, ok := msg.(plugin.NotifyMsg); ok && p.database != nil {
@@ -1112,11 +1133,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.flashMessage = ""
 		}
 		var cmds []tea.Cmd
-		if p.cc != nil && time.Since(p.ccLastRead) > ccReloadInterval {
-			if p.database != nil {
-				cmds = append(cmds, p.loadCCFromDBCmd())
-			}
-		}
+		// Trigger ccc-refresh when data is older than the refresh interval (default 5m).
 		if p.cc != nil && !p.ccRefreshing && time.Since(p.cc.GeneratedAt) > ccRefreshInterval {
 			if time.Since(p.ccLastRefreshTriggered) > ccRefreshInterval {
 				p.ccRefreshing = true

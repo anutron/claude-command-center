@@ -12,6 +12,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/external"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/tui"
 )
@@ -92,12 +93,21 @@ func main() {
 	}
 	defer logger.Close()
 
+	// Construct LLM implementation
+	var l llm.LLM
+	if llm.Available() {
+		l = llm.ClaudeCLI{}
+	} else {
+		l = llm.NoopLLM{}
+	}
+
 	extCtx := plugin.Context{
 		DB:     database,
 		Config: cfg,
 		Bus:    bus,
 		Logger: logger,
 		DBPath: config.DBPath(),
+		LLM:    l,
 	}
 	extPlugins, err := external.LoadExternalPlugins(cfg, extCtx)
 	if err != nil {
@@ -125,8 +135,12 @@ func main() {
 	}()
 
 	// TUI loop: launch TUI, optionally exec claude, return to TUI
+	returnedFromLaunch := false
 	for {
 		m := tui.NewModel(database, cfg, bus, logger, pluginInterfaces...)
+		if returnedFromLaunch {
+			m.SetReturnedFromLaunch()
+		}
 		p := tea.NewProgram(m, tea.WithAltScreen())
 
 		// Start unix socket listener for cross-instance notifications
@@ -148,7 +162,8 @@ func main() {
 		if err := tui.RunClaude(*fm.Launch); err != nil {
 			fmt.Fprintf(os.Stderr, "Claude error: %v\n", err)
 		}
-		// Claude exited — loop back to TUI
+		// Claude exited — loop back to TUI with returnedFromLaunch flag
+		returnedFromLaunch = true
 	}
 }
 

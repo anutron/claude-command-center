@@ -118,16 +118,18 @@ func TestViewDoesNotPanic(t *testing.T) {
 	}
 
 	// Command Center tab
+	prev := m.activeTab
 	m.activeTab = tabCommand
-	m.activateTab()
+	m.activateTab(prev)
 	v = m.View()
 	if v == "" {
 		t.Error("expected non-empty view for command tab")
 	}
 
 	// Threads tab
+	prev = m.activeTab
 	m.activeTab = tabThreads
-	m.activateTab()
+	m.activateTab(prev)
 	v = m.View()
 	if v == "" {
 		t.Error("expected non-empty view for threads tab")

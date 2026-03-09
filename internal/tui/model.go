@@ -49,6 +49,9 @@ type Model struct {
 	// allPlugins holds every unique plugin for lifecycle management.
 	allPlugins []plugin.Plugin
 
+	// returnedFromLaunch is set when the TUI restarts after a Claude session.
+	returnedFromLaunch bool
+
 	db *sql.DB
 }
 
@@ -127,6 +130,12 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	}
 }
 
+// SetReturnedFromLaunch marks that this TUI instance is returning from a Claude session.
+// Must be called before the program is run.
+func (m *Model) SetReturnedFromLaunch() {
+	m.returnedFromLaunch = true
+}
+
 func (m Model) activePlugin() plugin.Plugin {
 	return m.tabs[m.activeTab].plugin
 }
@@ -150,6 +159,9 @@ func (m Model) Init() tea.Cmd {
 	if m.db != nil {
 		cmds = append(cmds, m.sessionsPlugin.Refresh())
 	}
+	if m.returnedFromLaunch {
+		cmds = append(cmds, func() tea.Msg { return plugin.ReturnMsg{} })
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -172,13 +184,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyTab:
+			prev := m.activeTab
 			m.activeTab = (m.activeTab + 1) % tab(len(m.tabs))
-			m.activateTab()
-			return m, nil
+			cmd := m.activateTab(prev)
+			return m, cmd
 		case tea.KeyShiftTab:
+			prev := m.activeTab
 			m.activeTab = (m.activeTab + tab(len(m.tabs)) - 1) % tab(len(m.tabs))
-			m.activateTab()
-			return m, nil
+			cmd := m.activateTab(prev)
+			return m, cmd
 		case tea.KeyEsc:
 			// Let active plugin try esc first
 			action := m.activePlugin().HandleKey(msg)
@@ -219,9 +233,30 @@ func (m *Model) broadcastMessage(msg tea.Msg, cmds *[]tea.Cmd) {
 	}
 }
 
-func (m *Model) activateTab() {
-	entry := m.tabs[m.activeTab]
-	entry.plugin.NavigateTo(entry.route, nil)
+func (m *Model) activateTab(prevTab tab) tea.Cmd {
+	var cmds []tea.Cmd
+
+	// Send TabLeaveMsg to the previous plugin.
+	prevEntry := m.tabs[prevTab]
+	_, leaveAction := prevEntry.plugin.HandleMessage(plugin.TabLeaveMsg{Route: prevEntry.route})
+	if leaveAction.TeaCmd != nil {
+		cmds = append(cmds, leaveAction.TeaCmd)
+	}
+
+	// Navigate the new plugin to its route.
+	newEntry := m.tabs[m.activeTab]
+	newEntry.plugin.NavigateTo(newEntry.route, nil)
+
+	// Send TabViewMsg to the new plugin.
+	_, viewAction := newEntry.plugin.HandleMessage(plugin.TabViewMsg{Route: newEntry.route})
+	if viewAction.TeaCmd != nil {
+		cmds = append(cmds, viewAction.TeaCmd)
+	}
+
+	if len(cmds) > 0 {
+		return tea.Batch(cmds...)
+	}
+	return nil
 }
 
 func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
@@ -235,24 +270,34 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 			la.InitialPrompt = prompt
 		}
 		m.Launch = la
-		return m, tea.Quit
+		// Broadcast LaunchMsg to all plugins before quitting.
+		var cmds []tea.Cmd
+		m.broadcastMessage(plugin.LaunchMsg{
+			Dir:      action.Args["dir"],
+			ResumeID: action.Args["resume_id"],
+		}, &cmds)
+		cmds = append(cmds, tea.Quit)
+		return m, tea.Batch(cmds...)
 
 	case "quit":
 		return m, tea.Quit
 
 	case "navigate":
+		var cmd tea.Cmd
 		switch action.Payload {
 		case "sessions":
 			if todo := m.commandCenterPlugin.PendingLaunchTodo(); todo != nil {
 				m.sessionsPlugin.SetPendingLaunchTodo(todo)
 			}
+			prev := m.activeTab
 			m.activeTab = tabNew
-			m.activateTab()
+			cmd = m.activateTab(prev)
 		case "command":
+			prev := m.activeTab
 			m.activeTab = tabCommand
-			m.activateTab()
+			cmd = m.activateTab(prev)
 		}
-		return m, nil
+		return m, cmd
 
 	case "unhandled":
 		return m, tea.Quit
