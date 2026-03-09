@@ -87,3 +87,10 @@ type Plugin interface {
 type SetupFlow interface {
 	RunSetup() (map[string]interface{}, error)
 }
+
+// NotifyMsg is sent when an external process notifies the TUI to reload.
+// Defined in the plugin package so plugins can type-assert on it without
+// importing tui (which would cause a circular dependency).
+type NotifyMsg struct {
+	Event string
+}

@@ -56,6 +56,16 @@ Unloads and removes the launchd plist.
 - Deletes the plist file
 - No-op if no schedule is installed
 
+### `ccc notify [event]`
+
+Sends a notification event to all running CCC instances, causing them to reload from DB.
+
+- Scans `~/.config/ccc/data/` for `ccc-*.sock` files
+- Connects to each unix socket and sends the event string (default: "reload")
+- Stale sockets (connection refused) are automatically cleaned up
+- Prints count of instances notified
+- Useful for external scripts (e.g., after ccc-refresh runs in launchd)
+
 ### `ccc sessions`
 
 Alias for default (launches TUI).
@@ -74,3 +84,8 @@ Prints usage information.
 - Config: ParseRefreshInterval with valid durations
 - Config: ParseRefreshInterval with empty/invalid → returns default
 - Config: ParseRefreshInterval with <1m → returns default
+- Notify: socket path contains PID and ends with .sock
+- Notify: socket path respects CCC_STATE_DIR env var
+- Notify: SendNotify with no instances returns error
+- Notify: SendNotify reaches a listening socket
+- Notify: stale socket files are cleaned up on failed connection

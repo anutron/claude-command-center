@@ -40,17 +40,17 @@ Extract the Command Center TUI from AI-RON into a standalone, installable projec
 
 **Goal:** Make CCC reliable enough to use every day. Fix bugs, smooth rough edges, consolidate MCP servers, add operational infrastructure.
 
-- [ ] Fix TUI glitches identified during first real usage
-- [ ] Refresh configurability (intervals, retry behavior, staleness threshold)
-- [ ] `ccc doctor` — diagnostic command checking config, credentials, connectivity
-- [ ] `ccc install-schedule` — scheduled refresh via launchd plist
-- [ ] Move gmail + things MCP servers into monorepo under `servers/`
-- [ ] MCP config generation in `ccc setup` (output `.claude/mcp.json` snippets)
-- [ ] `make install` builds enabled MCP servers
-- [ ] Docs cleanup — remove stale Supabase/memory references, update specs
-- [ ] Auto-refresh on TUI startup if data is stale (>5 min old)
-- [ ] Cross-instance notification (unix socket) so multiple TUI instances stay in sync
-- [ ] Remove any remaining personal content / hardcoded references
+- [x] Fix TUI glitches: DB nil safety, RunClaude error handling, signal handling
+- [x] Refresh configurability: configurable interval, status indicator, error display
+- [x] `ccc doctor` — diagnostic command checking config, credentials, connectivity
+- [x] `ccc install-schedule` / `ccc uninstall-schedule` — launchd plist management
+- [x] Move gmail + things MCP servers into monorepo under `servers/`
+- [x] MCP config generation in `ccc setup` (output `.claude/mcp.json` snippets)
+- [x] `make install` builds enabled MCP servers
+- [x] Docs cleanup — remove stale Supabase/memory references, update specs
+- [x] Auto-refresh on TUI startup if data is stale
+- [x] Cross-instance notification (`ccc notify`) via unix sockets
+- [x] Audit for personal content / hardcoded references — clean
 
 ### Sprint 5: Architecture Evolution
 

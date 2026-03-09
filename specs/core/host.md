@@ -102,6 +102,18 @@ The host holds direct references to the sessions and command center plugins for 
 - 18 FPS tick drives gradient shimmer on banner, fade-in on startup, pulsing pointer on selected items
 - Gradient uses three configurable color stops (GradStart/GradMid/GradEnd) from palette
 
+### Cross-Instance Notification
+
+Multiple CCC instances share the same SQLite DB. A unix socket notification system keeps them in sync:
+
+- Each TUI instance creates a PID-scoped socket at `~/.config/ccc/data/ccc-<PID>.sock`
+- A goroutine listens for newline-delimited event strings on the socket
+- Incoming events are injected as `plugin.NotifyMsg` into the bubbletea program via `p.Send()`
+- The CC plugin handles `NotifyMsg` by reloading data from DB
+- `ccc notify [event]` connects to all `ccc-*.sock` files and sends the event (default: "reload")
+- Stale sockets (connection refused) are automatically cleaned up
+- External scripts can use `ccc notify` to trigger reloads (e.g., after ccc-refresh runs)
+
 ### Shutdown & Error Handling
 
 - **Database required**: If the database cannot be opened, the process exits with a clear error message and instructions. The TUI is useless without a DB.

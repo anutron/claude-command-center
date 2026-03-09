@@ -190,6 +190,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		action := m.activePlugin().HandleKey(msg)
 		return m.processAction(action)
 
+	case plugin.NotifyMsg:
+		// External notification — reload all plugins from DB
+		var cmds []tea.Cmd
+		m.broadcastMessage(msg, &cmds)
+		return m, tea.Batch(cmds...)
+
 	default:
 		var cmds []tea.Cmd
 		m.broadcastMessage(msg, &cmds)

@@ -44,6 +44,16 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "notify":
+			event := "reload"
+			if len(os.Args) > 2 {
+				event = os.Args[2]
+			}
+			if err := tui.SendNotify(event); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "-h", "--help", "help":
 			printUsage()
 			return
@@ -118,7 +128,12 @@ func main() {
 	for {
 		m := tui.NewModel(database, cfg, bus, logger, pluginInterfaces...)
 		p := tea.NewProgram(m, tea.WithAltScreen())
+
+		// Start unix socket listener for cross-instance notifications
+		cleanupNotify := tui.StartNotifyListener(p)
+
 		finalModel, err := p.Run()
+		cleanupNotify()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -148,6 +163,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  doctor               Check system health")
 	fmt.Fprintln(os.Stderr, "  install-schedule     Install launchd plist for background refresh")
 	fmt.Fprintln(os.Stderr, "  uninstall-schedule   Remove background refresh schedule")
+	fmt.Fprintln(os.Stderr, "  notify [event]       Notify running instances to reload (default: reload)")
 	fmt.Fprintln(os.Stderr, "  sessions             Same as default")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Options:")

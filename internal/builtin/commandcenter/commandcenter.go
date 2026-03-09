@@ -1100,6 +1100,12 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		p.height = msg.Height
 		return false, plugin.NoopAction() // Let host also handle this
 
+	// Handle external notifications by reloading from DB
+	default:
+		if _, ok := msg.(plugin.NotifyMsg); ok && p.database != nil {
+			return true, plugin.Action{Type: "noop", TeaCmd: p.loadCCFromDBCmd()}
+		}
+
 	case tickMsg:
 		p.frame++
 		if p.flashMessage != "" && time.Since(p.flashMessageAt) > 15*time.Second {
