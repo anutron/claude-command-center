@@ -73,10 +73,6 @@ func Run(opts Options) error {
 			}
 			mu.Lock()
 			results = append(results, result)
-			// Collect any warnings from the source itself
-			if len(result.Warnings) > 0 {
-				warnings = append(warnings, result.Warnings...)
-			}
 			mu.Unlock()
 			if opts.Verbose {
 				logSourceResult(s.Name(), result)
@@ -87,6 +83,12 @@ func Run(opts Options) error {
 	wg.Wait()
 
 	fresh := combineResults(results)
+	// Collect warnings from successful source results
+	for _, r := range results {
+		if r != nil && len(r.Warnings) > 0 {
+			warnings = append(warnings, r.Warnings...)
+		}
+	}
 
 	merged := Merge(existing, fresh)
 

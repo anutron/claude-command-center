@@ -60,7 +60,8 @@ Merges all `SourceResult` values into a single `FreshData`:
 - Calendar: uses first non-nil `*db.CalendarData` (only CalendarSource provides it)
 - Todos: concatenates all source todos
 - Threads: concatenates all source threads
-- Warnings: concatenates all source warnings
+
+Note: `FreshData` does not carry warnings. Source warnings (from `SourceResult.Warnings`) and fetch-error warnings are collected separately in `Run()` after `combineResults` and set on the merged result.
 
 ### LLM extraction
 
