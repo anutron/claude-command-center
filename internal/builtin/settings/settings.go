@@ -108,6 +108,21 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	p.rebuildItems()
+
+	// Subscribe to todo events for logging
+	if p.bus != nil {
+		todoTopics := []string{"todo.completed", "todo.created", "todo.dismissed", "todo.deferred", "todo.promoted", "todo.edited"}
+		for _, topic := range todoTopics {
+			t := topic // capture
+			p.bus.Subscribe(t, func(e plugin.Event) {
+				if p.logger != nil {
+					title, _ := e.Payload["title"].(string)
+					p.logger.Info("settings", fmt.Sprintf("event %s: %s", t, title))
+				}
+			})
+		}
+	}
+
 	return nil
 }
 
@@ -274,22 +289,25 @@ func (p *Plugin) handlePaletteKey(msg tea.KeyMsg) plugin.Action {
 		}
 	case "enter":
 		selected := names[p.paletteCursor]
+		previous := p.cfg.Palette
 		p.cfg.Palette = selected
 		if err := config.Save(p.cfg); err == nil {
 			p.flashMessage = "Palette saved: " + selected
+			p.publishConfigSaved("palette")
+			if p.bus != nil {
+				p.bus.Publish(plugin.Event{
+					Source: "settings",
+					Topic:  "palette.changed",
+					Payload: map[string]interface{}{
+						"previous": previous,
+						"new":      selected,
+					},
+				})
+			}
 		} else {
 			p.flashMessage = "Failed to save palette: " + err.Error()
 		}
 		p.flashMessageAt = time.Now()
-		if p.bus != nil {
-			p.bus.Publish(plugin.Event{
-				Source: "settings",
-				Topic: "settings.palette_changed",
-				Payload: map[string]interface{}{
-					"palette": selected,
-				},
-			})
-		}
 	case "esc":
 		return plugin.Action{Type: "unhandled"}
 	}
@@ -309,6 +327,7 @@ func (p *Plugin) applyToggle(item settingsItem) {
 		}
 		if err := config.Save(p.cfg); err == nil {
 			p.flashMessage = "Restart CCC to apply"
+			p.publishConfigSaved("external_plugins")
 		} else {
 			p.flashMessage = "Failed to save: " + err.Error()
 		}
@@ -341,10 +360,34 @@ func (p *Plugin) applyToggle(item settingsItem) {
 		}
 		if err := config.Save(p.cfg); err == nil {
 			p.flashMessage = "Changes apply on next refresh"
+			p.publishConfigSaved(item.slug)
+			if p.bus != nil {
+				p.bus.Publish(plugin.Event{
+					Source: "settings",
+					Topic:  "datasource.toggled",
+					Payload: map[string]interface{}{
+						"name":    item.slug,
+						"enabled": item.enabled,
+					},
+				})
+			}
 		} else {
 			p.flashMessage = "Failed to save: " + err.Error()
 		}
 		p.flashMessageAt = time.Now()
+	}
+}
+
+// publishConfigSaved publishes a config.saved event via the bus.
+func (p *Plugin) publishConfigSaved(keysChanged string) {
+	if p.bus != nil {
+		p.bus.Publish(plugin.Event{
+			Source: "settings",
+			Topic:  "config.saved",
+			Payload: map[string]interface{}{
+				"keys_changed": keysChanged,
+			},
+		})
 	}
 }
 

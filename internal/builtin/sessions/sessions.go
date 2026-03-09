@@ -324,6 +324,34 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	s.Style = lipgloss.NewStyle().Foreground(p.styles.colorCyan)
 	p.spinner = s
 
+	// Subscribe to events
+	if p.bus != nil {
+		p.bus.Subscribe("pending.todo", func(e plugin.Event) {
+			title, _ := e.Payload["title"].(string)
+			context, _ := e.Payload["context"].(string)
+			detail, _ := e.Payload["detail"].(string)
+			whoWaiting, _ := e.Payload["who_waiting"].(string)
+			due, _ := e.Payload["due"].(string)
+			effort, _ := e.Payload["effort"].(string)
+			p.pendingLaunchTodo = &db.Todo{
+				Title:      title,
+				Context:    context,
+				Detail:     detail,
+				WhoWaiting: whoWaiting,
+				Due:        due,
+				Effort:     effort,
+			}
+			p.subTab = "new"
+		})
+		p.bus.Subscribe("data.refreshed", func(e plugin.Event) {
+			// Reload bookmarks when data is refreshed
+			if p.db != nil {
+				sessions, _ := db.DBLoadBookmarks(p.db)
+				p.resumeList.SetItems(buildSessionItems(sessions))
+			}
+		})
+	}
+
 	return nil
 }
 
@@ -407,6 +435,13 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	case "esc":
 		if p.pendingLaunchTodo != nil {
 			p.pendingLaunchTodo = nil
+			if p.bus != nil {
+				p.bus.Publish(plugin.Event{
+					Source:  "sessions",
+					Topic:   "pending.todo.cancel",
+					Payload: map[string]interface{}{},
+				})
+			}
 			return plugin.Action{Type: "navigate", Payload: "command"}
 		}
 		return plugin.Action{Type: "quit"}

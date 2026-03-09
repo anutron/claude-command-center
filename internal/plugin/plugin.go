@@ -84,6 +84,12 @@ type Plugin interface {
 	Refresh() tea.Cmd
 }
 
+// Starter is optionally implemented by plugins that need to run initial
+// tea.Cmds (e.g., spinner ticks). The host collects these during Init().
+type Starter interface {
+	StartCmds() tea.Cmd
+}
+
 // SetupFlow is optionally implemented by plugins that need onboarding.
 type SetupFlow interface {
 	RunSetup() (map[string]interface{}, error)

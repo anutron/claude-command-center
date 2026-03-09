@@ -27,17 +27,49 @@ type EventBus interface {
 - Publishing to a topic with no subscribers is a no-op (no error).
 - Handlers should not block (long operations should return tea.Cmd via Action).
 
-## Built-in Events
+## Event Catalog
 
-| Topic | Source | Payload | Description |
-|-------|--------|---------|-------------|
-| project.selected | sessions | path, prompt | User picked a project to launch |
-| session.launch | any | dir, args | Request to launch a Claude session |
-| todo.created | command-center | title, id | New todo was created |
-| todo.completed | command-center | id | Todo marked done |
-| todo.dismissed | command-center | id | Todo dismissed |
-| focus.updated | command-center | focus | Focus suggestion changed |
-| flash | any | message | Display flash message in host |
+### Command Center Events
+
+| Topic | Payload | Subscribers | Description |
+|-------|---------|-------------|-------------|
+| `todo.completed` | `{id, title}` | settings (log) | Todo marked done |
+| `todo.created` | `{id, title, source}` | settings (log) | New todo created |
+| `todo.dismissed` | `{id, title}` | settings (log) | Todo dismissed |
+| `todo.deferred` | `{id, title}` | settings (log) | Todo deferred |
+| `todo.promoted` | `{id, title}` | settings (log) | Todo promoted to top |
+| `todo.edited` | `{id, title}` | settings (log) | Todo edited via LLM |
+| `pending.todo` | `{todo_id, title, context, detail, who_waiting, due, effort}` | sessions | User selected a todo for launch without a project dir |
+| `data.refreshed` | `{source}` | sessions | ccc-refresh completed |
+
+### Sessions Events
+
+| Topic | Payload | Subscribers | Description |
+|-------|---------|-------------|-------------|
+| `pending.todo.cancel` | `{}` | commandcenter | User cancelled pending todo selection |
+| `session.bookmark.created` | `{session_id, project}` | — | Session bookmarked |
+| `session.bookmark.deleted` | `{session_id}` | — | Session bookmark removed |
+
+### Settings Events
+
+| Topic | Payload | Subscribers | Description |
+|-------|---------|-------------|-------------|
+| `config.saved` | `{keys_changed}` | commandcenter | Config file saved |
+| `palette.changed` | `{previous, new}` | — | Color palette changed |
+| `datasource.toggled` | `{name, enabled}` | — | Data source toggled on/off |
+
+## Starter Interface
+
+Plugins that need to run initial tea.Cmds (e.g., spinner ticks) implement:
+
+```go
+type Starter interface {
+    StartCmds() tea.Cmd
+}
+```
+
+The host iterates all plugins in `Init()`, checks for `Starter`, and collects cmds.
+This replaces direct plugin-specific init calls in the host.
 
 ## Test Cases
 

@@ -257,6 +257,19 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	s.Style = lipgloss.NewStyle().Foreground(p.styles.ColorCyan)
 	p.spinner = s
 
+	// Subscribe to events
+	if p.bus != nil {
+		p.bus.Subscribe("pending.todo.cancel", func(e plugin.Event) {
+			p.pendingLaunchTodo = nil
+		})
+		p.bus.Subscribe("config.saved", func(e plugin.Event) {
+			// Re-read config on save (palette, refresh interval, etc.)
+			if p.logger != nil {
+				p.logger.Info("commandcenter", "config.saved event received")
+			}
+		})
+	}
+
 	// Load CC from DB
 	if p.database != nil {
 		cc, err := db.LoadCommandCenterFromDB(p.database)
@@ -543,6 +556,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			})
 			todoID := todo.ID
 			p.cc.CompleteTodo(todoID)
+			p.publishEvent("todo.completed", map[string]interface{}{"id": todoID, "title": todo.Title})
 			newLen := len(p.cc.ActiveTodos())
 			if p.ccCursor >= newLen && newLen > 0 {
 				p.ccCursor = newLen - 1
@@ -569,6 +583,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			})
 			todoID := todo.ID
 			p.cc.RemoveTodo(todoID)
+			p.publishEvent("todo.dismissed", map[string]interface{}{"id": todoID, "title": todo.Title})
 			newLen := len(p.cc.ActiveTodos())
 			if p.ccCursor >= newLen && newLen > 0 {
 				p.ccCursor = newLen - 1
@@ -609,8 +624,10 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 
 	case "d":
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
-			todoID := activeTodos[p.ccCursor].ID
+			todo := activeTodos[p.ccCursor]
+			todoID := todo.ID
 			p.cc.DeferTodo(todoID)
+			p.publishEvent("todo.deferred", map[string]interface{}{"id": todoID, "title": todo.Title})
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBDeferTodo(database, todoID) })
 			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
 				return plugin.Action{Type: "noop", TeaCmd: tea.Batch(dbCmd, focusCmd)}
@@ -621,8 +638,10 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 
 	case "p":
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
-			todoID := activeTodos[p.ccCursor].ID
+			todo := activeTodos[p.ccCursor]
+			todoID := todo.ID
 			p.cc.PromoteTodo(todoID)
+			p.publishEvent("todo.promoted", map[string]interface{}{"id": todoID, "title": todo.Title})
 			p.ccCursor = 0
 			p.ccScrollOffset = 0
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBPromoteTodo(database, todoID) })
@@ -699,6 +718,15 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				}
 			}
 			p.pendingLaunchTodo = &todo
+			p.publishEvent("pending.todo", map[string]interface{}{
+				"todo_id":     todo.ID,
+				"title":       todo.Title,
+				"context":     todo.Context,
+				"detail":      todo.Detail,
+				"who_waiting": todo.WhoWaiting,
+				"due":         todo.Due,
+				"effort":      todo.Effort,
+			})
 			return plugin.Action{
 				Type:    "navigate",
 				Payload: "sessions",
@@ -946,6 +974,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.flashMessageAt = time.Now()
 		} else {
 			p.lastRefreshError = ""
+			p.publishEvent("data.refreshed", map[string]interface{}{"source": "ccc-refresh"})
 		}
 		if p.database != nil {
 			return true, plugin.Action{Type: "noop", TeaCmd: p.loadCCFromDBCmd()}
@@ -979,6 +1008,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 						break
 					}
 				}
+				p.publishEvent("todo.edited", map[string]interface{}{"id": todoID, "title": updated.Title})
 				return true, plugin.Action{Type: "noop", TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBUpdateTodo(database, todoID, updated)
 				})}
@@ -1009,6 +1039,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 				todo.Detail = enriched.Detail
 				todo.ProjectDir = enriched.ProjectDir
 				todoCopy := *todo
+				p.publishEvent("todo.created", map[string]interface{}{"id": todoCopy.ID, "title": todoCopy.Title, "source": "enrich"})
 				return true, plugin.Action{Type: "noop", TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBInsertTodo(database, todoCopy)
 				})}
@@ -1064,10 +1095,12 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 						todo.Detail = item.Detail
 						todo.ProjectDir = item.ProjectDir
 						t := *todo
+						p.publishEvent("todo.created", map[string]interface{}{"id": t.ID, "title": t.Title, "source": "command"})
 						dbCmds = append(dbCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBInsertTodo(database, t) }))
 					}
 					for _, id := range resp.CompleteTodoIDs {
 						p.cc.CompleteTodo(id)
+						p.publishEvent("todo.completed", map[string]interface{}{"id": id, "title": ""})
 						cid := id
 						dbCmds = append(dbCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBCompleteTodo(database, cid) }))
 					}
@@ -1273,6 +1306,17 @@ func (p *Plugin) renderBookingPicker() string {
 	}
 	picker := strings.Join(parts, "  ")
 	return p.styles.SectionHeader.Render("Book time: ") + picker + p.styles.Hint.Render("  (<-> select, enter confirm, esc cancel)")
+}
+
+// publishEvent is a helper for publishing events to the bus.
+func (p *Plugin) publishEvent(topic string, payload map[string]interface{}) {
+	if p.bus != nil {
+		p.bus.Publish(plugin.Event{
+			Source:  "commandcenter",
+			Topic:   topic,
+			Payload: payload,
+		})
+	}
 }
 
 // SubView returns the current sub-view name.

@@ -38,7 +38,7 @@ func setupPlugin(t *testing.T) *Plugin {
 	err = p.Init(plugin.Context{
 		DB:     database,
 		Config: cfg,
-		Bus:    &plugin.Bus{},
+		Bus:    plugin.NewBus(),
 		Logger: testLogger{},
 	})
 	if err != nil {
@@ -64,7 +64,7 @@ func TestInitLoadsPaths(t *testing.T) {
 	err = p.Init(plugin.Context{
 		DB:     database,
 		Config: cfg,
-		Bus:    &plugin.Bus{},
+		Bus:    plugin.NewBus(),
 		Logger: testLogger{},
 	})
 	if err != nil {

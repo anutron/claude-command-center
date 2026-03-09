@@ -13,6 +13,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Verify built-in plugins implement Starter at compile time.
+var _ plugin.Starter = (*sessions.Plugin)(nil)
+var _ plugin.Starter = (*commandcenter.Plugin)(nil)
+
 type tab int
 
 const (
@@ -41,10 +45,6 @@ type Model struct {
 	frame     int
 
 	Launch *LaunchAction
-
-	// Direct references for cross-plugin communication
-	sessionsPlugin      *sessions.Plugin
-	commandCenterPlugin *commandcenter.Plugin
 
 	// allPlugins holds every unique plugin for lifecycle management.
 	allPlugins []plugin.Plugin
@@ -118,15 +118,13 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	allPlugins = append(allPlugins, extPlugins...)
 
 	return Model{
-		cfg:                 cfg,
-		styles:              styles,
-		grad:                grad,
-		tabs:                tabs,
-		activeTab:           tabNew,
-		sessionsPlugin:      sessPlug,
-		commandCenterPlugin: ccPlug,
-		allPlugins:          allPlugins,
-		db:                  database,
+		cfg:        cfg,
+		styles:     styles,
+		grad:       grad,
+		tabs:       tabs,
+		activeTab:  tabNew,
+		allPlugins: allPlugins,
+		db:         database,
 	}
 }
 
@@ -154,11 +152,30 @@ func (m Model) Shutdown() {
 func (m Model) Init() tea.Cmd {
 	var cmds []tea.Cmd
 	cmds = append(cmds, tickCmd())
-	cmds = append(cmds, m.sessionsPlugin.StartCmds())
-	cmds = append(cmds, m.commandCenterPlugin.StartCmds())
-	if m.db != nil {
-		cmds = append(cmds, m.sessionsPlugin.Refresh())
+
+	// Collect StartCmds from all plugins that implement Starter.
+	seen := map[string]bool{}
+	for _, p := range m.allPlugins {
+		if seen[p.Slug()] {
+			continue
+		}
+		seen[p.Slug()] = true
+		if starter, ok := p.(plugin.Starter); ok {
+			if cmd := starter.StartCmds(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 	}
+
+	// Initial data load for plugins that need it.
+	if m.db != nil {
+		for _, p := range m.allPlugins {
+			if p.RefreshInterval() == 0 && p.Slug() == "sessions" {
+				cmds = append(cmds, p.Refresh())
+			}
+		}
+	}
+
 	if m.returnedFromLaunch {
 		cmds = append(cmds, func() tea.Msg { return plugin.ReturnMsg{} })
 	}
@@ -286,9 +303,6 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		switch action.Payload {
 		case "sessions":
-			if todo := m.commandCenterPlugin.PendingLaunchTodo(); todo != nil {
-				m.sessionsPlugin.SetPendingLaunchTodo(todo)
-			}
 			prev := m.activeTab
 			m.activeTab = tabNew
 			cmd = m.activateTab(prev)
