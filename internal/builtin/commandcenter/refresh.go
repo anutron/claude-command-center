@@ -2,9 +2,11 @@ package commandcenter
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,7 +15,8 @@ import (
 	"github.com/anutron/claude-command-center/internal/refresh"
 )
 
-const ccRefreshInterval = 5 * time.Minute
+// ccRefreshInterval is set during Init from config. Defaults to 5 minutes.
+var ccRefreshInterval = 5 * time.Minute
 
 // ccRefreshFinishedMsg is sent when the background refresh process completes.
 type ccRefreshFinishedMsg struct {
@@ -43,6 +46,12 @@ func refreshCCCmd() tea.Cmd {
 		var stdout bytes.Buffer
 		cmd.Stdout = &stdout
 		err := cmd.Run()
+		if err != nil {
+			errMsg := strings.TrimSpace(stderr.String())
+			if errMsg != "" {
+				err = fmt.Errorf("ccc-refresh failed: %s", errMsg)
+			}
+		}
 		return ccRefreshFinishedMsg{err: err}
 	}
 }

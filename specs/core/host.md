@@ -102,6 +102,13 @@ The host holds direct references to the sessions and command center plugins for 
 - 18 FPS tick drives gradient shimmer on banner, fade-in on startup, pulsing pointer on selected items
 - Gradient uses three configurable color stops (GradStart/GradMid/GradEnd) from palette
 
+### Shutdown & Error Handling
+
+- **Database required**: If the database cannot be opened, the process exits with a clear error message and instructions. The TUI is useless without a DB.
+- **Signal handling**: SIGINT and SIGTERM trigger graceful shutdown — all external plugin subprocesses are cleaned up before exit. Prevents orphaned plugin processes on Ctrl+C.
+- **Claude exit errors**: If `claude` exits non-zero, the error is printed to stderr but the TUI loop continues (user returns to the dashboard). Only failures to *launch* claude are fatal.
+- **RunClaude error propagation**: `launch.go:RunClaude()` returns errors from `cmd.Run()` instead of swallowing them.
+
 ## Key Design Decisions
 
 1. **No domain logic in host** — The host knows nothing about todos, threads, calendar, or sessions. It only knows about tabs, plugins, and actions.

@@ -102,7 +102,6 @@ Auto-run `ccc-refresh` on a schedule so data is fresh when the TUI opens. Option
 ## MCP Server Distribution
 
 Fold MCP servers into the monorepo under `servers/`:
-- `servers/memory/` — Memory MCP (rewritten for SQLite)
 - `servers/gmail/` — Gmail MCP (already generic)
 - `servers/things/` — Things MCP (macOS-only, optional)
 
@@ -110,9 +109,13 @@ Fold MCP servers into the monorepo under `servers/`:
 
 ---
 
-## Supabase → SQLite Migration
+## Memory as External Plugin
 
-For Aaron's existing setup: `ccc migrate-from-supabase` command to export Supabase tables (interactions, observations, etc.) to local SQLite. One-time operation, then remove Supabase dependency entirely.
+Memory-MCP lives in AI-RON — it's Aaron's personal memory system (workouts, sleep, observations, people). It is not part of CCC.
+
+CCC could surface memory data via an external CCC plugin that talks to Supabase (or whatever backend AI-RON uses). This would be a read-only display plugin: "here's what memory-mcp knows about today."
+
+This would be an AI-RON-side plugin, not a CCC built-in. AI-RON would ship the plugin, CCC would just run it via the external plugin protocol.
 
 ---
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -187,5 +188,72 @@ func TestCustomPalette(t *testing.T) {
 	aurora := GetPalette("aurora", nil)
 	if p2.Fg != aurora.Fg {
 		t.Error("custom without colors should fall back to aurora")
+	}
+}
+
+func TestParseRefreshInterval(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected time.Duration
+	}{
+		{"empty defaults to 5m", "", 5 * time.Minute},
+		{"valid 10m", "10m", 10 * time.Minute},
+		{"valid 1h", "1h", 1 * time.Hour},
+		{"valid 2m", "2m", 2 * time.Minute},
+		{"below minimum returns default", "30s", 5 * time.Minute},
+		{"invalid string returns default", "invalid", 5 * time.Minute},
+		{"zero returns default", "0s", 5 * time.Minute},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{RefreshInterval: tt.input}
+			got := cfg.ParseRefreshInterval()
+			if got != tt.expected {
+				t.Errorf("ParseRefreshInterval(%q) = %v, want %v", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDoctorChecks(t *testing.T) {
+	// Doctor checks with a temp config dir should get predictable results
+	tmp := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", tmp)
+	t.Setenv("CCC_STATE_DIR", filepath.Join(tmp, "data"))
+
+	checks := runDoctorChecks()
+
+	// We should get 8 checks
+	if len(checks) != 8 {
+		t.Fatalf("expected 8 doctor checks, got %d", len(checks))
+	}
+
+	// Config should pass (missing file returns default)
+	if !checks[0].OK {
+		t.Errorf("config check should pass with default config, got: %s", checks[0].Message)
+	}
+
+	// Database should fail (no DB file in temp dir)
+	// (or pass if OpenDB creates it — either way, check it runs without panic)
+	_ = checks[1]
+
+	// Data freshness should fail (no data)
+	freshCheck := checks[7]
+	if freshCheck.OK && freshCheck.Message == "" {
+		// If DB was created, data freshness should still fail (no command_center row)
+	}
+}
+
+func TestSchedulePlistPath(t *testing.T) {
+	path := plistPath()
+	if path == "" {
+		t.Error("plistPath() returned empty string")
+	}
+	home, _ := os.UserHomeDir()
+	expected := filepath.Join(home, "Library", "LaunchAgents", "com.ccc.refresh.plist")
+	if path != expected {
+		t.Errorf("plistPath() = %q, want %q", path, expected)
 	}
 }

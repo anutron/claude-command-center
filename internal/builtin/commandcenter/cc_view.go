@@ -28,7 +28,7 @@ func formatDuration(d time.Duration) string {
 }
 
 // renderCommandCenterView is the main entry point for the command center tab.
-func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool) string {
+func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool, lastRefreshError string) string {
 	if cc == nil {
 		empty := lipgloss.NewStyle().
 			Foreground(s.ColorMuted).
@@ -85,7 +85,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 		columns = s.PanelBorder.Width(todoWidth).Render(todoContent)
 	}
 
-	footer := renderCCFooter(s, cc.GeneratedAt, width, refreshing, frame)
+	footer := renderCCFooter(s, cc.GeneratedAt, width, refreshing, frame, lastRefreshError)
 
 	var parts []string
 	if warningBanner != "" {
@@ -559,11 +559,17 @@ func renderDetailView(s *ccStyles, todo db.Todo, inputView string, width int) st
 	return s.PanelBorder.Width(innerWidth).Render(content)
 }
 
-func renderCCFooter(s *ccStyles, generatedAt time.Time, width int, refreshing bool, frame int) string {
+func renderCCFooter(s *ccStyles, generatedAt time.Time, width int, refreshing bool, frame int, lastRefreshError string) string {
 	var left string
 	if refreshing {
 		dots := strings.Repeat(".", (frame/6)%4)
 		left = lipgloss.NewStyle().Foreground(s.ColorCyan).Render("refreshing" + dots)
+	} else if lastRefreshError != "" {
+		errMsg := lastRefreshError
+		if len(errMsg) > 60 {
+			errMsg = errMsg[:57] + "..."
+		}
+		left = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6666")).Render("refresh failed: " + errMsg)
 	} else {
 		left = s.RefreshInfo.Render("refreshed " + db.RelativeTime(generatedAt))
 	}

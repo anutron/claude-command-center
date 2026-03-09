@@ -36,6 +36,8 @@ func RunClaude(action LaunchAction) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	_ = cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("claude exited with error: %w", err)
+	}
 	return nil
 }

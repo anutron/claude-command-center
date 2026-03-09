@@ -101,6 +101,8 @@ type Plugin struct {
 	// Background CC refresh
 	ccRefreshing           bool
 	ccLastRefreshTriggered time.Time
+	lastRefreshAt          time.Time
+	lastRefreshError       string
 
 	// Undo stack
 	undoStack []undoEntry
@@ -129,6 +131,9 @@ func New() *Plugin {
 
 // StartCmds returns initial tea.Cmds (e.g., spinner tick) the host should run.
 func (p *Plugin) StartCmds() tea.Cmd {
+	if p.ccRefreshing {
+		return tea.Batch(p.spinner.Tick, refreshCCCmd())
+	}
 	return p.spinner.Tick
 }
 
@@ -159,10 +164,13 @@ func (p *Plugin) NavigateTo(route string, args map[string]string) {
 	}
 }
 
-// RefreshInterval returns the interval between background refreshes.
+// RefreshInterval returns the configured interval between background refreshes.
 func (p *Plugin) RefreshInterval() time.Duration {
 	return ccRefreshInterval
 }
+
+// ccReloadInterval is separate from refresh — it's how often the plugin re-reads from DB.
+
 
 // Refresh returns a command that triggers a CC refresh.
 func (p *Plugin) Refresh() tea.Cmd {
@@ -211,6 +219,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.bus = ctx.Bus
 	p.logger = ctx.Logger
 
+	// Set refresh interval from config
+	ccRefreshInterval = ctx.Config.ParseRefreshInterval()
+
 	pal := config.GetPalette(p.cfg.Palette, p.cfg.Colors)
 	p.styles = newCCStyles(pal)
 	p.grad = newGradientColors(pal)
@@ -249,6 +260,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		}
 		if cc != nil {
 			p.cc = cc
+			// Auto-refresh if data is stale (e.g., after machine sleep)
+			if time.Since(cc.GeneratedAt) > ccRefreshInterval {
+				p.ccRefreshing = true
+				p.ccLastRefreshTriggered = time.Now()
+			}
 		}
 		p.ccLastRead = time.Now()
 	}
@@ -916,6 +932,14 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 
 	case ccRefreshFinishedMsg:
 		p.ccRefreshing = false
+		p.lastRefreshAt = time.Now()
+		if msg.err != nil {
+			p.lastRefreshError = msg.err.Error()
+			p.flashMessage = "Refresh error: " + msg.err.Error()
+			p.flashMessageAt = time.Now()
+		} else {
+			p.lastRefreshError = ""
+		}
 		if p.database != nil {
 			return true, plugin.Action{Type: "noop", TeaCmd: p.loadCCFromDBCmd()}
 		}
@@ -1173,7 +1197,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		return view
 	}
 
-	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing)
+	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError)
 
 	if p.claudeLoading {
 		loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg

@@ -36,30 +36,32 @@ Extract the Command Center TUI from AI-RON into a standalone, installable projec
 
 ## Remaining Work
 
-### Sprint 3: Polish & Daily Driver
+### Sprint 3+4: Polish, Hardening, MCP Consolidation (in progress)
 
-**Goal:** Make CCC reliable enough to use every day. Fix bugs, smooth rough edges, add the operational infrastructure that makes it "just work."
+**Goal:** Make CCC reliable enough to use every day. Fix bugs, smooth rough edges, consolidate MCP servers, add operational infrastructure.
 
 - [ ] Fix TUI glitches identified during first real usage
-- [ ] Scheduled refresh via launchd plist (`ccc install-schedule`)
-- [ ] `ccc setup` wizard — interactive first-run for config + credentials
+- [ ] Refresh configurability (intervals, retry behavior, staleness threshold)
 - [ ] `ccc doctor` — diagnostic command checking config, credentials, connectivity
+- [ ] `ccc install-schedule` — scheduled refresh via launchd plist
+- [ ] Move gmail + things MCP servers into monorepo under `servers/`
+- [ ] MCP config generation in `ccc setup` (output `.claude/mcp.json` snippets)
+- [ ] `make install` builds enabled MCP servers
+- [ ] Docs cleanup — remove stale Supabase/memory references, update specs
 - [ ] Auto-refresh on TUI startup if data is stale (>5 min old)
 - [ ] Cross-instance notification (unix socket) so multiple TUI instances stay in sync
 - [ ] Remove any remaining personal content / hardcoded references
 
-### Sprint 4: MCP & Memory
+### Sprint 5: Architecture Evolution
 
-**Goal:** Bring MCP servers into the monorepo. Rewrite memory-mcp for SQLite. Drop Supabase.
+**Goal:** Evolve the plugin architecture to support third-party data sources and richer plugin capabilities.
 
-- [ ] Fold `servers/memory/`, `servers/gmail/`, `servers/things/` into monorepo
-- [ ] Rewrite memory-mcp to use SQLite (`better-sqlite3`, same DB file, WAL mode)
-- [ ] `ccc migrate-from-supabase` — one-time data export for Aaron
-- [ ] MCP config generation in `ccc setup` (output `.claude/mcp.json` snippets)
-- [ ] `make install` builds enabled MCP servers
-- [ ] Remove Supabase dependency entirely
+- [ ] Data Source Plugins — extract fetchers into `DataSource` interface, enable third-party data sources
+- [ ] SettingsProvider Interface — plugins own their settings UI
+- [ ] Plugin Lifecycle Events — onTabView, onLaunch, onReturn for lazy loading and analytics
+- [ ] Multi-agent codebase review for large files
 
-### Sprint 5: Distribution & Onboarding
+### Sprint 6: Distribution & Onboarding
 
 **Goal:** Someone else can `git clone` + `make install` + `ccc setup` and have a working system.
 
@@ -69,13 +71,10 @@ Extract the Command Center TUI from AI-RON into a standalone, installable projec
 - [ ] Verification: clean Mac install test
 - [ ] Ship to 2-3 beta testers, iterate on feedback
 
-### Future: Architecture Evolution
+### Future
 
 These are ideas, not commitments. Build toward them incrementally when the need arises.
 
-- **Data Source Plugins** — extract fetchers into `DataSource` interface, enable third-party data sources
-- **SettingsProvider Interface** — plugins own their settings UI
-- **Plugin Lifecycle Events** — onTabView, onLaunch, onReturn for lazy loading and analytics
 - **Full Daemon** — centralize refresh + event dispatch, TUI instances become thin clients
 
 See `docs/ideas.md` for detailed exploration of each.

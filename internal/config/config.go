@@ -3,20 +3,36 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Name    string        `yaml:"name"`
-	Palette string        `yaml:"palette"`
-	Colors  *CustomColors `yaml:"colors,omitempty"`
+	Name            string        `yaml:"name"`
+	Palette         string        `yaml:"palette"`
+	Colors          *CustomColors `yaml:"colors,omitempty"`
+	RefreshInterval string        `yaml:"refresh_interval,omitempty"`
 
 	Calendar        CalendarConfig         `yaml:"calendar"`
 	GitHub          GitHubConfig           `yaml:"github"`
 	Todos           TodosConfig            `yaml:"todos"`
 	Granola         GranolaConfig          `yaml:"granola"`
 	ExternalPlugins []ExternalPluginConfig `yaml:"external_plugins"`
+}
+
+const DefaultRefreshInterval = 5 * time.Minute
+
+// ParseRefreshInterval returns the configured refresh interval, or the default.
+func (c *Config) ParseRefreshInterval() time.Duration {
+	if c.RefreshInterval == "" {
+		return DefaultRefreshInterval
+	}
+	d, err := time.ParseDuration(c.RefreshInterval)
+	if err != nil || d < 1*time.Minute {
+		return DefaultRefreshInterval
+	}
+	return d
 }
 
 type CustomColors struct {

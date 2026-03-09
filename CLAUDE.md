@@ -14,6 +14,7 @@ CCC is a terminal-based productivity dashboard built in Go with bubbletea. It ag
 make build     # Build ccc + ccc-refresh binaries
 make test      # Run all tests (go test -v ./...)
 make install   # Symlink binaries to /usr/local/bin
+make servers   # Build MCP servers (gmail, things)
 ```
 
 ## Development Workflow: Spec-Driven Development
@@ -75,6 +76,9 @@ internal/
 specs/                # Feature specifications
 docs/                 # Roadmap, ideas, product requirements
 examples/             # Example external plugins
+servers/              # MCP servers (gmail, things)
+  gmail/              # Gmail MCP server (TypeScript)
+  things/             # Things MCP server (TypeScript, macOS-only)
 ```
 
 ## Architecture Conventions

@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -20,6 +22,25 @@ func main() {
 		case "setup":
 			if err := config.RunSetup(); err != nil {
 				fmt.Fprintf(os.Stderr, "Setup failed: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "doctor":
+			fmt.Println("Claude Command Center — Doctor")
+			fmt.Println()
+			if err := config.RunDoctor(); err != nil {
+				os.Exit(1)
+			}
+			return
+		case "install-schedule":
+			if err := config.InstallSchedule(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "uninstall-schedule":
+			if err := config.UninstallSchedule(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -42,15 +63,15 @@ func main() {
 		cfg = config.DefaultConfig()
 	}
 
-	// Open database
+	// Open database (required — TUI is useless without it)
 	dbPath := config.DBPath()
 	database, err := db.OpenDB(dbPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not open database: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: could not open database at %s: %v\n", dbPath, err)
+		fmt.Fprintf(os.Stderr, "Run 'ccc setup' to initialize, or check permissions.\n")
+		os.Exit(1)
 	}
-	if database != nil {
-		defer database.Close()
-	}
+	defer database.Close()
 
 	// Load external plugins (persist across TUI loop iterations).
 	bus := plugin.NewBus()
@@ -76,7 +97,18 @@ func main() {
 	for _, ep := range extPlugins {
 		pluginInterfaces = append(pluginInterfaces, ep)
 	}
+	// Graceful shutdown on SIGINT/SIGTERM to clean up plugin subprocesses
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		for _, ep := range pluginInterfaces {
+			ep.Shutdown()
+		}
+		os.Exit(0)
+	}()
 	defer func() {
+		signal.Stop(sigCh)
 		for _, ep := range pluginInterfaces {
 			ep.Shutdown()
 		}
@@ -99,8 +131,7 @@ func main() {
 		}
 
 		if err := tui.RunClaude(*fm.Launch); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to launch claude: %v\n", err)
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "Claude error: %v\n", err)
 		}
 		// Claude exited — loop back to TUI
 	}
@@ -112,10 +143,13 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "Usage: ccc [command]")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Commands:")
-	fmt.Fprintln(os.Stderr, "  (default)    Launch session picker")
-	fmt.Fprintln(os.Stderr, "  setup        Run interactive setup wizard")
-	fmt.Fprintln(os.Stderr, "  sessions     Same as default")
+	fmt.Fprintln(os.Stderr, "  (default)            Launch session picker")
+	fmt.Fprintln(os.Stderr, "  setup                Run interactive setup wizard")
+	fmt.Fprintln(os.Stderr, "  doctor               Check system health")
+	fmt.Fprintln(os.Stderr, "  install-schedule     Install launchd plist for background refresh")
+	fmt.Fprintln(os.Stderr, "  uninstall-schedule   Remove background refresh schedule")
+	fmt.Fprintln(os.Stderr, "  sessions             Same as default")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Options:")
-	fmt.Fprintln(os.Stderr, "  -h, --help   Show this help")
+	fmt.Fprintln(os.Stderr, "  -h, --help           Show this help")
 }

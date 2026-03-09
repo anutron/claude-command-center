@@ -49,6 +49,33 @@ Refresh locking is implemented in `internal/refresh/lock.go`:
 
 The lockfile lives at `~/.config/ccc/data/refresh.lock`. Stale locks are detected by checking if the PID is still alive.
 
+## Configurable Refresh Interval
+
+The refresh interval is configurable via `config.yaml`:
+
+```yaml
+refresh_interval: "10m"  # default: "5m", minimum: "1m"
+```
+
+`Config.ParseRefreshInterval()` parses the duration string, returning `DefaultRefreshInterval` (5m) if the string is empty, unparseable, or less than 1 minute.
+
+The CC plugin reads this at `Init()` and uses it for:
+- Background auto-refresh timer
+- Stale data detection on startup
+
+## Refresh Status Indicator
+
+The CC footer shows refresh status:
+- **Normal**: "refreshed Xm ago" (muted)
+- **Refreshing**: "refreshing..." with animated dots (cyan)
+- **Error**: "refresh failed: ..." (red, truncated to 60 chars)
+
+Fields on Plugin struct: `lastRefreshAt time.Time`, `lastRefreshError string`.
+
+## Auto-Refresh on Startup
+
+During `Init()`, after loading CC from DB, if `GeneratedAt` is older than the configured refresh interval, an auto-refresh is triggered via `StartCmds()`. This handles the common case of launching CCC after machine sleep.
+
 ## ccc-refresh Binary
 
 A standalone binary at `cmd/ccc-refresh/main.go` provides the CLI entrypoint for refresh.
