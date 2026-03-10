@@ -10,6 +10,11 @@ import (
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/lockfile"
 	"github.com/anutron/claude-command-center/internal/refresh"
+	calendarsrc "github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
+	githubsrc "github.com/anutron/claude-command-center/internal/refresh/sources/github"
+	gmailsrc "github.com/anutron/claude-command-center/internal/refresh/sources/gmail"
+	granolasrc "github.com/anutron/claude-command-center/internal/refresh/sources/granola"
+	slacksrc "github.com/anutron/claude-command-center/internal/refresh/sources/slack"
 )
 
 func main() {
@@ -57,11 +62,11 @@ func main() {
 
 	// Build DataSources from config
 	sources := []refresh.DataSource{
-		refresh.NewCalendarSource(cfg.Calendar.Enabled, calendarIDs, nil),
-		refresh.NewGmailSource(),
-		refresh.NewGitHubSource(cfg.GitHub.Enabled, cfg.GitHub.Repos, cfg.GitHub.Username),
-		refresh.NewSlackSource(l),
-		refresh.NewGranolaSource(cfg.Granola.Enabled, l),
+		calendarsrc.New(cfg.Calendar.Enabled, calendarIDs, nil),
+		gmailsrc.New(),
+		githubsrc.New(cfg.GitHub.Enabled, cfg.GitHub.Repos, cfg.GitHub.Username),
+		slacksrc.New(l),
+		granolasrc.New(cfg.Granola.Enabled, l),
 	}
 
 	opts := refresh.Options{

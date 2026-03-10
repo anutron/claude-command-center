@@ -1,25 +1,30 @@
-package refresh
+package gmail
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/refresh"
 	"golang.org/x/oauth2"
-	"google.golang.org/api/gmail/v1"
+	gmail "google.golang.org/api/gmail/v1"
 	"google.golang.org/api/option"
 )
 
 // GmailSource fetches unread actionable emails from Gmail.
 type GmailSource struct{}
 
-func NewGmailSource() *GmailSource { return &GmailSource{} }
+// New creates a GmailSource.
+func New() *GmailSource { return &GmailSource{} }
 
 func (s *GmailSource) Name() string  { return "gmail" }
 func (s *GmailSource) Enabled() bool { return true } // always enabled; auth check in Fetch
 
-func (s *GmailSource) Fetch(ctx context.Context) (*SourceResult, error) {
+func (s *GmailSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) {
 	ts, err := loadGmailAuth()
 	if err != nil {
 		return nil, fmt.Errorf("gmail auth: %w", err)
@@ -30,7 +35,38 @@ func (s *GmailSource) Fetch(ctx context.Context) (*SourceResult, error) {
 		return nil, fmt.Errorf("fetch failed: %w", err)
 	}
 
-	return &SourceResult{Threads: threads}, nil
+	return &refresh.SourceResult{Threads: threads}, nil
+}
+
+func loadGmailAuth() (oauth2.TokenSource, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("home dir: %w", err)
+	}
+	path := filepath.Join(home, ".gmail-mcp", "work.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("no gmail token at %s: %w", path, err)
+	}
+
+	var tf refresh.GoogleTokenFile
+	if err := json.Unmarshal(data, &tf); err != nil {
+		return nil, fmt.Errorf("parsing gmail token: %w", err)
+	}
+
+	clientID := tf.ClientID
+	clientSecret := tf.ClientSecret
+	if clientID == "" {
+		clientID = os.Getenv("GMAIL_CLIENT_ID")
+		clientSecret = os.Getenv("GMAIL_CLIENT_SECRET")
+	}
+	if clientID == "" {
+		return nil, fmt.Errorf("gmail token missing clientId and GMAIL_CLIENT_ID not set")
+	}
+
+	conf := refresh.LoadGoogleOAuth2Config(clientID, clientSecret, gmail.GmailReadonlyScope)
+	tok := tf.ToOAuth2Token()
+	return conf.TokenSource(context.Background(), tok), nil
 }
 
 func fetchActionableEmails(ctx context.Context, ts oauth2.TokenSource) ([]db.Thread, error) {

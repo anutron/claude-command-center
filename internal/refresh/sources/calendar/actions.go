@@ -1,4 +1,4 @@
-package refresh
+package calendar
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/db"
 	"golang.org/x/oauth2"
-	"google.golang.org/api/calendar/v3"
+	gcal "google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 )
 
@@ -17,7 +17,7 @@ func executePendingActions(ctx context.Context, ts oauth2.TokenSource, cc *db.Co
 		return
 	}
 
-	srv, err := calendar.NewService(ctx, option.WithTokenSource(ts))
+	srv, err := gcal.NewService(ctx, option.WithTokenSource(ts))
 	if err != nil {
 		log.Printf("cannot execute pending actions: calendar service error: %v", err)
 		return
@@ -45,12 +45,12 @@ func executePendingActions(ctx context.Context, ts oauth2.TokenSource, cc *db.Co
 			continue
 		}
 
-		event := &calendar.Event{
+		event := &gcal.Event{
 			Summary: title,
-			Start: &calendar.EventDateTime{
+			Start: &gcal.EventDateTime{
 				DateTime: slot.Format(time.RFC3339),
 			},
-			End: &calendar.EventDateTime{
+			End: &gcal.EventDateTime{
 				DateTime: slot.Add(time.Duration(action.DurationMinutes) * time.Minute).Format(time.RFC3339),
 			},
 		}
@@ -68,7 +68,7 @@ func executePendingActions(ctx context.Context, ts oauth2.TokenSource, cc *db.Co
 	cc.PendingActions = remaining
 }
 
-func findFreeSlot(ctx context.Context, srv *calendar.Service, durationMinutes int) (time.Time, error) {
+func findFreeSlot(ctx context.Context, srv *gcal.Service, durationMinutes int) (time.Time, error) {
 	now := time.Now()
 	start := now.Truncate(15 * time.Minute).Add(15 * time.Minute)
 	endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 18, 0, 0, 0, now.Location())

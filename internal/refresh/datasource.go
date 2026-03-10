@@ -2,6 +2,7 @@ package refresh
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/anutron/claude-command-center/internal/db"
 )
@@ -15,6 +16,12 @@ type DataSource interface {
 	Enabled() bool
 	// Fetch loads auth, fetches data, and returns results.
 	Fetch(ctx context.Context) (*SourceResult, error)
+}
+
+// PostMerger is optionally implemented by DataSources that need to perform
+// actions after the merge step (e.g., calendar pending action execution).
+type PostMerger interface {
+	PostMerge(ctx context.Context, db *sql.DB, cc *db.CommandCenter, verbose bool) error
 }
 
 // SourceResult holds data returned by a single DataSource.

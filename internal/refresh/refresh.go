@@ -30,7 +30,7 @@ func Run(opts Options) error {
 		log.SetOutput(os.Stderr)
 	}
 
-	loadEnvFile()
+	LoadEnvFile()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -38,10 +38,6 @@ func Run(opts Options) error {
 	existing, err := db.LoadCommandCenterFromDB(opts.DB)
 	if err != nil {
 		log.Printf("warning: loading existing state: %v", err)
-	}
-
-	if err := migrateCalendarCredentials(); err != nil {
-		log.Printf("calendar credential migration: %v", err)
 	}
 
 	// Fetch from all enabled sources in parallel
@@ -92,10 +88,13 @@ func Run(opts Options) error {
 
 	merged := Merge(existing, fresh)
 
-	// Execute pending calendar actions if calendar auth is available
-	calTS, err := calendarTokenSource()
-	if err == nil {
-		executePendingActions(ctx, calTS, merged)
+	// Execute post-merge hooks
+	for _, src := range opts.Sources {
+		if pm, ok := src.(PostMerger); ok {
+			if err := pm.PostMerge(ctx, opts.DB, merged, opts.Verbose); err != nil {
+				log.Printf("%s post-merge: %v", src.Name(), err)
+			}
+		}
 	}
 
 	// Generate suggestions if LLM is available

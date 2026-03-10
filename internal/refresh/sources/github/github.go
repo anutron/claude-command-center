@@ -1,4 +1,4 @@
-package refresh
+package github
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/refresh"
 )
 
 // GitHubSource fetches open PRs authored by the user from configured repos.
@@ -17,8 +18,8 @@ type GitHubSource struct {
 	enabled  bool
 }
 
-// NewGitHubSource creates a GitHubSource with the given config.
-func NewGitHubSource(enabled bool, repos []string, username string) *GitHubSource {
+// New creates a GitHubSource with the given config.
+func New(enabled bool, repos []string, username string) *GitHubSource {
 	return &GitHubSource{
 		Repos:    repos,
 		Username: username,
@@ -29,13 +30,13 @@ func NewGitHubSource(enabled bool, repos []string, username string) *GitHubSourc
 func (s *GitHubSource) Name() string  { return "github" }
 func (s *GitHubSource) Enabled() bool { return s.enabled }
 
-func (s *GitHubSource) Fetch(ctx context.Context) (*SourceResult, error) {
+func (s *GitHubSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) {
 	threads, err := fetchGitHubThreads(ctx, s.Repos)
 	if err != nil {
 		return nil, fmt.Errorf("fetch failed: %w", err)
 	}
 
-	return &SourceResult{Threads: threads}, nil
+	return &refresh.SourceResult{Threads: threads}, nil
 }
 
 type ghPR struct {

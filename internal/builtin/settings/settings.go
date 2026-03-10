@@ -10,8 +10,10 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
+	ghsettings "github.com/anutron/claude-command-center/internal/refresh/sources/github"
+	"github.com/anutron/claude-command-center/internal/refresh/sources/granola"
 	"github.com/anutron/claude-command-center/internal/ui"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -34,6 +36,9 @@ type Plugin struct {
 	bus      plugin.EventBus
 	styles   settingsStyles
 
+	// SettingsProvider implementations for data sources
+	providers map[string]plugin.SettingsProvider
+
 	subView       string // "plugins", "logs", "palette"
 	cursor        int
 	logOffset     int
@@ -41,13 +46,9 @@ type Plugin struct {
 	items         []settingsItem
 
 	// Detail view state
-	detailView    bool
-	detailIdx     int
-	detailCursor  int    // cursor within detail view fields
-	repoInput     textinput.Model
-	repoEditing   bool   // true when text input is focused
-	usernameInput textinput.Model
-	usernameEditing bool
+	detailView   bool
+	detailIdx    int
+	detailCursor int // cursor within detail view fields
 
 	flashMessage   string
 	flashMessageAt time.Time
@@ -109,6 +110,14 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 	p.rebuildItems()
 
+	// Initialize providers map and register data source settings providers.
+	if p.providers == nil {
+		p.providers = make(map[string]plugin.SettingsProvider)
+	}
+	p.providers["calendar"] = calendar.NewSettings(p.cfg, pal)
+	p.providers["github"] = ghsettings.NewSettings(p.cfg, pal)
+	p.providers["granola"] = granola.NewSettings(p.cfg, pal)
+
 	// Subscribe to todo events for logging
 	if p.bus != nil {
 		todoTopics := []string{"todo.completed", "todo.created", "todo.dismissed", "todo.deferred", "todo.promoted", "todo.edited"}
@@ -126,6 +135,15 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	return nil
+}
+
+// RegisterProvider adds a SettingsProvider for a given slug.
+// This allows data source packages to provide their own settings UI.
+func (p *Plugin) RegisterProvider(slug string, sp plugin.SettingsProvider) {
+	if p.providers == nil {
+		p.providers = make(map[string]plugin.SettingsProvider)
+	}
+	p.providers[slug] = sp
 }
 
 // StartCmds returns initial commands (none needed for settings).
@@ -410,113 +428,65 @@ func (p *Plugin) openDetailView(idx int) {
 	p.detailView = true
 	p.detailIdx = idx
 	p.detailCursor = 0
-	p.repoEditing = false
-	p.usernameEditing = false
 
-	// Initialize text inputs for GitHub
+	// Reset provider editing state if applicable.
 	item := p.items[idx]
-	if item.slug == "github" {
-		p.repoInput = textinput.New()
-		p.repoInput.Placeholder = "owner/repo"
-		p.repoInput.CharLimit = 100
-
-		p.usernameInput = textinput.New()
-		p.usernameInput.Placeholder = "GitHub username"
-		p.usernameInput.CharLimit = 50
-		p.usernameInput.SetValue(p.cfg.GitHub.Username)
+	if sp, ok := p.providers[item.slug]; ok {
+		if resetter, ok := sp.(interface{ ResetEditing() }); ok {
+			resetter.ResetEditing()
+		}
 	}
 }
 
 func (p *Plugin) handleDetailKey(msg tea.KeyMsg) plugin.Action {
 	item := p.items[p.detailIdx]
 
-	// If editing a text input, route keys there
-	if p.repoEditing {
-		switch msg.String() {
-		case "enter":
-			val := strings.TrimSpace(p.repoInput.Value())
-			if val != "" {
-				p.cfg.GitHub.Repos = append(p.cfg.GitHub.Repos, val)
-				config.Save(p.cfg)
-				p.flashMessage = "Added repo: " + val
-				p.flashMessageAt = time.Now()
-			}
-			p.repoInput.SetValue("")
-			p.repoEditing = false
-			p.repoInput.Blur()
-			return plugin.NoopAction()
-		case "esc":
-			p.repoEditing = false
-			p.repoInput.Blur()
-			return plugin.NoopAction()
-		}
-		p.repoInput, _ = p.repoInput.Update(msg)
-		return plugin.NoopAction()
-	}
-
-	if p.usernameEditing {
-		switch msg.String() {
-		case "enter":
-			p.cfg.GitHub.Username = strings.TrimSpace(p.usernameInput.Value())
-			config.Save(p.cfg)
-			p.flashMessage = "Username saved"
-			p.flashMessageAt = time.Now()
-			p.usernameEditing = false
-			p.usernameInput.Blur()
-			return plugin.NoopAction()
-		case "esc":
-			p.usernameEditing = false
-			p.usernameInput.Blur()
-			return plugin.NoopAction()
-		}
-		p.usernameInput, _ = p.usernameInput.Update(msg)
-		return plugin.NoopAction()
-	}
-
+	// esc and space are always handled by the settings plugin.
 	switch msg.String() {
 	case "esc":
 		p.detailView = false
 		return plugin.NoopAction()
 	case " ":
-		// Toggle enable/disable from detail view
 		if item.toggleable {
 			p.items[p.detailIdx].enabled = !p.items[p.detailIdx].enabled
 			p.applyToggle(p.items[p.detailIdx])
 		}
+		return plugin.NoopAction()
+	}
+
+	// Check SettingsProvider — providers handle their own cursor, editing, etc.
+	if sp, ok := p.providers[item.slug]; ok {
+		action := sp.HandleSettingsKey(msg)
+		if action.Type == plugin.ActionFlash {
+			p.flashMessage = action.Payload
+			p.flashMessageAt = time.Now()
+			return plugin.NoopAction()
+		}
+		if action.Type != plugin.ActionUnhandled {
+			return action
+		}
+	} else if plug, ok := p.registry.BySlug(item.slug); ok {
+		if sp, ok := plug.(plugin.SettingsProvider); ok {
+			action := sp.HandleSettingsKey(msg)
+			if action.Type == plugin.ActionFlash {
+				p.flashMessage = action.Payload
+				p.flashMessageAt = time.Now()
+				return plugin.NoopAction()
+			}
+			if action.Type != plugin.ActionUnhandled {
+				return action
+			}
+		}
+	}
+
+	// Generic navigation for views without a provider (or unhandled keys).
+	switch msg.String() {
 	case "up", "k":
 		if p.detailCursor > 0 {
 			p.detailCursor--
 		}
 	case "down", "j":
 		p.detailCursor++
-	}
-
-	// GitHub-specific keys
-	if item.slug == "github" {
-		switch msg.String() {
-		case "a":
-			p.repoEditing = true
-			p.repoInput.Focus()
-		case "u":
-			p.usernameEditing = true
-			p.usernameInput.SetValue(p.cfg.GitHub.Username)
-			p.usernameInput.Focus()
-		case "x", "d":
-			// Delete repo at detailCursor position
-			if p.detailCursor < len(p.cfg.GitHub.Repos) {
-				removed := p.cfg.GitHub.Repos[p.detailCursor]
-				p.cfg.GitHub.Repos = append(
-					p.cfg.GitHub.Repos[:p.detailCursor],
-					p.cfg.GitHub.Repos[p.detailCursor+1:]...,
-				)
-				config.Save(p.cfg)
-				p.flashMessage = "Removed: " + removed
-				p.flashMessageAt = time.Now()
-				if p.detailCursor >= len(p.cfg.GitHub.Repos) && p.detailCursor > 0 {
-					p.detailCursor--
-				}
-			}
-		}
 	}
 
 	return plugin.NoopAction()
@@ -535,18 +505,21 @@ func (p *Plugin) viewDetail(width, height int) string {
 
 	switch item.kind {
 	case "builtin-plugin":
-		lines = append(lines, p.viewDetailBuiltinPlugin(item)...)
+		if plug, ok := p.registry.BySlug(item.slug); ok {
+			if sp, ok := plug.(plugin.SettingsProvider); ok {
+				lines = append(lines, sp.SettingsView(width, height))
+			} else {
+				lines = append(lines, p.viewDetailBuiltinPlugin(item)...)
+			}
+		} else {
+			lines = append(lines, p.viewDetailBuiltinPlugin(item)...)
+		}
 	case "external-plugin":
 		lines = append(lines, p.viewDetailExternalPlugin(item)...)
 	case "datasource":
-		switch item.slug {
-		case "calendar":
-			lines = append(lines, p.viewDetailCalendar(item)...)
-		case "github":
-			lines = append(lines, p.viewDetailGitHub(item)...)
-		case "granola":
-			lines = append(lines, p.viewDetailGranola(item)...)
-		default:
+		if sp, ok := p.providers[item.slug]; ok {
+			lines = append(lines, sp.SettingsView(width, height))
+		} else {
 			lines = append(lines, p.viewDetailBuiltinPlugin(item)...)
 		}
 	}
@@ -607,140 +580,6 @@ func (p *Plugin) viewDetailExternalPlugin(item settingsItem) []string {
 	return lines
 }
 
-func (p *Plugin) viewDetailCalendar(item settingsItem) []string {
-	var lines []string
-
-	statusText := "[off]"
-	statusStyle := p.styles.disabled
-	if item.enabled {
-		statusText = "[on] "
-		statusStyle = p.styles.enabled
-	}
-
-	lines = append(lines, fmt.Sprintf("  %s %s",
-		p.styles.muted.Render("Enabled:"),
-		statusStyle.Render(statusText+" (space to toggle)")))
-
-	// Credential status
-	credStatus := p.styles.enabled.Render("Configured")
-	if err := config.ValidateCalendar(); err != nil {
-		credStatus = p.styles.logError.Render("Not configured")
-	}
-	lines = append(lines, fmt.Sprintf("  %s %s",
-		p.styles.muted.Render("Credentials:"),
-		credStatus))
-
-	// Configured calendars
-	lines = append(lines, "")
-	lines = append(lines, p.styles.header.Render("  CALENDARS"))
-	if len(p.cfg.Calendar.Calendars) == 0 {
-		lines = append(lines, p.styles.muted.Render("  No calendars configured"))
-	} else {
-		for _, cal := range p.cfg.Calendar.Calendars {
-			label := cal.ID
-			if cal.Label != "" {
-				label = cal.Label
-			}
-			lines = append(lines, fmt.Sprintf("    %s", p.styles.itemName.Render(label)))
-		}
-	}
-
-	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  Run 'ccc setup' to add or modify calendars"))
-
-	return lines
-}
-
-func (p *Plugin) viewDetailGitHub(item settingsItem) []string {
-	var lines []string
-
-	statusText := "[off]"
-	statusStyle := p.styles.disabled
-	if item.enabled {
-		statusText = "[on] "
-		statusStyle = p.styles.enabled
-	}
-
-	lines = append(lines, fmt.Sprintf("  %s %s",
-		p.styles.muted.Render("Enabled:"),
-		statusStyle.Render(statusText+" (space to toggle)")))
-
-	// Credential status
-	credStatus := p.styles.enabled.Render("Authenticated")
-	if err := config.ValidateGitHub(); err != nil {
-		credStatus = p.styles.logError.Render("Not authenticated")
-	}
-	lines = append(lines, fmt.Sprintf("  %s %s",
-		p.styles.muted.Render("gh CLI:"),
-		credStatus))
-
-	// Username
-	username := p.cfg.GitHub.Username
-	if username == "" {
-		username = "(not set)"
-	}
-	lines = append(lines, fmt.Sprintf("  %s %s %s",
-		p.styles.muted.Render("Username:"),
-		p.styles.itemName.Render(username),
-		p.styles.muted.Render("(u to edit)")))
-	if p.usernameEditing {
-		lines = append(lines, "  "+p.usernameInput.View())
-	}
-
-	// Repos
-	lines = append(lines, "")
-	lines = append(lines, p.styles.header.Render("  REPOS"))
-	if len(p.cfg.GitHub.Repos) == 0 {
-		lines = append(lines, p.styles.muted.Render("  No repos configured"))
-	} else {
-		for i, repo := range p.cfg.GitHub.Repos {
-			cursor := "  "
-			if i == p.detailCursor {
-				cursor = p.styles.pointer.Render("> ")
-			}
-			lines = append(lines, fmt.Sprintf("  %s%s", cursor, p.styles.itemName.Render(repo)))
-		}
-	}
-
-	if p.repoEditing {
-		lines = append(lines, "  "+p.repoInput.View())
-	}
-
-	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  a add repo · x remove · u edit username"))
-	lines = append(lines, p.styles.muted.Render("  Run 'gh auth login' to authenticate"))
-
-	return lines
-}
-
-func (p *Plugin) viewDetailGranola(item settingsItem) []string {
-	var lines []string
-
-	statusText := "[off]"
-	statusStyle := p.styles.disabled
-	if item.enabled {
-		statusText = "[on] "
-		statusStyle = p.styles.enabled
-	}
-
-	lines = append(lines, fmt.Sprintf("  %s %s",
-		p.styles.muted.Render("Enabled:"),
-		statusStyle.Render(statusText+" (space to toggle)")))
-
-	// Credential status
-	credStatus := p.styles.enabled.Render("Token found")
-	if err := config.ValidateGranola(); err != nil {
-		credStatus = p.styles.logError.Render("Not configured")
-	}
-	lines = append(lines, fmt.Sprintf("  %s %s",
-		p.styles.muted.Render("Credentials:"),
-		credStatus))
-
-	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  Open Granola app to refresh token"))
-
-	return lines
-}
 
 func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	switch msg.(type) {

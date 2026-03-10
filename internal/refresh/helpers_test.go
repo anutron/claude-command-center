@@ -7,50 +7,6 @@ import (
 	"github.com/anutron/claude-command-center/internal/db"
 )
 
-func TestMatchesDomain(t *testing.T) {
-	tests := []struct {
-		email   string
-		domains []string
-		want    bool
-	}{
-		{"user@example.com", []string{"example.com"}, true},
-		{"user@example.com", []string{"other.com"}, false},
-		{"user@example.com", []string{"other.com", "example.com"}, true},
-		{"user@sub.example.com", []string{"example.com"}, false},
-		{"", []string{"example.com"}, false},
-		{"user@example.com", nil, false},
-		{"user@example.com", []string{}, false},
-	}
-	for _, tt := range tests {
-		got := matchesDomain(tt.email, tt.domains)
-		if got != tt.want {
-			t.Errorf("matchesDomain(%q, %v) = %v, want %v", tt.email, tt.domains, got, tt.want)
-		}
-	}
-}
-
-func TestHasCommitmentLanguage(t *testing.T) {
-	tests := []struct {
-		text string
-		want bool
-	}{
-		{"I'll send you the report", true},
-		{"I will handle this", true},
-		{"Let me check on that", true},
-		{"No commitments here", false},
-		{"Just a regular message", false},
-		{"I'LL SEND IT", true}, // case insensitive
-		{"action item: review PR", true},
-		{"", false},
-	}
-	for _, tt := range tests {
-		got := hasCommitmentLanguage(tt.text)
-		if got != tt.want {
-			t.Errorf("hasCommitmentLanguage(%q) = %v, want %v", tt.text, got, tt.want)
-		}
-	}
-}
-
 func TestCleanJSON(t *testing.T) {
 	tests := []struct {
 		input string
@@ -63,9 +19,9 @@ func TestCleanJSON(t *testing.T) {
 		{"", ""},
 	}
 	for _, tt := range tests {
-		got := cleanJSON(tt.input)
+		got := CleanJSON(tt.input)
 		if got != tt.want {
-			t.Errorf("cleanJSON(%q) = %q, want %q", tt.input, got, tt.want)
+			t.Errorf("CleanJSON(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }

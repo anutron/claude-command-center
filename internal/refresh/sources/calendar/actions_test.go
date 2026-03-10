@@ -1,4 +1,4 @@
-package refresh
+package calendar
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"google.golang.org/api/calendar/v3"
+	gcal "google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 )
 
@@ -15,14 +15,14 @@ func TestFindFreeSlot_MalformedTimes(t *testing.T) {
 	// Mock Google Calendar API server that returns events with unparseable times
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		resp := &calendar.Events{
-			Items: []*calendar.Event{
+		resp := &gcal.Events{
+			Items: []*gcal.Event{
 				{
 					Summary: "Malformed Event",
-					Start: &calendar.EventDateTime{
+					Start: &gcal.EventDateTime{
 						DateTime: "not-a-valid-time",
 					},
-					End: &calendar.EventDateTime{
+					End: &gcal.EventDateTime{
 						DateTime: "also-not-valid",
 					},
 				},
@@ -34,7 +34,7 @@ func TestFindFreeSlot_MalformedTimes(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	srv, err := calendar.NewService(context.Background(),
+	srv, err := gcal.NewService(context.Background(),
 		option.WithHTTPClient(server.Client()),
 		option.WithEndpoint(server.URL),
 	)

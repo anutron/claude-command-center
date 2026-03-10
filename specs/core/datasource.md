@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Extensible data source interface for the refresh pipeline. Replaces hardcoded fetcher goroutines in `refresh.Run()` with a uniform `DataSource` interface, enabling each source to own its auth loading, enablement logic, and data fetching independently.
+Extensible data source interface for the refresh pipeline. Each source owns its auth loading, enablement logic, and data fetching independently. Sources live in sub-packages under `internal/refresh/sources/`.
 
 ## Interface
 
@@ -33,15 +33,66 @@ type SourceResult struct {
 
 Each source populates only the fields it produces. Nil/empty fields are ignored during result combination.
 
+### PostMerger (optional)
+
+```go
+type PostMerger interface {
+    PostMerge(ctx context.Context, db *sql.DB, cc *db.CommandCenter, verbose bool) error
+}
+```
+
+DataSources that need to perform actions after the merge step (e.g., calendar pending action execution) implement this optional interface. The orchestrator checks each source after merge and calls PostMerge if implemented.
+
+## Package Structure
+
+```
+internal/refresh/
+  datasource.go          # DataSource, SourceResult, PostMerger, combineResults
+  refresh.go             # Run() orchestrator
+  merge.go               # Merge() logic
+  types.go               # FreshData
+  llm.go                 # generateSuggestions, CleanJSON, activeTodos, activeThreads
+  auth.go                # Shared auth: GoogleTokenFile, LoadGoogleOAuth2Config, LoadEnvFile
+  sources/
+    calendar/
+      calendar.go        # CalendarSource (implements DataSource + PostMerger)
+      auth.go            # Calendar-specific auth, RunCalendarAuth, MigrateCalendarCredentials
+      actions.go         # executePendingActions, findFreeSlot
+      settings.go        # CalendarSettings (implements plugin.SettingsProvider)
+    github/
+      github.go          # GitHubSource (implements DataSource)
+      settings.go        # GitHubSettings (implements plugin.SettingsProvider)
+    gmail/
+      gmail.go           # GmailSource (implements DataSource)
+    granola/
+      granola.go         # GranolaSource (implements DataSource)
+      llm.go             # extractCommitments (Granola-specific LLM extraction)
+      settings.go        # GranolaSettings (implements plugin.SettingsProvider)
+    slack/
+      slack.go           # SlackSource (implements DataSource)
+      llm.go             # extractSlackCommitments (Slack-specific LLM extraction)
+```
+
+### What stays in `internal/refresh/`
+
+| File | Contents | Why |
+|------|----------|-----|
+| `datasource.go` | DataSource, SourceResult, PostMerger, combineResults() | Shared contract |
+| `refresh.go` | Run() orchestrator | Source-agnostic coordination |
+| `merge.go` | Merge() logic | Source-agnostic |
+| `types.go` | FreshData | Shared type |
+| `llm.go` | generateSuggestions(), CleanJSON(), activeTodos(), activeThreads() | Post-merge global logic |
+| `auth.go` | GoogleTokenFile, LoadGoogleOAuth2Config(), LoadEnvFile(), LoadCalendarCredsFromClaudeConfig() | Shared by calendar + gmail |
+
 ## Implementations
 
-| Struct | Name | Returns | Config |
-|--------|------|---------|--------|
-| CalendarSource | "calendar" | Calendar | CalendarIDs, AutoAcceptDomains, enabled flag |
-| GmailSource | "gmail" | Threads | (auth only) |
-| GitHubSource | "github" | Threads | Repos |
-| SlackSource | "slack" | Todos (via LLM) | llm.LLM |
-| GranolaSource | "granola" | Todos (via LLM) | llm.LLM |
+| Package | Name | Returns | Config | PostMerger |
+|---------|------|---------|--------|------------|
+| sources/calendar | "calendar" | Calendar | CalendarIDs, AutoAcceptDomains, enabled | Yes (pending actions) |
+| sources/gmail | "gmail" | Threads | (auth only) | No |
+| sources/github | "github" | Threads | Repos, Username, enabled | No |
+| sources/slack | "slack" | Todos (via LLM) | llm.LLM | No |
+| sources/granola | "granola" | Todos (via LLM) | llm.LLM, enabled | No |
 
 Each source struct holds its configuration (passed at construction time). Auth loading happens inside `Fetch()`, not at construction.
 
@@ -49,10 +100,14 @@ Each source struct holds its configuration (passed at construction time). Auth l
 
 ### refresh.Run() flow
 
-1. Load env, existing state, migrate credentials (unchanged)
-2. Iterate `opts.Sources`: for each enabled source, spawn a goroutine calling `Fetch(ctx)`
-3. Collect all `SourceResult` values; combine into `FreshData`
-4. Merge, execute pending actions, generate suggestions, save (unchanged)
+1. Load env via `LoadEnvFile()`
+2. Load existing state from DB
+3. Iterate `opts.Sources`: for each enabled source, spawn a goroutine calling `Fetch(ctx)`
+4. Collect all `SourceResult` values; combine into `FreshData` via `combineResults()`
+5. Merge fresh data with existing state
+6. Execute PostMerger hooks: iterate sources, call `PostMerge()` on those implementing PostMerger
+7. Generate suggestions via LLM (if available)
+8. Save merged result to DB
 
 ### combineResults()
 
@@ -65,7 +120,11 @@ Note: `FreshData` does not carry warnings. Source warnings (from `SourceResult.W
 
 ### LLM extraction
 
-Slack and Granola sources that need LLM perform extraction inside `Fetch()`. They receive `llm.LLM` at construction time. If LLM is a `NoopLLM`, they still fetch raw data but skip extraction (returning empty todos).
+Slack and Granola sources that need LLM perform extraction inside `Fetch()`. They receive `llm.LLM` at construction time. If LLM is a `NoopLLM`, they still fetch raw data but skip extraction (returning empty todos). LLM-specific logic lives in source-local `llm.go` files; the shared `CleanJSON()` helper is exported from the parent refresh package.
+
+### SettingsProvider
+
+Calendar, GitHub, and Granola source packages also export `Settings` types implementing `plugin.SettingsProvider`. These are constructed by the Settings plugin at init time and provide source-specific settings detail views (enabled toggle, credential status, repo management, etc.).
 
 ## Test Cases
 
@@ -75,10 +134,14 @@ Slack and Granola sources that need LLM perform extraction inside `Fetch()`. The
 - Calendar field uses first non-nil value
 - Todos and threads from multiple sources are concatenated
 - Warnings from sources are preserved
+- PostMerger is called after merge for sources that implement it
+- matchesDomain correctly matches email domains (calendar)
+- hasCommitmentLanguage detects commitment phrases (slack)
+- findFreeSlot returns error for malformed event times (calendar)
 
-## Key Changes from Previous Design
+## Key Design Decisions
 
-- `Options` no longer carries per-source config (CalendarIDs, GitHubRepos, etc.) — those live on source structs
-- `Options` carries `Sources []DataSource` instead of enable flags and config fields
-- Auth loading moves from `Run()` into each source's `Fetch()`
-- LLM extraction for Slack/Granola happens inside `Fetch()` rather than as a separate post-fetch phase
+- Source packages import the parent `refresh` package for shared types (GoogleTokenFile, CleanJSON, etc.) — no circular imports since `refresh` never imports source packages
+- `cmd/ccc-refresh/main.go` constructs sources from source packages, passes them to `refresh.Run()`
+- Calendar credential migration happens in `CalendarSource.Fetch()`, making it self-contained
+- PostMerger pattern keeps the orchestrator source-agnostic while allowing calendar-specific post-merge actions

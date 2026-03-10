@@ -1,4 +1,4 @@
-package refresh
+package granola
 
 import (
 	"bytes"
@@ -8,12 +8,26 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
+	"github.com/anutron/claude-command-center/internal/refresh"
 )
+
+// RawMeeting is a meeting transcript from Granola.
+type RawMeeting struct {
+	ID         string    `json:"id"`
+	Title      string    `json:"title"`
+	StartTime  time.Time `json:"start_time"`
+	EndTime    time.Time `json:"end_time"`
+	Transcript string    `json:"transcript"`
+	Summary    string    `json:"summary"`
+	Attendees  []string  `json:"attendees"`
+}
 
 // GranolaSource fetches meeting transcripts from Granola and uses LLM to extract commitments.
 type GranolaSource struct {
@@ -21,8 +35,8 @@ type GranolaSource struct {
 	enabled bool
 }
 
-// NewGranolaSource creates a GranolaSource with the given config.
-func NewGranolaSource(enabled bool, l llm.LLM) *GranolaSource {
+// New creates a GranolaSource with the given config.
+func New(enabled bool, l llm.LLM) *GranolaSource {
 	return &GranolaSource{
 		LLM:     l,
 		enabled: enabled,
@@ -32,7 +46,7 @@ func NewGranolaSource(enabled bool, l llm.LLM) *GranolaSource {
 func (s *GranolaSource) Name() string  { return "granola" }
 func (s *GranolaSource) Enabled() bool { return s.enabled }
 
-func (s *GranolaSource) Fetch(ctx context.Context) (*SourceResult, error) {
+func (s *GranolaSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) {
 	token, err := loadGranolaAuth()
 	if err != nil {
 		return nil, fmt.Errorf("granola auth: %w", err)
@@ -49,13 +63,82 @@ func (s *GranolaSource) Fetch(ctx context.Context) (*SourceResult, error) {
 		todos, err = extractCommitments(ctx, s.LLM, meetings)
 		if err != nil {
 			// LLM extraction failure is non-fatal; return without todos
-			return &SourceResult{
+			return &refresh.SourceResult{
 				Warnings: []db.Warning{{Source: "granola", Message: fmt.Sprintf("LLM extraction failed: %v", err)}},
 			}, nil
 		}
 	}
 
-	return &SourceResult{Todos: todos}, nil
+	return &refresh.SourceResult{Todos: todos}, nil
+}
+
+type granolaStoredAccounts struct {
+	Accounts []granolaAccount `json:"accounts"`
+}
+
+type granolaAccount struct {
+	Email       string            `json:"email"`
+	AccessToken string            `json:"access_token"`
+	ObtainedAt  int64             `json:"obtained_at"`
+	ExpiresIn   int64             `json:"expires_in"`
+	Tokens      map[string]string `json:"tokens"`
+}
+
+func loadGranolaAuth() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
+	path := filepath.Join(home, "Library", "Application Support", "Granola", "stored-accounts.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("no granola auth at %s: %w", path, err)
+	}
+
+	var wrapper struct {
+		Accounts string `json:"accounts"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return "", fmt.Errorf("parsing granola stored-accounts.json: %w", err)
+	}
+
+	var accounts []struct {
+		UserID  string `json:"userId"`
+		Email   string `json:"email"`
+		Tokens  string `json:"tokens"`
+		SavedAt int64  `json:"savedAt"`
+	}
+	if err := json.Unmarshal([]byte(wrapper.Accounts), &accounts); err != nil {
+		return "", fmt.Errorf("parsing granola accounts array: %w", err)
+	}
+
+	if len(accounts) == 0 {
+		return "", fmt.Errorf("no granola accounts found")
+	}
+
+	var tokens struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+		TokenType    string `json:"token_type"`
+	}
+	if err := json.Unmarshal([]byte(accounts[0].Tokens), &tokens); err != nil {
+		return "", fmt.Errorf("parsing granola tokens: %w", err)
+	}
+
+	if tokens.AccessToken == "" {
+		return "", fmt.Errorf("granola access token is empty")
+	}
+
+	if accounts[0].SavedAt > 0 && tokens.ExpiresIn > 0 {
+		savedAt := time.UnixMilli(accounts[0].SavedAt)
+		expiresAt := savedAt.Add(time.Duration(tokens.ExpiresIn) * time.Second)
+		if time.Now().After(expiresAt) {
+			return "", fmt.Errorf("granola token expired at %s — open Granola app to refresh", expiresAt.Format(time.RFC3339))
+		}
+	}
+
+	return tokens.AccessToken, nil
 }
 
 const granolaAPI = "https://api.granola.ai"
