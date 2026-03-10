@@ -232,6 +232,7 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 					})
 				}
 			}
+			m.saveConfig()
 		}
 		return m, nil
 
@@ -291,6 +292,8 @@ func (m *Model) handleWelcomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		o.step = stepPalette
 		o.nameInput.Blur()
 		return m, nil
+	case tea.KeyEsc:
+		return m, tea.Quit
 	default:
 		var cmd tea.Cmd
 		o.nameInput, cmd = o.nameInput.Update(msg)
@@ -346,33 +349,45 @@ func (m *Model) handleSourcesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	o := m.onboardingState
 	total := o.totalSourceItems()
 
-	switch msg.String() {
-	case "up", "k":
-		if o.sourceCursor > 0 {
-			o.sourceCursor--
+	switch msg.Type {
+	case tea.KeyTab:
+		// Hotkey to continue without scrolling to the button.
+		m.applySourceSelections()
+		m.saveConfig()
+		o.step = stepDone
+		return m.enterDoneStep()
+	default:
+		switch msg.String() {
+		case "up", "k":
+			if o.sourceCursor > 0 {
+				o.sourceCursor--
+			}
+		case "down", "j":
+			if o.sourceCursor < total-1 {
+				o.sourceCursor++
+			}
+		case " ":
+			// Toggle enable/disable (only on source items, not Continue).
+			if o.sourceCursor < len(o.sources) {
+				o.sources[o.sourceCursor].enabled = !o.sources[o.sourceCursor].enabled
+				m.applySourceSelections()
+				m.saveConfig()
+			}
+		case "enter":
+			if o.sourceCursor == len(o.sources) {
+				// "Continue →" selected — apply enabled sources to config and advance.
+				m.applySourceSelections()
+				m.saveConfig()
+				o.step = stepDone
+				return m.enterDoneStep()
+			}
+			// Open per-source sub-flow.
+			o.activeSource = o.sources[o.sourceCursor].slug
+			o.step = stepSourceDetail
+			return m, nil
+		case "esc":
+			o.step = stepPalette
 		}
-	case "down", "j":
-		if o.sourceCursor < total-1 {
-			o.sourceCursor++
-		}
-	case " ":
-		// Toggle enable/disable (only on source items, not Continue).
-		if o.sourceCursor < len(o.sources) {
-			o.sources[o.sourceCursor].enabled = !o.sources[o.sourceCursor].enabled
-		}
-	case "enter":
-		if o.sourceCursor == len(o.sources) {
-			// "Continue →" selected — apply enabled sources to config and advance.
-			m.applySourceSelections()
-			o.step = stepDone
-			return m.enterDoneStep()
-		}
-		// Open per-source sub-flow.
-		o.activeSource = o.sources[o.sourceCursor].slug
-		o.step = stepSourceDetail
-		return m, nil
-	case "esc":
-		o.step = stepPalette
 	}
 	return m, nil
 }
@@ -456,6 +471,7 @@ func (m *Model) handleCalendarDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if cs.cursor >= len(m.cfg.Calendar.Calendars) && cs.cursor > 0 {
 				cs.cursor--
 			}
+			m.saveConfig()
 		}
 	case "e":
 		if len(m.cfg.Calendar.Calendars) > 0 && cs.cursor < len(m.cfg.Calendar.Calendars) {
@@ -514,6 +530,7 @@ func (m *Model) handleCalendarAddMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cs.idInput.Blur()
 		cs.labelInput.Blur()
 		cs.cursor = len(m.cfg.Calendar.Calendars) - 1
+		m.saveConfig()
 		return m, nil
 	default:
 		var cmd tea.Cmd
@@ -538,6 +555,7 @@ func (m *Model) handleCalendarEditMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		label := strings.TrimSpace(cs.labelInput.Value())
 		if label != "" && cs.cursor < len(m.cfg.Calendar.Calendars) {
 			m.cfg.Calendar.Calendars[cs.cursor].Label = label
+			m.saveConfig()
 		}
 		cs.editMode = false
 		cs.labelInput.Blur()
@@ -566,6 +584,7 @@ func (m *Model) handleGithubDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			val := strings.TrimSpace(gs.repoInput.Value())
 			if val != "" {
 				m.cfg.GitHub.Repos = append(m.cfg.GitHub.Repos, val)
+				m.saveConfig()
 			}
 			gs.repoEditing = false
 			gs.repoInput.Blur()
@@ -589,6 +608,7 @@ func (m *Model) handleGithubDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			val := strings.TrimSpace(gs.usernameInput.Value())
 			if val != "" {
 				m.cfg.GitHub.Username = val
+				m.saveConfig()
 			}
 			gs.usernameEditing = false
 			gs.usernameInput.Blur()
@@ -625,6 +645,7 @@ func (m *Model) handleGithubDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if gs.cursor >= len(m.cfg.GitHub.Repos) && gs.cursor > 0 {
 				gs.cursor--
 			}
+			m.saveConfig()
 		}
 	case "u":
 		gs.usernameEditing = true
@@ -757,7 +778,7 @@ func (o *onboardingState) viewWelcome(width int, styles *Styles) string {
 	lines = append(lines, "")
 	lines = append(lines, "  "+o.nameInput.View())
 	lines = append(lines, "")
-	lines = append(lines, styles.Hint.Render("  enter continue"))
+	lines = append(lines, styles.Hint.Render("  enter continue · esc quit"))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return styles.PanelBorder.Width(width - 4).Render(content)
@@ -844,7 +865,7 @@ func (o *onboardingState) viewSources(width int, styles *Styles) string {
 	lines = append(lines, cursor+continueStyle.Render("Continue →"))
 
 	lines = append(lines, "")
-	lines = append(lines, styles.Hint.Render("  up/down navigate · space toggle · enter configure/continue · esc back"))
+	lines = append(lines, styles.Hint.Render("  up/down navigate · space toggle · enter configure · tab continue · esc back"))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return styles.PanelBorder.Width(width - 4).Render(content)
@@ -1054,6 +1075,12 @@ func (o *onboardingState) viewDone(width int, styles *Styles) string {
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return styles.PanelBorder.Width(width - 4).Render(content)
+}
+
+// saveConfig persists the current config to disk. Errors are silently ignored
+// during onboarding — the Done step will do a final save with error reporting.
+func (m *Model) saveConfig() {
+	_ = config.Save(m.cfg)
 }
 
 // findSource returns a pointer to the sourceItem with the given slug, or nil.
