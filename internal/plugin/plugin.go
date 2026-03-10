@@ -103,9 +103,11 @@ type Starter interface {
 	StartCmds() tea.Cmd
 }
 
-// SetupFlow is optionally implemented by plugins that need onboarding.
-type SetupFlow interface {
-	RunSetup() (map[string]interface{}, error)
+// SettingsProvider is an optional interface for plugins that want to render
+// their own settings detail view instead of the default.
+type SettingsProvider interface {
+	SettingsView(width, height int) string
+	HandleSettingsKey(msg tea.KeyMsg) Action
 }
 
 // NotifyMsg is sent when an external process notifies the TUI to reload.

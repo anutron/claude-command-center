@@ -85,7 +85,7 @@ The `plugin.Plugin` interface at `/Users/aaron/Personal/claude-command-center/in
 - Clean separation of concerns in the interface design
 - `plugin.Context` provides everything plugins need via dependency injection
 - `plugin.Action` provides a clear return protocol for key/message handling
-- Optional interfaces (`Starter`, `SetupFlow`) keep the core interface minimal
+- Optional interfaces (`Starter`, `SettingsProvider`) keep the core interface minimal
 - Lifecycle messages (`TabViewMsg`, `TabLeaveMsg`, `LaunchMsg`, `ReturnMsg`) are defined in the `plugin` package to avoid circular imports
 
 **Weaknesses:**

@@ -8,13 +8,12 @@ The codebase has a clean plugin architecture with well-separated concerns, but s
 
 | Interface | Location | Methods | Verdict |
 |-----------|----------|---------|---------|
-| `Plugin` | `internal/plugin/plugin.go:58` | 13 | **Bloated.** Every plugin must implement 13 methods even if most are no-ops (e.g., `Migrations()`, `Routes()`, `Shutdown()`). Go-idiomatic would be a smaller core interface + optional interfaces (like `Starter` and `SetupFlow` already are). `Migrations`, `Routes`, `Shutdown`, `RefreshInterval`, `Refresh`, and `KeyBindings` are all candidates for optional interfaces. |
+| `Plugin` | `internal/plugin/plugin.go:58` | 13 | **Bloated.** Every plugin must implement 13 methods even if most are no-ops (e.g., `Migrations()`, `Routes()`, `Shutdown()`). Go-idiomatic would be a smaller core interface + optional interfaces (like `Starter` already is). `Migrations`, `Routes`, `Shutdown`, `RefreshInterval`, `Refresh`, and `KeyBindings` are all candidates for optional interfaces. |
 | `EventBus` | `internal/plugin/eventbus.go:13` | 2 | **Good.** Minimal, consumed where defined (plugin package). |
 | `Logger` | `internal/plugin/logger.go:12` | 4 | **Acceptable.** `Recent(n)` couples it to the settings UI. Consider splitting into `Logger` (3 methods) and `LogReader` (1 method) to let most consumers depend on less. |
 | `LLM` | `internal/llm/llm.go:9` | 1 | **Good.** Single-method interface, idiomatic Go. |
 | `DataSource` | `internal/refresh/datasource.go:11` | 3 | **Good.** Minimal and focused. Defined where consumed (refresh package). |
 | `Starter` | `internal/plugin/plugin.go:89` | 1 | **Good.** Single-method optional interface. |
-| `SetupFlow` | `internal/plugin/plugin.go:94` | 1 | **Acceptable** but uses `map[string]interface{}` return -- see below. |
 
 ### Interface Location
 
