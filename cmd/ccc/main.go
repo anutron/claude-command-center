@@ -21,12 +21,6 @@ import (
 func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case "setup":
-			if err := config.RunSetup(); err != nil {
-				fmt.Fprintf(os.Stderr, "Setup failed: %v\n", err)
-				os.Exit(1)
-			}
-			return
 		case "doctor":
 			fmt.Println("Claude Command Center — Doctor")
 			fmt.Println()

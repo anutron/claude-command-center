@@ -1,110 +1,15 @@
 package config
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
 )
 
-// RunSetup runs an interactive setup wizard that creates a config.yaml.
-func RunSetup() error {
-	reader := bufio.NewReader(os.Stdin)
-
-	fmt.Println("Claude Command Center — Setup Wizard")
-	fmt.Println()
-
-	cfg := DefaultConfig()
-
-	// Try loading existing config
-	if existing, err := Load(); err == nil {
-		cfg = existing
-	}
-
-	// 1. Name + palette
-	fmt.Printf("Dashboard name [%s]: ", cfg.Name)
-	if name := readLine(reader); name != "" {
-		cfg.Name = name
-	}
-
-	fmt.Printf("Color palette (%s) [%s]: ", strings.Join(PaletteNames(), ", "), cfg.Palette)
-	if palette := readLine(reader); palette != "" {
-		cfg.Palette = palette
-	}
-
-	// 2. Calendar
-	fmt.Println()
-	if err := ValidateCalendar(); err != nil {
-		fmt.Println("  [!!] Calendar: " + err.Error())
-		fmt.Println("  To set up Google Calendar:")
-		fmt.Println("    1. Create OAuth credentials at https://console.cloud.google.com/")
-		fmt.Println("    2. Save credentials.json to ~/.config/google-calendar-mcp/credentials.json")
-		fmt.Println("    3. Run the calendar MCP server once to complete OAuth flow")
-	} else {
-		fmt.Println("  [OK] Calendar credentials found")
-		if !cfg.Calendar.Enabled {
-			fmt.Print("  Enable calendar? [Y/n]: ")
-			if ans := readLine(reader); ans == "" || strings.HasPrefix(strings.ToLower(ans), "y") {
-				cfg.Calendar.Enabled = true
-			}
-		}
-	}
-
-	// 3. GitHub
-	fmt.Println()
-	if err := ValidateGitHub(); err != nil {
-		fmt.Println("  [!!] GitHub: " + err.Error())
-		fmt.Println("  Run 'gh auth login' to authenticate the GitHub CLI.")
-	} else {
-		fmt.Println("  [OK] GitHub CLI authenticated")
-		if !cfg.GitHub.Enabled {
-			fmt.Print("  Enable GitHub? [Y/n]: ")
-			if ans := readLine(reader); ans == "" || strings.HasPrefix(strings.ToLower(ans), "y") {
-				cfg.GitHub.Enabled = true
-			}
-		}
-	}
-
-	// 4. Granola
-	fmt.Println()
-	if err := ValidateGranola(); err != nil {
-		fmt.Println("  [!!] Granola: " + err.Error())
-	} else {
-		fmt.Println("  [OK] Granola configured")
-		if !cfg.Granola.Enabled {
-			fmt.Print("  Enable Granola? [Y/n]: ")
-			if ans := readLine(reader); ans == "" || strings.HasPrefix(strings.ToLower(ans), "y") {
-				cfg.Granola.Enabled = true
-			}
-		}
-	}
-
-	// Save config
-	if err := Save(cfg); err != nil {
-		return fmt.Errorf("saving config: %w", err)
-	}
-
-	fmt.Printf("\nConfig saved to %s\n", ConfigPath())
-
-	// 5. MCP config generation
-	fmt.Println()
-	fmt.Print("Generate MCP server config for Claude Code? [Y/n]: ")
-	if ans := readLine(reader); ans == "" || strings.HasPrefix(strings.ToLower(ans), "y") {
-		if err := generateMCPConfig(); err != nil {
-			fmt.Printf("  [!!] MCP config: %v\n", err)
-		}
-	}
-
-	fmt.Println()
-	fmt.Println("Run 'ccc' to launch the dashboard.")
-	fmt.Println("Run 'ccc doctor' to verify your setup.")
-	return nil
-}
-
-// generateMCPConfig writes MCP server entries for gmail and things to ~/.claude/mcp.json.
-func generateMCPConfig() error {
+// GenerateMCPConfig writes MCP server entries for gmail and things to ~/.claude/mcp.json.
+func GenerateMCPConfig() error {
 	// Find the servers directory (next to the ccc binary or in the repo)
 	serversDir := findServersDir()
 	if serversDir == "" {
@@ -174,8 +79,57 @@ func generateMCPConfig() error {
 		return err
 	}
 
-	fmt.Printf("  [OK] Added %s to %s\n", strings.Join(added, ", "), mcpPath)
 	return nil
+}
+
+// BuildAndConfigureMCP builds MCP servers if needed and writes their config to ~/.claude/mcp.json.
+// Returns the list of servers that were configured.
+func BuildAndConfigureMCP() ([]string, error) {
+	// Check node is available
+	if _, err := exec.LookPath("node"); err != nil {
+		return nil, fmt.Errorf("node not found")
+	}
+
+	serversDir := findServersDir()
+	if serversDir == "" {
+		return nil, fmt.Errorf("servers/ directory not found")
+	}
+
+	var added []string
+	serverNames := []string{"gmail", "things"}
+
+	for _, name := range serverNames {
+		serverDir := filepath.Join(serversDir, name)
+		entryPoint := filepath.Join(serverDir, "dist", "index.js")
+
+		// Skip build if dist/index.js already exists
+		if _, err := os.Stat(entryPoint); err == nil {
+			added = append(added, name)
+			continue
+		}
+
+		// Build the server: npm install && npm run build
+		install := exec.Command("npm", "install")
+		install.Dir = serverDir
+		if out, err := install.CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("npm install for %s failed: %w\n%s", name, err, string(out))
+		}
+
+		build := exec.Command("npm", "run", "build")
+		build.Dir = serverDir
+		if out, err := build.CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("npm run build for %s failed: %w\n%s", name, err, string(out))
+		}
+
+		added = append(added, name)
+	}
+
+	// Write MCP config
+	if err := GenerateMCPConfig(); err != nil {
+		return nil, fmt.Errorf("generating MCP config: %w", err)
+	}
+
+	return added, nil
 }
 
 // findServersDir looks for the servers/ directory relative to the binary or cwd.
@@ -195,9 +149,4 @@ func findServersDir() string {
 		}
 	}
 	return ""
-}
-
-func readLine(reader *bufio.Reader) string {
-	line, _ := reader.ReadString('\n')
-	return strings.TrimSpace(line)
 }
