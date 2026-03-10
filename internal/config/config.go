@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Name            string        `yaml:"name"`
+	Subtitle        string        `yaml:"subtitle,omitempty"`
 	ShowBanner      *bool         `yaml:"show_banner,omitempty"`
 	Palette         string        `yaml:"palette"`
 	Colors          *CustomColors `yaml:"colors,omitempty"`

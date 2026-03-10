@@ -351,7 +351,7 @@ func (m Model) View() string {
 		// During onboarding, always show banner for preview (unless user toggled it off).
 		var banner string
 		if m.cfg.BannerVisible() {
-			banner = topPad + renderGradientBanner(&m.grad, m.cfg.Name, ui.ContentMaxWidth, m.frame)
+			banner = topPad + renderGradientBanner(&m.grad, m.cfg.Name, m.cfg.Subtitle, ui.ContentMaxWidth, m.frame)
 		} else {
 			banner = topPad
 		}
@@ -365,7 +365,7 @@ func (m Model) View() string {
 
 	var banner string
 	if m.cfg.BannerVisible() {
-		banner = topPad + renderGradientBanner(&m.grad, m.cfg.Name, ui.ContentMaxWidth, m.frame)
+		banner = topPad + renderGradientBanner(&m.grad, m.cfg.Name, m.cfg.Subtitle, ui.ContentMaxWidth, m.frame)
 	} else {
 		banner = topPad
 	}

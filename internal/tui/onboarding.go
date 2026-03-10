@@ -38,6 +38,8 @@ type sourceItem struct {
 type onboardingState struct {
 	step          onboardingStep
 	nameInput     textinput.Model
+	subtitleInput textinput.Model
+	activeField   int // 0=name, 1=subtitle
 	paletteCursor int
 	sources       []sourceItem
 	sourceCursor  int
@@ -101,11 +103,17 @@ type mcpResultMsg struct {
 // newOnboardingState initializes onboarding state from the current config.
 func newOnboardingState(cfg *config.Config) *onboardingState {
 	ni := textinput.New()
-	ni.Placeholder = "Command Center"
-	ni.CharLimit = 40
-	ni.Width = 30
+	ni.Placeholder = "Claude Command"
+	ni.CharLimit = 20
+	ni.Width = 20
 	ni.SetValue(cfg.Name)
 	ni.Focus()
+
+	si := textinput.New()
+	si.Placeholder = "Center"
+	si.CharLimit = 30
+	si.Width = 30
+	si.SetValue(cfg.Subtitle)
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -145,6 +153,7 @@ func newOnboardingState(cfg *config.Config) *onboardingState {
 	return &onboardingState{
 		step:          stepWelcome,
 		nameInput:     ni,
+		subtitleInput: si,
 		paletteCursor: palCursor,
 		sources: []sourceItem{
 			{name: "Google Calendar", slug: "calendar", enabled: cfg.Calendar.Enabled},
@@ -313,15 +322,44 @@ func (m *Model) handleWelcomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.Type {
 	case tea.KeyEnter:
+		if o.activeField == 0 {
+			// Move from banner title to subtitle field.
+			o.activeField = 1
+			o.nameInput.Blur()
+			o.subtitleInput.Focus()
+			return m, textinput.Blink
+		}
+		// Confirm both fields and advance.
 		val := strings.TrimSpace(o.nameInput.Value())
 		if val == "" {
-			val = "Command Center"
+			val = "Claude Command"
 		}
 		m.cfg.Name = val
+		m.cfg.Subtitle = strings.TrimSpace(o.subtitleInput.Value())
 		o.step = stepPalette
 		o.nameInput.Blur()
+		o.subtitleInput.Blur()
 		return m, nil
+	case tea.KeyTab, tea.KeyShiftTab:
+		// Switch between the two fields.
+		if o.activeField == 0 {
+			o.activeField = 1
+			o.nameInput.Blur()
+			o.subtitleInput.Focus()
+		} else {
+			o.activeField = 0
+			o.subtitleInput.Blur()
+			o.nameInput.Focus()
+		}
+		return m, textinput.Blink
 	case tea.KeyEsc:
+		if o.activeField == 1 {
+			// Go back to name field.
+			o.activeField = 0
+			o.subtitleInput.Blur()
+			o.nameInput.Focus()
+			return m, textinput.Blink
+		}
 		return m, tea.Quit
 	default:
 		// Toggle banner visibility with ctrl+b.
@@ -330,11 +368,12 @@ func (m *Model) handleWelcomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		var cmd tea.Cmd
-		o.nameInput, cmd = o.nameInput.Update(msg)
-		// Update config name live for banner preview.
-		val := o.nameInput.Value()
-		if val != "" {
-			m.cfg.Name = val
+		if o.activeField == 0 {
+			o.nameInput, cmd = o.nameInput.Update(msg)
+			m.cfg.Name = o.nameInput.Value()
+		} else {
+			o.subtitleInput, cmd = o.subtitleInput.Update(msg)
+			m.cfg.Subtitle = o.subtitleInput.Value()
 		}
 		return m, cmd
 	}
@@ -880,10 +919,25 @@ func (o *onboardingState) viewWelcome(width int, styles *Styles, cfg *config.Con
 
 	lines = append(lines, styles.TitleBoldC.Render("WELCOME"))
 	lines = append(lines, "")
-	lines = append(lines, styles.DescMuted.Render("Choose a subtitle for the banner above:"))
-	lines = append(lines, styles.Hint.Render("  The text you type appears spaced out below the CCC logo."))
-	lines = append(lines, "")
+
+	// Banner title field.
+	nameLabel := styles.DescMuted.Render("Banner title:")
+	if o.activeField == 0 {
+		nameLabel = styles.TitleBoldW.Render("Banner title:")
+	}
+	lines = append(lines, "  "+nameLabel)
 	lines = append(lines, "  "+o.nameInput.View())
+	lines = append(lines, styles.Hint.Render("    Rendered as large block letters above"))
+	lines = append(lines, "")
+
+	// Subtitle field.
+	subLabel := styles.DescMuted.Render("Subtitle:")
+	if o.activeField == 1 {
+		subLabel = styles.TitleBoldW.Render("Subtitle:")
+	}
+	lines = append(lines, "  "+subLabel)
+	lines = append(lines, "  "+o.subtitleInput.View())
+	lines = append(lines, styles.Hint.Render("    Spaced text below the banner (leave empty to hide)"))
 	lines = append(lines, "")
 
 	bannerStatus := "on"
@@ -892,7 +946,7 @@ func (o *onboardingState) viewWelcome(width int, styles *Styles, cfg *config.Con
 	}
 	lines = append(lines, styles.Hint.Render(fmt.Sprintf("  Show banner: [%s]  (ctrl+b to toggle)", bannerStatus)))
 	lines = append(lines, "")
-	lines = append(lines, styles.Hint.Render("  enter continue · esc quit"))
+	lines = append(lines, styles.Hint.Render("  tab switch field · enter next/continue · ctrl+b toggle banner · esc quit"))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return styles.PanelBorder.Width(width - 4).Render(content)

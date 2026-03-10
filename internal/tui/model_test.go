@@ -157,15 +157,20 @@ func TestGradientColorsFromPalette(t *testing.T) {
 	}
 }
 
-func TestSubtitleFromName(t *testing.T) {
-	got := subtitleFromName("CCC")
+func TestSubtitleFromText(t *testing.T) {
+	got := subtitleFromText("CCC")
 	if got != "C C C" {
 		t.Errorf("expected 'C C C', got %q", got)
 	}
 
-	got = subtitleFromName("")
-	if got != defaultSubtitle {
-		t.Errorf("expected default subtitle, got %q", got)
+	got = subtitleFromText("")
+	if got != "" {
+		t.Errorf("expected empty string, got %q", got)
+	}
+
+	got = subtitleFromText("Center")
+	if got != "C E N T E R" {
+		t.Errorf("expected 'C E N T E R', got %q", got)
 	}
 }
 
