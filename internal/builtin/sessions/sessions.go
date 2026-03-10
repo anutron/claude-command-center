@@ -386,12 +386,12 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	if p.subTab == "new" && p.newList.FilterState() == list.Filtering {
 		var cmd tea.Cmd
 		p.newList, cmd = p.newList.Update(msg)
-		return plugin.Action{Type: "noop", TeaCmd: cmd}
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	}
 	if p.subTab == "resume" && p.resumeList.FilterState() == list.Filtering {
 		var cmd tea.Cmd
 		p.resumeList, cmd = p.resumeList.Update(msg)
-		return plugin.Action{Type: "noop", TeaCmd: cmd}
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	}
 
 	if p.confirming {
@@ -415,9 +415,9 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 					Payload: map[string]interface{}{},
 				})
 			}
-			return plugin.Action{Type: "navigate", Payload: "command"}
+			return plugin.Action{Type: plugin.ActionNavigate, Payload: "command"}
 		}
-		return plugin.Action{Type: "quit"}
+		return plugin.Action{Type: plugin.ActionQuit}
 	}
 
 	switch p.subTab {
@@ -454,7 +454,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		p.spinner, cmd = p.spinner.Update(msg)
-		return true, plugin.Action{Type: "noop", TeaCmd: cmd}
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
@@ -478,13 +478,13 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		var cmd tea.Cmd
 		p.newList, cmd = p.newList.Update(msg)
 		if cmd != nil {
-			return true, plugin.Action{Type: "noop", TeaCmd: cmd}
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
 	case "resume":
 		var cmd tea.Cmd
 		p.resumeList, cmd = p.resumeList.Update(msg)
 		if cmd != nil {
-			return true, plugin.Action{Type: "noop", TeaCmd: cmd}
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
 	}
 	return false, plugin.NoopAction()
@@ -523,14 +523,14 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 			cmd := tea.Exec(proc, func(err error) tea.Msg {
 				return fzfFinishedMsg{path: proc.output, err: err}
 			})
-			return plugin.Action{Type: "noop", TeaCmd: cmd}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
 		args := map[string]string{"dir": item.path}
 		if p.pendingLaunchTodo != nil {
 			args["initial_prompt"] = formatTodoContext(*p.pendingLaunchTodo)
 			p.pendingLaunchTodo = nil
 		}
-		return plugin.Action{Type: "launch", Args: args}
+		return plugin.Action{Type: plugin.ActionLaunch, Args: args}
 
 	case "delete", "backspace":
 		item, ok := p.newList.SelectedItem().(newItem)
@@ -546,7 +546,7 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 
 	var cmd tea.Cmd
 	p.newList, cmd = p.newList.Update(msg)
-	return plugin.Action{Type: "noop", TeaCmd: cmd}
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
 func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
@@ -578,7 +578,7 @@ func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
 
 	var cmd tea.Cmd
 	p.resumeList, cmd = p.resumeList.Update(msg)
-	return plugin.Action{Type: "noop", TeaCmd: cmd}
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
 func (p *Plugin) handleConfirming(msg tea.KeyMsg) plugin.Action {

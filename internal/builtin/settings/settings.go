@@ -257,7 +257,7 @@ func (p *Plugin) handlePluginsKey(msg tea.KeyMsg) plugin.Action {
 			p.openDetailView(p.cursor)
 		}
 	case "esc":
-		return plugin.Action{Type: "unhandled"}
+		return plugin.Action{Type: plugin.ActionUnhandled}
 	}
 	return plugin.NoopAction()
 }
@@ -271,7 +271,7 @@ func (p *Plugin) handleLogsKey(msg tea.KeyMsg) plugin.Action {
 	case "down", "j":
 		p.logOffset++
 	case "esc":
-		return plugin.Action{Type: "unhandled"}
+		return plugin.Action{Type: plugin.ActionUnhandled}
 	}
 	return plugin.NoopAction()
 }
@@ -309,7 +309,7 @@ func (p *Plugin) handlePaletteKey(msg tea.KeyMsg) plugin.Action {
 		}
 		p.flashMessageAt = time.Now()
 	case "esc":
-		return plugin.Action{Type: "unhandled"}
+		return plugin.Action{Type: plugin.ActionUnhandled}
 	}
 	return plugin.NoopAction()
 }

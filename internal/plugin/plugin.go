@@ -21,9 +21,20 @@ type Context struct {
 	LLM    interface{} // llm.LLM — interface to avoid circular import
 }
 
+// Action type constants.
+const (
+	ActionNoop      = "noop"
+	ActionOpenURL   = "open_url"
+	ActionFlash     = "flash"
+	ActionLaunch    = "launch"
+	ActionQuit      = "quit"
+	ActionNavigate  = "navigate"
+	ActionUnhandled = "unhandled"
+)
+
 // Action is returned by HandleKey/HandleMessage to tell the host what to do.
 type Action struct {
-	Type    string            // "noop", "open_url", "flash", "launch", "quit", "navigate"
+	Type    string            // ActionNoop, ActionOpenURL, ActionFlash, ActionLaunch, ActionQuit, ActionNavigate
 	Payload string            // URL, message, slug, etc.
 	Args    map[string]string // route arguments
 	TeaCmd  tea.Cmd           // built-in plugins only; nil for external
@@ -31,7 +42,7 @@ type Action struct {
 
 // NoopAction returns an action that does nothing.
 func NoopAction() Action {
-	return Action{Type: "noop"}
+	return Action{Type: ActionNoop}
 }
 
 // Route declares a navigable sub-route within a plugin.

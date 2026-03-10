@@ -279,7 +279,7 @@ func (m *Model) activateTab(prevTab tab) tea.Cmd {
 
 func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 	switch action.Type {
-	case "launch":
+	case plugin.ActionLaunch:
 		la := &LaunchAction{Dir: action.Args["dir"]}
 		if rid := action.Args["resume_id"]; rid != "" {
 			la.Args = []string{"-r", rid}
@@ -297,10 +297,10 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, tea.Quit)
 		return m, tea.Batch(cmds...)
 
-	case "quit":
+	case plugin.ActionQuit:
 		return m, tea.Quit
 
-	case "navigate":
+	case plugin.ActionNavigate:
 		var cmd tea.Cmd
 		switch action.Payload {
 		case "sessions":
@@ -314,10 +314,10 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 
-	case "unhandled":
+	case plugin.ActionUnhandled:
 		return m, tea.Quit
 
-	default: // "noop" and anything else
+	default: // ActionNoop and anything else
 		if action.TeaCmd != nil {
 			return m, action.TeaCmd
 		}
