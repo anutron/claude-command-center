@@ -139,8 +139,16 @@ func (p *Plugin) Slug() string { return "commandcenter" }
 // TabName returns the primary tab name.
 func (p *Plugin) TabName() string { return "Command Center" }
 
-// Migrations returns DB migrations (none needed, tables already exist).
-func (p *Plugin) Migrations() []plugin.Migration { return nil }
+// Migrations returns DB migrations for the command center plugin.
+func (p *Plugin) Migrations() []plugin.Migration {
+	return []plugin.Migration{
+		{
+			Version: 1,
+			SQL: `CREATE INDEX IF NOT EXISTS idx_cc_todos_status_sort ON cc_todos(status, sort_order);
+CREATE INDEX IF NOT EXISTS idx_cc_threads_status_created ON cc_threads(status, created_at);`,
+		},
+	}
+}
 
 // Routes returns the sub-routes for this plugin.
 func (p *Plugin) Routes() []plugin.Route {

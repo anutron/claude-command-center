@@ -27,6 +27,12 @@ func OpenDB(dbPath string) (*sql.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	if _, err := db.Exec("PRAGMA synchronous=NORMAL"); err != nil {
+		db.Close()
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if err := migrateSchema(db); err != nil {
 		db.Close()
 		return nil, err

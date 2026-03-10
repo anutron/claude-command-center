@@ -15,13 +15,19 @@ func DBCompleteTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
 	_, err := db.Exec(`UPDATE cc_todos SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?`,
 		now, now, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("complete todo %s: %w", id, err)
+	}
+	return nil
 }
 
 func DBDismissTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
 	_, err := db.Exec(`UPDATE cc_todos SET status = 'dismissed', updated_at = ? WHERE id = ?`, now, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("dismiss todo %s: %w", id, err)
+	}
+	return nil
 }
 
 func DBRestoreTodo(db *sql.DB, id, status string, completedAt *time.Time) error {
@@ -33,21 +39,30 @@ func DBRestoreTodo(db *sql.DB, id, status string, completedAt *time.Time) error 
 	}
 	_, err := db.Exec(`UPDATE cc_todos SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?`,
 		status, ca, now, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("restore todo %s: %w", id, err)
+	}
+	return nil
 }
 
 func DBDeferTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
 	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status = 'active'), updated_at = ? WHERE id = ?`,
 		now, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("defer todo %s: %w", id, err)
+	}
+	return nil
 }
 
 func DBPromoteTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
 	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM cc_todos WHERE status = 'active'), updated_at = ? WHERE id = ?`,
 		now, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("promote todo %s: %w", id, err)
+	}
+	return nil
 }
 
 func DBInsertTodo(db *sql.DB, t Todo) error {
@@ -70,7 +85,10 @@ func DBInsertTodo(db *sql.DB, t Todo) error {
 		t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
 		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort,
 		createdAt, completedAt, now)
-	return err
+	if err != nil {
+		return fmt.Errorf("insert todo %s: %w", t.ID, err)
+	}
+	return nil
 }
 
 func DBUpdateTodo(db *sql.DB, id string, t Todo) error {
@@ -87,7 +105,10 @@ func DBUpdateTodo(db *sql.DB, id string, t Todo) error {
 		WHERE id = ?`,
 		t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
 		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, completedAt, now, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("update todo %s: %w", id, err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +155,10 @@ func DBSaveFocus(db *sql.DB, focus string) error {
 			COALESCE((SELECT ranked_todo_ids FROM cc_suggestions WHERE id = 1), '[]'),
 			COALESCE((SELECT reasons FROM cc_suggestions WHERE id = 1), '{}'),
 			?)`, focus, now)
-	return err
+	if err != nil {
+		return fmt.Errorf("save focus: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -145,21 +169,30 @@ func DBPauseThread(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
 	_, err := db.Exec(`UPDATE cc_threads SET status = 'paused', paused_at = ?, updated_at = ? WHERE id = ?`,
 		now, now, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("pause thread %s: %w", id, err)
+	}
+	return nil
 }
 
 func DBStartThread(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
 	_, err := db.Exec(`UPDATE cc_threads SET status = 'active', paused_at = NULL, updated_at = ? WHERE id = ?`,
 		now, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("start thread %s: %w", id, err)
+	}
+	return nil
 }
 
 func DBCloseThread(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
 	_, err := db.Exec(`UPDATE cc_threads SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?`,
 		now, now, id)
-	return err
+	if err != nil {
+		return fmt.Errorf("close thread %s: %w", id, err)
+	}
+	return nil
 }
 
 func DBInsertThread(db *sql.DB, t Thread) error {
@@ -174,7 +207,10 @@ func DBInsertThread(db *sql.DB, t Thread) error {
 		NULLIF(?, ''), ?, NULL, NULL, ?)`,
 		t.ID, t.Type, t.Title, t.URL, t.Repo, t.ProjectDir, t.Status, t.Summary,
 		"", createdAt, now)
-	return err
+	if err != nil {
+		return fmt.Errorf("insert thread %s: %w", t.ID, err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -196,12 +232,18 @@ func DBInsertBookmark(db *sql.DB, b Session) error {
 	_, err := db.Exec(`INSERT OR REPLACE INTO cc_bookmarks (session_id, project, repo, branch, label, summary, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		b.SessionID, b.Project, b.Repo, b.Branch, "", b.Summary, FormatTime(b.Created))
-	return err
+	if err != nil {
+		return fmt.Errorf("insert bookmark %s: %w", b.SessionID, err)
+	}
+	return nil
 }
 
 func DBRemoveBookmark(db *sql.DB, sessionID string) error {
 	_, err := db.Exec(`DELETE FROM cc_bookmarks WHERE session_id = ?`, sessionID)
-	return err
+	if err != nil {
+		return fmt.Errorf("remove bookmark %s: %w", sessionID, err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -211,12 +253,18 @@ func DBRemoveBookmark(db *sql.DB, sessionID string) error {
 func DBAddPath(db *sql.DB, path string) error {
 	_, err := db.Exec(`INSERT OR IGNORE INTO cc_learned_paths (path, added_at) VALUES (?, ?)`,
 		path, FormatTime(time.Now()))
-	return err
+	if err != nil {
+		return fmt.Errorf("add path %s: %w", path, err)
+	}
+	return nil
 }
 
 func DBRemovePath(db *sql.DB, path string) error {
 	_, err := db.Exec(`DELETE FROM cc_learned_paths WHERE path = ?`, path)
-	return err
+	if err != nil {
+		return fmt.Errorf("remove path %s: %w", path, err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------

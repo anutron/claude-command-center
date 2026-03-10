@@ -49,7 +49,10 @@ func loadGoogleOAuth2Config(clientID, clientSecret string, scopes ...string) *oa
 }
 
 func loadCalendarAuth() (oauth2.TokenSource, error) {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("home dir: %w", err)
+	}
 	dir := filepath.Join(home, ".config", "google-calendar-mcp")
 
 	credsPath := filepath.Join(dir, "credentials.json")
@@ -89,7 +92,10 @@ func loadCalendarAuth() (oauth2.TokenSource, error) {
 }
 
 func loadGmailAuth() (oauth2.TokenSource, error) {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("home dir: %w", err)
+	}
 	path := filepath.Join(home, ".gmail-mcp", "work.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -137,7 +143,10 @@ type granolaAccount struct {
 }
 
 func loadGranolaAuth() (string, error) {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
 	path := filepath.Join(home, "Library", "Application Support", "Granola", "stored-accounts.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -200,7 +209,10 @@ func loadGitHubToken() (string, error) {
 
 // RunCalendarAuth performs the OAuth2 flow for Google Calendar.
 func RunCalendarAuth() error {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("home dir: %w", err)
+	}
 	dir := filepath.Join(home, ".config", "google-calendar-mcp")
 
 	clientID := os.Getenv("GOOGLE_CLIENT_ID")
@@ -265,7 +277,9 @@ func RunCalendarAuth() error {
 		return fmt.Errorf("token exchange failed: %w", err)
 	}
 
-	os.MkdirAll(dir, 0o755)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create credentials dir: %w", err)
+	}
 	creds := googleTokenFile{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
@@ -280,7 +294,10 @@ func RunCalendarAuth() error {
 
 // loadEnvFile reads KEY=VALUE pairs from ~/.config/ccc/.env and sets them as env vars.
 func loadEnvFile() {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
 	data, err := os.ReadFile(filepath.Join(home, ".config", "ccc", ".env"))
 	if err != nil {
 		return
@@ -304,7 +321,10 @@ func loadEnvFile() {
 }
 
 func loadCalendarCredsFromClaudeConfig() (clientID, clientSecret string) {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", ""
+	}
 	data, err := os.ReadFile(filepath.Join(home, ".claude.json"))
 	if err != nil {
 		return "", ""
@@ -326,7 +346,10 @@ func loadCalendarCredsFromClaudeConfig() (clientID, clientSecret string) {
 }
 
 func migrateCalendarCredentials() error {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("home dir: %w", err)
+	}
 	dir := filepath.Join(home, ".config", "google-calendar-mcp")
 	credsPath := filepath.Join(dir, "credentials.json")
 	tokenPath := filepath.Join(dir, "token.json")

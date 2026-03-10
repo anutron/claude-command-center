@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -178,10 +179,14 @@ func dbLoadSuggestions(db *sql.DB) (Suggestions, error) {
 	}
 	s.Focus = focus.String
 	if rankedJSON.Valid {
-		_ = json.Unmarshal([]byte(rankedJSON.String), &s.RankedTodoIDs)
+		if err := json.Unmarshal([]byte(rankedJSON.String), &s.RankedTodoIDs); err != nil {
+			log.Printf("WARNING: corrupt ranked_todo_ids JSON: %v", err)
+		}
 	}
 	if reasonsJSON.Valid {
-		_ = json.Unmarshal([]byte(reasonsJSON.String), &s.Reasons)
+		if err := json.Unmarshal([]byte(reasonsJSON.String), &s.Reasons); err != nil {
+			log.Printf("WARNING: corrupt reasons JSON: %v", err)
+		}
 	}
 	return s, nil
 }

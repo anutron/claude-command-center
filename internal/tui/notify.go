@@ -3,6 +3,7 @@ package tui
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,7 +18,11 @@ import (
 func SocketPath() string {
 	dir := os.Getenv("CCC_STATE_DIR")
 	if dir == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			log.Printf("WARNING: cannot determine home directory: %v", err)
+			return ""
+		}
 		dir = filepath.Join(home, ".config", "ccc", "data")
 	}
 	return filepath.Join(dir, fmt.Sprintf("ccc-%d.sock", os.Getpid()))
@@ -27,7 +32,11 @@ func SocketPath() string {
 func sockDir() string {
 	dir := os.Getenv("CCC_STATE_DIR")
 	if dir == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			log.Printf("WARNING: cannot determine home directory: %v", err)
+			return ""
+		}
 		dir = filepath.Join(home, ".config", "ccc", "data")
 	}
 	return dir

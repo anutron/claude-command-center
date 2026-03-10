@@ -38,14 +38,23 @@ func RunMigrations(db *sql.DB, slug string, migrations []Migration) error {
 		if m.Version <= maxVersion {
 			continue
 		}
-		if _, err := db.Exec(m.SQL); err != nil {
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin tx for migration v%d of %s: %w", m.Version, slug, err)
+		}
+		if _, err := tx.Exec(m.SQL); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("migration v%d for %s: %w", m.Version, slug, err)
 		}
-		if _, err := db.Exec(
+		if _, err := tx.Exec(
 			`INSERT INTO ccc_plugin_migrations (plugin_slug, version, applied_at) VALUES (?, ?, datetime('now'))`,
 			slug, m.Version,
 		); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("record migration v%d for %s: %w", m.Version, slug, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration v%d for %s: %w", m.Version, slug, err)
 		}
 	}
 

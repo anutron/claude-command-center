@@ -180,15 +180,21 @@ func migrateBookmarks(db *sql.DB, bookmarksPath string) error {
 		return err
 	}
 
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	for _, b := range bookmarks {
-		_, err := db.Exec(`INSERT OR IGNORE INTO cc_bookmarks (session_id, project, repo, branch, label, summary, created_at)
+		_, err := tx.Exec(`INSERT OR IGNORE INTO cc_bookmarks (session_id, project, repo, branch, label, summary, created_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			b.SessionID, b.Project, b.Repo, b.Branch, b.Label, b.Summary, b.Created)
 		if err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 func migrateLearnedPaths(db *sql.DB, pathsPath string) error {
@@ -197,12 +203,18 @@ func migrateLearnedPaths(db *sql.DB, pathsPath string) error {
 		return err
 	}
 
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	for _, p := range paths {
-		_, err := db.Exec(`INSERT OR IGNORE INTO cc_learned_paths (path, added_at) VALUES (?, ?)`,
+		_, err := tx.Exec(`INSERT OR IGNORE INTO cc_learned_paths (path, added_at) VALUES (?, ?)`,
 			p, FormatTime(time.Now()))
 		if err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
