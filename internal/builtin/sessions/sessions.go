@@ -300,12 +300,16 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	// Subscribe to events
 	if p.bus != nil {
 		p.bus.Subscribe("pending.todo", func(e plugin.Event) {
-			title, _ := e.Payload["title"].(string)
-			context, _ := e.Payload["context"].(string)
-			detail, _ := e.Payload["detail"].(string)
-			whoWaiting, _ := e.Payload["who_waiting"].(string)
-			due, _ := e.Payload["due"].(string)
-			effort, _ := e.Payload["effort"].(string)
+			m, ok := e.Payload.(map[string]interface{})
+			if !ok {
+				return
+			}
+			title, _ := m["title"].(string)
+			context, _ := m["context"].(string)
+			detail, _ := m["detail"].(string)
+			whoWaiting, _ := m["who_waiting"].(string)
+			due, _ := m["due"].(string)
+			effort, _ := m["effort"].(string)
 			p.pendingLaunchTodo = &db.Todo{
 				Title:      title,
 				Context:    context,

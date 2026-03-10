@@ -6,7 +6,7 @@ import "sync"
 type Event struct {
 	Source  string
 	Topic   string
-	Payload map[string]interface{}
+	Payload any
 }
 
 // EventBus provides pub/sub communication between plugins.

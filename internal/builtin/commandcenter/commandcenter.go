@@ -222,8 +222,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.cfg = ctx.Config
 	p.bus = ctx.Bus
 	p.logger = ctx.Logger
-	if l, ok := ctx.LLM.(llm.LLM); ok && l != nil {
-		p.llm = l
+	if ctx.LLM != nil {
+		p.llm = ctx.LLM
 	} else {
 		p.llm = llm.NoopLLM{}
 	}

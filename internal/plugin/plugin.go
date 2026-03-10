@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -18,7 +19,7 @@ type Context struct {
 	Bus    EventBus
 	Logger Logger
 	DBPath string
-	LLM    interface{} // llm.LLM — interface to avoid circular import
+	LLM    llm.LLM
 }
 
 // Action type constants.

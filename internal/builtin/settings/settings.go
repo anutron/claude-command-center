@@ -116,8 +116,10 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 			t := topic // capture
 			p.bus.Subscribe(t, func(e plugin.Event) {
 				if p.logger != nil {
-					title, _ := e.Payload["title"].(string)
-					p.logger.Info("settings", fmt.Sprintf("event %s: %s", t, title))
+					if m, ok := e.Payload.(map[string]interface{}); ok {
+						title, _ := m["title"].(string)
+						p.logger.Info("settings", fmt.Sprintf("event %s: %s", t, title))
+					}
 				}
 			})
 		}

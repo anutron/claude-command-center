@@ -22,8 +22,12 @@ func TestPublishSubscribe(t *testing.T) {
 	if received.Topic != "test.topic" {
 		t.Errorf("expected topic 'test.topic', got %q", received.Topic)
 	}
-	if received.Payload["key"] != "value" {
-		t.Errorf("expected payload key=value, got %v", received.Payload["key"])
+	m, ok := received.Payload.(map[string]interface{})
+	if !ok {
+		t.Fatal("payload is not map[string]interface{}")
+	}
+	if m["key"] != "value" {
+		t.Errorf("expected payload key=value, got %v", m["key"])
 	}
 }
 
