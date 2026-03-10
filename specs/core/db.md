@@ -12,43 +12,55 @@ Provides all data persistence for the Claude Command Center (CCC). Manages SQLit
 - **Domain objects**: `Todo`, `Thread`, `Session`, `PendingAction`, `CalendarData` passed to DB write functions
 
 ### Outputs
-- `*sql.DB` connection (WAL mode, 5s busy timeout)
-- `*CommandCenter` aggregate loaded from DB or JSON
+- `*sql.DB` connection (WAL mode, 5s busy timeout, NORMAL synchronous, max 1 conn)
+- `*CommandCenter` aggregate loaded from DB
 - Individual query results (bookmarks, paths, etc.)
 
 ### Dependencies
 - `modernc.org/sqlite` (pure-Go SQLite driver, no CGO)
 - Standard library only otherwise
 
+## File Organization
+
+| File | Responsibility |
+|------|---------------|
+| `schema.go` | `OpenDB`, `migrateSchema` (table DDL), `FormatTime`, `ParseTime` helpers |
+| `types.go` | All exported domain types, ID generation, time helpers, in-memory `CommandCenter` mutation methods, file-based path CRUD |
+| `read.go` | `LoadCommandCenterFromDB` and all `dbLoad*` query functions, `DBLoadBookmarks`, `DBLoadPaths`, `DBIsEmpty` |
+| `write.go` | All `DB*` write functions for todos, threads, calendar, suggestions, pending actions, bookmarks, paths, meta; `DBSaveRefreshResult` bulk write |
+| `sessions.go` | Session types, file-based session parsing (`ParseSessionFile`, `LoadWinddownSessions`, `LoadBookmarks`, `LoadAllSessions`, `RemoveBookmark`) -- used by sessions plugin only |
+| `migrate.go` | `MigrateFromJSON` -- one-time import from legacy JSON/text files into SQLite |
+
 ## Types
 
 All types are exported for use by other packages:
 
-- `CommandCenter` -- top-level aggregate: calendar, todos, threads, suggestions, pending actions, warnings
+- `CommandCenter` -- top-level aggregate: calendar, todos, threads, suggestions, pending actions, warnings, generated_at
 - `CalendarData` -- today/tomorrow event lists
 - `CalendarEvent` -- title, start/end times, all-day, declined, calendar_id
 - `CalendarConflict` -- overlap between two events
-- `Todo` -- task with status, source, due date, effort, etc.
+- `Todo` -- task with status, source, due date, effort, project_dir, session_id, etc.
 - `Thread` -- PR/issue/conversation tracker with pause/resume/close lifecycle
-- `Suggestions` -- AI-generated focus and ranked todo ordering
+- `Suggestions` -- AI-generated focus and ranked todo ordering with per-todo reasons
 - `PendingAction` -- queued actions (e.g., calendar bookings)
-- `Warning` -- system warnings
-- `Session` -- resumable Claude Code session (bookmark or winddown)
+- `Warning` -- system warnings (source, message, timestamp)
+- `Session` -- resumable Claude Code session (bookmark or winddown) -- used by sessions plugin only
 - `SessionType` -- enum: `SessionWinddown`, `SessionBookmark`
 - `Bookmark` -- JSON serialization format for bookmarks file
 
 ## Behavior
 
 ### Database Lifecycle
-1. `OpenDB(dbPath)` creates directories, opens SQLite, sets WAL + busy_timeout, runs `migrateSchema`
+1. `OpenDB(dbPath)` creates directories, opens SQLite, sets WAL + busy_timeout + synchronous=NORMAL, max 1 connection, runs `migrateSchema`
 2. Schema creates 8 tables: `cc_todos`, `cc_threads`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`
 3. Unique indexes on `source_ref` for todos and threads (WHERE NOT NULL/empty)
+4. Post-DDL migration adds `calendar_id` column if missing (ALTER TABLE, errors ignored)
 
 ### Todo Operations
 - `DBInsertTodo` -- auto-assigns sort_order = max+1
 - `DBCompleteTodo` -- sets status=completed, completed_at=now
 - `DBDismissTodo` -- sets status=dismissed
-- `DBRestoreTodo` -- restores to given status (for undo)
+- `DBRestoreTodo` -- restores to given status and completed_at (for undo)
 - `DBDeferTodo` -- sets sort_order to max+1 (moves to bottom)
 - `DBPromoteTodo` -- sets sort_order to min-1 (moves to top)
 - `DBUpdateTodo` -- updates all fields except sort_order
@@ -62,37 +74,46 @@ All types are exported for use by other packages:
 ### Calendar & Suggestions
 - `DBReplaceCalendar` -- transactional replace of all cached events
 - `DBSaveFocus` -- upserts focus text, preserving ranked_todo_ids/reasons
+- `DBSaveSuggestions` -- replaces the full suggestions row
+
+### Bulk Refresh
+- `DBSaveRefreshResult` -- atomically replaces all refresh-managed data (todos, threads, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ccc-refresh`.
 
 ### Bookmarks & Paths (DB)
 - `DBLoadBookmarks`, `DBInsertBookmark`, `DBRemoveBookmark`
 - `DBLoadPaths`, `DBAddPath` (INSERT OR IGNORE), `DBRemovePath`
 
-### JSON File Operations (Legacy)
-- `LoadCommandCenter(path)` -- reads JSON, runs `EnforceDismissed`
-- `SaveCommandCenter(path, cc)` -- atomic write via temp file + rename
-- `MutateSave(path, fallback, fn)` -- reload-modify-save pattern
-- `LoadPaths`, `SavePaths`, `AddPath`, `RemovePath` -- newline-delimited file
-- `LoadBookmarks`, `RemoveBookmark` -- JSON array file
-- `LoadWinddownSessions`, `LoadAllSessions` -- markdown frontmatter files
-- `ParseSessionFile` -- parses YAML-ish frontmatter from markdown
+### Meta & Pending Actions
+- `DBSetMeta` -- upserts a key-value pair in `cc_meta`
+- `DBClearPendingActions` -- removes all pending actions
 
-### Migration
-- `MigrateFromJSON(db, ccPath, bookmarksPath, pathsPath)` -- one-time import from legacy files
+### File-Based Session Functions (used by sessions plugin only)
+- `ParseSessionFile` -- parses YAML-ish frontmatter from markdown winddown files
+- `LoadWinddownSessions` -- reads all `.md` files from sessions directory
+- `LoadBookmarks` -- reads JSON array from bookmarks file
+- `LoadAllSessions` -- merges winddowns + bookmarks, sorted by created desc
+- `RemoveBookmark` -- removes a bookmark from the JSON file
+
+### File-Based Path Functions
+- `LoadPaths`, `SavePaths` -- newline-delimited text file
+- `AddPath`, `RemovePath` -- in-memory list manipulation
+
+### Migration (Legacy)
+- `MigrateFromJSON(db, ccPath, bookmarksPath, pathsPath)` -- one-time import from legacy JSON files
 - Only runs if DB is empty (no todos)
 - Idempotent: uses INSERT OR IGNORE
 - Preserves sort_order from array position
+- Migrates: command-center.json, bookmarks.json, learned-paths.txt
 
-### EnforceDismissed
-- Auto-dismisses any active todo whose source_ref matches a dismissed todo's source_ref
-- Runs on every `LoadCommandCenter` call
-- Prevents refresh from re-adding user-dismissed items
+### Dismissed-Todo Filtering
+- Dismissed-todo filtering (preventing refresh from re-adding user-dismissed items) lives in the merge layer (`internal/refresh/merge.go`), not in the db package
 
 ### In-Memory Mutations (on CommandCenter)
 - `CompleteTodo`, `RestoreTodo`, `AddTodo`, `RemoveTodo`, `DeferTodo`, `PromoteTodo`
 - `PauseThread`, `StartThread`, `CloseThread`, `AddThread`
 - `ActiveTodos`, `CompletedTodos`, `ActiveThreads`, `PausedThreads` -- filtered/sorted views
 - `AddPendingBooking` -- appends a booking action
-- `FindConflicts` -- detects overlapping calendar events
+- `FindConflicts` -- detects overlapping calendar events (skips declined, all-day, ended)
 
 ### Helpers
 - `FormatTime(t)` -- UTC RFC3339
@@ -106,20 +127,18 @@ All types are exported for use by other packages:
 ## Test Cases
 
 - DB open/close and table creation
-- Todo CRUD round-trip (insert, complete, dismiss, defer, promote)
+- Todo CRUD round-trip (insert, complete, dismiss, defer, promote, restore)
 - Thread lifecycle (insert, pause, start, close)
 - Path CRUD (add, duplicate ignore, remove)
 - Bookmark CRUD (insert, load, remove)
-- JSON migration (full data, idempotent re-run)
+- JSON migration (full data, idempotent re-run, empty DB guard)
 - DBIsEmpty on fresh vs populated DB
-- CommandCenter JSON load/save round-trip
-- Atomic write (no .tmp file left behind)
-- In-memory mutations (complete, remove, add, defer, pause, start, close, add thread)
+- DBSaveRefreshResult round-trip
+- In-memory mutations (complete, remove, add, defer, promote, pause, start, close, add thread)
 - ActiveTodos/CompletedTodos/ActiveThreads/PausedThreads filtering
 - DueUrgency for overdue/soon/later/none/bad-date
 - RelativeTime for minutes/hours/days
 - FindConflicts with overlaps and no overlaps
-- EnforceDismissed (matching refs, no refs, via LoadCommandCenter)
 - Session file parsing (valid, missing fields, no frontmatter)
 - Winddown sessions (multiple files, empty dir, missing dir)
 - Bookmarks from JSON file (valid, missing file)

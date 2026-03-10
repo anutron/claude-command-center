@@ -6,7 +6,7 @@ The thin host shell for the Claude Command Center. Manages the Bubbletea applica
 
 ## Interface
 
-- **Inputs**: `*sql.DB`, `*config.Config`, `plugin.EventBus`, `plugin.Logger` (passed to `NewModel`); optional external plugins
+- **Inputs**: `*sql.DB`, `*config.Config`, `plugin.EventBus`, `plugin.Logger` (passed to `NewModel`); optional external plugins via variadic `extPlugins`
 - **Outputs**: `Model` implementing `tea.Model` (Init/Update/View); `LaunchAction` set when a plugin requests a session launch
 - **Dependencies**: `internal/config`, `internal/plugin`, `internal/builtin/sessions`, `internal/builtin/commandcenter`, `internal/builtin/settings`, Bubbletea framework
 
@@ -14,7 +14,7 @@ The thin host shell for the Claude Command Center. Manages the Bubbletea applica
 
 ### Files
 
-- `model.go` — Main model struct, plugin wiring, Init/Update/View, action dispatch (~240 lines)
+- `model.go` — Main model struct, plugin wiring, Init/Update/View, action dispatch
 - `styles.go` — Styles struct derived from `config.Palette` (all colors configurable)
 - `effects.go` — Animation: tick messages, gradient interpolation, fade-in, pulsing pointer
 - `banner.go` — ASCII art banner with animated gradient, subtitle from config name
@@ -31,10 +31,9 @@ type Model struct {
     activeTab tab
     width, height, frame int
     Launch    *LaunchAction
+    allPlugins []plugin.Plugin  // every unique plugin for lifecycle management
+    returnedFromLaunch bool     // set when TUI restarts after a Claude session
     db        *sql.DB
-    // Direct references for cross-plugin communication
-    sessionsPlugin      *sessions.Plugin
-    commandCenterPlugin *commandcenter.Plugin
 }
 ```
 
@@ -61,18 +60,19 @@ Each tab maps a label to a plugin and a route within that plugin. Multiple tabs 
 4. Create settings plugin with registry reference: `settings.New(registry)`
 5. Create shared plugin context with the **shared bus and logger from main.go** (not a local bus — this ensures all plugins communicate via the same event bus)
 6. Call `Init(ctx)` on each plugin
-7. Wire tab entries to plugins and routes (settings tab at the end)
-8. In `Init()`, start animation tick and plugin startup commands
+7. Wire tab entries to plugins and routes (external plugin tabs before settings, settings always last)
+8. Collect all unique plugins into `allPlugins` for lifecycle management
+9. In `Init()`, start animation tick, plugin startup commands (`Starter` interface), initial data load, and emit `ReturnMsg` if `returnedFromLaunch` is set
 
 ### Input Dispatch
 
-- **Tab/Shift+Tab**: Cycle active tab, call `NavigateTo(route)` on the newly active plugin
+- **Tab/Shift+Tab**: Cycle active tab; sends `TabLeaveMsg` to previous plugin, calls `NavigateTo(route)` on new plugin, sends `TabViewMsg` to new plugin
 - **Esc**: Offer to active plugin first; if plugin returns "unhandled" or "quit", exit the TUI
 - **All other keys**: Forward to active plugin's `HandleKey`, process the returned action
 
 ### Message Broadcast
 
-Non-key messages (ticks, window resize, custom plugin messages) are broadcast to all unique plugins via `HandleMessage`. Each plugin slug is visited once.
+Non-key messages (ticks, window resize, `NotifyMsg`, custom plugin messages) are broadcast to all unique plugins via `HandleMessage`. Each plugin slug is visited once.
 
 ### Action Processing
 
@@ -80,26 +80,26 @@ Plugins return `plugin.Action` values. The host processes them:
 
 | Action Type | Host Behavior |
 |-------------|---------------|
-| `launch` | Build `LaunchAction` from args (dir, resume_id, prompt), quit TUI |
+| `launch` | Build `LaunchAction` from args (dir, resume_id, initial_prompt), broadcast `LaunchMsg` to all plugins, quit TUI |
 | `quit` | Quit TUI |
-| `navigate` | Switch to target tab, activate plugin route |
+| `navigate` | Switch to target tab (`sessions` or `command`), activate plugin route |
 | `unhandled` | Quit TUI (esc fallthrough) |
 | `noop` | Execute `TeaCmd` if present, otherwise no-op |
 
 ### Cross-Plugin Communication
 
-The host holds direct references to the sessions and command center plugins for cases where the event bus is insufficient (e.g., passing a pending launch todo from CC to sessions before navigating).
+All cross-plugin communication uses the event bus exclusively. The host does not hold direct references to specific plugin types — it only interacts with plugins through the `plugin.Plugin` interface. The `allPlugins` slice holds every unique plugin instance for shutdown and lifecycle management.
 
 ### Rendering
 
-1. Banner with animated gradient (top)
-2. Tab bar with active tab highlighted (center-aligned)
+1. Banner with animated gradient (top, with top padding)
+2. Tab bar with active tab highlighted (center-aligned, `> label` format)
 3. Active plugin's `View()` output (below tab bar)
 4. Centered in terminal via `lipgloss.Place`
 
 ### Animation
 
-- 18 FPS tick drives gradient shimmer on banner, fade-in on startup, pulsing pointer on selected items
+- Tick-driven gradient shimmer on banner, fade-in on startup, pulsing pointer on selected items
 - Gradient uses three configurable color stops (GradStart/GradMid/GradEnd) from palette
 
 ### Cross-Instance Notification
@@ -109,17 +109,17 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 - Each TUI instance creates a PID-scoped socket at `~/.config/ccc/data/ccc-<PID>.sock`
 - A goroutine listens for newline-delimited event strings on the socket
 - Incoming events are injected as `plugin.NotifyMsg` into the bubbletea program via `p.Send()`
-- The CC plugin handles `NotifyMsg` by reloading data from DB
+- Plugins handle `NotifyMsg` by reloading data from DB
 - `ccc notify [event]` connects to all `ccc-*.sock` files and sends the event (default: "reload")
 - Stale sockets (connection refused) are automatically cleaned up
-- External scripts can use `ccc notify` to trigger reloads (e.g., after ccc-refresh runs)
 
 ### Shutdown & Error Handling
 
-- **Database required**: If the database cannot be opened, the process exits with a clear error message and instructions. The TUI is useless without a DB.
-- **Signal handling**: SIGINT and SIGTERM trigger graceful shutdown — all external plugin subprocesses are cleaned up before exit. Prevents orphaned plugin processes on Ctrl+C.
-- **Claude exit errors**: If `claude` exits non-zero, the error is printed to stderr but the TUI loop continues (user returns to the dashboard). Only failures to *launch* claude are fatal.
-- **RunClaude error propagation**: `launch.go:RunClaude()` returns errors from `cmd.Run()` instead of swallowing them.
+- **Shutdown**: Calls `Shutdown()` on every unique plugin (deduplicated by slug)
+- **Database required**: If the database cannot be opened, the process exits with a clear error message
+- **Signal handling**: SIGINT and SIGTERM trigger graceful shutdown — all external plugin subprocesses are cleaned up
+- **Claude exit errors**: If `claude` exits non-zero, the error is printed to stderr but the TUI loop continues
+- **RunClaude error propagation**: `launch.go:RunClaude()` returns errors from `cmd.Run()`
 
 ## Key Design Decisions
 
@@ -127,11 +127,13 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 2. **Colors from palette** — No hardcoded color constants. All colors derived from `config.Palette` via `NewStyles()`.
 3. **Multiple tabs per plugin** — A single plugin can power multiple tabs via different routes.
 4. **Plugin registration order** — Tab order is defined by the host, not the plugins.
+5. **Event-bus-only communication** — No direct plugin-to-plugin references; all cross-plugin communication goes through the shared event bus.
 
 ## Test Cases
 
 - NewModel creates model with correct config name and initial tab
 - Tab navigation cycles through all tabs and wraps
+- Tab switching sends TabLeaveMsg/TabViewMsg
 - Window resize updates dimensions
 - View renders without panic
 - Styles generated for all built-in palettes
@@ -139,3 +141,6 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 - subtitleFromName generates spaced uppercase from config name
 - Esc key quits the TUI
 - Tab entries map to correct plugins
+- allPlugins contains all unique plugin instances
+- returnedFromLaunch emits ReturnMsg on Init
+- Shutdown calls Shutdown on each unique plugin once
