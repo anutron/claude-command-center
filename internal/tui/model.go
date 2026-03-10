@@ -53,6 +53,10 @@ type Model struct {
 	// returnedFromLaunch is set when the TUI restarts after a Claude session.
 	returnedFromLaunch bool
 
+	// Onboarding flow state.
+	onboarding      bool
+	onboardingState *onboardingState
+
 	db *sql.DB
 }
 
@@ -135,6 +139,12 @@ func (m *Model) SetReturnedFromLaunch() {
 	m.returnedFromLaunch = true
 }
 
+// SetOnboarding enables the onboarding flow. Must be called before the program is run.
+func (m *Model) SetOnboarding() {
+	m.onboarding = true
+	m.onboardingState = newOnboardingState(m.cfg)
+}
+
 func (m Model) activePlugin() plugin.Plugin {
 	return m.tabs[m.activeTab].plugin
 }
@@ -151,6 +161,11 @@ func (m Model) Shutdown() {
 }
 
 func (m Model) Init() tea.Cmd {
+	// During onboarding, only run the tick — defer plugin init until onboarding completes.
+	if m.onboarding {
+		return ui.TickCmd()
+	}
+
 	var cmds []tea.Cmd
 	cmds = append(cmds, ui.TickCmd())
 
@@ -184,6 +199,10 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.onboarding {
+		return m.updateOnboarding(msg)
+	}
+
 	switch msg := msg.(type) {
 	case ui.TickMsg:
 		m.frame++
@@ -328,6 +347,16 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	topPad := "\n\n\n\n\n\n"
 	banner := topPad + renderGradientBanner(&m.grad, m.cfg.Name, ui.ContentMaxWidth, m.frame)
+
+	if m.onboarding {
+		content := m.onboardingState.view(m.width, m.height, &m.styles, &m.grad, m.cfg, m.frame)
+		page := lipgloss.JoinVertical(lipgloss.Left, banner, "", content)
+		if m.width > 0 && m.height > 0 {
+			return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, page)
+		}
+		return page
+	}
+
 	tabBar := m.renderTabBar()
 	content := m.activePlugin().View(m.width, m.height, m.frame)
 

@@ -19,6 +19,8 @@ import (
 )
 
 func main() {
+	forceSetup := false
+
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "doctor":
@@ -53,6 +55,9 @@ func main() {
 		case "-h", "--help", "help":
 			printUsage()
 			return
+		case "setup":
+			forceSetup = true
+			// Fall through to normal TUI launch with onboarding.
 		case "sessions":
 			// same as default, fall through
 		default:
@@ -61,6 +66,10 @@ func main() {
 			os.Exit(1)
 		}
 	}
+
+	// Detect first run: config file doesn't exist yet.
+	_, statErr := os.Stat(config.ConfigPath())
+	isFirstRun := os.IsNotExist(statErr)
 
 	// Load config
 	cfg, err := config.Load()
@@ -135,6 +144,9 @@ func main() {
 		m := tui.NewModel(database, cfg, bus, logger, pluginInterfaces...)
 		if returnedFromLaunch {
 			m.SetReturnedFromLaunch()
+		}
+		if (isFirstRun || forceSetup) && !returnedFromLaunch {
+			m.SetOnboarding()
 		}
 		p := tea.NewProgram(m, tea.WithAltScreen())
 
