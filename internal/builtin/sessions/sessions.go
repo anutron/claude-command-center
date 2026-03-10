@@ -8,7 +8,6 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,19 +17,14 @@ import (
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	colorful "github.com/lucasb-eyer/go-colorful"
 )
 
-// contentMaxWidth mirrors the layout constant from the host TUI.
-const contentMaxWidth = 120
-
-// Animation constants (mirrored from tui/effects.go).
-const pulsePeriod = 54
 
 // ---------------------------------------------------------------------------
 // Local item types (no tui import needed)
@@ -109,31 +103,6 @@ func newSessionStyles(p config.Palette) sessionStyles {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Pulsing pointer (local gradient colors)
-// ---------------------------------------------------------------------------
-
-type gradientColors struct {
-	dimCyan    colorful.Color
-	brightCyan colorful.Color
-}
-
-func newGradientColors(p config.Palette) gradientColors {
-	bg, _ := colorful.Hex(p.BgDark)
-	bright, _ := colorful.Hex(p.Pointer)
-	dim := bg.BlendLab(bright, 0.6)
-	return gradientColors{
-		dimCyan:    dim,
-		brightCyan: bright,
-	}
-}
-
-func pulsingPointerStyle(g *gradientColors, frame int) lipgloss.Style {
-	phase := float64(frame) / float64(pulsePeriod) * 2.0 * math.Pi
-	brightness := 0.7 + 0.3*math.Sin(phase)
-	c := g.dimCyan.BlendLab(g.brightCyan, brightness)
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(c.Hex()))
-}
 
 // ---------------------------------------------------------------------------
 // Item delegate
@@ -142,7 +111,7 @@ func pulsingPointerStyle(g *gradientColors, frame int) lipgloss.Style {
 type itemDelegate struct {
 	frame  int
 	styles *sessionStyles
-	grad   *gradientColors
+	grad   *ui.GradientColors
 }
 
 func (d itemDelegate) Height() int                             { return 1 }
@@ -156,7 +125,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	var title, desc string
 	pointer := "  "
 	if selected && d.grad != nil {
-		pointer = pulsingPointerStyle(d.grad, d.frame).Render("> ")
+		pointer = ui.PulsingPointerStyle(d.grad, d.frame).Render("> ")
 	}
 
 	switch it := item.(type) {
@@ -260,7 +229,7 @@ type Plugin struct {
 	logger plugin.Logger
 
 	styles sessionStyles
-	grad   gradientColors
+	grad   ui.GradientColors
 
 	newList       list.Model
 	resumeList    list.Model
@@ -294,7 +263,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 	pal := config.GetPalette(p.cfg.Palette, p.cfg.Colors)
 	p.styles = newSessionStyles(pal)
-	p.grad = newGradientColors(pal)
+	if ctx.Grad != nil {
+		p.grad = *ctx.Grad
+	} else {
+		p.grad = ui.NewGradientColors(pal)
+	}
 
 	p.subTab = "new"
 	p.loading = true
@@ -486,7 +459,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height
-		listWidth := contentMaxWidth
+		listWidth := ui.ContentMaxWidth
 		if p.width > 0 && p.width < listWidth {
 			listWidth = p.width
 		}
@@ -698,7 +671,7 @@ func (p *Plugin) renderHints() string {
 	} else {
 		hints = p.styles.hint.Render("n/r sub-tab   up/down navigate   enter launch   del remove   / filter   esc quit")
 	}
-	return lipgloss.PlaceHorizontal(contentMaxWidth, lipgloss.Center, hints)
+	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hints)
 }
 
 // ---------------------------------------------------------------------------

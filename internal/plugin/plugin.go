@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -12,8 +13,8 @@ import (
 type Context struct {
 	DB     *sql.DB
 	Config *config.Config
-	Styles interface{} // *tui.Styles — interface to avoid circular import
-	Grad   interface{} // *tui.GradientColors
+	Styles *ui.Styles
+	Grad   *ui.GradientColors
 	Bus    EventBus
 	Logger Logger
 	DBPath string

@@ -12,7 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/anutron/claude-command-center/internal/config"
-	"github.com/anutron/claude-command-center/internal/refresh"
+	"github.com/anutron/claude-command-center/internal/lockfile"
 )
 
 // ccRefreshInterval is set during Init from config. Defaults to 5 minutes.
@@ -28,7 +28,7 @@ type ccRefreshFinishedMsg struct {
 func refreshCCCmd() tea.Cmd {
 	return func() tea.Msg {
 		stateDir := config.DataDir()
-		if refresh.IsLocked(stateDir) {
+		if lockfile.IsLocked(stateDir) {
 			return ccRefreshFinishedMsg{err: nil}
 		}
 

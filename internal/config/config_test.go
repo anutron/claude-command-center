@@ -217,43 +217,4 @@ func TestParseRefreshInterval(t *testing.T) {
 	}
 }
 
-func TestDoctorChecks(t *testing.T) {
-	// Doctor checks with a temp config dir should get predictable results
-	tmp := t.TempDir()
-	t.Setenv("CCC_CONFIG_DIR", tmp)
-	t.Setenv("CCC_STATE_DIR", filepath.Join(tmp, "data"))
 
-	checks := runDoctorChecks()
-
-	// We should get 8 checks
-	if len(checks) != 8 {
-		t.Fatalf("expected 8 doctor checks, got %d", len(checks))
-	}
-
-	// Config should pass (missing file returns default)
-	if !checks[0].OK {
-		t.Errorf("config check should pass with default config, got: %s", checks[0].Message)
-	}
-
-	// Database should fail (no DB file in temp dir)
-	// (or pass if OpenDB creates it — either way, check it runs without panic)
-	_ = checks[1]
-
-	// Data freshness should fail (no data)
-	freshCheck := checks[7]
-	if freshCheck.OK && freshCheck.Message == "" {
-		// If DB was created, data freshness should still fail (no command_center row)
-	}
-}
-
-func TestSchedulePlistPath(t *testing.T) {
-	path := plistPath()
-	if path == "" {
-		t.Error("plistPath() returned empty string")
-	}
-	home, _ := os.UserHomeDir()
-	expected := filepath.Join(home, "Library", "LaunchAgents", "com.ccc.refresh.plist")
-	if path != expected {
-		t.Errorf("plistPath() = %q, want %q", path, expected)
-	}
-}

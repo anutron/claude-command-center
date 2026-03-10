@@ -10,12 +10,12 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-const contentMaxWidth = 120
 
 // settingsItem represents a plugin or data source in the settings list.
 type settingsItem struct {
@@ -761,7 +761,7 @@ func (p *Plugin) View(width, height, frame int) string {
 	p.width = width
 	p.height = height
 
-	viewWidth := contentMaxWidth
+	viewWidth := ui.ContentMaxWidth
 	if width > 0 && width < viewWidth {
 		viewWidth = width
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -20,8 +21,7 @@ import (
 )
 
 const (
-	contentMaxWidth       = 120
-	ccStaleThreshold      = 2 * time.Second
+	ccStaleThreshold = 2 * time.Second
 )
 
 var bookingDurations = []int{15, 30, 60, 120, 240}
@@ -48,9 +48,6 @@ type ccLoadedMsg struct {
 type dbWriteResult struct {
 	err error
 }
-
-// tickMsg drives all frame-based animation.
-type tickMsg time.Time
 
 // Plugin implements the plugin.Plugin interface for the Command Center.
 type Plugin struct {
@@ -229,9 +226,18 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	// Set refresh interval from config
 	ccRefreshInterval = ctx.Config.ParseRefreshInterval()
 
-	pal := config.GetPalette(p.cfg.Palette, p.cfg.Colors)
-	p.styles = newCCStyles(pal)
-	p.grad = newGradientColors(pal)
+	if ctx.Styles != nil {
+		p.styles = *ctx.Styles
+	} else {
+		pal := config.GetPalette(p.cfg.Palette, p.cfg.Colors)
+		p.styles = ui.NewStyles(pal)
+	}
+	if ctx.Grad != nil {
+		p.grad = *ctx.Grad
+	} else {
+		pal := config.GetPalette(p.cfg.Palette, p.cfg.Colors)
+		p.grad = ui.NewGradientColors(pal)
+	}
 
 	// Set up text input
 	ti := textinput.New()
@@ -1160,7 +1166,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			return true, plugin.Action{Type: "noop", TeaCmd: p.loadCCFromDBCmd()}
 		}
 
-	case tickMsg:
+	case ui.TickMsg:
 		p.frame++
 		if p.flashMessage != "" && time.Since(p.flashMessageAt) > 15*time.Second {
 			p.flashMessage = ""
@@ -1228,7 +1234,7 @@ func (p *Plugin) View(width, height, frame int) string {
 }
 
 func (p *Plugin) viewCommandTab(width, height int) string {
-	viewWidth := contentMaxWidth
+	viewWidth := ui.ContentMaxWidth
 	if width > 0 && width < viewWidth {
 		viewWidth = width
 	}
@@ -1275,7 +1281,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 }
 
 func (p *Plugin) viewThreadsTab(width, height int) string {
-	viewWidth := contentMaxWidth
+	viewWidth := ui.ContentMaxWidth
 	if width > 0 && width < viewWidth {
 		viewWidth = width
 	}

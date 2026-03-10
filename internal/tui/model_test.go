@@ -6,6 +6,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -149,7 +150,7 @@ func TestStylesFromPalette(t *testing.T) {
 func TestGradientColorsFromPalette(t *testing.T) {
 	pal := config.GetPalette("aurora", nil)
 	g := NewGradientColors(pal)
-	c := gradientColor(&g, 0.5)
+	c := ui.GradientColor(&g, 0.5)
 	hex := c.Hex()
 	if hex == "" {
 		t.Error("expected non-empty hex color")

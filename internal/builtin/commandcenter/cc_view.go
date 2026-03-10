@@ -7,6 +7,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -363,7 +364,7 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 		}
 		var line1 string
 		if i == cursor {
-			pointer := pulsingPointerStyle(g, frame).Render("> ")
+			pointer := ui.PulsingPointerStyle(g, frame).Render("> ")
 			styledNum := lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(numStr + ". " + title)
 			if isLoading {
 				styledNum = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(numStr) +
@@ -623,7 +624,7 @@ func renderExpandedTodoItem(s *ccStyles, g *gradientColors, todo db.Todo, num in
 	}
 	var line1 string
 	if isCursor {
-		pointer := pulsingPointerStyle(g, frame).Render("> ")
+		pointer := ui.PulsingPointerStyle(g, frame).Render("> ")
 		if isLoading {
 			line1 = pointer + lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(numStr) +
 				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(". "+title)

@@ -1,4 +1,4 @@
-package refresh
+package lockfile
 
 import (
 	"os"

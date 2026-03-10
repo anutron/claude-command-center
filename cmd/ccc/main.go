@@ -11,6 +11,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/doctor"
 	"github.com/anutron/claude-command-center/internal/external"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -29,7 +30,7 @@ func main() {
 		case "doctor":
 			fmt.Println("Claude Command Center — Doctor")
 			fmt.Println()
-			if err := config.RunDoctor(); err != nil {
+			if err := doctor.RunDoctor(); err != nil {
 				os.Exit(1)
 			}
 			return

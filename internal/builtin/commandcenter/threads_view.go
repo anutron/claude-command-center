@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -48,7 +49,7 @@ func renderThreadSection(s *ccStyles, g *gradientColors, title string, threads [
 
 		pointer := "  "
 		if selected {
-			pointer = pulsingPointerStyle(g, frame).Render("> ")
+			pointer = ui.PulsingPointerStyle(g, frame).Render("> ")
 		}
 
 		prefix := threadTypePrefix(s, t.Type)

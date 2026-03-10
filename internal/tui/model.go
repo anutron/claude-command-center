@@ -9,6 +9,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/builtin/settings"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -151,7 +152,7 @@ func (m Model) Shutdown() {
 
 func (m Model) Init() tea.Cmd {
 	var cmds []tea.Cmd
-	cmds = append(cmds, tickCmd())
+	cmds = append(cmds, ui.TickCmd())
 
 	// Collect StartCmds from all plugins that implement Starter.
 	seen := map[string]bool{}
@@ -184,10 +185,10 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tickMsg:
+	case ui.TickMsg:
 		m.frame++
 		var cmds []tea.Cmd
-		cmds = append(cmds, tickCmd())
+		cmds = append(cmds, ui.TickCmd())
 		m.broadcastMessage(msg, &cmds)
 		return m, tea.Batch(cmds...)
 
@@ -326,7 +327,7 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	topPad := "\n\n\n\n\n\n"
-	banner := topPad + renderGradientBanner(&m.grad, m.cfg.Name, contentMaxWidth, m.frame)
+	banner := topPad + renderGradientBanner(&m.grad, m.cfg.Name, ui.ContentMaxWidth, m.frame)
 	tabBar := m.renderTabBar()
 	content := m.activePlugin().View(m.width, m.height, m.frame)
 
@@ -352,5 +353,5 @@ func (m Model) renderTabBar() string {
 		}
 	}
 	tabBar := strings.Join(parts, "")
-	return lipgloss.PlaceHorizontal(contentMaxWidth, lipgloss.Center, tabBar)
+	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, tabBar)
 }

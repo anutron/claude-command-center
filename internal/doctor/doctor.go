@@ -1,4 +1,4 @@
-package config
+package doctor
 
 import (
 	"database/sql"
@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 )
 
@@ -73,7 +74,7 @@ func runDoctorChecks() []DoctorCheck {
 }
 
 func checkConfig() DoctorCheck {
-	_, err := Load()
+	_, err := config.Load()
 	if err != nil {
 		return DoctorCheck{Name: "Config file", OK: false, Message: fmt.Sprintf("Error: %v — run 'ccc setup'", err)}
 	}
@@ -81,7 +82,7 @@ func checkConfig() DoctorCheck {
 }
 
 func checkDatabase() DoctorCheck {
-	dbPath := DBPath()
+	dbPath := config.DBPath()
 	database, err := db.OpenDB(dbPath)
 	if err != nil {
 		return DoctorCheck{Name: "Database", OK: false, Message: fmt.Sprintf("Cannot open %s: %v", dbPath, err)}
@@ -91,21 +92,21 @@ func checkDatabase() DoctorCheck {
 }
 
 func checkCalendar() DoctorCheck {
-	if err := ValidateCalendar(); err != nil {
+	if err := config.ValidateCalendar(); err != nil {
 		return DoctorCheck{Name: "Calendar credentials", OK: false, Message: err.Error()}
 	}
 	return DoctorCheck{Name: "Calendar credentials", OK: true}
 }
 
 func checkGitHub() DoctorCheck {
-	if err := ValidateGitHub(); err != nil {
+	if err := config.ValidateGitHub(); err != nil {
 		return DoctorCheck{Name: "GitHub CLI", OK: false, Message: err.Error()}
 	}
 	return DoctorCheck{Name: "GitHub CLI", OK: true}
 }
 
 func checkGranola() DoctorCheck {
-	if err := ValidateGranola(); err != nil {
+	if err := config.ValidateGranola(); err != nil {
 		return DoctorCheck{Name: "Granola", OK: false, Message: err.Error()}
 	}
 	return DoctorCheck{Name: "Granola", OK: true}
@@ -135,7 +136,7 @@ func checkClaudeCLI() DoctorCheck {
 }
 
 func checkDataFreshness() DoctorCheck {
-	dbPath := DBPath()
+	dbPath := config.DBPath()
 	database, err := db.OpenDB(dbPath)
 	if err != nil {
 		return DoctorCheck{Name: "Data freshness", OK: false, Message: "Cannot open database"}

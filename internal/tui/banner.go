@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -42,7 +43,7 @@ func renderGradientBanner(g *GradientColors, name string, width int, frame int) 
 		maxWidth = 1
 	}
 
-	offset := float64(frame) * shimmerSpeed
+	offset := float64(frame) * ui.ShimmerSpeed
 
 	var bannerLines []string
 	for _, line := range lines {
@@ -54,8 +55,8 @@ func renderGradientBanner(g *GradientColors, name string, width int, frame int) 
 				continue
 			}
 			t := float64(x)/float64(maxWidth) + offset
-			c := gradientColor(g, t)
-			c = applyFade(g, c, frame)
+			c := ui.GradientColor(g, t)
+			c = ui.ApplyFade(g, c, frame)
 			style := lipgloss.NewStyle().Foreground(lipgloss.Color(c.Hex()))
 			styled.WriteString(style.Render(string(r)))
 		}
@@ -65,7 +66,7 @@ func renderGradientBanner(g *GradientColors, name string, width int, frame int) 
 	banner := strings.Join(bannerLines, "\n")
 
 	sub := subtitleFromName(name)
-	subtitleColor := applyFade(g, g.Mid, frame)
+	subtitleColor := ui.ApplyFade(g, g.Mid, frame)
 	s := lipgloss.NewStyle().Foreground(lipgloss.Color(subtitleColor.Hex())).Render(sub)
 
 	block := lipgloss.JoinVertical(lipgloss.Center, banner, s)

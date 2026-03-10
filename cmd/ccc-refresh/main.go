@@ -8,6 +8,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
+	"github.com/anutron/claude-command-center/internal/lockfile"
 	"github.com/anutron/claude-command-center/internal/refresh"
 )
 
@@ -33,7 +34,7 @@ func main() {
 
 	// Acquire refresh lock
 	stateDir := config.DataDir()
-	release, err := refresh.AcquireLock(stateDir)
+	release, err := lockfile.AcquireLock(stateDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
