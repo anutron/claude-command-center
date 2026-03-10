@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Name            string        `yaml:"name"`
+	ShowBanner      *bool         `yaml:"show_banner,omitempty"`
 	Palette         string        `yaml:"palette"`
 	Colors          *CustomColors `yaml:"colors,omitempty"`
 	RefreshInterval string        `yaml:"refresh_interval,omitempty"`
@@ -85,6 +86,20 @@ type ExternalPluginConfig struct {
 	Name    string `yaml:"name"`
 	Command string `yaml:"command"`
 	Enabled bool   `yaml:"enabled"`
+}
+
+// BannerVisible returns whether the banner should be shown.
+// Defaults to true if ShowBanner is nil (backwards compat).
+func (c *Config) BannerVisible() bool {
+	if c.ShowBanner == nil {
+		return true
+	}
+	return *c.ShowBanner
+}
+
+// SetShowBanner sets the ShowBanner field.
+func (c *Config) SetShowBanner(v bool) {
+	c.ShowBanner = &v
 }
 
 // DefaultConfig returns a Config with sensible defaults.

@@ -346,15 +346,28 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	topPad := "\n\n\n\n\n\n"
-	banner := topPad + renderGradientBanner(&m.grad, m.cfg.Name, ui.ContentMaxWidth, m.frame)
 
 	if m.onboarding {
+		// During onboarding, always show banner for preview (unless user toggled it off).
+		var banner string
+		if m.cfg.BannerVisible() {
+			banner = topPad + renderGradientBanner(&m.grad, m.cfg.Name, ui.ContentMaxWidth, m.frame)
+		} else {
+			banner = topPad
+		}
 		content := m.onboardingState.view(m.width, m.height, &m.styles, &m.grad, m.cfg, m.frame)
 		page := lipgloss.JoinVertical(lipgloss.Left, banner, "", content)
 		if m.width > 0 && m.height > 0 {
 			return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, page)
 		}
 		return page
+	}
+
+	var banner string
+	if m.cfg.BannerVisible() {
+		banner = topPad + renderGradientBanner(&m.grad, m.cfg.Name, ui.ContentMaxWidth, m.frame)
+	} else {
+		banner = topPad
 	}
 
 	tabBar := m.renderTabBar()

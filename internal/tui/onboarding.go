@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/config"
@@ -63,6 +64,12 @@ type calendarSetupState struct {
 	phase    int // 0=id, 1=label (during add)
 	fetching bool
 	fetchErr string
+
+	// Selection mode after fetch.
+	selectMode       bool
+	fetchedCalendars []calendar.CalendarInfo
+	selectCursor     int
+	selectChecked    []bool
 }
 
 type githubSetupState struct {
@@ -77,6 +84,12 @@ type githubSetupState struct {
 type calendarListMsg struct {
 	calendars []calendar.CalendarInfo
 	err       error
+}
+
+// githubUsernameMsg carries the result of auto-fetching the GitHub username.
+type githubUsernameMsg struct {
+	username string
+	err      error
 }
 
 // mcpResultMsg carries the result of BuildAndConfigureMCP.
@@ -217,23 +230,37 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cs.fetchErr = msg.err.Error()
 		} else {
 			cs.fetchErr = ""
-			// Add fetched calendars that aren't already configured.
+			// Filter out calendars already configured.
 			existing := map[string]bool{}
 			for _, c := range m.cfg.Calendar.Calendars {
 				existing[c.ID] = true
 			}
+			var available []calendar.CalendarInfo
 			for _, cal := range msg.calendars {
 				if !existing[cal.ID] {
-					label := cal.Summary
-					if cal.Primary {
-						label = cal.Summary + " (primary)"
-					}
-					m.cfg.Calendar.Calendars = append(m.cfg.Calendar.Calendars, config.CalendarEntry{
-						ID:    cal.ID,
-						Label: label,
-					})
+					available = append(available, cal)
 				}
 			}
+			if len(available) > 0 {
+				// Enter selection mode.
+				cs.fetchedCalendars = available
+				cs.selectMode = true
+				cs.selectCursor = 0
+				cs.selectChecked = make([]bool, len(available))
+				// Auto-check primary calendar.
+				for i, cal := range available {
+					if cal.Primary {
+						cs.selectChecked[i] = true
+					}
+				}
+			}
+		}
+		return m, nil
+
+	case githubUsernameMsg:
+		if msg.err == nil && msg.username != "" {
+			m.cfg.GitHub.Username = msg.username
+			o.githubState.usernameInput.SetValue(msg.username)
 			m.saveConfig()
 		}
 		return m, nil
@@ -297,6 +324,11 @@ func (m *Model) handleWelcomeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyEsc:
 		return m, tea.Quit
 	default:
+		// Toggle banner visibility with ctrl+b.
+		if msg.String() == "ctrl+b" {
+			m.cfg.SetShowBanner(!m.cfg.BannerVisible())
+			return m, nil
+		}
 		var cmd tea.Cmd
 		o.nameInput, cmd = o.nameInput.Update(msg)
 		// Update config name live for banner preview.
@@ -386,6 +418,10 @@ func (m *Model) handleSourcesKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Open per-source sub-flow.
 			o.activeSource = o.sources[o.sourceCursor].slug
 			o.step = stepSourceDetail
+			// Auto-fetch GitHub username when entering the GitHub sub-flow.
+			if o.activeSource == "github" {
+				return m, m.maybeAutoFetchGitHubUsername()
+			}
 			return m, nil
 		case "esc":
 			o.step = stepPalette
@@ -435,6 +471,11 @@ func (m *Model) handleSourceDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *Model) handleCalendarDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	o := m.onboardingState
 	cs := o.calendarState
+
+	// If in selection mode (after fetch), handle selection keys.
+	if cs.selectMode {
+		return m.handleCalendarSelectMode(msg)
+	}
 
 	// If in add mode, handle textinput.
 	if cs.addMode {
@@ -493,6 +534,51 @@ func (m *Model) handleCalendarDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cals, err := calendar.ListAvailableCalendars()
 			return calendarListMsg{calendars: cals, err: err}
 		}
+	}
+	return m, nil
+}
+
+func (m *Model) handleCalendarSelectMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	cs := m.onboardingState.calendarState
+
+	switch msg.String() {
+	case "esc":
+		// Cancel selection, discard fetched calendars.
+		cs.selectMode = false
+		cs.fetchedCalendars = nil
+		cs.selectChecked = nil
+		return m, nil
+	case "up", "k":
+		if cs.selectCursor > 0 {
+			cs.selectCursor--
+		}
+	case "down", "j":
+		if cs.selectCursor < len(cs.fetchedCalendars)-1 {
+			cs.selectCursor++
+		}
+	case " ":
+		if cs.selectCursor < len(cs.selectChecked) {
+			cs.selectChecked[cs.selectCursor] = !cs.selectChecked[cs.selectCursor]
+		}
+	case "enter":
+		// Add selected calendars to config.
+		for i, cal := range cs.fetchedCalendars {
+			if cs.selectChecked[i] {
+				label := cal.Summary
+				if cal.Primary {
+					label = cal.Summary + " (primary)"
+				}
+				m.cfg.Calendar.Calendars = append(m.cfg.Calendar.Calendars, config.CalendarEntry{
+					ID:    cal.ID,
+					Label: label,
+				})
+			}
+		}
+		m.saveConfig()
+		cs.selectMode = false
+		cs.fetchedCalendars = nil
+		cs.selectChecked = nil
+		return m, nil
 	}
 	return m, nil
 }
@@ -655,8 +741,26 @@ func (m *Model) handleGithubDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 	case "r":
 		o.validateSources()
+		// Auto-fetch username if auth is valid and username is empty.
+		return m, m.maybeAutoFetchGitHubUsername()
 	}
 	return m, nil
+}
+
+// maybeAutoFetchGitHubUsername returns a Cmd that fetches the GitHub username
+// via `gh api user` if auth is valid and the username is not yet set.
+func (m *Model) maybeAutoFetchGitHubUsername() tea.Cmd {
+	ghSrc := m.onboardingState.findSource("github")
+	if ghSrc == nil || !ghSrc.valid || m.cfg.GitHub.Username != "" {
+		return nil
+	}
+	return func() tea.Msg {
+		out, err := exec.Command("gh", "api", "user", "-q", ".login").Output()
+		if err != nil {
+			return githubUsernameMsg{err: err}
+		}
+		return githubUsernameMsg{username: strings.TrimSpace(string(out))}
+	}
 }
 
 // --- Granola sub-flow ---
@@ -757,7 +861,7 @@ func (o *onboardingState) view(width, height int, styles *Styles, grad *Gradient
 	var content string
 	switch o.step {
 	case stepWelcome:
-		content = o.viewWelcome(viewWidth, styles)
+		content = o.viewWelcome(viewWidth, styles, cfg)
 	case stepPalette:
 		content = o.viewPalette(viewWidth, styles)
 	case stepSources:
@@ -771,14 +875,22 @@ func (o *onboardingState) view(width, height int, styles *Styles, grad *Gradient
 	return content
 }
 
-func (o *onboardingState) viewWelcome(width int, styles *Styles) string {
+func (o *onboardingState) viewWelcome(width int, styles *Styles, cfg *config.Config) string {
 	var lines []string
 
 	lines = append(lines, styles.TitleBoldC.Render("WELCOME"))
 	lines = append(lines, "")
-	lines = append(lines, styles.DescMuted.Render("Give your command center a name:"))
+	lines = append(lines, styles.DescMuted.Render("Choose a subtitle for the banner above:"))
+	lines = append(lines, styles.Hint.Render("  The text you type appears spaced out below the CCC logo."))
 	lines = append(lines, "")
 	lines = append(lines, "  "+o.nameInput.View())
+	lines = append(lines, "")
+
+	bannerStatus := "on"
+	if !cfg.BannerVisible() {
+		bannerStatus = "off"
+	}
+	lines = append(lines, styles.Hint.Render(fmt.Sprintf("  Show banner: [%s]  (ctrl+b to toggle)", bannerStatus)))
 	lines = append(lines, "")
 	lines = append(lines, styles.Hint.Render("  enter continue · esc quit"))
 
@@ -920,6 +1032,35 @@ func (o *onboardingState) viewCalendarDetail(width int, styles *Styles, cfg *con
 		lines = append(lines, "")
 	}
 
+	// Selection mode after fetch.
+	if cs.selectMode {
+		lines = append(lines, styles.TitleBoldW.Render("  Select Calendars to Add"))
+		lines = append(lines, "")
+		for i, cal := range cs.fetchedCalendars {
+			cursor := "    "
+			if i == cs.selectCursor {
+				cursor = "  " + styles.Pointer.Render("> ")
+			}
+			check := "[ ]"
+			if cs.selectChecked[i] {
+				check = "[x]"
+			}
+			label := cal.Summary
+			if cal.Primary {
+				label += " (primary)"
+			}
+			lines = append(lines, fmt.Sprintf("%s%s %s  %s",
+				cursor,
+				check,
+				styles.NormalItem.Render(label),
+				styles.Hint.Render(cal.ID)))
+		}
+		lines = append(lines, "")
+		lines = append(lines, styles.Hint.Render("  space toggle · up/down navigate · enter add selected · esc cancel"))
+		content := lipgloss.JoinVertical(lipgloss.Left, lines...)
+		return styles.PanelBorder.Width(width - 4).Render(content)
+	}
+
 	// Add mode.
 	if cs.addMode {
 		lines = append(lines, styles.TitleBoldW.Render("  Add Calendar"))
@@ -1034,13 +1175,21 @@ func (o *onboardingState) viewGranolaDetail(width int, styles *Styles) string {
 	lines = append(lines, styles.TitleBoldC.Render("GRANOLA"))
 	lines = append(lines, "")
 
+	lines = append(lines, styles.DescMuted.Render("  Granola records and summarizes your meetings."))
+	lines = append(lines, "")
+
 	grSrc := o.findSource("granola")
 	if grSrc != nil && grSrc.valid {
 		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(styles.ColorGreen).Render("✓ Granola configured"))
 	} else {
 		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Render("✗ Granola not configured"))
 		lines = append(lines, "")
-		lines = append(lines, styles.Hint.Render("  Open the Granola app and sign in to set up"))
+		lines = append(lines, styles.DescMuted.Render("  To set up Granola:"))
+		lines = append(lines, styles.Hint.Render("  1. Install from granola.ai"))
+		lines = append(lines, styles.Hint.Render("  2. Open Granola and sign in"))
+		lines = append(lines, styles.Hint.Render("  3. CCC reads Granola's local data automatically"))
+		lines = append(lines, "")
+		lines = append(lines, styles.Hint.Render("  Looks for: ~/Library/Application Support/Granola/stored-accounts.json"))
 	}
 
 	lines = append(lines, "")
