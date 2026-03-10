@@ -97,13 +97,19 @@ func findFreeSlot(ctx context.Context, srv *calendar.Service, durationMinutes in
 		if item.Start.DateTime == "" {
 			continue
 		}
-		eventStart, _ := time.Parse(time.RFC3339, item.Start.DateTime)
+		eventStart, err := time.Parse(time.RFC3339, item.Start.DateTime)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("parse event start %q: %w", item.Start.DateTime, err)
+		}
 
 		if candidate.Add(duration).Before(eventStart) || candidate.Add(duration).Equal(eventStart) {
 			return candidate, nil
 		}
 
-		eventEnd, _ := time.Parse(time.RFC3339, item.End.DateTime)
+		eventEnd, err := time.Parse(time.RFC3339, item.End.DateTime)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("parse event end %q: %w", item.End.DateTime, err)
+		}
 		if eventEnd.After(candidate) {
 			candidate = eventEnd
 		}

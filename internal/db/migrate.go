@@ -117,42 +117,53 @@ func migrateCommandCenter(db *sql.DB, ccPath string) error {
 
 	// Migrate calendar cache
 	for _, ev := range cc.Calendar.Today {
-		migrateCachedEvent(tx, "today", ev)
+		if err := migrateCachedEvent(tx, "today", ev); err != nil {
+			return fmt.Errorf("migrate calendar today: %w", err)
+		}
 	}
 	for _, ev := range cc.Calendar.Tomorrow {
-		migrateCachedEvent(tx, "tomorrow", ev)
+		if err := migrateCachedEvent(tx, "tomorrow", ev); err != nil {
+			return fmt.Errorf("migrate calendar tomorrow: %w", err)
+		}
 	}
 
 	// Migrate suggestions
 	if cc.Suggestions.Focus != "" || len(cc.Suggestions.RankedTodoIDs) > 0 {
 		rankedJSON, _ := json.Marshal(cc.Suggestions.RankedTodoIDs)
 		reasonsJSON, _ := json.Marshal(cc.Suggestions.Reasons)
-		_, _ = tx.Exec(`INSERT OR REPLACE INTO cc_suggestions (id, focus, ranked_todo_ids, reasons, updated_at)
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO cc_suggestions (id, focus, ranked_todo_ids, reasons, updated_at)
 			VALUES (1, ?, ?, ?, ?)`,
-			cc.Suggestions.Focus, string(rankedJSON), string(reasonsJSON), FormatTime(time.Now()))
+			cc.Suggestions.Focus, string(rankedJSON), string(reasonsJSON), FormatTime(time.Now())); err != nil {
+			return fmt.Errorf("migrate suggestions: %w", err)
+		}
 	}
 
 	// Migrate pending actions
 	for _, a := range cc.PendingActions {
-		_, _ = tx.Exec(`INSERT INTO cc_pending_actions (type, todo_id, duration_minutes, requested_at)
+		if _, err := tx.Exec(`INSERT INTO cc_pending_actions (type, todo_id, duration_minutes, requested_at)
 			VALUES (?, ?, ?, ?)`,
-			a.Type, a.TodoID, a.DurationMinutes, FormatTime(a.RequestedAt))
+			a.Type, a.TodoID, a.DurationMinutes, FormatTime(a.RequestedAt)); err != nil {
+			return fmt.Errorf("migrate pending action: %w", err)
+		}
 	}
 
 	// Migrate generated_at
 	if !cc.GeneratedAt.IsZero() {
-		_, _ = tx.Exec(`INSERT OR REPLACE INTO cc_meta (key, value, updated_at)
+		if _, err := tx.Exec(`INSERT OR REPLACE INTO cc_meta (key, value, updated_at)
 			VALUES ('generated_at', ?, ?)`,
-			FormatTime(cc.GeneratedAt), FormatTime(time.Now()))
+			FormatTime(cc.GeneratedAt), FormatTime(time.Now())); err != nil {
+			return fmt.Errorf("migrate generated_at: %w", err)
+		}
 	}
 
 	return tx.Commit()
 }
 
-func migrateCachedEvent(tx *sql.Tx, day string, ev CalendarEvent) {
-	_, _ = tx.Exec(`INSERT INTO cc_calendar_cache (day, title, start_time, end_time, all_day, declined, calendar_id, cached_at)
+func migrateCachedEvent(tx *sql.Tx, day string, ev CalendarEvent) error {
+	_, err := tx.Exec(`INSERT INTO cc_calendar_cache (day, title, start_time, end_time, all_day, declined, calendar_id, cached_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		day, ev.Title, FormatTime(ev.Start), FormatTime(ev.End), ev.AllDay, ev.Declined, ev.CalendarID, FormatTime(time.Now()))
+	return err
 }
 
 func migrateBookmarks(db *sql.DB, bookmarksPath string) error {

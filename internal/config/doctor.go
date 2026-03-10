@@ -143,7 +143,7 @@ func checkDataFreshness() DoctorCheck {
 	defer database.Close()
 
 	var generatedAt sql.NullString
-	err = database.QueryRow("SELECT generated_at FROM command_center LIMIT 1").Scan(&generatedAt)
+	err = database.QueryRow("SELECT value FROM cc_meta WHERE key = 'generated_at'").Scan(&generatedAt)
 	if err != nil || !generatedAt.Valid {
 		return DoctorCheck{Name: "Data freshness", OK: false, Message: "No data — run 'ccc-refresh' to populate"}
 	}

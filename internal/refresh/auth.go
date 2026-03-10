@@ -242,7 +242,11 @@ func RunCalendarAuth() error {
 	})
 
 	srv := &http.Server{Addr: ":3000", Handler: mux}
-	go srv.ListenAndServe()
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("listen on :3000: %w", err)
+		}
+	}()
 
 	var code string
 	select {
