@@ -47,9 +47,24 @@ type CalendarConfig struct {
 }
 
 type CalendarEntry struct {
-	ID    string `yaml:"id"`
-	Label string `yaml:"label"`
-	Color string `yaml:"color"`
+	ID      string `yaml:"id"`
+	Label   string `yaml:"label"`
+	Color   string `yaml:"color,omitempty"`
+	Enabled *bool  `yaml:"enabled,omitempty"`
+}
+
+// IsEnabled returns whether this calendar entry is enabled.
+// Defaults to true if the Enabled field is nil (not set).
+func (e CalendarEntry) IsEnabled() bool {
+	if e.Enabled == nil {
+		return true
+	}
+	return *e.Enabled
+}
+
+// SetEnabled sets the enabled state of a calendar entry.
+func (e *CalendarEntry) SetEnabled(v bool) {
+	e.Enabled = &v
 }
 
 type GitHubConfig struct {

@@ -134,9 +134,9 @@ func newOnboardingState(cfg *config.Config) *onboardingState {
 		nameInput:     ni,
 		paletteCursor: palCursor,
 		sources: []sourceItem{
-			{name: "Google Calendar", slug: "calendar"},
-			{name: "GitHub", slug: "github"},
-			{name: "Granola", slug: "granola"},
+			{name: "Google Calendar", slug: "calendar", enabled: cfg.Calendar.Enabled},
+			{name: "GitHub", slug: "github", enabled: cfg.GitHub.Enabled},
+			{name: "Granola", slug: "granola", enabled: cfg.Granola.Enabled},
 		},
 		calendarState: &calendarSetupState{
 			idInput:    calIDInput,
@@ -173,9 +173,11 @@ func (o *onboardingState) validateSources() {
 }
 
 // autoEnableSources enables sources that have valid credentials.
+// It only promotes sources from disabled to enabled — it never disables
+// a source that was already enabled in the config.
 func (o *onboardingState) autoEnableSources() {
 	for i := range o.sources {
-		if o.sources[i].valid {
+		if o.sources[i].valid && !o.sources[i].enabled {
 			o.sources[i].enabled = true
 		}
 	}

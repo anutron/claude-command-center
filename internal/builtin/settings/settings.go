@@ -441,20 +441,13 @@ func (p *Plugin) openDetailView(idx int) {
 func (p *Plugin) handleDetailKey(msg tea.KeyMsg) plugin.Action {
 	item := p.items[p.detailIdx]
 
-	// esc and space are always handled by the settings plugin.
-	switch msg.String() {
-	case "esc":
+	// esc is always handled by the settings plugin.
+	if msg.String() == "esc" {
 		p.detailView = false
-		return plugin.NoopAction()
-	case " ":
-		if item.toggleable {
-			p.items[p.detailIdx].enabled = !p.items[p.detailIdx].enabled
-			p.applyToggle(p.items[p.detailIdx])
-		}
 		return plugin.NoopAction()
 	}
 
-	// Check SettingsProvider — providers handle their own cursor, editing, etc.
+	// Check SettingsProvider first — providers handle their own cursor, editing, etc.
 	if sp, ok := p.providers[item.slug]; ok {
 		action := sp.HandleSettingsKey(msg)
 		if action.Type == plugin.ActionFlash {
@@ -477,6 +470,15 @@ func (p *Plugin) handleDetailKey(msg tea.KeyMsg) plugin.Action {
 				return action
 			}
 		}
+	}
+
+	// Space toggles the data source (when provider didn't handle it).
+	if msg.String() == " " {
+		if item.toggleable {
+			p.items[p.detailIdx].enabled = !p.items[p.detailIdx].enabled
+			p.applyToggle(p.items[p.detailIdx])
+		}
+		return plugin.NoopAction()
 	}
 
 	// Generic navigation for views without a provider (or unhandled keys).
@@ -531,7 +533,7 @@ func (p *Plugin) viewDetail(width, height int) string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  esc back · space toggle"))
+	lines = append(lines, p.styles.muted.Render("  esc back"))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return p.styles.panel.Width(width - 4).Render(content)

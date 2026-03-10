@@ -54,10 +54,12 @@ func main() {
 		l = llm.NoopLLM{}
 	}
 
-	// Build calendar IDs from config
+	// Build calendar IDs from config (only enabled calendars)
 	var calendarIDs []string
 	for _, cal := range cfg.Calendar.Calendars {
-		calendarIDs = append(calendarIDs, cal.ID)
+		if cal.IsEnabled() {
+			calendarIDs = append(calendarIDs, cal.ID)
+		}
 	}
 
 	// Build DataSources from config
