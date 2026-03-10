@@ -107,9 +107,6 @@ func renderCalendarColumn(s *ccStyles, calendars []config.CalendarEntry, cal *db
 	afternoon := now.Hour() >= 12
 
 	todayEvents := visibleEvents(cal.Today)
-	if afternoon {
-		todayEvents = upcomingEvents(todayEvents, now)
-	}
 
 	todayLabel := fmt.Sprintf("TODAY (%s)", strings.ToUpper(now.Format("Mon Jan 2")))
 
@@ -126,54 +123,52 @@ func renderCalendarColumn(s *ccStyles, calendars []config.CalendarEntry, cal *db
 			tomorrowMax = 3
 		}
 
-		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, todayMax)
+		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, todayMax, true)
 		parts = append(parts, todaySection)
 
 		tomorrow := now.AddDate(0, 0, 1)
 		tomorrowLabel := fmt.Sprintf("TOMORROW (%s)", strings.ToUpper(tomorrow.Format("Mon Jan 2")))
-		tomorrowSection := renderCalendarPanelCapped(s, calendars, visibleEvents(cal.Tomorrow), tomorrowLabel, width, tomorrowMax)
+		tomorrowSection := renderCalendarPanelCapped(s, calendars, visibleEvents(cal.Tomorrow), tomorrowLabel, width, tomorrowMax, false)
 		parts = append(parts, "", tomorrowSection)
 	} else {
 		calMax := maxHeight - usedLines
 		if calMax < 5 {
 			calMax = 5
 		}
-		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, calMax)
+		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, calMax, true)
 		parts = append(parts, todaySection)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
-func upcomingEvents(events []db.CalendarEvent, now time.Time) []db.CalendarEvent {
-	var out []db.CalendarEvent
-	for _, ev := range events {
-		if ev.End.After(now) {
-			out = append(out, ev)
-		}
-	}
-	return out
-}
-
 func visibleEvents(events []db.CalendarEvent) []db.CalendarEvent {
 	var out []db.CalendarEvent
 	for _, ev := range events {
-		if !ev.Declined {
-			out = append(out, ev)
+		if ev.Declined {
+			continue
 		}
+		// Filter out noise: skip events with no title and no meaningful content
+		if strings.TrimSpace(ev.Title) == "" {
+			continue
+		}
+		out = append(out, ev)
 	}
 	return out
 }
 
-func renderCalendarPanelCapped(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width, maxLines int) string {
+func renderCalendarPanelCapped(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width, maxLines int, showNowLine bool) string {
 	availableForEvents := maxLines - 1
+	if showNowLine {
+		availableForEvents-- // account for the now-line taking a row
+	}
 	if availableForEvents < 1 {
 		availableForEvents = 1
 	}
 	if len(events) > availableForEvents {
 		events = events[:availableForEvents]
 	}
-	return renderCalendarPanel(s, calendars, events, label, width)
+	return renderCalendarPanel(s, calendars, events, label, width, showNowLine)
 }
 
 type conflictPos int
@@ -220,26 +215,51 @@ func computeConflictPositions(events []db.CalendarEvent) ([]conflictPos, []time.
 	return pos, groupEnd
 }
 
-// calendarColorMap builds a lookup from calendar ID to color string.
-func calendarColorMap(calendars []config.CalendarEntry) map[string]string {
-	m := make(map[string]string, len(calendars))
+// defaultCalendarColors is a palette for calendars without a configured color.
+var defaultCalendarColors = []string{
+	"#7aa2f7", // blue
+	"#9ece6a", // green
+	"#bb9af7", // purple
+	"#e0af68", // yellow
+	"#7dcfff", // cyan
+	"#ff9e64", // orange
+}
+
+// calendarColor returns the color for a calendar ID, falling back to a default palette.
+func calendarColor(calendars []config.CalendarEntry, calendarID string, idx int) string {
 	for _, c := range calendars {
-		if c.Color != "" {
-			m[c.ID] = c.Color
+		if c.ID == calendarID && c.Color != "" {
+			return c.Color
 		}
 	}
-	return m
-}
-
-func calendarEventStyle(calendars []config.CalendarEntry, calendarID string) lipgloss.Style {
-	colorMap := calendarColorMap(calendars)
-	if color, ok := colorMap[calendarID]; ok {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	if idx >= 0 {
+		return defaultCalendarColors[idx%len(defaultCalendarColors)]
 	}
-	return lipgloss.NewStyle()
+	return ""
 }
 
-func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width int) string {
+// calendarIDIndex returns a stable index for a calendar ID based on config order.
+func calendarIDIndex(calendars []config.CalendarEntry, calendarID string) int {
+	for i, c := range calendars {
+		if c.ID == calendarID {
+			return i
+		}
+	}
+	return -1
+}
+
+// renderNowLine renders a red horizontal "now" indicator line.
+func renderNowLine(s *ccStyles, now time.Time, width int) string {
+	timeStr := now.Format("3:04pm")
+	label := " now "
+	lineLen := width - len(timeStr) - len(label) - 4
+	if lineLen < 3 {
+		lineLen = 3
+	}
+	return s.CalendarNowLine.Render(fmt.Sprintf("  %s %s%s", timeStr, strings.Repeat("\u2500", lineLen), label))
+}
+
+func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width int, showNowLine bool) string {
 	var lines []string
 	lines = append(lines, s.SectionHeader.Render(label))
 
@@ -248,21 +268,32 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 		return strings.Join(lines, "\n")
 	}
 
+	now := time.Now()
 	positions, groupEnds := computeConflictPositions(events)
-	var maxEndSoFar time.Time
+	nowLineInserted := false
+
+	// Fixed-width time column: 8 chars for time like "12:00pm" + 1 space
+	const timeColWidth = 9
+	// Duration column: 6 chars like " 1h30m"
+	const durColWidth = 6
 
 	for i, ev := range events {
-		if i > 0 && !maxEndSoFar.IsZero() {
-			gap := ev.Start.Sub(maxEndSoFar)
-			if gap > 30*time.Minute {
-				freeTime := s.CalendarTime.Render(maxEndSoFar.Format("3:04pm"))
-				freeLine := fmt.Sprintf("  %s  %s", freeTime, s.CalendarFree.Render("---- free ----"))
-				lines = append(lines, freeLine)
-			}
-		}
+		isPast := ev.End.Before(now)
 
-		if ev.End.After(maxEndSoFar) {
-			maxEndSoFar = ev.End
+		// Insert now-line before the first event that starts after now (or is in progress)
+		if showNowLine && !nowLineInserted && ev.End.After(now) {
+			// If this event starts after now, or we're between events, insert line
+			if i == 0 && ev.Start.After(now) {
+				lines = append(lines, renderNowLine(s, now, width))
+				nowLineInserted = true
+			} else if i > 0 && ev.Start.After(now) {
+				lines = append(lines, renderNowLine(s, now, width))
+				nowLineInserted = true
+			} else if !isPast {
+				// Event is in progress — insert now line before it
+				lines = append(lines, renderNowLine(s, now, width))
+				nowLineInserted = true
+			}
 		}
 
 		isConflict := positions[i] != posNone
@@ -277,35 +308,61 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 			connector = " "
 		}
 
-		timeStyle := s.CalendarTime
-		if isConflict {
-			timeStyle = s.DueOverdue
+		timeFmt := ev.Start.Format("3:04pm")
+		dur := ev.End.Sub(ev.Start)
+		durFmt := formatDuration(dur)
+
+		// Calculate title space: total width - connector(2) - time(timeColWidth) - dur(durColWidth) - spacing(2)
+		titleMaxWidth := width - 2 - timeColWidth - durColWidth - 2
+		if titleMaxWidth < 10 {
+			titleMaxWidth = 10
 		}
 
-		timeFmt := ev.Start.Format("3:04pm")
-		timeStr := timeStyle.Render(timeFmt)
-		dur := ev.End.Sub(ev.Start)
-		durStr := timeStyle.Render(formatDuration(dur))
-
-		titleMaxWidth := width - 7 - len(timeFmt) - len(formatDuration(dur))
 		title := ev.Title
 		if len(title) > titleMaxWidth && titleMaxWidth > 0 {
 			title = title[:titleMaxWidth-1] + "~"
 		}
 
-		padding := ""
-		if titleMaxWidth > len(title) {
-			padding = strings.Repeat(" ", titleMaxWidth-len(title))
+		// Right-pad title to fill the column
+		titlePadded := title
+		if len(title) < titleMaxWidth {
+			titlePadded = title + strings.Repeat(" ", titleMaxWidth-len(title))
 		}
 
-		if isConflict {
-			title = s.DueOverdue.Render(title)
-		} else if ev.CalendarID != "" {
-			title = calendarEventStyle(calendars, ev.CalendarID).Render(title)
-		}
+		// Right-align duration
+		durPadded := fmt.Sprintf("%*s", durColWidth, durFmt)
 
-		line := fmt.Sprintf("%s %s  %s%s %s", connector, timeStr, title, padding, durStr)
-		lines = append(lines, line)
+		// Apply styling based on state
+		if isPast && showNowLine {
+			// Past events are dimmed
+			timeStr := s.CalendarPast.Render(fmt.Sprintf("%-*s", timeColWidth, timeFmt))
+			titleStyled := s.CalendarPast.Render(titlePadded)
+			durStr := s.CalendarPast.Render(durPadded)
+			line := fmt.Sprintf("%s %s%s %s", connector, timeStr, titleStyled, durStr)
+			lines = append(lines, line)
+		} else if isConflict {
+			timeStr := s.DueOverdue.Render(fmt.Sprintf("%-*s", timeColWidth, timeFmt))
+			titleStyled := s.DueOverdue.Render(titlePadded)
+			durStr := s.DueOverdue.Render(durPadded)
+			line := fmt.Sprintf("%s %s%s %s", connector, timeStr, titleStyled, durStr)
+			lines = append(lines, line)
+		} else {
+			timeStr := s.CalendarTime.Render(fmt.Sprintf("%-*s", timeColWidth, timeFmt))
+
+			// Color the title by calendar
+			calIdx := calendarIDIndex(calendars, ev.CalendarID)
+			color := calendarColor(calendars, ev.CalendarID, calIdx)
+			if color != "" {
+				titleStyled := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(titlePadded)
+				durStr := s.CalendarTime.Render(durPadded)
+				line := fmt.Sprintf("%s %s%s %s", connector, timeStr, titleStyled, durStr)
+				lines = append(lines, line)
+			} else {
+				durStr := s.CalendarTime.Render(durPadded)
+				line := fmt.Sprintf("%s %s%s %s", connector, timeStr, titlePadded, durStr)
+				lines = append(lines, line)
+			}
+		}
 
 		if positions[i] == posLast {
 			endStr := groupEnds[i].Format("3:04pm")
@@ -317,6 +374,11 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 			closer := s.DueOverdue.Render(prefix + strings.Repeat("\u2500", fillLen))
 			lines = append(lines, closer)
 		}
+	}
+
+	// If now line still not inserted and it's today, put it at the end
+	if showNowLine && !nowLineInserted {
+		lines = append(lines, renderNowLine(s, now, width))
 	}
 
 	return strings.Join(lines, "\n")

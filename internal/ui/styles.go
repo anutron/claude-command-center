@@ -49,6 +49,10 @@ type Styles struct {
 	PanelBorder      lipgloss.Style
 	RefreshInfo      lipgloss.Style
 
+	// Calendar now-indicator and past-event styles
+	CalendarNowLine lipgloss.Style
+	CalendarPast    lipgloss.Style
+
 	// Thread styles
 	ThreadActive lipgloss.Style
 	ThreadPaused lipgloss.Style
@@ -109,6 +113,9 @@ func NewStyles(p config.Palette) Styles {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#3b4261")),
 		RefreshInfo: lipgloss.NewStyle().Foreground(colorMuted),
+
+		CalendarNowLine: lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Bold(true),
+		CalendarPast:    lipgloss.NewStyle().Foreground(colorMuted).Faint(true),
 
 		ThreadActive: lipgloss.NewStyle().Foreground(colorWhite),
 		ThreadPaused: lipgloss.NewStyle().Foreground(colorMuted),
