@@ -221,7 +221,10 @@ func DBInsertPendingAction(db *sql.DB, a PendingAction) error {
 	_, err := db.Exec(`INSERT INTO cc_pending_actions (type, todo_id, duration_minutes, requested_at)
 		VALUES (?, ?, ?, ?)`,
 		a.Type, a.TodoID, a.DurationMinutes, FormatTime(a.RequestedAt))
-	return err
+	if err != nil {
+		return fmt.Errorf("insert pending action %s: %w", a.TodoID, err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -396,7 +399,10 @@ func DBSaveSuggestions(d *sql.DB, s Suggestions) error {
 	_, err := d.Exec(`INSERT OR REPLACE INTO cc_suggestions (id, focus, ranked_todo_ids, reasons, updated_at)
 		VALUES (1, ?, ?, ?, ?)`,
 		s.Focus, string(rankedJSON), string(reasonsJSON), now)
-	return err
+	if err != nil {
+		return fmt.Errorf("save suggestions: %w", err)
+	}
+	return nil
 }
 
 // DBSetMeta upserts a key-value pair in cc_meta.
@@ -404,11 +410,17 @@ func DBSetMeta(d *sql.DB, key, value string) error {
 	now := FormatTime(time.Now())
 	_, err := d.Exec(`INSERT OR REPLACE INTO cc_meta (key, value, updated_at) VALUES (?, ?, ?)`,
 		key, value, now)
-	return err
+	if err != nil {
+		return fmt.Errorf("set meta %s: %w", key, err)
+	}
+	return nil
 }
 
 // DBClearPendingActions removes all pending actions.
 func DBClearPendingActions(d *sql.DB) error {
 	_, err := d.Exec(`DELETE FROM cc_pending_actions`)
-	return err
+	if err != nil {
+		return fmt.Errorf("clear pending actions: %w", err)
+	}
+	return nil
 }
