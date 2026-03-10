@@ -7,8 +7,8 @@ Replace the CLI wizard (`ccc setup`) with a TUI onboarding flow that triggers on
 ## Interface
 
 - **Inputs**: Config file existence (first-run detection), `ccc setup` flag (re-run), user keyboard input
-- **Outputs**: Saved `config.yaml` with name, palette, show_banner, and data source settings; built MCP servers; transition to normal TUI
-- **Dependencies**: `config` package, `bubbletea`, `textinput` component, `spinner` component, calendar/github/granola credential validation
+- **Outputs**: Saved `config.yaml` with name, subtitle, palette, show_banner, and data source settings; built MCP servers; transition to normal TUI
+- **Dependencies**: `config` package, `bubbletea`, `textinput` component, `spinner` component, calendar/github/granola credential validation, `tui/banner.go` block font renderer
 
 ## Detection
 
@@ -33,20 +33,30 @@ The onboarding flow is a mode within the main TUI Model:
 - `onboardingStep int` — tracks current step (0–3)
 - `onboardingModel OnboardingModel` — holds all onboarding-specific state
 
-### Step 0: Welcome + Banner Subtitle
+### Step 0: Welcome + Banner Configuration
 
 **Display:**
 - Welcome message
-- Explanation that the text input sets the banner subtitle (the spaced-out text below the CCC logo)
-- Text input for banner subtitle (pre-filled with `DefaultConfig().Name`)
-- Live banner preview above the input — subtitle updates on every keystroke
+- Two input fields:
+  1. **Banner title** (`cfg.Name`) — rendered as large block letters via dynamic block font (`textToBanner()`). Default: "Claude Command". Active field is highlighted.
+  2. **Subtitle** (`cfg.Subtitle`) — rendered as spaced uppercase text below the banner. Default: empty (no subtitle line). Leave empty to hide.
+- Live banner preview above the panel — both fields update the banner on every keystroke
 - Banner visibility toggle showing current state (`[on]`/`[off]`)
 
+**Dynamic Block Font:**
+- `banner.go` contains `blockFont` map: A-Z, 0-9, `-`, space → 6-line Unicode block art
+- `textToBanner(text)` converts any string to block art (unknown chars skipped)
+- `subtitleFromText(text)` generates spaced uppercase text (empty input → empty output, no line rendered)
+- Banner text is always rendered uppercase regardless of input casing
+
 **Keys:**
-- Type to edit subtitle text
+- Type to edit the active field
+- `tab` / `shift+tab` switches between banner title and subtitle fields
+- `enter` on banner title field → moves focus to subtitle field
+- `enter` on subtitle field → advances to Step 1
 - `ctrl+b` toggles banner visibility (`cfg.ShowBanner`)
-- `enter` advances to Step 1
-- `esc` quits
+- `esc` on subtitle field → goes back to banner title field
+- `esc` on banner title field → quits
 
 **Banner Visibility:**
 - `Config.ShowBanner` is a `*bool` (nil defaults to true for backwards compat)
@@ -178,7 +188,7 @@ When Step 3 completes:
 
 | Step | Enter | Esc | Other |
 |------|-------|-----|-------|
-| 0: Welcome + Subtitle | Go to Step 1 | Quit TUI | Type to edit subtitle, ctrl+b toggle banner |
+| 0: Welcome + Banner | Next field / Go to Step 1 | Back to title / Quit TUI | tab switch field, ctrl+b toggle banner |
 | 1: Palette | Go to Step 2 | Back to Step 0 | up/down to cycle |
 | 2: Data Sources Hub | Open sub-flow | Back to Step 1 | space toggle, tab/n to Step 3 |
 | 2a: Calendar sub-flow | Confirm (or add selected) | Cancel/back | a/x/e/f/r, selection mode keys |
@@ -193,13 +203,18 @@ When Step 3 completes:
 - Existing config file skips onboarding
 - `ccc setup` flag triggers onboarding even with existing config
 
-### Step 0: Banner Subtitle + Visibility
-- Typing updates the live banner subtitle preview
-- Empty name falls back to default ("Command Center")
-- Enter advances to Step 1 with name stored
+### Step 0: Banner Title + Subtitle + Visibility
+- Typing in banner title updates the big block letters in real-time
+- Typing in subtitle updates the spaced text below the banner in real-time
+- Empty banner title falls back to "Claude Command"
+- Empty subtitle removes the subtitle line entirely (no wasted space)
+- Tab switches between banner title and subtitle fields
+- Enter on title field moves focus to subtitle; enter on subtitle advances to Step 1
+- Esc on subtitle goes back to title; esc on title quits
 - `ctrl+b` toggles banner visibility in real-time
 - Banner hidden when `ShowBanner` is false
 - `ShowBanner` defaults to true when nil (backwards compat)
+- Block font renders A-Z, 0-9, `-`, space as 6-line Unicode art
 
 ### Step 1: Palette Selection
 - All 5 palettes are listed and selectable
