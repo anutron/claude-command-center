@@ -5,6 +5,7 @@ package settings
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -377,12 +378,35 @@ func (p *Plugin) applyToggle(item settingsItem) {
 		p.flashMessageAt = time.Now()
 
 	case "external-plugin":
+		// Find the matching external plugin config by slug index
+		epIdx := -1
 		for i := range p.cfg.ExternalPlugins {
 			if item.slug == fmt.Sprintf("external-%d", i) {
-				p.cfg.ExternalPlugins[i].Enabled = item.enabled
+				epIdx = i
 				break
 			}
 		}
+		if epIdx < 0 {
+			return
+		}
+		// Validate command exists when enabling
+		if item.enabled {
+			parts := strings.Fields(p.cfg.ExternalPlugins[epIdx].Command)
+			if len(parts) > 0 {
+				if _, err := exec.LookPath(parts[0]); err != nil {
+					for i := range p.items {
+						if p.items[i].slug == item.slug {
+							p.items[i].enabled = false
+							break
+						}
+					}
+					p.flashMessage = fmt.Sprintf("Command not found: %s", parts[0])
+					p.flashMessageAt = time.Now()
+					return
+				}
+			}
+		}
+		p.cfg.ExternalPlugins[epIdx].Enabled = item.enabled
 		if err := config.Save(p.cfg); err == nil {
 			p.flashMessage = "Restart CCC to apply"
 			p.publishConfigSaved("external_plugins")
