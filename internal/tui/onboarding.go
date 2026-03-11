@@ -57,6 +57,21 @@ type onboardingState struct {
 	mcpSpinner  spinner.Model
 }
 
+// calendarColorPresets are the available colors for per-calendar color coding.
+var calendarColorPresets = []struct {
+	Name string
+	Hex  string
+}{
+	{"Red", "#f7768e"},
+	{"Blue", "#7aa2f7"},
+	{"Green", "#9ece6a"},
+	{"Yellow", "#e0af68"},
+	{"Purple", "#bb9af7"},
+	{"Cyan", "#7dcfff"},
+	{"Orange", "#ff9e64"},
+	{"Pink", "#f7768e"},
+}
+
 type calendarSetupState struct {
 	cursor   int
 	addMode  bool
@@ -66,6 +81,10 @@ type calendarSetupState struct {
 	phase    int // 0=id, 1=label (during add)
 	fetching bool
 	fetchErr string
+
+	// Color picker mode.
+	colorPicking bool
+	colorCursor  int
 
 	// Selection mode after fetch.
 	selectMode       bool
@@ -511,6 +530,11 @@ func (m *Model) handleCalendarDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	o := m.onboardingState
 	cs := o.calendarState
 
+	// If in color picker mode, handle color selection.
+	if cs.colorPicking {
+		return m.handleCalendarColorPicker(msg)
+	}
+
 	// If in selection mode (after fetch), handle selection keys.
 	if cs.selectMode {
 		return m.handleCalendarSelectMode(msg)
@@ -562,6 +586,22 @@ func (m *Model) handleCalendarDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cs.labelInput.Focus()
 			return m, textinput.Blink
 		}
+	case "c":
+		// Open color picker for selected calendar.
+		if len(m.cfg.Calendar.Calendars) > 0 && cs.cursor < len(m.cfg.Calendar.Calendars) {
+			cs.colorPicking = true
+			cs.colorCursor = 0
+			// Pre-select current color if set.
+			cal := m.cfg.Calendar.Calendars[cs.cursor]
+			if cal.Color != "" {
+				for i, c := range calendarColorPresets {
+					if c.Hex == cal.Color {
+						cs.colorCursor = i
+						break
+					}
+				}
+			}
+		}
 	case "r":
 		// Re-check credentials.
 		o.validateSources()
@@ -573,6 +613,35 @@ func (m *Model) handleCalendarDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cals, err := calendar.ListAvailableCalendars()
 			return calendarListMsg{calendars: cals, err: err}
 		}
+	}
+	return m, nil
+}
+
+func (m *Model) handleCalendarColorPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	cs := m.onboardingState.calendarState
+	totalOptions := len(calendarColorPresets) + 1 // +1 for "none"
+
+	switch msg.String() {
+	case "esc":
+		cs.colorPicking = false
+	case "up", "k":
+		if cs.colorCursor > 0 {
+			cs.colorCursor--
+		}
+	case "down", "j":
+		if cs.colorCursor < totalOptions-1 {
+			cs.colorCursor++
+		}
+	case "enter":
+		if cs.cursor < len(m.cfg.Calendar.Calendars) {
+			if cs.colorCursor < len(calendarColorPresets) {
+				m.cfg.Calendar.Calendars[cs.cursor].Color = calendarColorPresets[cs.colorCursor].Hex
+			} else {
+				m.cfg.Calendar.Calendars[cs.cursor].Color = ""
+			}
+			m.saveConfig()
+		}
+		cs.colorPicking = false
 	}
 	return m, nil
 }
@@ -1140,6 +1209,32 @@ func (o *onboardingState) viewCalendarDetail(width int, styles *Styles, cfg *con
 		return styles.PanelBorder.Width(width - 4).Render(content)
 	}
 
+	// Color picker mode.
+	if cs.colorPicking && cs.cursor < len(cfg.Calendar.Calendars) {
+		cal := cfg.Calendar.Calendars[cs.cursor]
+		lines = append(lines, styles.TitleBoldW.Render("  Color for "+cal.Label))
+		lines = append(lines, "")
+		for i, c := range calendarColorPresets {
+			pointer := "    "
+			if i == cs.colorCursor {
+				pointer = "  " + styles.Pointer.Render("> ")
+			}
+			swatch := lipgloss.NewStyle().Foreground(lipgloss.Color(c.Hex)).Render("██")
+			lines = append(lines, fmt.Sprintf("%s%s %s", pointer, swatch, c.Name))
+		}
+		// "None" option
+		noneIdx := len(calendarColorPresets)
+		pointer := "    "
+		if cs.colorCursor == noneIdx {
+			pointer = "  " + styles.Pointer.Render("> ")
+		}
+		lines = append(lines, fmt.Sprintf("%s%s", pointer, styles.Hint.Render("None")))
+		lines = append(lines, "")
+		lines = append(lines, styles.Hint.Render("  enter select · esc cancel"))
+		content := lipgloss.JoinVertical(lipgloss.Left, lines...)
+		return styles.PanelBorder.Width(width - 4).Render(content)
+	}
+
 	// Calendar list.
 	lines = append(lines, styles.TitleBoldW.Render("  Calendars"))
 	if len(cfg.Calendar.Calendars) == 0 {
@@ -1150,15 +1245,20 @@ func (o *onboardingState) viewCalendarDetail(width int, styles *Styles, cfg *con
 			if i == cs.cursor {
 				cursor = "  " + styles.Pointer.Render("> ")
 			}
-			lines = append(lines, fmt.Sprintf("%s%s  %s",
+			colorSwatch := ""
+			if cal.Color != "" {
+				colorSwatch = lipgloss.NewStyle().Foreground(lipgloss.Color(cal.Color)).Render("●") + " "
+			}
+			lines = append(lines, fmt.Sprintf("%s%s%s  %s",
 				cursor,
+				colorSwatch,
 				styles.NormalItem.Render(cal.Label),
 				styles.Hint.Render(cal.ID)))
 		}
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, styles.Hint.Render("  a add · x remove · e edit · f fetch from Google · r re-check · esc back"))
+	lines = append(lines, styles.Hint.Render("  a add · x remove · e edit · c color · f fetch · r re-check · esc back"))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return styles.PanelBorder.Width(width - 4).Render(content)

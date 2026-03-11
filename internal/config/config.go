@@ -106,7 +106,7 @@ func (c *Config) SetShowBanner(v bool) {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() *Config {
 	return &Config{
-		Name:    "Command Center",
+		Name:    "Claude Command",
 		Palette: "aurora",
 		Todos:   TodosConfig{Enabled: true},
 	}

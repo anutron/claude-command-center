@@ -10,7 +10,7 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Name != "Command Center" {
+	if cfg.Name != "Claude Command" {
 		t.Errorf("expected Name='Command Center', got %q", cfg.Name)
 	}
 	if cfg.Palette != "aurora" {
@@ -41,7 +41,7 @@ func TestLoadMissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Name != "Command Center" {
+	if cfg.Name != "Claude Command" {
 		t.Errorf("expected default Name, got %q", cfg.Name)
 	}
 }

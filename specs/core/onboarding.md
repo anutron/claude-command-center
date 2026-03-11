@@ -110,9 +110,18 @@ The onboarding flow is a mode within the main TUI Model:
 - `a` to add a calendar ID manually (two-phase: ID then label)
 - `x` to remove selected calendar
 - `e` to edit selected calendar's label
+- `c` to pick a color for the selected calendar (enters color picker mode)
 - `f` to fetch calendars from Google (enters selection mode)
 - `r` to re-check credentials
 - `esc` to return to hub
+
+**Color Picker:**
+- Pressing `c` enters color picker mode for the selected calendar
+- Shows 8 color presets (Red, Blue, Green, Yellow, Purple, Cyan, Orange, Pink) with colored swatches
+- Also includes a "None" option to remove the color
+- `up`/`down` navigates, `enter` selects, `esc` cancels
+- Selected color is saved to `CalendarEntry.Color` and persisted immediately
+- Calendar list shows a colored dot (`●`) next to calendars with a color set
 
 **Fetch with Select-to-Add:**
 - Pressing `f` fetches all calendars from Google via `calendar.ListAvailableCalendars()`
@@ -237,6 +246,9 @@ When Step 3 completes:
 - Calendar: esc in selection mode discards fetched results
 - Calendar: already-configured calendars filtered from fetch results
 - Calendar: shows error and manual entry on fetch failure
+- Calendar: `c` opens color picker for selected calendar
+- Calendar: color picker shows 8 presets + None option
+- Calendar: selected color persists and shows as dot in list
 - GitHub: auto-fetches username when entering sub-flow with valid auth
 - GitHub: auto-fetches username on `r` re-check with valid auth and empty username
 - GitHub: does not auto-fetch if username already set

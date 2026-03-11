@@ -30,6 +30,11 @@ Lists all registered plugins and data sources with enable/disable status.
 - External plugins: saves config, flashes "Restart CCC to apply"
 - Data sources: when enabling, validates credentials first; reverts toggle on failure with error message; on success saves config, flashes "Changes apply on next refresh"
 
+**Enabled-state sync:**
+- The settings plugin syncs its displayed enabled states from the live `config.Config` at the start of each `View()` call
+- This ensures that if another flow (e.g., onboarding) modifies config, settings reflects the current truth
+- Without this, the settings items snapshot enabled state at Init() time and can show stale values
+
 ### Detail Views
 
 Opened by pressing `enter` on any item in the plugins list.

@@ -600,7 +600,25 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	return false, plugin.NoopAction()
 }
 
+// syncEnabledFromConfig updates item enabled states from the live config.
+// This ensures settings reflects changes made by onboarding or external edits.
+func (p *Plugin) syncEnabledFromConfig() {
+	for i := range p.items {
+		switch p.items[i].slug {
+		case "calendar":
+			p.items[i].enabled = p.cfg.Calendar.Enabled
+		case "github":
+			p.items[i].enabled = p.cfg.GitHub.Enabled
+		case "granola":
+			p.items[i].enabled = p.cfg.Granola.Enabled
+		case "todos":
+			p.items[i].enabled = p.cfg.Todos.Enabled
+		}
+	}
+}
+
 func (p *Plugin) View(width, height, frame int) string {
+	p.syncEnabledFromConfig()
 	p.width = width
 	p.height = height
 
