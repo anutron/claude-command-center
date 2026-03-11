@@ -1,8 +1,6 @@
 package settings
 
 import (
-	"strings"
-
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -41,13 +39,13 @@ func (p *Plugin) renderContentForSlug(item *NavItem, width, height int) string {
 
 	// --- System ---
 	case "system-schedule":
-		return p.viewSystemPlaceholder("Schedule", "Refresh schedule configuration")
+		return p.viewScheduleContent(width, height)
 	case "system-mcp":
-		return p.viewSystemPlaceholder("MCP Servers", "MCP server management")
+		return p.viewMCPContent(width, height)
 	case "system-skills":
-		return p.viewSystemPlaceholder("Skills", "Skill configuration")
+		return p.viewSkillsContent(width, height)
 	case "system-shell":
-		return p.viewSystemPlaceholder("Shell Integration", "Shell integration settings")
+		return p.viewShellContent(width, height)
 	case "system-logs":
 		return p.viewLogsContent(width, height)
 
@@ -87,9 +85,14 @@ func (p *Plugin) handleContentKey(msg tea.KeyMsg) plugin.Action {
 		return p.handlePaletteContentKey(msg)
 	case "system-logs":
 		return p.handleLogsContentKey(msg)
-	case "system-schedule", "system-mcp", "system-skills", "system-shell":
-		// Placeholder — no keys handled yet.
-		return plugin.NoopAction()
+	case "system-schedule":
+		return p.handleScheduleContentKey(msg)
+	case "system-mcp":
+		return p.handleMCPContentKey(msg)
+	case "system-skills":
+		return p.handleSkillsContentKey(msg)
+	case "system-shell":
+		return p.handleShellContentKey(msg)
 	default:
 		switch item.Kind {
 		case "plugin":
@@ -102,14 +105,3 @@ func (p *Plugin) handleContentKey(msg tea.KeyMsg) plugin.Action {
 	return plugin.NoopAction()
 }
 
-// --- System placeholders ---
-
-func (p *Plugin) viewSystemPlaceholder(title, description string) string {
-	var lines []string
-	lines = append(lines, p.styles.header.Render(strings.ToUpper(title)))
-	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  "+description))
-	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  Coming soon"))
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
-}

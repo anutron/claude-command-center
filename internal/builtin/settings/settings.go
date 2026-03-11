@@ -65,6 +65,9 @@ type Plugin struct {
 	detailIdx    int
 	detailCursor int // cursor within detail view fields
 
+	// System content pane cursor positions (keyed by slug)
+	systemCursors map[string]int
+
 	flashMessage   string
 	flashMessageAt time.Time
 
@@ -857,6 +860,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		p.width = msg.Width
 		p.height = msg.Height
 		return false, plugin.NoopAction()
+	case systemActionResult:
+		p.handleSystemActionResult(msg)
+		return true, plugin.NoopAction()
 	case plugin.TabLeaveMsg:
 		// Cancel any active banner editing when leaving the tab
 		if p.bannerEditing {
