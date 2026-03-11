@@ -3,7 +3,7 @@ REFRESH_BINARY = ccc-refresh
 INSTALL_PATH = /usr/local/bin/$(BINARY)
 REFRESH_INSTALL_PATH = /usr/local/bin/$(REFRESH_BINARY)
 
-.PHONY: build test install clean servers servers-gmail servers-things
+.PHONY: build test install clean servers servers-gmail
 
 build:
 	go build -o $(BINARY) ./cmd/ccc/
@@ -27,10 +27,7 @@ install: build servers
 servers-gmail:
 	cd servers/gmail && npm install && npm run build
 
-servers-things:
-	cd servers/things && npm install && npm run build
-
-servers: servers-gmail servers-things
+servers: servers-gmail
 
 clean:
 	rm -f $(BINARY) $(REFRESH_BINARY)

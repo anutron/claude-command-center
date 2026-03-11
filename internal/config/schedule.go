@@ -37,6 +37,12 @@ func plistPath() string {
 	return filepath.Join(home, "Library", "LaunchAgents", plistLabel+".plist")
 }
 
+// IsScheduleInstalled checks if the launchd plist file exists.
+func IsScheduleInstalled() bool {
+	_, err := os.Stat(plistPath())
+	return err == nil
+}
+
 // InstallSchedule generates a launchd plist for ccc-refresh and loads it.
 func InstallSchedule() error {
 	cfg, err := Load()

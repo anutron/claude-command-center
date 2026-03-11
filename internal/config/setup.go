@@ -8,7 +8,22 @@ import (
 	"path/filepath"
 )
 
-// GenerateMCPConfig writes MCP server entries for gmail and things to ~/.claude/mcp.json.
+// IsMCPBuilt returns a map of server name to whether its dist/index.js exists.
+func IsMCPBuilt() map[string]bool {
+	result := map[string]bool{}
+	serversDir := findServersDir()
+	if serversDir == "" {
+		return result
+	}
+	for _, name := range []string{"gmail"} {
+		entryPoint := filepath.Join(serversDir, name, "dist", "index.js")
+		_, err := os.Stat(entryPoint)
+		result[name] = err == nil
+	}
+	return result
+}
+
+// GenerateMCPConfig writes MCP server entries for gmail to ~/.claude/mcp.json.
 func GenerateMCPConfig() error {
 	// Find the servers directory (next to the ccc binary or in the repo)
 	serversDir := findServersDir()
@@ -51,16 +66,6 @@ func GenerateMCPConfig() error {
 		added = append(added, "gmail")
 	}
 
-	// Things MCP
-	thingsEntry := filepath.Join(serversDir, "things", "dist", "index.js")
-	if _, err := os.Stat(thingsEntry); err == nil {
-		servers["things"] = map[string]interface{}{
-			"command": "node",
-			"args":    []string{thingsEntry},
-		}
-		added = append(added, "things")
-	}
-
 	if len(added) == 0 {
 		return fmt.Errorf("no built MCP servers found in %s — run 'make servers'", serversDir)
 	}
@@ -96,7 +101,7 @@ func BuildAndConfigureMCP() ([]string, error) {
 	}
 
 	var added []string
-	serverNames := []string{"gmail", "things"}
+	serverNames := []string{"gmail"}
 
 	for _, name := range serverNames {
 		serverDir := filepath.Join(serversDir, name)

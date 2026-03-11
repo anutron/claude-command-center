@@ -178,6 +178,9 @@ func main() {
 			break
 		}
 
+		// Write the launch directory so the shell hook can cd to it after exit.
+		_ = os.WriteFile(filepath.Join(config.DataDir(), "last-dir"), []byte(fm.Launch.Dir), 0o644)
+
 		if err := tui.RunClaude(*fm.Launch); err != nil {
 			fmt.Fprintf(os.Stderr, "Claude error: %v\n", err)
 		}

@@ -23,6 +23,7 @@ type Config struct {
 	Threads         ThreadsConfig          `yaml:"threads"`
 	Granola         GranolaConfig          `yaml:"granola"`
 	Slack           SlackConfig            `yaml:"slack"`
+	Gmail           GmailConfig            `yaml:"gmail"`
 	ExternalPlugins []ExternalPluginConfig `yaml:"external_plugins"`
 
 	// DisabledPlugins lists slugs of built-in plugins the user has turned off.
@@ -124,6 +125,10 @@ type GranolaConfig struct {
 }
 
 type SlackConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type GmailConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 

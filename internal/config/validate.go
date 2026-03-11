@@ -46,6 +46,27 @@ func ValidateSlack() error {
 	return nil
 }
 
+// ValidateGmail checks that Gmail MCP server credentials exist.
+func ValidateGmail() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
+
+	tokenPath := filepath.Join(home, ".gmail-mcp", "work.json")
+	data, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return fmt.Errorf("gmail credentials not found at %s — run gmail MCP auth to configure", tokenPath)
+	}
+
+	var token map[string]interface{}
+	if err := json.Unmarshal(data, &token); err != nil {
+		return fmt.Errorf("gmail credentials malformed — re-run gmail MCP auth to reconfigure")
+	}
+
+	return nil
+}
+
 // ValidateGranola checks that Granola stored accounts exist.
 func ValidateGranola() error {
 	home, err := os.UserHomeDir()

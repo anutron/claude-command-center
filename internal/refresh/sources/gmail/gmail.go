@@ -16,13 +16,15 @@ import (
 )
 
 // GmailSource fetches unread actionable emails from Gmail.
-type GmailSource struct{}
+type GmailSource struct {
+	enabled bool
+}
 
-// New creates a GmailSource.
-func New() *GmailSource { return &GmailSource{} }
+// New creates a GmailSource with the given enabled flag.
+func New(enabled bool) *GmailSource { return &GmailSource{enabled: enabled} }
 
 func (s *GmailSource) Name() string  { return "gmail" }
-func (s *GmailSource) Enabled() bool { return true } // always enabled; auth check in Fetch
+func (s *GmailSource) Enabled() bool { return s.enabled }
 
 func (s *GmailSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) {
 	ts, err := loadGmailAuth()

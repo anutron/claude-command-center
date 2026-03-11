@@ -6,23 +6,27 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	s := New()
+	s := New(true)
 	if s == nil {
 		t.Fatal("New() returned nil")
 	}
 }
 
 func TestName(t *testing.T) {
-	s := New()
+	s := New(true)
 	if got := s.Name(); got != "gmail" {
 		t.Errorf("Name() = %q, want %q", got, "gmail")
 	}
 }
 
 func TestEnabled(t *testing.T) {
-	s := New()
+	s := New(true)
 	if !s.Enabled() {
-		t.Error("Enabled() = false, want true")
+		t.Error("Enabled() = false, want true for enabled=true")
+	}
+	s2 := New(false)
+	if s2.Enabled() {
+		t.Error("Enabled() = true, want false for enabled=false")
 	}
 }
 
