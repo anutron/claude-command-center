@@ -96,11 +96,19 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	_ = ccPlug.Init(ctx)
 	_ = settingsPlug.Init(ctx)
 
-	tabs := []tabEntry{
-		{label: "New Session", plugin: sessPlug, route: "new"},
-		{label: "Resume", plugin: sessPlug, route: "resume"},
-		{label: "Command Center", plugin: ccPlug, route: "commandcenter"},
-		{label: "Threads", plugin: ccPlug, route: "commandcenter/threads"},
+	var tabs []tabEntry
+
+	if cfg.PluginEnabled("sessions") {
+		tabs = append(tabs,
+			tabEntry{label: "New Session", plugin: sessPlug, route: "new"},
+			tabEntry{label: "Resume", plugin: sessPlug, route: "resume"},
+		)
+	}
+	if cfg.PluginEnabled("commandcenter") {
+		tabs = append(tabs,
+			tabEntry{label: "Command Center", plugin: ccPlug, route: "commandcenter"},
+			tabEntry{label: "Threads", plugin: ccPlug, route: "commandcenter/threads"},
+		)
 	}
 
 	// Append tabs for external plugins.
@@ -127,10 +135,20 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		styles:     styles,
 		grad:       grad,
 		tabs:       tabs,
-		activeTab:  tabNew,
+		activeTab:  0,
 		allPlugins: allPlugins,
 		db:         database,
 	}
+}
+
+// findTabByRoute returns the index of a tab with the given route, or -1 if not found.
+func (m *Model) findTabByRoute(route string) int {
+	for i, t := range m.tabs {
+		if t.route == route {
+			return i
+		}
+	}
+	return -1
 }
 
 // SetReturnedFromLaunch marks that this TUI instance is returning from a Claude session.
@@ -323,13 +341,17 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		switch action.Payload {
 		case "sessions":
-			prev := m.activeTab
-			m.activeTab = tabNew
-			cmd = m.activateTab(prev)
+			if idx := m.findTabByRoute("new"); idx >= 0 {
+				prev := m.activeTab
+				m.activeTab = tab(idx)
+				cmd = m.activateTab(prev)
+			}
 		case "command":
-			prev := m.activeTab
-			m.activeTab = tabCommand
-			cmd = m.activateTab(prev)
+			if idx := m.findTabByRoute("commandcenter"); idx >= 0 {
+				prev := m.activeTab
+				m.activeTab = tab(idx)
+				cmd = m.activateTab(prev)
+			}
 		}
 		return m, cmd
 

@@ -17,16 +17,19 @@ Lists all registered plugins and data sources with enable/disable status.
 **Two sections:**
 
 1. **Plugins** — Things with tabs/UI:
-   - Built-in (Sessions, Command Center, Settings) — always on, not toggleable
+   - Built-in: Sessions and Command Center are toggleable; Settings is always on (not toggleable)
+   - Disabling a built-in plugin hides its tabs from the tab bar (requires restart)
+   - Disabled plugins stored in `config.DisabledPlugins` slug list
    - External — from `external_plugins` config, toggleable
 
 2. **Data Sources** — Things that feed data during `ccc-refresh`:
    - Todos — always on, not toggleable
-   - Calendar, GitHub, Granola — each toggleable
+   - Calendar, GitHub, Granola, Slack — each toggleable
 
 **Toggle behavior:**
 - `space` toggles enable/disable on the selected item
 - `enter` opens the detail view for the selected item
+- Built-in plugins: saves to `config.DisabledPlugins`, flashes "Restart CCC to apply"
 - External plugins: saves config, flashes "Restart CCC to apply"
 - Data sources: when enabling, validates credentials first; reverts toggle on failure with error message; on success saves config, flashes "Changes apply on next refresh"
 
@@ -39,7 +42,7 @@ Lists all registered plugins and data sources with enable/disable status.
 
 Opened by pressing `enter` on any item in the plugins list.
 
-**Core plugins** (Sessions, Command Center, Settings):
+**Settings plugin** (always-on core plugin):
 - Read-only status display (always enabled, no configuration)
 
 **External plugins:**

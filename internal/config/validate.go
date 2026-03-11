@@ -38,6 +38,14 @@ func ValidateGitHub() error {
 	return nil
 }
 
+// ValidateSlack checks that the SLACK_BOT_TOKEN environment variable is set.
+func ValidateSlack() error {
+	if os.Getenv("SLACK_BOT_TOKEN") == "" {
+		return fmt.Errorf("SLACK_BOT_TOKEN not set — export SLACK_BOT_TOKEN in your shell profile")
+	}
+	return nil
+}
+
 // ValidateGranola checks that Granola stored accounts exist.
 func ValidateGranola() error {
 	home, err := os.UserHomeDir()

@@ -156,17 +156,14 @@ func (p *Plugin) rebuildItems() {
 	// Built-in plugins from registry
 	if p.registry != nil {
 		for _, plug := range p.registry.All() {
-			toggleable := false
 			slug := plug.Slug()
-			// Core built-ins are not toggleable
-			if slug == "sessions" || slug == "commandcenter" || slug == "settings" {
-				toggleable = false
-			}
+			// Settings itself is not toggleable
+			toggleable := slug != "settings"
 			p.items = append(p.items, settingsItem{
 				name:       plug.TabName(),
 				slug:       slug,
 				kind:       "builtin-plugin",
-				enabled:    true,
+				enabled:    p.cfg.PluginEnabled(slug),
 				toggleable: toggleable,
 			})
 		}
@@ -199,6 +196,10 @@ func (p *Plugin) rebuildItems() {
 	p.items = append(p.items, settingsItem{
 		name: "Granola", slug: "granola", kind: "datasource",
 		enabled: p.cfg.Granola.Enabled, toggleable: true,
+	})
+	p.items = append(p.items, settingsItem{
+		name: "Slack", slug: "slack", kind: "datasource",
+		enabled: p.cfg.Slack.Enabled, toggleable: true,
 	})
 }
 
@@ -338,6 +339,16 @@ func (p *Plugin) handlePaletteKey(msg tea.KeyMsg) plugin.Action {
 // For data sources, validates credentials when enabling.
 func (p *Plugin) applyToggle(item settingsItem) {
 	switch item.kind {
+	case "builtin-plugin":
+		p.cfg.SetPluginEnabled(item.slug, item.enabled)
+		if err := config.Save(p.cfg); err == nil {
+			p.flashMessage = "Restart CCC to apply"
+			p.publishConfigSaved("disabled_plugins")
+		} else {
+			p.flashMessage = "Failed to save: " + err.Error()
+		}
+		p.flashMessageAt = time.Now()
+
 	case "external-plugin":
 		for i := range p.cfg.ExternalPlugins {
 			if item.slug == fmt.Sprintf("external-%d", i) {
@@ -377,6 +388,8 @@ func (p *Plugin) applyToggle(item settingsItem) {
 			p.cfg.GitHub.Enabled = item.enabled
 		case "granola":
 			p.cfg.Granola.Enabled = item.enabled
+		case "slack":
+			p.cfg.Slack.Enabled = item.enabled
 		}
 		if err := config.Save(p.cfg); err == nil {
 			p.flashMessage = "Changes apply on next refresh"
@@ -419,6 +432,8 @@ func (p *Plugin) validateDataSource(slug string) error {
 		return config.ValidateGitHub()
 	case "granola":
 		return config.ValidateGranola()
+	case "slack":
+		return config.ValidateSlack()
 	}
 	return nil
 }
@@ -604,15 +619,22 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 // This ensures settings reflects changes made by onboarding or external edits.
 func (p *Plugin) syncEnabledFromConfig() {
 	for i := range p.items {
-		switch p.items[i].slug {
-		case "calendar":
-			p.items[i].enabled = p.cfg.Calendar.Enabled
-		case "github":
-			p.items[i].enabled = p.cfg.GitHub.Enabled
-		case "granola":
-			p.items[i].enabled = p.cfg.Granola.Enabled
-		case "todos":
-			p.items[i].enabled = p.cfg.Todos.Enabled
+		switch p.items[i].kind {
+		case "builtin-plugin":
+			p.items[i].enabled = p.cfg.PluginEnabled(p.items[i].slug)
+		case "datasource":
+			switch p.items[i].slug {
+			case "calendar":
+				p.items[i].enabled = p.cfg.Calendar.Enabled
+			case "github":
+				p.items[i].enabled = p.cfg.GitHub.Enabled
+			case "granola":
+				p.items[i].enabled = p.cfg.Granola.Enabled
+			case "slack":
+				p.items[i].enabled = p.cfg.Slack.Enabled
+			case "todos":
+				p.items[i].enabled = p.cfg.Todos.Enabled
+			}
 		}
 	}
 }

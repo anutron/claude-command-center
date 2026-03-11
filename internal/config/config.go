@@ -20,7 +20,41 @@ type Config struct {
 	GitHub          GitHubConfig           `yaml:"github"`
 	Todos           TodosConfig            `yaml:"todos"`
 	Granola         GranolaConfig          `yaml:"granola"`
+	Slack           SlackConfig            `yaml:"slack"`
 	ExternalPlugins []ExternalPluginConfig `yaml:"external_plugins"`
+
+	// DisabledPlugins lists slugs of built-in plugins the user has turned off.
+	// e.g. ["sessions", "commandcenter"]
+	DisabledPlugins []string `yaml:"disabled_plugins,omitempty"`
+}
+
+// PluginEnabled returns whether a built-in plugin is enabled (not in DisabledPlugins).
+func (c *Config) PluginEnabled(slug string) bool {
+	for _, s := range c.DisabledPlugins {
+		if s == slug {
+			return false
+		}
+	}
+	return true
+}
+
+// SetPluginEnabled adds or removes a slug from DisabledPlugins.
+func (c *Config) SetPluginEnabled(slug string, enabled bool) {
+	if enabled {
+		// Remove from disabled list
+		out := c.DisabledPlugins[:0]
+		for _, s := range c.DisabledPlugins {
+			if s != slug {
+				out = append(out, s)
+			}
+		}
+		c.DisabledPlugins = out
+	} else {
+		// Add to disabled list if not already there
+		if c.PluginEnabled(slug) {
+			c.DisabledPlugins = append(c.DisabledPlugins, slug)
+		}
+	}
 }
 
 const DefaultRefreshInterval = 5 * time.Minute
@@ -80,6 +114,10 @@ type TodosConfig struct {
 }
 
 type GranolaConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type SlackConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 

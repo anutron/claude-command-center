@@ -167,6 +167,21 @@ The onboarding flow is a mode within the main TUI Model:
 - `r` to re-check credentials
 - `esc` to return to hub
 
+### Sub-Flow: Slack
+
+**Display:**
+- Brief description: "Slack scans your messages for commitments and creates todos."
+- Credential status (SLACK_BOT_TOKEN environment variable set/missing)
+- If missing: step-by-step setup instructions:
+  1. Create a Slack app with channels:history, users:read scopes
+  2. Install the app to your workspace
+  3. Export SLACK_BOT_TOKEN in your shell profile
+- If found: confirmation message
+
+**Keys:**
+- `r` to re-check credentials
+- `esc` to return to hub
+
 ### Step 3: Done
 
 **Display:**
@@ -203,6 +218,7 @@ When Step 3 completes:
 | 2a: Calendar sub-flow | Confirm (or add selected) | Cancel/back | a/x/e/f/r, selection mode keys |
 | 2b: GitHub sub-flow | Confirm | Back to hub | a/x/u/r, auto-fetch username |
 | 2c: Granola sub-flow | - | Back to hub | r re-check |
+| 2d: Slack sub-flow | - | Back to hub | r re-check |
 | 3: Done | Save + start TUI | Back to Step 2 | Wait for builds |
 
 ## Test Cases

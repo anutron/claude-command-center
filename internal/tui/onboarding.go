@@ -178,6 +178,7 @@ func newOnboardingState(cfg *config.Config) *onboardingState {
 			{name: "Google Calendar", slug: "calendar", enabled: cfg.Calendar.Enabled},
 			{name: "GitHub", slug: "github", enabled: cfg.GitHub.Enabled},
 			{name: "Granola", slug: "granola", enabled: cfg.Granola.Enabled},
+			{name: "Slack", slug: "slack", enabled: cfg.Slack.Enabled},
 		},
 		calendarState: &calendarSetupState{
 			idInput:    calIDInput,
@@ -202,6 +203,8 @@ func (o *onboardingState) validateSources() {
 			err = config.ValidateGitHub()
 		case "granola":
 			err = config.ValidateGranola()
+		case "slack":
+			err = config.ValidateSlack()
 		}
 		if err != nil {
 			o.sources[i].valid = false
@@ -499,6 +502,8 @@ func (m *Model) applySourceSelections() {
 			m.cfg.GitHub.Enabled = src.enabled
 		case "granola":
 			m.cfg.Granola.Enabled = src.enabled
+		case "slack":
+			m.cfg.Slack.Enabled = src.enabled
 		}
 	}
 }
@@ -515,6 +520,8 @@ func (m *Model) handleSourceDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleGithubDetailKey(msg)
 	case "granola":
 		return m.handleGranolaDetailKey(msg)
+	case "slack":
+		return m.handleSlackDetailKey(msg)
 	}
 
 	// Fallback: esc returns to hub.
@@ -885,6 +892,20 @@ func (m *Model) handleGranolaDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// --- Slack sub-flow ---
+
+func (m *Model) handleSlackDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	o := m.onboardingState
+
+	switch msg.String() {
+	case "esc":
+		o.step = stepSources
+	case "r":
+		o.validateSources()
+	}
+	return m, nil
+}
+
 // --- Step 4: Done ---
 
 func (m *Model) enterDoneStep() (tea.Model, tea.Cmd) {
@@ -1116,6 +1137,8 @@ func (o *onboardingState) viewSourceDetail(width int, styles *Styles, cfg *confi
 		return o.viewGithubDetail(width, styles, cfg)
 	case "granola":
 		return o.viewGranolaDetail(width, styles)
+	case "slack":
+		return o.viewSlackDetail(width, styles)
 	}
 	return ""
 }
@@ -1344,6 +1367,34 @@ func (o *onboardingState) viewGranolaDetail(width int, styles *Styles) string {
 		lines = append(lines, styles.Hint.Render("  3. CCC reads Granola's local data automatically"))
 		lines = append(lines, "")
 		lines = append(lines, styles.Hint.Render("  Looks for: ~/Library/Application Support/Granola/stored-accounts.json"))
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, styles.Hint.Render("  r re-check · esc back"))
+
+	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
+	return styles.PanelBorder.Width(width - 4).Render(content)
+}
+
+func (o *onboardingState) viewSlackDetail(width int, styles *Styles) string {
+	var lines []string
+
+	lines = append(lines, styles.TitleBoldC.Render("SLACK"))
+	lines = append(lines, "")
+
+	lines = append(lines, styles.DescMuted.Render("  Slack scans your messages for commitments and creates todos."))
+	lines = append(lines, "")
+
+	slSrc := o.findSource("slack")
+	if slSrc != nil && slSrc.valid {
+		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(styles.ColorGreen).Render("✓ SLACK_BOT_TOKEN configured"))
+	} else {
+		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Render("✗ SLACK_BOT_TOKEN not set"))
+		lines = append(lines, "")
+		lines = append(lines, styles.DescMuted.Render("  To set up Slack:"))
+		lines = append(lines, styles.Hint.Render("  1. Create a Slack app with channels:history, users:read scopes"))
+		lines = append(lines, styles.Hint.Render("  2. Install the app to your workspace"))
+		lines = append(lines, styles.Hint.Render("  3. Export SLACK_BOT_TOKEN in your shell profile"))
 	}
 
 	lines = append(lines, "")
