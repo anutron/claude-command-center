@@ -55,6 +55,11 @@ type Plugin struct {
 	bannerField         int  // 0=name, 1=subtitle, 2=show/hide
 	bannerEditing       bool // true when a text field is focused
 
+	// Sidebar nav state (new layout)
+	navCategories []Category
+	navCursor     int
+	focusZone     FocusZone
+
 	// Detail view state
 	detailView   bool
 	detailIdx    int
