@@ -26,6 +26,8 @@ type settingsItem struct {
 	kind       string // "builtin-plugin", "external-plugin", "datasource"
 	enabled    bool
 	toggleable bool
+	valid      *bool // nil = not checked, true/false = credential check result
+	validHint  string
 }
 
 // Plugin implements the plugin.Plugin interface for Settings.
@@ -109,6 +111,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	p.rebuildItems()
+	p.validateAllSources()
 
 	// Initialize providers map and register data source settings providers.
 	if p.providers == nil {
@@ -203,6 +206,25 @@ func (p *Plugin) rebuildItems() {
 	})
 }
 
+// validateAllSources runs credential checks on all data sources and updates valid status.
+func (p *Plugin) validateAllSources() {
+	for i := range p.items {
+		if p.items[i].kind != "datasource" {
+			continue
+		}
+		err := p.validateDataSource(p.items[i].slug)
+		if err != nil {
+			v := false
+			p.items[i].valid = &v
+			p.items[i].validHint = err.Error()
+		} else {
+			v := true
+			p.items[i].valid = &v
+			p.items[i].validHint = ""
+		}
+	}
+}
+
 func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 	return []plugin.KeyBinding{
 		{Key: "up/down", Description: "Navigate list", Promoted: true},
@@ -277,6 +299,11 @@ func (p *Plugin) handlePluginsKey(msg tea.KeyMsg) plugin.Action {
 		if p.cursor < len(p.items) {
 			p.openDetailView(p.cursor)
 		}
+	case "t":
+		// Re-validate all data source credentials
+		p.validateAllSources()
+		p.flashMessage = "Credentials re-checked"
+		p.flashMessageAt = time.Now()
 	case "esc":
 		return plugin.Action{Type: plugin.ActionUnhandled}
 	}
@@ -708,6 +735,13 @@ func (p *Plugin) viewPlugins(width, height int) string {
 		if !item.toggleable {
 			suffix = p.styles.muted.Render(" (core)")
 		}
+		if item.valid != nil && item.kind == "datasource" {
+			if *item.valid {
+				suffix += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")).Render("✓")
+			} else {
+				suffix += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Render("✗")
+			}
+		}
 
 		lines = append(lines, fmt.Sprintf("%s%s %s%s", cursor, status, label, suffix))
 	}
@@ -720,7 +754,7 @@ func (p *Plugin) viewPlugins(width, height int) string {
 
 	// Footer hints
 	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  ↑↓ navigate · enter toggle · l logs · p palette"))
+	lines = append(lines, p.styles.muted.Render("  ↑↓ navigate · space toggle · enter detail · t test connections · l logs · p palette"))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
 	return p.styles.panel.Width(width - 4).Render(content)

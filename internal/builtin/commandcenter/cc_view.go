@@ -299,7 +299,7 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 			gap := ev.Start.Sub(maxEndSoFar)
 			if gap > 30*time.Minute {
 				freeTime := s.CalendarTime.Render(fmt.Sprintf("%-*s", timeColWidth, maxEndSoFar.Format("3:04pm")))
-				freeLine := fmt.Sprintf("  %s%s", freeTime, s.CalendarFree.Render("---- free ----"))
+				freeLine := fmt.Sprintf("  %s%s", freeTime, s.CalendarFree.Render(fmt.Sprintf("---- %s free ----", formatDuration(gap))))
 				lines = append(lines, freeLine)
 			}
 		}
