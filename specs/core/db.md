@@ -72,6 +72,7 @@ All types are exported for use by other packages:
 - `DBCloseThread` -- sets status=completed, completed_at=now
 
 ### Calendar & Suggestions
+- **Calendar day-clamping on load**: `dbLoadCalendar` clamps multi-day event times to their day boundaries. Events whose start is before the day start are clamped to midnight; events whose end extends past the day end are clamped to end-of-day. Events are then re-sorted by effective start time. This ensures multi-day events sort and display correctly (e.g., a 3-day conference shows as starting at midnight today, not at its original start time days ago).
 - `DBReplaceCalendar` -- transactional replace of all cached events
 - `DBSaveFocus` -- upserts focus text, preserving ranked_todo_ids/reasons
 - `DBSaveSuggestions` -- replaces the full suggestions row

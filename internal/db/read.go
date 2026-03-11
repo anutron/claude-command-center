@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 )
 
@@ -163,7 +164,43 @@ func dbLoadCalendar(db *sql.DB) (CalendarData, error) {
 			cal.Tomorrow = append(cal.Tomorrow, ev)
 		}
 	}
-	return cal, rows.Err()
+	if err := rows.Err(); err != nil {
+		return cal, err
+	}
+
+	// Clamp multi-day events to their day boundaries so they sort and
+	// display correctly (e.g. a 3-day event shows as starting at midnight
+	// today, not at its original start time days ago).
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	todayEnd := todayStart.Add(24 * time.Hour)
+	tomorrowEnd := todayEnd.Add(24 * time.Hour)
+
+	cal.Today = clampEventsToDayBounds(cal.Today, todayStart, todayEnd)
+	cal.Tomorrow = clampEventsToDayBounds(cal.Tomorrow, todayEnd, tomorrowEnd)
+
+	sort.Slice(cal.Today, func(i, j int) bool { return cal.Today[i].Start.Before(cal.Today[j].Start) })
+	sort.Slice(cal.Tomorrow, func(i, j int) bool { return cal.Tomorrow[i].Start.Before(cal.Tomorrow[j].Start) })
+
+	return cal, nil
+}
+
+// clampEventsToDayBounds adjusts multi-day events so their Start/End are
+// clamped to the given day boundaries. This ensures correct sort order and
+// display for events that span multiple days.
+func clampEventsToDayBounds(events []CalendarEvent, dayStart, dayEnd time.Time) []CalendarEvent {
+	for i := range events {
+		if events[i].AllDay {
+			continue
+		}
+		if events[i].Start.Before(dayStart) {
+			events[i].Start = dayStart
+		}
+		if events[i].End.After(dayEnd) {
+			events[i].End = dayEnd
+		}
+	}
+	return events
 }
 
 func dbLoadSuggestions(db *sql.DB) (Suggestions, error) {
