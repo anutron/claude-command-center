@@ -187,9 +187,10 @@ func TestNavigateToSubViews(t *testing.T) {
 		t.Errorf("expected palette sub-view, got %q", p.subView)
 	}
 
+	// Navigating to "settings" (the tab route) preserves current sub-view
 	p.NavigateTo("settings", nil)
-	if p.subView != "plugins" {
-		t.Errorf("expected plugins sub-view, got %q", p.subView)
+	if p.subView != "palette" {
+		t.Errorf("expected palette sub-view preserved, got %q", p.subView)
 	}
 }
 

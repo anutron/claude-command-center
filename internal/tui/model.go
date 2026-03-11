@@ -420,17 +420,16 @@ func (m Model) View() string {
 		return page
 	}
 
-	var banner string
+	var sections []string
 	if m.cfg.BannerVisible() {
-		banner = topPad + renderGradientBanner(&m.grad, m.cfg.Name, m.cfg.Subtitle, ui.ContentMaxWidth, m.frame)
-	} else {
-		banner = topPad
+		sections = append(sections, topPad+renderGradientBanner(&m.grad, m.cfg.Name, m.cfg.Subtitle, ui.ContentMaxWidth, m.frame))
 	}
 
 	tabBar := m.renderTabBar()
 	content := m.activePlugin().View(m.width, m.height, m.frame)
 
-	page := lipgloss.JoinVertical(lipgloss.Left, banner, "", tabBar, "", content)
+	sections = append(sections, "", tabBar, "", content)
+	page := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	if m.width > 0 && m.height > 0 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, page)

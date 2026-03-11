@@ -96,6 +96,8 @@ func (p *Plugin) NavigateTo(route string, args map[string]string) {
 		p.subView = "palette"
 	case "settings/banner":
 		p.subView = "banner"
+	case "settings":
+		// Returning to settings tab — preserve current sub-view
 	default:
 		p.subView = "plugins"
 	}
@@ -845,12 +847,21 @@ func (p *Plugin) viewBanner(width, height int) string {
 }
 
 func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
-	switch msg.(type) {
+	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m := msg.(tea.WindowSizeMsg)
-		p.width = m.Width
-		p.height = m.Height
+		p.width = msg.Width
+		p.height = msg.Height
 		return false, plugin.NoopAction()
+	case plugin.TabLeaveMsg:
+		// Cancel any active banner editing when leaving the tab
+		if p.bannerEditing {
+			p.bannerEditing = false
+			p.bannerNameInput.SetValue(p.cfg.Name)
+			p.bannerNameInput.Blur()
+			p.bannerSubtitleInput.SetValue(p.cfg.Subtitle)
+			p.bannerSubtitleInput.Blur()
+		}
+		return true, plugin.NoopAction()
 	}
 
 	// Clear flash after 10 seconds
