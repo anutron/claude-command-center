@@ -206,7 +206,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "enter", Description: "Launch Claude session", Promoted: true},
 		{Key: "x", Description: "Mark todo done", Promoted: true},
 		{Key: "u", Description: "Undo last action", Promoted: true},
-		{Key: "c", Description: "Create new todo", Promoted: true},
+		{Key: "c", Description: "Command — tell Claude what to do", Promoted: true},
 		{Key: "X", Description: "Dismiss todo"},
 		{Key: "d", Description: "Defer todo"},
 		{Key: "p", Description: "Promote todo to top"},

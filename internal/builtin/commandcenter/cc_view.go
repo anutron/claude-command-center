@@ -107,6 +107,9 @@ func renderCalendarColumn(s *ccStyles, calendars []config.CalendarEntry, cal *db
 	afternoon := now.Hour() >= 12
 
 	todayEvents := visibleEvents(cal.Today)
+	if afternoon {
+		todayEvents = upcomingEvents(todayEvents, now)
+	}
 
 	todayLabel := fmt.Sprintf("TODAY (%s)", strings.ToUpper(now.Format("Mon Jan 2")))
 
@@ -148,11 +151,21 @@ func visibleEvents(events []db.CalendarEvent) []db.CalendarEvent {
 		if ev.Declined {
 			continue
 		}
-		// Filter out noise: skip events with no title and no meaningful content
 		if strings.TrimSpace(ev.Title) == "" {
 			continue
 		}
 		out = append(out, ev)
+	}
+	return out
+}
+
+// upcomingEvents filters to events that haven't ended yet (for afternoon view).
+func upcomingEvents(events []db.CalendarEvent, now time.Time) []db.CalendarEvent {
+	var out []db.CalendarEvent
+	for _, ev := range events {
+		if ev.End.After(now) {
+			out = append(out, ev)
+		}
 	}
 	return out
 }
@@ -277,8 +290,19 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 	// Duration column: 6 chars like " 1h30m"
 	const durColWidth = 6
 
+	var maxEndSoFar time.Time
 	for i, ev := range events {
 		isPast := ev.End.Before(now)
+
+		// Free-gap marker: show "---- free ----" when >30min gap between events
+		if i > 0 && !maxEndSoFar.IsZero() && !ev.AllDay {
+			gap := ev.Start.Sub(maxEndSoFar)
+			if gap > 30*time.Minute {
+				freeTime := s.CalendarTime.Render(fmt.Sprintf("%-*s", timeColWidth, maxEndSoFar.Format("3:04pm")))
+				freeLine := fmt.Sprintf("  %s%s", freeTime, s.CalendarFree.Render("---- free ----"))
+				lines = append(lines, freeLine)
+			}
+		}
 
 		// Insert now-line before the first event that starts after now (or is in progress)
 		if showNowLine && !nowLineInserted && ev.End.After(now) {
@@ -373,6 +397,11 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 			}
 			closer := s.DueOverdue.Render(prefix + strings.Repeat("\u2500", fillLen))
 			lines = append(lines, closer)
+		}
+
+		// Track the furthest end time for free-gap detection
+		if !ev.AllDay && ev.End.After(maxEndSoFar) {
+			maxEndSoFar = ev.End
 		}
 	}
 
@@ -636,7 +665,7 @@ func renderCCFooter(s *ccStyles, generatedAt time.Time, width int, refreshing bo
 	} else {
 		left = s.RefreshInfo.Render("refreshed " + db.RelativeTime(generatedAt))
 	}
-	right := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 c create \u00b7 ? help")
+	right := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 c command \u00b7 ? help")
 
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 2 {
@@ -749,7 +778,7 @@ func renderExpandedTodoView(s *ccStyles, g *gradientColors, todos []db.Todo, cur
 	currentPage := offset/pageSize + 1
 
 	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active) -- page %d/%d", len(todos), currentPage, totalPages))
-	hints := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 \u2190\u2192 columns \u00b7 esc collapse \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 c create \u00b7 ? help")
+	hints := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 \u2190\u2192 columns \u00b7 esc collapse \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 c command \u00b7 ? help")
 
 	if len(todos) == 0 {
 		return lipgloss.JoinVertical(lipgloss.Left, header, "", s.CalendarFree.Render("  No active todos"), "", hints)
@@ -833,7 +862,7 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 			{"u", "Undo last done/dismiss"},
 			{"d", "Defer todo to bottom of list"},
 			{"p", "Promote todo to top of list"},
-			{"c", "Create new todo"},
+			{"c", "Command — tell Claude what to do"},
 			{"s", "Schedule time block for todo"},
 			{"b", "Toggle completed backlog"},
 			{"r", "Refresh from all sources"},
