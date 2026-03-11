@@ -153,7 +153,7 @@ func main() {
 	// TUI loop: launch TUI, optionally exec claude, return to TUI
 	returnedFromLaunch := false
 	for {
-		m := tui.NewModel(database, cfg, bus, logger, pluginInterfaces...)
+		m := tui.NewModel(database, cfg, bus, logger, l, pluginInterfaces...)
 		if returnedFromLaunch {
 			m.SetReturnedFromLaunch()
 		}

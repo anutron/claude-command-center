@@ -5,6 +5,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,7 +28,7 @@ func TestNewModel(t *testing.T) {
 	defer database.Close()
 
 	cfg := testConfig()
-	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger())
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
 	if m.cfg.Name != "Test Center" {
 		t.Errorf("expected name 'Test Center', got %q", m.cfg.Name)
@@ -50,7 +51,7 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
 	// Tab forward
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -93,7 +94,7 @@ func TestWindowResize(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = result.(Model)
@@ -109,7 +110,7 @@ func TestViewDoesNotPanic(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 	m.width = 120
 	m.height = 40
 
@@ -182,7 +183,7 @@ func TestEscQuits(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Error("expected non-nil cmd (tea.Quit) on esc")
@@ -196,7 +197,7 @@ func TestPluginTabMapping(t *testing.T) {
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger())
+	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
 	// First two tabs should be sessions plugin
 	if m.tabs[0].plugin.Slug() != "sessions" {

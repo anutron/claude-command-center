@@ -8,6 +8,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/builtin/sessions"
 	"github.com/anutron/claude-command-center/internal/builtin/settings"
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
@@ -66,7 +67,7 @@ type Model struct {
 // NewModel creates the main TUI model with plugins.
 // bus and logger are owned by main.go and shared across all plugins.
 // Optional extPlugins are appended as additional tabs.
-func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger plugin.Logger, extPlugins ...plugin.Plugin) Model {
+func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger plugin.Logger, l llm.LLM, extPlugins ...plugin.Plugin) Model {
 	pal := config.GetPalette(cfg.Palette, cfg.Colors)
 	styles := NewStyles(pal)
 	grad := NewGradientColors(pal)
@@ -93,6 +94,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		Bus:    bus,
 		Logger: logger,
 		DBPath: config.DBPath(),
+		LLM:    l,
 	}
 
 	_ = sessPlug.Init(ctx)
@@ -426,7 +428,19 @@ func (m Model) View() string {
 	}
 
 	tabBar := m.renderTabBar()
-	content := m.activePlugin().View(m.width, m.height, m.frame)
+
+	// Compute overhead height so plugins know the available content area.
+	// Build the header sections, count their lines, and pass the remainder.
+	headerParts := make([]string, len(sections))
+	copy(headerParts, sections)
+	headerParts = append(headerParts, "", tabBar, "")
+	header := lipgloss.JoinVertical(lipgloss.Left, headerParts...)
+	contentHeight := m.height - strings.Count(header, "\n") - 1
+	if contentHeight < 10 {
+		contentHeight = 10
+	}
+
+	content := m.activePlugin().View(m.width, contentHeight, m.frame)
 
 	sections = append(sections, "", tabBar, "", content)
 	page := lipgloss.JoinVertical(lipgloss.Left, sections...)

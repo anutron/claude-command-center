@@ -6,7 +6,7 @@ The thin host shell for the Claude Command Center. Manages the Bubbletea applica
 
 ## Interface
 
-- **Inputs**: `*sql.DB`, `*config.Config`, `plugin.EventBus`, `plugin.Logger` (passed to `NewModel`); optional external plugins via variadic `extPlugins`
+- **Inputs**: `*sql.DB`, `*config.Config`, `plugin.EventBus`, `plugin.Logger`, `llm.LLM` (passed to `NewModel`); optional external plugins via variadic `extPlugins`
 - **Outputs**: `Model` implementing `tea.Model` (Init/Update/View); `LaunchAction` set when a plugin requests a session launch
 - **Dependencies**: `internal/config`, `internal/plugin`, `internal/builtin/sessions`, `internal/builtin/commandcenter`, `internal/builtin/settings`, Bubbletea framework
 
@@ -94,8 +94,10 @@ All cross-plugin communication uses the event bus exclusively. The host does not
 
 1. Banner with animated gradient (top, with top padding)
 2. Tab bar with active tab highlighted (center-aligned, `> label` format)
-3. Active plugin's `View()` output (below tab bar)
+3. Active plugin's `View(width, contentHeight, frame)` output (below tab bar)
 4. Centered in terminal via `lipgloss.Place`
+
+**Content height calculation**: The host computes the overhead (banner + spacing + tab bar) by rendering the header sections and counting newlines, then passes `terminalHeight - overhead` as `contentHeight` to the plugin. This prevents plugins from sizing their layouts to the full terminal height and overflowing past the banner/tabs.
 
 ### Animation
 
