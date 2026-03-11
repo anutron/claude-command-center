@@ -78,10 +78,10 @@ func TestInitLoadsPaths(t *testing.T) {
 		t.Fatalf("expected project-a, got %s", p.paths[0])
 	}
 
-	// New list should have: home + 2 paths + Browse = 4 items
+	// New list should have: 2 paths + Browse = 3 items
 	items := p.newList.Items()
-	if len(items) != 4 {
-		t.Fatalf("expected 4 new list items, got %d", len(items))
+	if len(items) != 3 {
+		t.Fatalf("expected 3 new list items, got %d", len(items))
 	}
 }
 
@@ -93,8 +93,8 @@ func TestHandleKeyEnterOnPathReturnsLaunch(t *testing.T) {
 	p.paths = append(p.paths, "/tmp/myproject")
 	p.newList.SetItems(p.buildNewItems())
 
-	// Select the second item (the path we just added)
-	p.newList.Select(1)
+	// Select the path we just added (index 0 since no more home item)
+	p.newList.Select(0)
 
 	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if action.Type != "launch" {
@@ -144,8 +144,8 @@ func TestHandleKeyDeleteEntersConfirming(t *testing.T) {
 	p.paths = append(p.paths, "/tmp/deleteme")
 	p.newList.SetItems(p.buildNewItems())
 
-	// Select the path item (index 1, since 0 is home)
-	p.newList.Select(1)
+	// Select the path item (index 0)
+	p.newList.Select(0)
 
 	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyDelete})
 	if action.Type != "noop" {
@@ -207,10 +207,13 @@ func TestSubTabSwitching(t *testing.T) {
 	}
 }
 
-func TestHandleKeyDeleteOnHomeEntersConfirming(t *testing.T) {
+func TestHandleKeyDeleteOnFirstPathEntersConfirming(t *testing.T) {
 	p := setupPlugin(t)
 
-	// Home item is at index 0 — should be deletable
+	// Add a path and select it
+	_ = db.DBAddPath(p.db, "/tmp/firstpath")
+	p.paths = append(p.paths, "/tmp/firstpath")
+	p.newList.SetItems(p.buildNewItems())
 	p.newList.Select(0)
 
 	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyDelete})
@@ -218,7 +221,10 @@ func TestHandleKeyDeleteOnHomeEntersConfirming(t *testing.T) {
 		t.Fatalf("expected noop action type, got %s", action.Type)
 	}
 	if !p.confirming {
-		t.Fatal("should enter confirming for home item")
+		t.Fatal("should enter confirming for first path")
+	}
+	if p.confirmItem.path != "/tmp/firstpath" {
+		t.Fatalf("expected confirm path /tmp/firstpath, got %s", p.confirmItem.path)
 	}
 }
 

@@ -40,15 +40,6 @@ func (c *Config) PluginEnabled(slug string) bool {
 	return true
 }
 
-// ResolveHomeDir returns HomeDir if set, otherwise the user's home directory.
-func (c *Config) ResolveHomeDir() string {
-	if c.HomeDir != "" {
-		return c.HomeDir
-	}
-	home, _ := os.UserHomeDir()
-	return home
-}
-
 // SetPluginEnabled adds or removes a slug from DisabledPlugins.
 func (c *Config) SetPluginEnabled(slug string, enabled bool) {
 	if enabled {

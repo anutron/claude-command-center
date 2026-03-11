@@ -34,7 +34,6 @@ import (
 type newItem struct {
 	path     string
 	label    string
-	isHome   bool
 	isBrowse bool
 }
 
@@ -130,10 +129,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 
 	switch it := item.(type) {
 	case newItem:
-		if it.isHome {
-			title = d.styles.titleBoldC.Render("* " + it.Title())
-			desc = "  " + d.styles.descMuted.Render(it.path)
-		} else if it.isBrowse {
+		if it.isBrowse {
 			title = d.styles.titleBoldC.Render("+ " + it.Title())
 		} else {
 			title = d.styles.titleBoldW.Render(it.Title())
@@ -273,6 +269,22 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.loading = true
 
 	paths, _ := db.DBLoadPaths(p.db)
+	// Ensure home_dir is in the paths list (at the front) if configured
+	if hd := p.cfg.HomeDir; hd != "" {
+		found := false
+		for _, pa := range paths {
+			if pa == hd {
+				found = true
+				break
+			}
+		}
+		if !found {
+			paths = append([]string{hd}, paths...)
+			if p.db != nil {
+				_ = db.DBAddPath(p.db, hd)
+			}
+		}
+	}
 	p.paths = paths
 
 	newItems := p.buildNewItems()
@@ -689,13 +701,7 @@ func (p *Plugin) renderHints() string {
 // ---------------------------------------------------------------------------
 
 func (p *Plugin) buildNewItems() []list.Item {
-	items := []list.Item{
-		newItem{
-			path:   p.cfg.ResolveHomeDir(),
-			label:  p.cfg.Name,
-			isHome: true,
-		},
-	}
+	var items []list.Item
 	for _, path := range p.paths {
 		items = append(items, newItem{
 			path:  path,
@@ -722,17 +728,14 @@ func (p *Plugin) dbWriteCmd(fn func(*sql.DB) error) tea.Cmd {
 // movePathUp swaps the selected path with the one above it.
 func (p *Plugin) movePathUp() plugin.Action {
 	idx := p.newList.Index()
-	// Items: [home, ...paths..., browse]
-	// Path indices in p.paths are offset by 1 (home is index 0)
-	pathIdx := idx - 1
-	if pathIdx <= 0 {
-		// Can't move the first path (or home) up further
+	// Items: [...paths..., browse] — list index == path index
+	if idx <= 0 || idx >= len(p.paths) {
 		return plugin.NoopAction()
 	}
-	p.paths[pathIdx-1], p.paths[pathIdx] = p.paths[pathIdx], p.paths[pathIdx-1]
+	p.paths[idx-1], p.paths[idx] = p.paths[idx], p.paths[idx-1]
 	p.newList.SetItems(p.buildNewItems())
 	p.newList.Select(idx - 1)
-	pathA, pathB := p.paths[pathIdx-1], p.paths[pathIdx]
+	pathA, pathB := p.paths[idx-1], p.paths[idx]
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
 		return db.DBSwapPathOrder(database, pathA, pathB)
 	})}
@@ -741,15 +744,13 @@ func (p *Plugin) movePathUp() plugin.Action {
 // movePathDown swaps the selected path with the one below it.
 func (p *Plugin) movePathDown() plugin.Action {
 	idx := p.newList.Index()
-	pathIdx := idx - 1
-	if pathIdx < 0 || pathIdx >= len(p.paths)-1 {
-		// Can't move the last path (or home/browse) down further
+	if idx < 0 || idx >= len(p.paths)-1 {
 		return plugin.NoopAction()
 	}
-	p.paths[pathIdx], p.paths[pathIdx+1] = p.paths[pathIdx+1], p.paths[pathIdx]
+	p.paths[idx], p.paths[idx+1] = p.paths[idx+1], p.paths[idx]
 	p.newList.SetItems(p.buildNewItems())
 	p.newList.Select(idx + 1)
-	pathA, pathB := p.paths[pathIdx], p.paths[pathIdx+1]
+	pathA, pathB := p.paths[idx], p.paths[idx+1]
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
 		return db.DBSwapPathOrder(database, pathA, pathB)
 	})}

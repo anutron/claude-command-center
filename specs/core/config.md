@@ -28,9 +28,10 @@ Provides user-configurable settings for the CCC TUI, including color palettes, d
 - `DBPath()`: `DataDir()/ccc.db`
 - `CredentialsDir()`: `ConfigDir()/credentials`
 
-### HomeDir Resolution
-- `ResolveHomeDir()` returns `HomeDir` if set in config, otherwise user's home directory (`$HOME`)
-- Used by the Sessions plugin as the path for the "home" entry in the new session list
+### HomeDir
+- Optional `home_dir` config field specifying the default project directory
+- On Sessions plugin Init, if set and not already in learned paths, it is prepended to the paths list and persisted to DB
+- No special styling or behavior — treated as a regular path entry that can be reordered or deleted
 
 ### Default Config
 - Name: "Command Center"

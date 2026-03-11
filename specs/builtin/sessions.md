@@ -51,10 +51,10 @@ None — uses existing cc_bookmarks and cc_learned_paths tables.
 3. Resume sub-tab shows bookmarked sessions
 4. Enter on a path launches Claude in that directory
 5. Enter on a session resumes that Claude session
-6. Delete/backspace shows confirmation dialog (all items including home are deletable)
+6. Delete/backspace shows confirmation dialog (all path entries are deletable)
 7. Shift+up/down swaps the selected path with its neighbor, persisted via `sort_order` column in `cc_learned_paths`
 8. When pendingLaunchTodo is set (via event bus), shows banner "Select project for: <title>"
-9. Home item uses `config.HomeDir` (falls back to user's home directory)
+9. If `config.HomeDir` is set, it is auto-added to the paths list on Init (treated as a regular path, no special styling)
 
 ## Test Cases
 
@@ -64,5 +64,5 @@ None — uses existing cc_bookmarks and cc_learned_paths tables.
 - HandleKey "delete" enters confirming mode
 - Confirming "y" removes item
 - Sub-tab switching works
-- Delete on home item enters confirming mode (home is deletable)
+- Delete on first path enters confirming mode (all paths deletable)
 - Shift+up/down reorders paths in-memory and persists via DB
