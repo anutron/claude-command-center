@@ -145,9 +145,13 @@ func (m *Model) rebuildTabs() {
 
 	var filtered []tabEntry
 	for _, t := range m.allTabs {
-		if m.cfg.PluginEnabled(t.ownerSlug) {
-			filtered = append(filtered, t)
+		if !m.cfg.PluginEnabled(t.ownerSlug) {
+			continue
 		}
+		if t.route == "commandcenter/threads" && !m.cfg.Threads.Enabled {
+			continue
+		}
+		filtered = append(filtered, t)
 	}
 	m.tabs = filtered
 

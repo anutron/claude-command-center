@@ -190,6 +190,10 @@ func (p *Plugin) rebuildItems() {
 		enabled: p.cfg.Todos.Enabled, toggleable: false,
 	})
 	p.items = append(p.items, settingsItem{
+		name: "Threads", slug: "threads", kind: "datasource",
+		enabled: p.cfg.Threads.Enabled, toggleable: true,
+	})
+	p.items = append(p.items, settingsItem{
 		name: "Calendar", slug: "calendar", kind: "datasource",
 		enabled: p.cfg.Calendar.Enabled, toggleable: true,
 	})
@@ -441,6 +445,8 @@ func (p *Plugin) applyToggle(item settingsItem) {
 			p.cfg.Calendar.Enabled = item.enabled
 		case "github":
 			p.cfg.GitHub.Enabled = item.enabled
+		case "threads":
+			p.cfg.Threads.Enabled = item.enabled
 		case "granola":
 			p.cfg.Granola.Enabled = item.enabled
 		case "slack":
@@ -689,6 +695,8 @@ func (p *Plugin) syncEnabledFromConfig() {
 				p.items[i].enabled = p.cfg.Slack.Enabled
 			case "todos":
 				p.items[i].enabled = p.cfg.Todos.Enabled
+			case "threads":
+				p.items[i].enabled = p.cfg.Threads.Enabled
 			}
 		}
 	}

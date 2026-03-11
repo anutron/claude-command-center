@@ -78,7 +78,7 @@ func TestSlugAndTabName(t *testing.T) {
 }
 
 func TestRoutes(t *testing.T) {
-	p := New()
+	p := testPlugin(t)
 	routes := p.Routes()
 	if len(routes) != 2 {
 		t.Fatalf("Routes() returned %d routes, want 2", len(routes))

@@ -15,6 +15,7 @@ func testConfig() *config.Config {
 		Name:    "Test Center",
 		Palette: "aurora",
 		Todos:   config.TodosConfig{Enabled: true},
+		Threads: config.ThreadsConfig{Enabled: true},
 	}
 }
 

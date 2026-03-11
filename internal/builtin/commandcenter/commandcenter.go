@@ -152,10 +152,13 @@ CREATE INDEX IF NOT EXISTS idx_cc_threads_status_created ON cc_threads(status, c
 
 // Routes returns the sub-routes for this plugin.
 func (p *Plugin) Routes() []plugin.Route {
-	return []plugin.Route{
+	routes := []plugin.Route{
 		{Slug: "commandcenter", Description: "Command Center (calendar + todos)"},
-		{Slug: "commandcenter/threads", Description: "Threads view"},
 	}
+	if p.cfg != nil && p.cfg.Threads.Enabled {
+		routes = append(routes, plugin.Route{Slug: "commandcenter/threads", Description: "Threads view"})
+	}
+	return routes
 }
 
 // NavigateTo switches to the given sub-route.
