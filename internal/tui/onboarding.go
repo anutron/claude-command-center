@@ -55,6 +55,12 @@ type onboardingState struct {
 	mcpResult   string
 	mcpServers  []string
 	mcpSpinner  spinner.Model
+
+	skillsInstalling bool
+	skillsResult     string
+	skillsOK         bool
+
+	shellHookInstalled bool // whether the hook was already present
 }
 
 // calendarColorPresets are the available colors for per-calendar color coding.
@@ -117,6 +123,11 @@ type githubUsernameMsg struct {
 type mcpResultMsg struct {
 	servers []string
 	err     error
+}
+
+// skillsResultMsg carries the result of InstallSkills.
+type skillsResultMsg struct {
+	err error
 }
 
 // newOnboardingState initializes onboarding state from the current config.
@@ -247,7 +258,7 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case spinner.TickMsg:
-		if o.mcpBuilding {
+		if o.mcpBuilding || o.skillsInstalling {
 			var cmd tea.Cmd
 			o.mcpSpinner, cmd = o.mcpSpinner.Update(msg)
 			return m, cmd
@@ -303,6 +314,16 @@ func (m *Model) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			o.mcpServers = msg.servers
 			o.mcpResult = fmt.Sprintf("configured %d server(s)", len(msg.servers))
+		}
+		return m, nil
+
+	case skillsResultMsg:
+		o.skillsInstalling = false
+		if msg.err != nil {
+			o.skillsResult = msg.err.Error()
+		} else {
+			o.skillsOK = true
+			o.skillsResult = "Skills symlinked"
 		}
 		return m, nil
 
@@ -914,6 +935,10 @@ func (m *Model) enterDoneStep() (tea.Model, tea.Cmd) {
 	o.mcpBuilding = true
 	o.mcpResult = ""
 	o.mcpServers = nil
+	o.skillsInstalling = true
+	o.skillsResult = ""
+	o.skillsOK = false
+	o.shellHookInstalled = config.IsShellHookInstalled()
 
 	// Save config synchronously.
 	if err := config.Save(m.cfg); err != nil {
@@ -924,12 +949,16 @@ func (m *Model) enterDoneStep() (tea.Model, tea.Cmd) {
 		o.saved = true
 	}
 
-	// Fire MCP build in background.
+	// Fire MCP build and skill install in background.
 	return m, tea.Batch(
 		o.mcpSpinner.Tick,
 		func() tea.Msg {
 			servers, err := config.BuildAndConfigureMCP()
 			return mcpResultMsg{servers: servers, err: err}
+		},
+		func() tea.Msg {
+			err := config.InstallSkills()
+			return skillsResultMsg{err: err}
 		},
 	)
 }
@@ -1424,6 +1453,22 @@ func (o *onboardingState) viewDone(width int, styles *Styles) string {
 		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(styles.ColorGreen).Render("✓ MCP servers ready: "+strings.Join(o.mcpServers, ", ")))
 	} else if o.mcpResult != "" {
 		lines = append(lines, "  "+styles.Hint.Render("- "+o.mcpResult))
+	}
+
+	// Skills install status.
+	if o.skillsInstalling {
+		lines = append(lines, "  "+o.mcpSpinner.View()+" Installing skills...")
+	} else if o.skillsOK {
+		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(styles.ColorGreen).Render("✓ "+o.skillsResult))
+	} else if o.skillsResult != "" {
+		lines = append(lines, "  "+styles.Hint.Render("- skills: "+o.skillsResult))
+	}
+
+	// Shell hook status (informational — enable via Settings > System).
+	if o.shellHookInstalled {
+		lines = append(lines, "  "+lipgloss.NewStyle().Foreground(styles.ColorGreen).Render("✓ Shell hook installed"))
+	} else {
+		lines = append(lines, "  "+styles.Hint.Render("- Shell hook: enable via Settings → System to auto-launch CCC"))
 	}
 
 	lines = append(lines, "")
