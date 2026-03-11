@@ -129,7 +129,9 @@ type SlackConfig struct {
 }
 
 type GmailConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled   bool   `yaml:"enabled"`
+	TodoLabel string `yaml:"todo_label,omitempty"` // Gmail label name to sync as todos (empty = disabled)
+	Advanced  bool   `yaml:"advanced,omitempty"`   // opt-in for modify+compose scopes (label mgmt, drafts)
 }
 
 type ExternalPluginConfig struct {

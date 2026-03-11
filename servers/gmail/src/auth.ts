@@ -8,7 +8,10 @@ import { homedir } from "os";
 import { join } from "path";
 import { execFile } from "child_process";
 
-const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
+const SCOPES = [
+  "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/gmail.compose",
+];
 const TOKEN_DIR = join(homedir(), ".gmail-mcp");
 const REDIRECT_PORT = 3093;
 const REDIRECT_URI = `http://127.0.0.1:${REDIRECT_PORT}`;
@@ -124,11 +127,11 @@ async function runAuthFlow(account: string) {
           `<h1>Gmail MCP authorized!</h1>` +
             `<p>Account: <strong>${account}</strong></p>` +
             `<p>You can close this tab and return to the terminal.</p>` +
-            `<p>Scope: <code>gmail.readonly</code> (read-only)</p>`
+            `<p>Scopes: <code>gmail.modify</code>, <code>gmail.compose</code></p>`
         );
 
         console.log(`Authorization successful! Token saved to ~/.gmail-mcp/${account}.json`);
-        console.log("Scope: gmail.readonly (read-only access only)");
+        console.log("Scopes: gmail.modify, gmail.compose");
 
         server.close();
         resolve();

@@ -2,45 +2,128 @@ package gmail
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/refresh"
 	"golang.org/x/oauth2"
 	gmail "google.golang.org/api/gmail/v1"
-	"google.golang.org/api/option"
 )
 
-// GmailSource fetches unread actionable emails from Gmail.
+// GmailSource fetches unread actionable emails and label-based todos from Gmail.
 type GmailSource struct {
-	enabled bool
+	cfg    config.GmailConfig
+	llm    llm.LLM
+	client *SafeGmailClient // populated during Fetch, reused in PostMerge
+
+	// freshLabeledIDs tracks message IDs returned by the label query during Fetch.
+	// Used by PostMerge to know which emails currently have the todo label.
+	freshLabeledIDs map[string]bool
 }
 
-// New creates a GmailSource with the given enabled flag.
-func New(enabled bool) *GmailSource { return &GmailSource{enabled: enabled} }
+// New creates a GmailSource with the given config and optional LLM.
+func New(cfg config.GmailConfig, l llm.LLM) *GmailSource {
+	return &GmailSource{cfg: cfg, llm: l}
+}
 
 func (s *GmailSource) Name() string  { return "gmail" }
-func (s *GmailSource) Enabled() bool { return s.enabled }
+func (s *GmailSource) Enabled() bool { return s.cfg.Enabled }
 
 func (s *GmailSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) {
-	ts, err := loadGmailAuth()
+	ts, err := loadGmailAuth(s.cfg.Advanced)
 	if err != nil {
 		return nil, fmt.Errorf("gmail auth: %w", err)
 	}
 
-	threads, err := fetchActionableEmails(ctx, ts)
+	client, err := NewSafeClient(ctx, ts, s.cfg.Advanced)
 	if err != nil {
-		return nil, fmt.Errorf("fetch failed: %w", err)
+		return nil, fmt.Errorf("gmail client: %w", err)
+	}
+	s.client = client
+
+	// Fetch unread email threads (existing behavior)
+	threads, err := fetchActionableEmails(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("fetch emails: %w", err)
 	}
 
-	return &refresh.SourceResult{Threads: threads}, nil
+	result := &refresh.SourceResult{Threads: threads}
+
+	// Fetch label-based todos if configured
+	if s.cfg.TodoLabel != "" {
+		todos, labeledIDs, err := fetchLabeledTodos(ctx, client, s.cfg.TodoLabel)
+		if err != nil {
+			log.Printf("gmail: label todos: %v", err)
+		} else {
+			result.Todos = todos
+			s.freshLabeledIDs = labeledIDs
+		}
+
+		// LLM commitment detection — auto-label emails (requires advanced mode)
+		if s.cfg.Advanced && s.llm != nil {
+			labelID, err := client.GetLabelID(ctx, s.cfg.TodoLabel)
+			if err != nil {
+				log.Printf("gmail: resolve label ID: %v", err)
+			} else {
+				if err := detectAndLabelCommitments(ctx, s.llm, client, labelID); err != nil {
+					log.Printf("gmail: commitment detection: %v", err)
+				}
+			}
+		}
+	}
+
+	return result, nil
 }
 
-func loadGmailAuth() (oauth2.TokenSource, error) {
+// PostMerge implements refresh.PostMerger.
+//
+// For completed gmail todos whose email still has the todo label:
+//   - Remove the label from the email (cleanup after completion).
+//
+// If a user re-labels a completed email's NEW reply, that's a different message ID
+// and creates a new todo naturally. For the edge case of re-labeling the exact same
+// message after completion, the label gets removed again on the next refresh.
+func (s *GmailSource) PostMerge(ctx context.Context, database *sql.DB, cc *db.CommandCenter, verbose bool) error {
+	if !s.cfg.Advanced || s.cfg.TodoLabel == "" || s.client == nil {
+		return nil
+	}
+
+	labelID, err := s.client.GetLabelID(ctx, s.cfg.TodoLabel)
+	if err != nil {
+		return fmt.Errorf("resolve label ID: %w", err)
+	}
+
+	for _, todo := range cc.Todos {
+		if todo.Source != "gmail" || todo.SourceRef == "" || todo.Status != "completed" {
+			continue
+		}
+
+		// Only remove label if the email currently has it
+		if !s.freshLabeledIDs[todo.SourceRef] {
+			continue
+		}
+
+		if err := s.client.ModifyLabels(ctx, todo.SourceRef, nil, []string{labelID}); err != nil {
+			log.Printf("gmail: remove label from %s: %v", todo.SourceRef, err)
+			continue
+		}
+		if verbose {
+			log.Printf("gmail: removed label from completed todo %q (%s)", todo.Title, todo.SourceRef)
+		}
+	}
+
+	return nil
+}
+
+func loadGmailAuth(advanced bool) (oauth2.TokenSource, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("home dir: %w", err)
@@ -66,33 +149,27 @@ func loadGmailAuth() (oauth2.TokenSource, error) {
 		return nil, fmt.Errorf("gmail token missing clientId and GMAIL_CLIENT_ID not set")
 	}
 
-	conf := refresh.LoadGoogleOAuth2Config(clientID, clientSecret, gmail.GmailReadonlyScope)
+	var scopes []string
+	if advanced {
+		scopes = []string{gmail.GmailModifyScope, gmail.GmailComposeScope}
+	} else {
+		scopes = []string{gmail.GmailReadonlyScope}
+	}
+
+	conf := refresh.LoadGoogleOAuth2Config(clientID, clientSecret, scopes...)
 	tok := tf.ToOAuth2Token()
 	return conf.TokenSource(context.Background(), tok), nil
 }
 
-func fetchActionableEmails(ctx context.Context, ts oauth2.TokenSource) ([]db.Thread, error) {
-	srv, err := gmail.NewService(ctx, option.WithTokenSource(ts))
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := srv.Users.Messages.List("me").
-		Q("is:unread newer_than:3d").
-		MaxResults(20).
-		Context(ctx).
-		Do()
+func fetchActionableEmails(ctx context.Context, client *SafeGmailClient) ([]db.Thread, error) {
+	msgs, err := client.ListMessages(ctx, "is:unread newer_than:3d", 20)
 	if err != nil {
 		return nil, err
 	}
 
 	var threads []db.Thread
-	for _, msg := range resp.Messages {
-		detail, err := srv.Users.Messages.Get("me", msg.Id).
-			Format("metadata").
-			MetadataHeaders("Subject", "From", "Date").
-			Context(ctx).
-			Do()
+	for _, msg := range msgs {
+		detail, err := client.GetMessage(ctx, msg.Id, "metadata", "Subject", "From", "Date")
 		if err != nil {
 			continue
 		}
@@ -127,4 +204,54 @@ func fetchActionableEmails(ctx context.Context, ts oauth2.TokenSource) ([]db.Thr
 	}
 
 	return threads, nil
+}
+
+// fetchLabeledTodos queries emails with the given label and returns todos + the set of message IDs found.
+func fetchLabeledTodos(ctx context.Context, client *SafeGmailClient, labelName string) ([]db.Todo, map[string]bool, error) {
+	query := fmt.Sprintf("label:%s", labelName)
+	msgs, err := client.ListMessages(ctx, query, 50)
+	if err != nil {
+		return nil, nil, fmt.Errorf("searching label %q: %w", labelName, err)
+	}
+
+	labeledIDs := make(map[string]bool, len(msgs))
+	var todos []db.Todo
+
+	for _, msg := range msgs {
+		labeledIDs[msg.Id] = true
+
+		detail, err := client.GetMessage(ctx, msg.Id, "metadata", "Subject", "From")
+		if err != nil {
+			continue
+		}
+
+		var subject, from string
+		for _, h := range detail.Payload.Headers {
+			switch h.Name {
+			case "Subject":
+				subject = h.Value
+			case "From":
+				from = h.Value
+			}
+		}
+
+		if subject == "" {
+			continue
+		}
+
+		senderName := from
+		if idx := strings.Index(from, "<"); idx > 0 {
+			senderName = strings.TrimSpace(from[:idx])
+		}
+
+		todos = append(todos, db.Todo{
+			Title:     subject,
+			Source:    "gmail",
+			SourceRef: msg.Id,
+			Context:   fmt.Sprintf("From: %s", senderName),
+			Status:    "active",
+		})
+	}
+
+	return todos, labeledIDs, nil
 }

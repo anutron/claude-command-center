@@ -63,7 +63,9 @@ internal/refresh/
       github.go          # GitHubSource (implements DataSource)
       settings.go        # GitHubSettings (implements plugin.SettingsProvider)
     gmail/
-      gmail.go           # GmailSource (implements DataSource)
+      gmail.go           # GmailSource (implements DataSource + PostMerger)
+      client.go          # SafeGmailClient (restricted Gmail API wrapper)
+      llm.go             # detectAndLabelCommitments (Gmail-specific LLM extraction)
     granola/
       granola.go         # GranolaSource (implements DataSource)
       llm.go             # extractCommitments (Granola-specific LLM extraction)
@@ -89,7 +91,7 @@ internal/refresh/
 | Package | Name | Returns | Config | PostMerger |
 |---------|------|---------|--------|------------|
 | sources/calendar | "calendar" | Calendar | CalendarIDs, AutoAcceptDomains, enabled | Yes (pending actions) |
-| sources/gmail | "gmail" | Threads | (auth only) | No |
+| sources/gmail | "gmail" | Threads + Todos (if todo_label set) | GmailConfig (enabled, todo_label, advanced), llm.LLM | Yes (label removal on completion) |
 | sources/github | "github" | Threads | Repos, Username, enabled | No |
 | sources/slack | "slack" | Todos (via LLM) | llm.LLM | No |
 | sources/granola | "granola" | Todos (via LLM) | llm.LLM, enabled | No |
@@ -120,7 +122,18 @@ Note: `FreshData` does not carry warnings. Source warnings (from `SourceResult.W
 
 ### LLM extraction
 
-Slack and Granola sources that need LLM perform extraction inside `Fetch()`. They receive `llm.LLM` at construction time. If LLM is a `NoopLLM`, they still fetch raw data but skip extraction (returning empty todos). LLM-specific logic lives in source-local `llm.go` files; the shared `CleanJSON()` helper is exported from the parent refresh package.
+Slack, Granola, and Gmail sources that need LLM perform extraction inside `Fetch()`. They receive `llm.LLM` at construction time. If LLM is a `NoopLLM`, they still fetch raw data but skip extraction (returning empty todos). LLM-specific logic lives in source-local `llm.go` files; the shared `CleanJSON()` helper is exported from the parent refresh package.
+
+### Gmail label-based todos
+
+Gmail supports opt-in label synchronization via `GmailConfig.TodoLabel` and `GmailConfig.Advanced`:
+
+- **Read-only mode** (`advanced: false`, default): Fetches emails with the configured label as todos. No write-back to Gmail.
+- **Advanced mode** (`advanced: true`): Uses `gmail.modify` + `gmail.compose` scopes. Enables:
+  - LLM commitment detection: analyzes sent emails and auto-labels commitments
+  - Label removal on completion: PostMerge removes the todo label from completed gmail todos
+- **Deduplication**: Uses Gmail message ID as `source_ref`. Each message creates at most one todo. New replies in a thread have distinct message IDs and create separate todos.
+- **Safety**: Gmail API access is wrapped in `SafeGmailClient` which structurally blocks Send, Delete, and Trash operations. See CLAUDE.md "Gmail Safety Rules".
 
 ### SettingsProvider
 

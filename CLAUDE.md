@@ -89,6 +89,13 @@ servers/              # MCP servers (gmail, things)
 - **Event bus for cross-plugin communication** — publish/subscribe, no direct plugin-to-plugin imports
 - **Namespaced migrations** — each plugin owns its SQLite tables via `plugin.Migration`
 
+## Gmail Safety Rules
+
+- NEVER add Send, Delete, or Trash methods to SafeGmailClient (`internal/refresh/sources/gmail/client.go`)
+- NEVER expose the raw `*gmail.Service` outside the client wrapper
+- These restrictions require explicit override from the user — do not infer permission from general instructions
+- Future: settings-based read-only permission will further lock this down
+
 ## Code Style
 
 - **Go standard formatting** — `gofmt`

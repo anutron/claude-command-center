@@ -3,37 +3,43 @@ package gmail
 import (
 	"os"
 	"testing"
+
+	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/llm"
 )
 
+func testCfg(enabled bool) config.GmailConfig {
+	return config.GmailConfig{Enabled: enabled}
+}
+
 func TestNew(t *testing.T) {
-	s := New(true)
+	s := New(testCfg(true), llm.NoopLLM{})
 	if s == nil {
 		t.Fatal("New() returned nil")
 	}
 }
 
 func TestName(t *testing.T) {
-	s := New(true)
+	s := New(testCfg(true), llm.NoopLLM{})
 	if got := s.Name(); got != "gmail" {
 		t.Errorf("Name() = %q, want %q", got, "gmail")
 	}
 }
 
 func TestEnabled(t *testing.T) {
-	s := New(true)
+	s := New(testCfg(true), llm.NoopLLM{})
 	if !s.Enabled() {
 		t.Error("Enabled() = false, want true for enabled=true")
 	}
-	s2 := New(false)
+	s2 := New(testCfg(false), llm.NoopLLM{})
 	if s2.Enabled() {
 		t.Error("Enabled() = true, want false for enabled=false")
 	}
 }
 
 func TestLoadGmailAuthMissingFile(t *testing.T) {
-	// Point HOME to a temp dir so the token file won't be found.
 	t.Setenv("HOME", t.TempDir())
-	_, err := loadGmailAuth()
+	_, err := loadGmailAuth(false)
 	if err == nil {
 		t.Fatal("loadGmailAuth() expected error with missing token file, got nil")
 	}
@@ -43,7 +49,6 @@ func TestLoadGmailAuthMissingFile(t *testing.T) {
 }
 
 func TestLoadGmailAuthBadJSON(t *testing.T) {
-	// Create a token file with invalid JSON.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := home + "/.gmail-mcp"
@@ -53,7 +58,7 @@ func TestLoadGmailAuthBadJSON(t *testing.T) {
 	if err := os.WriteFile(dir+"/work.json", []byte("{invalid json}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := loadGmailAuth()
+	_, err := loadGmailAuth(false)
 	if err == nil {
 		t.Fatal("loadGmailAuth() expected error with bad JSON, got nil")
 	}
@@ -63,7 +68,6 @@ func TestLoadGmailAuthBadJSON(t *testing.T) {
 }
 
 func TestLoadGmailAuthMissingClientID(t *testing.T) {
-	// Create a valid JSON file but with no clientId and no env var.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("GMAIL_CLIENT_ID", "")
@@ -71,11 +75,10 @@ func TestLoadGmailAuthMissingClientID(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Valid JSON but missing clientId field.
 	if err := os.WriteFile(dir+"/work.json", []byte(`{"access_token":"x","refresh_token":"y"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := loadGmailAuth()
+	_, err := loadGmailAuth(false)
 	if err == nil {
 		t.Fatal("loadGmailAuth() expected error with missing clientId, got nil")
 	}
@@ -84,7 +87,17 @@ func TestLoadGmailAuthMissingClientID(t *testing.T) {
 	}
 }
 
-// contains checks if s contains substr (avoids importing strings for one use).
+func TestLoadGmailAuthAdvancedScope(t *testing.T) {
+	// Verify that advanced=true doesn't error differently than advanced=false
+	// (both should fail the same way with missing file)
+	t.Setenv("HOME", t.TempDir())
+	_, err := loadGmailAuth(true)
+	if err == nil {
+		t.Fatal("loadGmailAuth(true) expected error with missing token file, got nil")
+	}
+}
+
+// contains checks if s contains substr.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchString(s, substr)
 }

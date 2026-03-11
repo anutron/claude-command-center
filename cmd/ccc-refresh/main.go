@@ -65,7 +65,7 @@ func main() {
 	// Build DataSources from config
 	sources := []refresh.DataSource{
 		calendarsrc.New(cfg.Calendar.Enabled, calendarIDs, nil),
-		gmailsrc.New(cfg.Gmail.Enabled),
+		gmailsrc.New(cfg.Gmail, l),
 		githubsrc.New(cfg.GitHub.Enabled, cfg.GitHub.Repos, cfg.GitHub.Username),
 		slacksrc.New(l),
 		granolasrc.New(cfg.Granola.Enabled, l),
