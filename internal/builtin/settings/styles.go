@@ -37,7 +37,7 @@ func newSettingsStyles(p config.Palette) settingsStyles {
 	borderBright := lipgloss.Color(p.Cyan)
 
 	return settingsStyles{
-		header:    lipgloss.NewStyle().Foreground(lipgloss.Color(p.Cyan)).Bold(true),
+		header:    lipgloss.NewStyle().Foreground(lipgloss.Color(p.Cyan)).Bold(true).PaddingLeft(1),
 		muted:     lipgloss.NewStyle().Foreground(lipgloss.Color(p.Muted)),
 		pointer:   lipgloss.NewStyle().Foreground(lipgloss.Color(p.Pointer)),
 		enabled:   lipgloss.NewStyle().Foreground(lipgloss.Color(p.Green)),

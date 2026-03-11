@@ -28,13 +28,14 @@ type Category struct {
 
 // NavItem represents a single entry in the sidebar navigation.
 type NavItem struct {
-	Label      string
-	Slug       string // unique: "banner", "palette", "calendar", "system-schedule", etc.
-	Kind       string // "appearance", "plugin", "datasource", "system"
-	Enabled    *bool  // nil = no toggle, non-nil = on/off
-	Toggleable bool
-	Valid      *bool
-	ValidHint  string
+	Label       string
+	Slug        string // unique: "banner", "palette", "calendar", "system-schedule", etc.
+	Kind        string // "appearance", "plugin", "datasource", "system"
+	Description string // short description shown in content pane
+	Enabled     *bool  // nil = no toggle, non-nil = on/off
+	Toggleable  bool
+	Valid       *bool
+	ValidHint   string
 }
 
 // rebuildNav populates the sidebar categories from config and registry.
@@ -45,13 +46,19 @@ func (p *Plugin) rebuildNav() {
 	appearance := Category{
 		Label: "APPEARANCE",
 		Items: []NavItem{
-			{Label: "Banner", Slug: "banner", Kind: "appearance"},
-			{Label: "Palette", Slug: "palette", Kind: "appearance"},
+			{Label: "Banner", Slug: "banner", Kind: "appearance", Description: "Configure the ASCII art banner name and subtitle"},
+			{Label: "Palette", Slug: "palette", Kind: "appearance", Description: "Choose the color theme for the interface"},
 		},
 	}
 	p.navCategories = append(p.navCategories, appearance)
 
 	// --- PLUGINS ---
+	pluginDescriptions := map[string]string{
+		"sessions":         "Start new Claude sessions and resume previous ones",
+		"commandcenter":    "AI-powered todo management, calendar view, and quick commands",
+		"threads":          "Persistent Claude conversation threads for ongoing work",
+	}
+
 	var pluginItems []NavItem
 	if p.registry != nil {
 		for _, plug := range p.registry.All() {
@@ -62,33 +69,36 @@ func (p *Plugin) rebuildNav() {
 			}
 			enabled := p.cfg.PluginEnabled(slug)
 			pluginItems = append(pluginItems, NavItem{
-				Label:      plug.TabName(),
-				Slug:       slug,
-				Kind:       "plugin",
-				Enabled:    &enabled,
-				Toggleable: true,
+				Label:       plug.TabName(),
+				Slug:        slug,
+				Kind:        "plugin",
+				Description: pluginDescriptions[slug],
+				Enabled:     &enabled,
+				Toggleable:  true,
 			})
 		}
 	}
 	// Threads data source — shown in PLUGINS as a toggleable item
 	threadsEnabled := p.cfg.Threads.Enabled
 	pluginItems = append(pluginItems, NavItem{
-		Label:      "Threads",
-		Slug:       "threads",
-		Kind:       "plugin",
-		Enabled:    &threadsEnabled,
-		Toggleable: true,
+		Label:       "Threads",
+		Slug:        "threads",
+		Kind:        "plugin",
+		Description: pluginDescriptions["threads"],
+		Enabled:     &threadsEnabled,
+		Toggleable:  true,
 	})
 
 	// External plugins
 	for i, ep := range p.cfg.ExternalPlugins {
 		enabled := ep.Enabled
 		pluginItems = append(pluginItems, NavItem{
-			Label:      ep.Name,
-			Slug:       fmt.Sprintf("external-%d", i),
-			Kind:       "plugin",
-			Enabled:    &enabled,
-			Toggleable: true,
+			Label:       ep.Name,
+			Slug:        fmt.Sprintf("external-%d", i),
+			Kind:        "plugin",
+			Description: ep.Description,
+			Enabled:     &enabled,
+			Toggleable:  true,
 		})
 	}
 	if len(pluginItems) > 0 {
@@ -100,27 +110,29 @@ func (p *Plugin) rebuildNav() {
 
 	// --- DATA SOURCES ---
 	type dsEntry struct {
-		label   string
-		slug    string
-		enabled bool
-		toggle  bool
+		label       string
+		slug        string
+		description string
+		enabled     bool
+		toggle      bool
 	}
 	dataSources := []dsEntry{
-		{"Calendar", "calendar", p.cfg.Calendar.Enabled, true},
-		{"GitHub", "github", p.cfg.GitHub.Enabled, true},
-		{"Granola", "granola", p.cfg.Granola.Enabled, true},
-		{"Slack", "slack", p.cfg.Slack.Enabled, true},
-		{"Gmail", "gmail", p.cfg.Gmail.Enabled, true},
+		{"Calendar", "calendar", "Google Calendar events, conflicts, and scheduling", p.cfg.Calendar.Enabled, true},
+		{"GitHub", "github", "Pull requests, reviews, and repository notifications", p.cfg.GitHub.Enabled, true},
+		{"Granola", "granola", "Meeting notes and transcripts from Granola", p.cfg.Granola.Enabled, true},
+		{"Slack", "slack", "Unread messages and mentions from Slack channels", p.cfg.Slack.Enabled, true},
+		{"Gmail", "gmail", "Recent emails and threads from Gmail", p.cfg.Gmail.Enabled, true},
 	}
 	var dsItems []NavItem
 	for _, ds := range dataSources {
 		enabled := ds.enabled
 		item := NavItem{
-			Label:      ds.label,
-			Slug:       ds.slug,
-			Kind:       "datasource",
-			Enabled:    &enabled,
-			Toggleable: ds.toggle,
+			Label:       ds.label,
+			Slug:        ds.slug,
+			Kind:        "datasource",
+			Description: ds.description,
+			Enabled:     &enabled,
+			Toggleable:  ds.toggle,
 		}
 		// Validate credentials
 		if err := p.validateDataSource(ds.slug); err != nil {
@@ -142,11 +154,11 @@ func (p *Plugin) rebuildNav() {
 	system := Category{
 		Label: "SYSTEM",
 		Items: []NavItem{
-			{Label: "Schedule", Slug: "system-schedule", Kind: "system"},
-			{Label: "MCP Servers", Slug: "system-mcp", Kind: "system"},
-			{Label: "Skills", Slug: "system-skills", Kind: "system"},
-			{Label: "Shell Integration", Slug: "system-shell", Kind: "system"},
-			{Label: "Logs", Slug: "system-logs", Kind: "system"},
+			{Label: "Schedule", Slug: "system-schedule", Kind: "system", Description: "Configure auto-refresh interval for data sources"},
+			{Label: "MCP Servers", Slug: "system-mcp", Kind: "system", Description: "Model Context Protocol server connections"},
+			{Label: "Skills", Slug: "system-skills", Kind: "system", Description: "Installed Claude Code skills and shortcuts"},
+			{Label: "Shell Integration", Slug: "system-shell", Kind: "system", Description: "Shell hooks and terminal integration status"},
+			{Label: "Logs", Slug: "system-logs", Kind: "system", Description: "Plugin and system log messages"},
 		},
 	}
 	p.navCategories = append(p.navCategories, system)

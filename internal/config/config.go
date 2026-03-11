@@ -133,9 +133,10 @@ type GmailConfig struct {
 }
 
 type ExternalPluginConfig struct {
-	Name    string `yaml:"name"`
-	Command string `yaml:"command"`
-	Enabled bool   `yaml:"enabled"`
+	Name        string `yaml:"name"`
+	Command     string `yaml:"command"`
+	Description string `yaml:"description,omitempty"`
+	Enabled     bool   `yaml:"enabled"`
 }
 
 // BannerVisible returns whether the banner should be shown.

@@ -15,6 +15,9 @@ import (
 func (p *Plugin) viewDatasourceContent(item *NavItem, width, height int) string {
 	var lines []string
 	lines = append(lines, p.styles.header.Render(strings.ToUpper(item.Label)))
+	if item.Description != "" {
+		lines = append(lines, "  "+p.styles.muted.Render(item.Description))
+	}
 	lines = append(lines, "")
 
 	// Check for a SettingsProvider

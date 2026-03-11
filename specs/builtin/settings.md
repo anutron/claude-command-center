@@ -6,7 +6,27 @@
 
 ## Purpose
 
-Provides a UI for managing plugins, data sources, logs, and color palettes.
+Provides a UI for managing plugins, data sources, logs, and color palettes. Uses a sidebar + content pane layout.
+
+## Layout
+
+Sidebar + content pane layout. The sidebar lists all items grouped by category (Appearance, Plugins, Data Sources, System). The content pane shows details for the selected item.
+
+### NavItem
+
+Each sidebar entry is a `NavItem` with:
+- `Label` — display name
+- `Slug` — unique identifier
+- `Kind` — "appearance", "plugin", "datasource", "system"
+- `Description` — short description shown below the title in the content pane
+- `Enabled` — toggle state (nil = no toggle)
+- `Valid` / `ValidHint` — credential validation status (data sources only)
+
+Descriptions are hardcoded for built-in plugins and data sources. External plugins get descriptions from `config.ExternalPluginConfig.Description`.
+
+### Content pane header
+
+The content pane title (e.g., "POMODORO", "CALENDAR") has left padding to avoid touching the panel border. A description line in muted text appears below the title when available.
 
 ## Sub-Views
 
@@ -46,7 +66,7 @@ Opened by pressing `enter` on any item in the plugins list.
 - Read-only status display (always enabled, no configuration)
 
 **External plugins:**
-- Name, command, and enable/disable status
+- Name, description (from config), command, and enable/disable status
 - Space toggles enable/disable
 
 **Calendar:**
