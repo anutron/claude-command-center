@@ -15,6 +15,7 @@ import (
 	ghsettings "github.com/anutron/claude-command-center/internal/refresh/sources/github"
 	"github.com/anutron/claude-command-center/internal/refresh/sources/granola"
 	"github.com/anutron/claude-command-center/internal/ui"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -42,11 +43,17 @@ type Plugin struct {
 	// SettingsProvider implementations for data sources
 	providers map[string]plugin.SettingsProvider
 
-	subView       string // "plugins", "logs", "palette"
+	subView       string // "plugins", "logs", "palette", "banner"
 	cursor        int
 	logOffset     int
 	paletteCursor int
 	items         []settingsItem
+
+	// Banner editing state
+	bannerNameInput     textinput.Model
+	bannerSubtitleInput textinput.Model
+	bannerField         int  // 0=name, 1=subtitle, 2=show/hide
+	bannerEditing       bool // true when a text field is focused
 
 	// Detail view state
 	detailView   bool
@@ -77,6 +84,7 @@ func (p *Plugin) Routes() []plugin.Route {
 		{Slug: "settings", Description: "Settings"},
 		{Slug: "settings/logs", Description: "Logs"},
 		{Slug: "settings/palette", Description: "Palette"},
+		{Slug: "settings/banner", Description: "Banner"},
 	}
 }
 
@@ -86,6 +94,8 @@ func (p *Plugin) NavigateTo(route string, args map[string]string) {
 		p.subView = "logs"
 	case "settings/palette":
 		p.subView = "palette"
+	case "settings/banner":
+		p.subView = "banner"
 	default:
 		p.subView = "plugins"
 	}
@@ -113,6 +123,19 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 	p.rebuildItems()
 	p.validateAllSources()
+
+	// Banner text inputs
+	ni := textinput.New()
+	ni.Placeholder = "Claude Command"
+	ni.CharLimit = 20
+	ni.SetValue(p.cfg.Name)
+	p.bannerNameInput = ni
+
+	si := textinput.New()
+	si.Placeholder = "Center"
+	si.CharLimit = 30
+	si.SetValue(p.cfg.Subtitle)
+	p.bannerSubtitleInput = si
 
 	// Initialize providers map and register data source settings providers.
 	if p.providers == nil {
@@ -236,6 +259,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "enter/space", Description: "Toggle enable/disable", Mode: "plugins", Promoted: true},
 		{Key: "l", Description: "View logs", Promoted: true},
 		{Key: "p", Description: "Pick palette", Promoted: true},
+		{Key: "b", Description: "Edit banner", Promoted: true},
 		{Key: "s", Description: "Plugin list", Promoted: true},
 		{Key: "left/right", Description: "Cycle palettes", Mode: "palette", Promoted: true},
 		{Key: "enter", Description: "Apply palette", Mode: "palette", Promoted: true},
@@ -266,6 +290,13 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 			p.subView = "palette"
 			return plugin.NoopAction()
 		}
+	case "b":
+		if p.subView != "banner" && !p.bannerEditing {
+			p.subView = "banner"
+			p.bannerField = 0
+			p.bannerEditing = false
+			return plugin.NoopAction()
+		}
 	}
 
 	switch p.subView {
@@ -275,6 +306,8 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleLogsKey(msg)
 	case "palette":
 		return p.handlePaletteKey(msg)
+	case "banner":
+		return p.handleBannerKey(msg)
 	}
 	return plugin.NoopAction()
 }
@@ -659,6 +692,158 @@ func (p *Plugin) viewDetailExternalPlugin(item settingsItem) []string {
 }
 
 
+func (p *Plugin) handleBannerKey(msg tea.KeyMsg) plugin.Action {
+	// When editing a text field, route to the textinput.
+	if p.bannerEditing {
+		switch msg.Type {
+		case tea.KeyEnter:
+			// Save the value and exit editing.
+			p.bannerEditing = false
+			if p.bannerField == 0 {
+				p.bannerNameInput.Blur()
+				p.cfg.Name = p.bannerNameInput.Value()
+			} else {
+				p.bannerSubtitleInput.Blur()
+				p.cfg.Subtitle = p.bannerSubtitleInput.Value()
+			}
+			if err := config.Save(p.cfg); err == nil {
+				p.flashMessage = "Banner saved"
+				p.publishConfigSaved("banner")
+			} else {
+				p.flashMessage = "Failed to save: " + err.Error()
+			}
+			p.flashMessageAt = time.Now()
+			return plugin.NoopAction()
+		case tea.KeyEsc:
+			// Cancel editing, restore original value.
+			p.bannerEditing = false
+			if p.bannerField == 0 {
+				p.bannerNameInput.SetValue(p.cfg.Name)
+				p.bannerNameInput.Blur()
+			} else {
+				p.bannerSubtitleInput.SetValue(p.cfg.Subtitle)
+				p.bannerSubtitleInput.Blur()
+			}
+			return plugin.NoopAction()
+		default:
+			if p.bannerField == 0 {
+				p.bannerNameInput, _ = p.bannerNameInput.Update(msg)
+			} else {
+				p.bannerSubtitleInput, _ = p.bannerSubtitleInput.Update(msg)
+			}
+			return plugin.NoopAction()
+		}
+	}
+
+	// Not editing — navigation mode.
+	switch msg.String() {
+	case "up", "k":
+		if p.bannerField > 0 {
+			p.bannerField--
+		}
+	case "down", "j":
+		if p.bannerField < 2 {
+			p.bannerField++
+		}
+	case "enter":
+		if p.bannerField <= 1 {
+			// Start editing text field.
+			p.bannerEditing = true
+			if p.bannerField == 0 {
+				p.bannerNameInput.Focus()
+			} else {
+				p.bannerSubtitleInput.Focus()
+			}
+		}
+	case " ":
+		if p.bannerField == 2 {
+			// Toggle show/hide.
+			p.cfg.SetShowBanner(!p.cfg.BannerVisible())
+			if err := config.Save(p.cfg); err == nil {
+				if p.cfg.BannerVisible() {
+					p.flashMessage = "Banner shown"
+				} else {
+					p.flashMessage = "Banner hidden"
+				}
+				p.publishConfigSaved("banner")
+			} else {
+				p.flashMessage = "Failed to save: " + err.Error()
+			}
+			p.flashMessageAt = time.Now()
+		}
+	case "esc":
+		return plugin.Action{Type: plugin.ActionUnhandled}
+	}
+	return plugin.NoopAction()
+}
+
+func (p *Plugin) viewBanner(width, height int) string {
+	var lines []string
+	lines = append(lines, p.styles.header.Render("SETTINGS"))
+	lines = append(lines, "")
+	lines = append(lines, p.renderSubTabs())
+	lines = append(lines, "")
+	lines = append(lines, p.styles.header.Render("BANNER"))
+	lines = append(lines, "")
+
+	fields := []struct {
+		label string
+		value string
+	}{
+		{"Name", p.cfg.Name},
+		{"Subtitle", p.cfg.Subtitle},
+	}
+
+	for i, f := range fields {
+		cursor := "  "
+		if i == p.bannerField {
+			cursor = p.styles.pointer.Render("> ")
+		}
+
+		if p.bannerEditing && i == p.bannerField {
+			var input string
+			if i == 0 {
+				input = p.bannerNameInput.View()
+			} else {
+				input = p.bannerSubtitleInput.View()
+			}
+			lines = append(lines, fmt.Sprintf("%s%s %s",
+				cursor, p.styles.muted.Render(f.label+":"), input))
+		} else {
+			val := f.value
+			if val == "" {
+				val = "(empty)"
+			}
+			lines = append(lines, fmt.Sprintf("%s%s %s",
+				cursor, p.styles.muted.Render(f.label+":"), p.styles.itemName.Render(val)))
+		}
+	}
+
+	// Show/hide toggle
+	cursor := "  "
+	if p.bannerField == 2 {
+		cursor = p.styles.pointer.Render("> ")
+	}
+	status := p.styles.enabled.Render("[on] ")
+	if !p.cfg.BannerVisible() {
+		status = p.styles.disabled.Render("[off]")
+	}
+	lines = append(lines, fmt.Sprintf("%s%s %s",
+		cursor, status, p.styles.itemName.Render("Show Banner")))
+
+	// Flash message
+	if p.flashMessage != "" {
+		lines = append(lines, "")
+		lines = append(lines, p.styles.flash.Render("  > "+p.flashMessage))
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, p.styles.muted.Render("  ↑↓ navigate · enter edit · space toggle · esc back"))
+
+	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
+	return p.styles.panel.Width(width - 4).Render(content)
+}
+
 func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	switch msg.(type) {
 	case tea.WindowSizeMsg:
@@ -721,6 +906,8 @@ func (p *Plugin) View(width, height, frame int) string {
 		return p.viewLogs(viewWidth, height)
 	case "palette":
 		return p.viewPalette(viewWidth, height)
+	case "banner":
+		return p.viewBanner(viewWidth, height)
 	default:
 		return p.viewPlugins(viewWidth, height)
 	}
@@ -917,6 +1104,7 @@ func (p *Plugin) renderSubTabs() string {
 		{"Plugins", "plugins"},
 		{"Logs", "logs"},
 		{"Palette", "palette"},
+		{"Banner", "banner"},
 	}
 
 	var parts []string

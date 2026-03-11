@@ -49,8 +49,8 @@ func TestSlugAndTabName(t *testing.T) {
 func TestRoutesReturnsThree(t *testing.T) {
 	p, _ := testSetup()
 	routes := p.Routes()
-	if len(routes) != 3 {
-		t.Errorf("expected 3 routes, got %d", len(routes))
+	if len(routes) != 4 {
+		t.Errorf("expected 4 routes, got %d", len(routes))
 	}
 }
 
