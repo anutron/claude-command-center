@@ -299,6 +299,14 @@ func (cc *CommandCenter) PromoteTodo(id string) {
 	cc.Todos = append([]Todo{todo}, cc.Todos...)
 }
 
+// SwapTodos swaps two todos by their slice indices.
+func (cc *CommandCenter) SwapTodos(i, j int) {
+	if i < 0 || j < 0 || i >= len(cc.Todos) || j >= len(cc.Todos) {
+		return
+	}
+	cc.Todos[i], cc.Todos[j] = cc.Todos[j], cc.Todos[i]
+}
+
 func (cc *CommandCenter) PauseThread(id string) {
 	now := time.Now()
 	for i := range cc.Threads {

@@ -139,6 +139,13 @@ func migrateSchema(db *sql.DB) error {
 	// Add session_id column if missing (added for CLI todo creation with session links)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN session_id TEXT`)
 
+	// Add sort_order column to learned paths if missing (added for manual reordering)
+	_, _ = db.Exec(`ALTER TABLE cc_learned_paths ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
+	// Backfill sort_order from added_at order for existing rows
+	_, _ = db.Exec(`UPDATE cc_learned_paths SET sort_order = (
+		SELECT COUNT(*) FROM cc_learned_paths p2 WHERE p2.added_at < cc_learned_paths.added_at
+	) WHERE sort_order = 0`)
+
 	return nil
 }
 

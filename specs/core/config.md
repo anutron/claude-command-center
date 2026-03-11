@@ -28,8 +28,13 @@ Provides user-configurable settings for the CCC TUI, including color palettes, d
 - `DBPath()`: `DataDir()/ccc.db`
 - `CredentialsDir()`: `ConfigDir()/credentials`
 
+### HomeDir Resolution
+- `ResolveHomeDir()` returns `HomeDir` if set in config, otherwise user's home directory (`$HOME`)
+- Used by the Sessions plugin as the path for the "home" entry in the new session list
+
 ### Default Config
 - Name: "Command Center"
+- HomeDir: "" (empty, defaults to $HOME via ResolveHomeDir)
 - Palette: "aurora"
 - Todos: enabled
 - Calendar, GitHub, Granola: disabled
@@ -56,6 +61,7 @@ Provides user-configurable settings for the CCC TUI, including color palettes, d
 ```yaml
 # ~/.config/ccc/config.yaml
 name: My Dashboard
+home_dir: /Users/me/Projects/my-project
 palette: ocean
 calendar:
   enabled: true

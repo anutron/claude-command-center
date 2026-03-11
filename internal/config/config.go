@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Name            string        `yaml:"name"`
+	HomeDir         string        `yaml:"home_dir,omitempty"`
 	Subtitle        string        `yaml:"subtitle,omitempty"`
 	ShowBanner      *bool         `yaml:"show_banner,omitempty"`
 	Palette         string        `yaml:"palette"`
@@ -37,6 +38,15 @@ func (c *Config) PluginEnabled(slug string) bool {
 		}
 	}
 	return true
+}
+
+// ResolveHomeDir returns HomeDir if set, otherwise the user's home directory.
+func (c *Config) ResolveHomeDir() string {
+	if c.HomeDir != "" {
+		return c.HomeDir
+	}
+	home, _ := os.UserHomeDir()
+	return home
 }
 
 // SetPluginEnabled adds or removes a slug from DisabledPlugins.

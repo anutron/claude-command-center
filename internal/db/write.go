@@ -254,7 +254,8 @@ func DBRemoveBookmark(db *sql.DB, sessionID string) error {
 // ---------------------------------------------------------------------------
 
 func DBAddPath(db *sql.DB, path string) error {
-	_, err := db.Exec(`INSERT OR IGNORE INTO cc_learned_paths (path, added_at) VALUES (?, ?)`,
+	_, err := db.Exec(`INSERT OR IGNORE INTO cc_learned_paths (path, added_at, sort_order) VALUES (?, ?,
+		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_learned_paths))`,
 		path, FormatTime(time.Now()))
 	if err != nil {
 		return fmt.Errorf("add path %s: %w", path, err)
@@ -266,6 +267,36 @@ func DBRemovePath(db *sql.DB, path string) error {
 	_, err := db.Exec(`DELETE FROM cc_learned_paths WHERE path = ?`, path)
 	if err != nil {
 		return fmt.Errorf("remove path %s: %w", path, err)
+	}
+	return nil
+}
+
+// DBSwapPathOrder swaps the sort_order of two paths.
+func DBSwapPathOrder(db *sql.DB, pathA, pathB string) error {
+	_, err := db.Exec(`
+		UPDATE cc_learned_paths SET sort_order = CASE
+			WHEN path = ? THEN (SELECT sort_order FROM cc_learned_paths WHERE path = ?)
+			WHEN path = ? THEN (SELECT sort_order FROM cc_learned_paths WHERE path = ?)
+		END
+		WHERE path IN (?, ?)`,
+		pathA, pathB, pathB, pathA, pathA, pathB)
+	if err != nil {
+		return fmt.Errorf("swap path order: %w", err)
+	}
+	return nil
+}
+
+// DBSwapTodoOrder swaps the sort_order of two todos by ID.
+func DBSwapTodoOrder(db *sql.DB, idA, idB string) error {
+	_, err := db.Exec(`
+		UPDATE cc_todos SET sort_order = CASE
+			WHEN id = ? THEN (SELECT sort_order FROM cc_todos WHERE id = ?)
+			WHEN id = ? THEN (SELECT sort_order FROM cc_todos WHERE id = ?)
+		END, updated_at = ?
+		WHERE id IN (?, ?)`,
+		idA, idB, idB, idA, FormatTime(time.Now()), idA, idB)
+	if err != nil {
+		return fmt.Errorf("swap todo order: %w", err)
 	}
 	return nil
 }

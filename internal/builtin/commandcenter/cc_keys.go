@@ -175,6 +175,65 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.NoopAction()
 
+	case "shift+up":
+		if len(activeTodos) > 1 && p.ccCursor > 0 && p.ccCursor < len(activeTodos) {
+			// Find the absolute indices in cc.Todos for the two active todos
+			activeA := p.ccCursor - 1
+			activeB := p.ccCursor
+			idA := activeTodos[activeA].ID
+			idB := activeTodos[activeB].ID
+			// Find absolute indices
+			absA, absB := -1, -1
+			for i := range p.cc.Todos {
+				if p.cc.Todos[i].ID == idA {
+					absA = i
+				}
+				if p.cc.Todos[i].ID == idB {
+					absB = i
+				}
+			}
+			if absA >= 0 && absB >= 0 {
+				p.cc.SwapTodos(absA, absB)
+				p.ccCursor--
+				if p.ccCursor < p.ccScrollOffset {
+					p.ccScrollOffset = p.ccCursor
+				}
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBSwapTodoOrder(database, idA, idB)
+				})}
+			}
+		}
+		return plugin.NoopAction()
+
+	case "shift+down":
+		if len(activeTodos) > 1 && p.ccCursor < len(activeTodos)-1 {
+			activeA := p.ccCursor
+			activeB := p.ccCursor + 1
+			idA := activeTodos[activeA].ID
+			idB := activeTodos[activeB].ID
+			absA, absB := -1, -1
+			for i := range p.cc.Todos {
+				if p.cc.Todos[i].ID == idA {
+					absA = i
+				}
+				if p.cc.Todos[i].ID == idB {
+					absB = i
+				}
+			}
+			if absA >= 0 && absB >= 0 {
+				p.cc.SwapTodos(absA, absB)
+				p.ccCursor++
+				todoViewHeight := p.normalMaxVisibleTodos()
+				if p.ccCursor >= p.ccScrollOffset+todoViewHeight {
+					p.ccScrollOffset++
+				}
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBSwapTodoOrder(database, idA, idB)
+				})}
+			}
+		}
+		return plugin.NoopAction()
+
 	case "x":
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
 			todo := activeTodos[p.ccCursor]

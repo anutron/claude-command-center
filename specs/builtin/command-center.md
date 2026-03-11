@@ -48,6 +48,8 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 |-----|---------|-------------|
 | `up`/`k` | normal | Move cursor up |
 | `down`/`j` | normal | Move cursor down |
+| `shift+up` | normal | Swap todo with the one above |
+| `shift+down` | normal | Swap todo with the one below |
 | `left`/`h` | expanded | Move cursor left (column navigation) |
 | `right`/`l` | expanded | Move cursor right (column navigation) |
 | `x` | normal | Complete selected todo (pushes to undo stack) |
@@ -181,6 +183,7 @@ When a todo has a `project_dir`, pressing enter launches a Claude session there.
 - Thread pause/start/close operations
 - Defer (d) moves todo to bottom
 - Promote (p) moves todo to top
+- Shift+up/down swaps todo with neighbor, persists via DB sort_order swap
 - Toggle backlog (b) shows/hides completed items
 - Booking mode enter/exit and duration selection
 - View renders without panic (with and without data)

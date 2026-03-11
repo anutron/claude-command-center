@@ -205,6 +205,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 	return []plugin.KeyBinding{
 		{Key: "up/k", Description: "Navigate todos", Promoted: true},
 		{Key: "down/j", Description: "Navigate todos", Promoted: true},
+		{Key: "shift+up/down", Description: "Move todo up/down", Promoted: true},
 		{Key: "space", Description: "View todo detail", Promoted: true},
 		{Key: "enter", Description: "Launch Claude session", Promoted: true},
 		{Key: "x", Description: "Mark todo done", Promoted: true},

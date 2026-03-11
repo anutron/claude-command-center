@@ -855,6 +855,7 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 	case "command":
 		cmds := []struct{ key, desc string }{
 			{"\u2191\u2193 / k j", "Navigate todos"},
+			{"shift+\u2191\u2193", "Move todo up/down"},
 			{"space", "View todo detail"},
 			{"enter", "Launch Claude session for todo"},
 			{"x", "Mark todo done"},

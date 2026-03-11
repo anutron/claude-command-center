@@ -207,18 +207,18 @@ func TestSubTabSwitching(t *testing.T) {
 	}
 }
 
-func TestHandleKeyDeleteOnHomeDoesNothing(t *testing.T) {
+func TestHandleKeyDeleteOnHomeEntersConfirming(t *testing.T) {
 	p := setupPlugin(t)
 
-	// Home item is at index 0
+	// Home item is at index 0 — should be deletable
 	p.newList.Select(0)
 
 	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyDelete})
 	if action.Type != "noop" {
-		t.Fatalf("expected noop for home delete, got %s", action.Type)
+		t.Fatalf("expected noop action type, got %s", action.Type)
 	}
-	if p.confirming {
-		t.Fatal("should not enter confirming for home item")
+	if !p.confirming {
+		t.Fatal("should enter confirming for home item")
 	}
 }
 

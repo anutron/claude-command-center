@@ -378,6 +378,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "n", Description: "New session sub-tab", Promoted: true},
 		{Key: "r", Description: "Resume session sub-tab", Promoted: true},
 		{Key: "enter", Description: "Launch session", Promoted: true},
+		{Key: "shift+up/down", Description: "Reorder paths", Promoted: true},
 		{Key: "delete", Description: "Remove saved path/session", Promoted: true},
 		{Key: "/", Description: "Filter list"},
 		{Key: "esc", Description: "Quit or cancel"},
@@ -536,9 +537,14 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.Action{Type: plugin.ActionLaunch, Args: args}
 
+	case "shift+up":
+		return p.movePathUp()
+	case "shift+down":
+		return p.movePathDown()
+
 	case "delete", "backspace":
 		item, ok := p.newList.SelectedItem().(newItem)
-		if !ok || item.isHome || item.isBrowse {
+		if !ok || item.isBrowse {
 			return plugin.NoopAction()
 		}
 		p.confirming = true
@@ -673,7 +679,7 @@ func (p *Plugin) renderHints() string {
 		}
 		hints = p.styles.hint.Render(fmt.Sprintf("Remove %q from saved list?  ", label)) + yesStr + p.styles.hint.Render("  |  ") + noStr
 	} else {
-		hints = p.styles.hint.Render("n/r sub-tab   up/down navigate   enter launch   del remove   / filter   esc quit")
+		hints = p.styles.hint.Render("n/r sub-tab   up/down navigate   shift+up/down reorder   enter launch   del remove   / filter   esc quit")
 	}
 	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hints)
 }
@@ -685,6 +691,7 @@ func (p *Plugin) renderHints() string {
 func (p *Plugin) buildNewItems() []list.Item {
 	items := []list.Item{
 		newItem{
+			path:   p.cfg.ResolveHomeDir(),
 			label:  p.cfg.Name,
 			isHome: true,
 		},
@@ -700,6 +707,52 @@ func (p *Plugin) buildNewItems() []list.Item {
 		isBrowse: true,
 	})
 	return items
+}
+
+func (p *Plugin) dbWriteCmd(fn func(*sql.DB) error) tea.Cmd {
+	database := p.db
+	return func() tea.Msg {
+		if database != nil {
+			_ = fn(database)
+		}
+		return nil
+	}
+}
+
+// movePathUp swaps the selected path with the one above it.
+func (p *Plugin) movePathUp() plugin.Action {
+	idx := p.newList.Index()
+	// Items: [home, ...paths..., browse]
+	// Path indices in p.paths are offset by 1 (home is index 0)
+	pathIdx := idx - 1
+	if pathIdx <= 0 {
+		// Can't move the first path (or home) up further
+		return plugin.NoopAction()
+	}
+	p.paths[pathIdx-1], p.paths[pathIdx] = p.paths[pathIdx], p.paths[pathIdx-1]
+	p.newList.SetItems(p.buildNewItems())
+	p.newList.Select(idx - 1)
+	pathA, pathB := p.paths[pathIdx-1], p.paths[pathIdx]
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
+		return db.DBSwapPathOrder(database, pathA, pathB)
+	})}
+}
+
+// movePathDown swaps the selected path with the one below it.
+func (p *Plugin) movePathDown() plugin.Action {
+	idx := p.newList.Index()
+	pathIdx := idx - 1
+	if pathIdx < 0 || pathIdx >= len(p.paths)-1 {
+		// Can't move the last path (or home/browse) down further
+		return plugin.NoopAction()
+	}
+	p.paths[pathIdx], p.paths[pathIdx+1] = p.paths[pathIdx+1], p.paths[pathIdx]
+	p.newList.SetItems(p.buildNewItems())
+	p.newList.Select(idx + 1)
+	pathA, pathB := p.paths[pathIdx], p.paths[pathIdx+1]
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
+		return db.DBSwapPathOrder(database, pathA, pathB)
+	})}
 }
 
 func buildSessionItems(sessions []db.Session) []list.Item {

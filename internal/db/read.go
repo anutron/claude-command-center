@@ -256,7 +256,7 @@ func DBLoadBookmarks(db *sql.DB) ([]Session, error) {
 
 // DBLoadPaths loads all learned paths from the database.
 func DBLoadPaths(db *sql.DB) ([]string, error) {
-	rows, err := db.Query(`SELECT path FROM cc_learned_paths ORDER BY added_at ASC`)
+	rows, err := db.Query(`SELECT path FROM cc_learned_paths ORDER BY sort_order ASC, added_at ASC`)
 	if err != nil {
 		return nil, err
 	}
