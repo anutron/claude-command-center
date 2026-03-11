@@ -3,6 +3,7 @@ package external
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -293,8 +294,12 @@ func (ep *ExternalPlugin) errorView() string {
 	if name == "" {
 		name = ep.command
 	}
-	return fmt.Sprintf(
-		"\n  Plugin %q crashed\n\n  Error: %s\n\n  Press 'r' to restart\n",
-		name, ep.errState,
+	lines := fmt.Sprintf(
+		"\n  Plugin %q crashed\n\n  Command: %s\n  Error: %s\n\n  Press 'r' to restart\n",
+		name, ep.command, ep.errState,
 	)
+	if strings.Contains(ep.errState, "exit status 127") {
+		lines += fmt.Sprintf("\n  Hint: command %q not found on PATH\n", ep.command)
+	}
+	return lines
 }

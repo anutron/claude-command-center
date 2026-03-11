@@ -24,7 +24,11 @@ func LoadExternalPlugins(cfg *config.Config, ctx plugin.Context) ([]*ExternalPlu
 			if ctx.Logger != nil {
 				ctx.Logger.Warn("external", "failed to load plugin "+entry.Command+": "+err.Error())
 			}
-			continue
+			// Keep the plugin in the list so it appears with an error view
+			// and the user can press 'r' to retry.
+			if ep.slug == "" {
+				ep.slug = entry.Name
+			}
 		}
 
 		plugins = append(plugins, ep)

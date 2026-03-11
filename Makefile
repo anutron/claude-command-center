@@ -18,6 +18,7 @@ install: build servers
 	ln -sf $$(pwd)/$(BINARY) $(INSTALL_PATH)
 	ln -sf $$(pwd)/$(REFRESH_BINARY) $(REFRESH_INSTALL_PATH)
 	ln -sf $$(pwd)/scripts/paused-sessions /usr/local/bin/paused-sessions
+	ln -sf $$(pwd)/examples/pomodoro/pomodoro.py /usr/local/bin/ccc-pomodoro
 	@mkdir -p $(HOME)/.claude/skills
 	@for skill in wind-down wind-up bookmark paused-sessions; do \
 		rm -f $(HOME)/.claude/skills/$$skill; \

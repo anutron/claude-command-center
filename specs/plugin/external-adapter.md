@@ -87,7 +87,9 @@ When the subprocess crashes or fails to respond:
 
 ### Loader
 
-`LoadExternalPlugins(cfg, ctx)` iterates `cfg.ExternalPlugins`, skips disabled/empty entries, initializes each. Failures are logged and skipped — one bad plugin doesn't block the rest.
+`LoadExternalPlugins(cfg, ctx)` iterates `cfg.ExternalPlugins`, skips disabled/empty entries, initializes each. Failures are logged but the plugin is **kept in the list** with its error state set — this ensures the error view ("press r to restart") is visible to the user rather than the plugin silently disappearing. If the slug wasn't set during init (process never responded), the plugin's configured name is used as the slug.
+
+The error view includes the command that failed. For exit status 127, a hint is shown that the command was not found on PATH.
 
 ## Test Cases
 
