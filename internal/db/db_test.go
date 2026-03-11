@@ -218,7 +218,7 @@ func TestBookmarkRoundTrip(t *testing.T) {
 		Created:   time.Now(),
 		Type:      SessionBookmark,
 	}
-	DBInsertBookmark(db, bm)
+	DBInsertBookmark(db, bm, "")
 
 	bookmarks, err := DBLoadBookmarks(db)
 	if err != nil {

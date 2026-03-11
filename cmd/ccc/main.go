@@ -52,6 +52,18 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "add-todo":
+			if err := runAddTodo(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "add-bookmark":
+			if err := runAddBookmark(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "-h", "--help", "help":
 			printUsage()
 			return
@@ -186,6 +198,8 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  install-schedule     Install launchd plist for background refresh")
 	fmt.Fprintln(os.Stderr, "  uninstall-schedule   Remove background refresh schedule")
 	fmt.Fprintln(os.Stderr, "  notify [event]       Notify running instances to reload (default: reload)")
+	fmt.Fprintln(os.Stderr, "  add-todo             Add a todo to the Command Center")
+	fmt.Fprintln(os.Stderr, "  add-bookmark         Save a session bookmark")
 	fmt.Fprintln(os.Stderr, "  sessions             Same as default")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Options:")

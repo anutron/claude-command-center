@@ -77,13 +77,13 @@ func DBInsertTodo(db *sql.DB, t Todo) error {
 		completedAt = &s
 	}
 	_, err := db.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
-		who_waiting, project_dir, due, effort, sort_order, created_at, completed_at, updated_at)
+		who_waiting, project_dir, due, effort, session_id, sort_order, created_at, completed_at, updated_at)
 		VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		NULLIF(?, ''), NULLIF(?, ''),
+		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status = 'active'),
 		?, ?, ?)`,
 		t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
-		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort,
+		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID,
 		createdAt, completedAt, now)
 	if err != nil {
 		return fmt.Errorf("insert todo %s: %w", t.ID, err)
@@ -101,10 +101,10 @@ func DBUpdateTodo(db *sql.DB, id string, t Todo) error {
 	_, err := db.Exec(`UPDATE cc_todos SET title = ?, status = ?, source = ?,
 		source_ref = NULLIF(?, ''), context = NULLIF(?, ''), detail = NULLIF(?, ''),
 		who_waiting = NULLIF(?, ''), project_dir = NULLIF(?, ''), due = NULLIF(?, ''),
-		effort = NULLIF(?, ''), completed_at = ?, updated_at = ?
+		effort = NULLIF(?, ''), session_id = NULLIF(?, ''), completed_at = ?, updated_at = ?
 		WHERE id = ?`,
 		t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
-		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, completedAt, now, id)
+		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, completedAt, now, id)
 	if err != nil {
 		return fmt.Errorf("update todo %s: %w", id, err)
 	}
@@ -231,10 +231,10 @@ func DBInsertPendingAction(db *sql.DB, a PendingAction) error {
 // Write methods -- Bookmarks
 // ---------------------------------------------------------------------------
 
-func DBInsertBookmark(db *sql.DB, b Session) error {
+func DBInsertBookmark(db *sql.DB, b Session, label string) error {
 	_, err := db.Exec(`INSERT OR REPLACE INTO cc_bookmarks (session_id, project, repo, branch, label, summary, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		b.SessionID, b.Project, b.Repo, b.Branch, "", b.Summary, FormatTime(b.Created))
+		b.SessionID, b.Project, b.Repo, b.Branch, label, b.Summary, FormatTime(b.Created))
 	if err != nil {
 		return fmt.Errorf("insert bookmark %s: %w", b.SessionID, err)
 	}
@@ -301,11 +301,11 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			completedAt = &s
 		}
 		_, err := tx.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
-			who_waiting, project_dir, due, effort, sort_order, created_at, completed_at, updated_at)
+			who_waiting, project_dir, due, effort, session_id, sort_order, created_at, completed_at, updated_at)
 			VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?)`,
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?)`,
 			t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
-			t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, i,
+			t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, i,
 			createdAt, completedAt, now)
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)

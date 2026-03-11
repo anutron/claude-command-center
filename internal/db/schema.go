@@ -136,6 +136,9 @@ func migrateSchema(db *sql.DB) error {
 	// Add calendar_id column if missing (added after initial schema)
 	_, _ = db.Exec(`ALTER TABLE cc_calendar_cache ADD COLUMN calendar_id TEXT NOT NULL DEFAULT ''`)
 
+	// Add session_id column if missing (added for CLI todo creation with session links)
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN session_id TEXT`)
+
 	return nil
 }
 

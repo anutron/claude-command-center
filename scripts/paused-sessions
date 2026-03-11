@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SESSIONS_DIR="$HOME/.claude/paused-sessions"
+RESUMED_DIR="$SESSIONS_DIR/resumed"
+
+usage() {
+  cat <<'EOF'
+Usage: paused-sessions <command> [options]
+
+Commands:
+  save     Save a new paused session (reads body from stdin)
+  list     List paused sessions
+  resume   Resume a paused session (outputs content, moves to resumed/)
+  clean    Delete old resumed sessions
+
+Save options:
+  --project PATH    Project directory path (required)
+  --repo NAME       Repository name (required)
+  --branch BRANCH   Git branch (required)
+  --summary TEXT    One-line summary (required)
+  --slug TEXT       Filename slug (optional, derived from summary if omitted)
+
+List options:
+  --project PATH    Filter to sessions matching this project path
+  --all             Show all sessions (default)
+
+Resume:
+  paused-sessions resume FILENAME
+
+Clean options:
+  --days N          Delete resumed sessions older than N days (default: 30)
+EOF
+}
+
+cmd_save() {
+  local project="" repo="" branch="" summary="" slug=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) project="$2"; shift 2 ;;
+      --repo) repo="$2"; shift 2 ;;
+      --branch) branch="$2"; shift 2 ;;
+      --summary) summary="$2"; shift 2 ;;
+      --slug) slug="$2"; shift 2 ;;
+      *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  if [[ -z "$project" || -z "$repo" || -z "$branch" || -z "$summary" ]]; then
+    echo "Error: --project, --repo, --branch, and --summary are required" >&2
+    exit 1
+  fi
+
+  # Generate slug from summary if not provided
+  if [[ -z "$slug" ]]; then
+    slug=$(echo "$summary" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | head -c 60)
+  fi
+
+  local timestamp
+  timestamp=$(date +"%Y-%m-%d-%H%M")
+  local filename="${timestamp}-${slug}.md"
+  local filepath="$SESSIONS_DIR/$filename"
+
+  mkdir -p "$SESSIONS_DIR"
+
+  # Write frontmatter
+  {
+    echo "---"
+    echo "project: $project"
+    echo "repo: $repo"
+    echo "branch: $branch"
+    echo "created: $(date +"%Y-%m-%dT%H:%M:%S")"
+    echo "summary: $summary"
+    echo "---"
+    echo ""
+    # Append body from stdin
+    cat
+  } > "$filepath"
+
+  echo "$filepath"
+}
+
+cmd_list() {
+  local filter_project="" show_all=true
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project) filter_project="$2"; show_all=false; shift 2 ;;
+      --all) show_all=true; shift ;;
+      *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  if [[ ! -d "$SESSIONS_DIR" ]]; then
+    exit 0
+  fi
+
+  local found=false
+  for f in "$SESSIONS_DIR"/*.md; do
+    [[ -f "$f" ]] || continue
+
+    # Parse frontmatter
+    local project="" created="" branch="" summary="" repo=""
+    while IFS= read -r line; do
+      [[ "$line" == "---" ]] && continue
+      case "$line" in
+        project:*) project="${line#project: }" ;;
+        created:*) created="${line#created: }" ;;
+        branch:*) branch="${line#branch: }" ;;
+        summary:*) summary="${line#summary: }" ;;
+        repo:*) repo="${line#repo: }" ;;
+        "") break ;;
+      esac
+    done < "$f"
+
+    # Filter by project if requested
+    if [[ -n "$filter_project" && "$project" != "$filter_project" ]]; then
+      continue
+    fi
+
+    local basename
+    basename=$(basename "$f")
+    echo "${basename}|${created}|${repo}|${branch}|${summary}|${project}"
+    found=true
+  done
+}
+
+cmd_resume() {
+  if [[ $# -lt 1 ]]; then
+    echo "Error: filename required" >&2
+    exit 1
+  fi
+
+  local filename="$1"
+  local filepath="$SESSIONS_DIR/$filename"
+
+  if [[ ! -f "$filepath" ]]; then
+    echo "Error: session file not found: $filepath" >&2
+    exit 1
+  fi
+
+  # Output content
+  cat "$filepath"
+
+  # Move to resumed
+  mkdir -p "$RESUMED_DIR"
+  mv "$filepath" "$RESUMED_DIR/$filename"
+}
+
+cmd_clean() {
+  local days=30
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --days) days="$2"; shift 2 ;;
+      *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  if [[ ! -d "$RESUMED_DIR" ]]; then
+    echo "No resumed sessions to clean."
+    exit 0
+  fi
+
+  local count=0
+  while IFS= read -r -d '' f; do
+    rm "$f"
+    ((count++))
+  done < <(find "$RESUMED_DIR" -name "*.md" -mtime +"$days" -print0 2>/dev/null)
+
+  echo "Cleaned $count resumed session(s) older than $days days."
+}
+
+# Main dispatch
+case "${1:-}" in
+  save) shift; cmd_save "$@" ;;
+  list) shift; cmd_list "$@" ;;
+  resume) shift; cmd_resume "$@" ;;
+  clean) shift; cmd_clean "$@" ;;
+  -h|--help|help) usage ;;
+  *) usage; exit 1 ;;
+esac

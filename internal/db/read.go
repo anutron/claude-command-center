@@ -55,7 +55,7 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 
 func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 	rows, err := db.Query(`SELECT id, title, status, source, source_ref, context, detail,
-		who_waiting, project_dir, due, effort, created_at, completed_at
+		who_waiting, project_dir, due, effort, session_id, created_at, completed_at
 		FROM cc_todos ORDER BY sort_order ASC`)
 	if err != nil {
 		return nil, err
@@ -67,10 +67,10 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		var t Todo
 		var createdStr string
 		var completedStr sql.NullString
-		var sourceRef, ctx, detail, who, projDir, due, effort sql.NullString
+		var sourceRef, ctx, detail, who, projDir, due, effort, sessionID sql.NullString
 
 		err := rows.Scan(&t.ID, &t.Title, &t.Status, &t.Source,
-			&sourceRef, &ctx, &detail, &who, &projDir, &due, &effort,
+			&sourceRef, &ctx, &detail, &who, &projDir, &due, &effort, &sessionID,
 			&createdStr, &completedStr)
 		if err != nil {
 			return nil, err
@@ -83,6 +83,7 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		t.ProjectDir = projDir.String
 		t.Due = due.String
 		t.Effort = effort.String
+		t.SessionID = sessionID.String
 		t.CreatedAt = ParseTime(createdStr)
 		if completedStr.Valid {
 			ct := ParseTime(completedStr.String)
