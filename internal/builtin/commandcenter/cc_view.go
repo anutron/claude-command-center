@@ -126,19 +126,19 @@ func renderCalendarColumn(s *ccStyles, calendars []config.CalendarEntry, cal *db
 			tomorrowMax = 3
 		}
 
-		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, todayMax, true)
+		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, todayMax)
 		parts = append(parts, todaySection)
 
 		tomorrow := now.AddDate(0, 0, 1)
 		tomorrowLabel := fmt.Sprintf("TOMORROW (%s)", strings.ToUpper(tomorrow.Format("Mon Jan 2")))
-		tomorrowSection := renderCalendarPanelCapped(s, calendars, visibleEvents(cal.Tomorrow), tomorrowLabel, width, tomorrowMax, false)
+		tomorrowSection := renderCalendarPanelCapped(s, calendars, visibleEvents(cal.Tomorrow), tomorrowLabel, width, tomorrowMax)
 		parts = append(parts, "", tomorrowSection)
 	} else {
 		calMax := maxHeight - usedLines
 		if calMax < 5 {
 			calMax = 5
 		}
-		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, calMax, true)
+		todaySection := renderCalendarPanelCapped(s, calendars, todayEvents, todayLabel, width, calMax)
 		parts = append(parts, todaySection)
 	}
 
@@ -170,18 +170,15 @@ func upcomingEvents(events []db.CalendarEvent, now time.Time) []db.CalendarEvent
 	return out
 }
 
-func renderCalendarPanelCapped(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width, maxLines int, showNowLine bool) string {
+func renderCalendarPanelCapped(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width, maxLines int) string {
 	availableForEvents := maxLines - 1
-	if showNowLine {
-		availableForEvents-- // account for the now-line taking a row
-	}
 	if availableForEvents < 1 {
 		availableForEvents = 1
 	}
 	if len(events) > availableForEvents {
 		events = events[:availableForEvents]
 	}
-	return renderCalendarPanel(s, calendars, events, label, width, showNowLine)
+	return renderCalendarPanel(s, calendars, events, label, width)
 }
 
 type conflictPos int
@@ -261,18 +258,7 @@ func calendarIDIndex(calendars []config.CalendarEntry, calendarID string) int {
 	return -1
 }
 
-// renderNowLine renders a red horizontal "now" indicator line.
-func renderNowLine(s *ccStyles, now time.Time, width int) string {
-	timeStr := now.Format("3:04pm")
-	label := " now "
-	lineLen := width - len(timeStr) - len(label) - 4
-	if lineLen < 3 {
-		lineLen = 3
-	}
-	return s.CalendarNowLine.Render(fmt.Sprintf("  %s %s%s", timeStr, strings.Repeat("\u2500", lineLen), label))
-}
-
-func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width int, showNowLine bool) string {
+func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events []db.CalendarEvent, label string, width int) string {
 	var lines []string
 	lines = append(lines, s.SectionHeader.Render(label))
 
@@ -283,7 +269,6 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 
 	now := time.Now()
 	positions, groupEnds := computeConflictPositions(events)
-	nowLineInserted := false
 
 	// Fixed-width time column: 8 chars for time like "12:00pm" + 1 space
 	const timeColWidth = 9
@@ -301,22 +286,6 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 				freeTime := s.CalendarTime.Render(fmt.Sprintf("%-*s", timeColWidth, maxEndSoFar.Format("3:04pm")))
 				freeLine := fmt.Sprintf("  %s%s", freeTime, s.CalendarFree.Render(fmt.Sprintf("---- %s free ----", formatDuration(gap))))
 				lines = append(lines, freeLine)
-			}
-		}
-
-		// Insert now-line before the first event that starts after now (or is in progress)
-		if showNowLine && !nowLineInserted && ev.End.After(now) {
-			// If this event starts after now, or we're between events, insert line
-			if i == 0 && ev.Start.After(now) {
-				lines = append(lines, renderNowLine(s, now, width))
-				nowLineInserted = true
-			} else if i > 0 && ev.Start.After(now) {
-				lines = append(lines, renderNowLine(s, now, width))
-				nowLineInserted = true
-			} else if !isPast {
-				// Event is in progress — insert now line before it
-				lines = append(lines, renderNowLine(s, now, width))
-				nowLineInserted = true
 			}
 		}
 
@@ -357,7 +326,7 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 		durPadded := fmt.Sprintf("%*s", durColWidth, durFmt)
 
 		// Apply styling based on state
-		if isPast && showNowLine {
+		if isPast {
 			// Past events are dimmed
 			timeStr := s.CalendarPast.Render(fmt.Sprintf("%-*s", timeColWidth, timeFmt))
 			titleStyled := s.CalendarPast.Render(titlePadded)
@@ -403,11 +372,6 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 		if !ev.AllDay && ev.End.After(maxEndSoFar) {
 			maxEndSoFar = ev.End
 		}
-	}
-
-	// If now line still not inserted and it's today, put it at the end
-	if showNowLine && !nowLineInserted {
-		lines = append(lines, renderNowLine(s, now, width))
 	}
 
 	return strings.Join(lines, "\n")
