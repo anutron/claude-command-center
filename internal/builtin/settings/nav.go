@@ -70,6 +70,16 @@ func (p *Plugin) rebuildNav() {
 			})
 		}
 	}
+	// Threads data source — shown in PLUGINS as a toggleable item
+	threadsEnabled := p.cfg.Threads.Enabled
+	pluginItems = append(pluginItems, NavItem{
+		Label:      "Threads",
+		Slug:       "threads",
+		Kind:       "plugin",
+		Enabled:    &threadsEnabled,
+		Toggleable: true,
+	})
+
 	// External plugins
 	for i, ep := range p.cfg.ExternalPlugins {
 		enabled := ep.Enabled
@@ -300,6 +310,21 @@ func (p *Plugin) applyNavToggle(item *NavItem) {
 
 	switch item.Kind {
 	case "plugin":
+		// Threads data source — uses ThreadsConfig.Enabled
+		if item.Slug == "threads" {
+			p.cfg.Threads.Enabled = enabled
+			if err := config.Save(p.cfg); err == nil {
+				if enabled {
+					p.flashMessage = "Threads enabled"
+				} else {
+					p.flashMessage = "Threads disabled"
+				}
+				p.publishConfigSaved("threads")
+			} else {
+				p.flashMessage = "Failed to save: " + err.Error()
+			}
+			break
+		}
 		// Check if it's an external plugin
 		if strings.HasPrefix(item.Slug, "external-") {
 			epIdx := -1

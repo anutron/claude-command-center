@@ -264,7 +264,9 @@ func (p *Plugin) syncNavFromConfig() {
 			}
 			switch item.Kind {
 			case "plugin":
-				if len(item.Slug) > 9 && item.Slug[:9] == "external-" {
+				if item.Slug == "threads" {
+					*item.Enabled = p.cfg.Threads.Enabled
+				} else if len(item.Slug) > 9 && item.Slug[:9] == "external-" {
 					// External plugins — find matching config entry
 					for k, ep := range p.cfg.ExternalPlugins {
 						if item.Slug == fmt.Sprintf("external-%d", k) {
@@ -289,8 +291,6 @@ func (p *Plugin) syncNavFromConfig() {
 					*item.Enabled = p.cfg.Gmail.Enabled
 				case "todos":
 					*item.Enabled = p.cfg.Todos.Enabled
-				case "threads":
-					*item.Enabled = p.cfg.Threads.Enabled
 				}
 			}
 		}
