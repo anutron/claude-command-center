@@ -46,91 +46,136 @@ func TestSlugAndTabName(t *testing.T) {
 	}
 }
 
-func TestRoutesReturnsThree(t *testing.T) {
+func TestRoutesReturnsOne(t *testing.T) {
 	p, _ := testSetup()
 	routes := p.Routes()
-	if len(routes) != 4 {
-		t.Errorf("expected 4 routes, got %d", len(routes))
+	if len(routes) != 1 {
+		t.Errorf("expected 1 route, got %d", len(routes))
 	}
 }
 
-func TestPluginListPopulated(t *testing.T) {
+func TestNavCategoriesPopulated(t *testing.T) {
 	p, _ := testSetup()
-	if len(p.items) == 0 {
-		t.Error("expected items to be populated")
+	if len(p.navCategories) == 0 {
+		t.Error("expected nav categories to be populated")
 	}
 
-	// Should have: settings (builtin), pomodoro (external), todos, calendar, github, granola (data sources)
-	found := map[string]bool{}
-	for _, item := range p.items {
-		found[item.slug] = true
+	// Should have categories: APPEARANCE, PLUGINS, DATA SOURCES, SYSTEM
+	catLabels := map[string]bool{}
+	for _, cat := range p.navCategories {
+		catLabels[cat.Label] = true
 	}
-	if !found["settings"] {
-		t.Error("expected settings in items")
+	if !catLabels["APPEARANCE"] {
+		t.Error("expected APPEARANCE category")
 	}
-	if !found["external-0"] {
-		t.Error("expected external-0 (Pomodoro) in items")
+	if !catLabels["PLUGINS"] {
+		t.Error("expected PLUGINS category")
 	}
-	if !found["calendar"] {
-		t.Error("expected calendar in items")
+	if !catLabels["DATA SOURCES"] {
+		t.Error("expected DATA SOURCES category")
+	}
+	if !catLabels["SYSTEM"] {
+		t.Error("expected SYSTEM category")
 	}
 }
 
-func TestToggleDataSource(t *testing.T) {
+func TestNavHasExpectedItems(t *testing.T) {
 	p, _ := testSetup()
 
-	// Find calendar item
+	slugs := map[string]bool{}
+	for _, cat := range p.navCategories {
+		for _, item := range cat.Items {
+			slugs[item.Slug] = true
+		}
+	}
+
+	// Appearance items
+	if !slugs["banner"] {
+		t.Error("expected banner in nav")
+	}
+	if !slugs["palette"] {
+		t.Error("expected palette in nav")
+	}
+	// External plugin
+	if !slugs["external-0"] {
+		t.Error("expected external-0 (Pomodoro) in nav")
+	}
+	// Data sources
+	if !slugs["calendar"] {
+		t.Error("expected calendar in nav")
+	}
+	// System
+	if !slugs["system-logs"] {
+		t.Error("expected system-logs in nav")
+	}
+}
+
+func TestToggleDataSourceViaSidebar(t *testing.T) {
+	p, _ := testSetup()
+
+	// Navigate to calendar item in sidebar
 	calIdx := -1
-	for i, item := range p.items {
-		if item.slug == "calendar" {
-			calIdx = i
-			break
+	idx := 0
+	for _, cat := range p.navCategories {
+		for _, item := range cat.Items {
+			if item.Slug == "calendar" {
+				calIdx = idx
+			}
+			idx++
 		}
 	}
 	if calIdx < 0 {
-		t.Fatal("calendar item not found")
+		t.Fatal("calendar item not found in nav")
 	}
 
+	p.navCursor = calIdx
+	p.focusZone = FocusNav
+
 	// Calendar should be enabled initially
-	if !p.items[calIdx].enabled {
+	item := p.selectedNavItem()
+	if item == nil || item.Enabled == nil || !*item.Enabled {
 		t.Error("expected calendar to be enabled initially")
 	}
 
-	// Toggle with space (enter now opens detail view)
-	p.cursor = calIdx
+	// Toggle with space
 	p.HandleKey(tea.KeyMsg{Type: tea.KeySpace})
 
-	if p.items[calIdx].enabled {
+	item = p.selectedNavItem()
+	if item == nil || item.Enabled == nil || *item.Enabled {
 		t.Error("expected calendar to be disabled after toggle")
-	}
-	if !p.cfg.Calendar.Enabled == p.items[calIdx].enabled {
-		// Config should match
 	}
 }
 
-func TestToggleExternalPlugin(t *testing.T) {
+func TestToggleExternalPluginViaSidebar(t *testing.T) {
 	p, _ := testSetup()
 
-	// Find external plugin
+	// Find external plugin in nav
 	extIdx := -1
-	for i, item := range p.items {
-		if item.kind == "external-plugin" {
-			extIdx = i
-			break
+	idx := 0
+	for _, cat := range p.navCategories {
+		for _, item := range cat.Items {
+			if item.Slug == "external-0" {
+				extIdx = idx
+			}
+			idx++
 		}
 	}
 	if extIdx < 0 {
-		t.Fatal("external plugin item not found")
+		t.Fatal("external plugin not found in nav")
 	}
 
-	if !p.items[extIdx].enabled {
+	p.navCursor = extIdx
+	p.focusZone = FocusNav
+
+	item := p.selectedNavItem()
+	if item == nil || item.Enabled == nil || !*item.Enabled {
 		t.Error("expected external plugin to be enabled initially")
 	}
 
-	p.cursor = extIdx
 	p.HandleKey(tea.KeyMsg{Type: tea.KeySpace})
 
-	if p.items[extIdx].enabled {
+	item = p.selectedNavItem()
+	if item == nil || item.Enabled == nil || *item.Enabled {
 		t.Error("expected external plugin to be disabled after toggle")
 	}
 	if p.flashMessage != "Restart CCC to apply" {
@@ -138,192 +183,100 @@ func TestToggleExternalPlugin(t *testing.T) {
 	}
 }
 
-func TestCorePluginNotToggleable(t *testing.T) {
+func TestFocusSwitching(t *testing.T) {
+	p, _ := testSetup()
+	p.focusZone = FocusNav
+
+	// Enter should switch to content
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if p.focusZone != FocusContent {
+		t.Errorf("expected FocusContent, got %d", p.focusZone)
+	}
+
+	// Esc should go back to nav
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if p.focusZone != FocusNav {
+		t.Errorf("expected FocusNav after esc, got %d", p.focusZone)
+	}
+}
+
+func TestViewRendersWithoutPanic(t *testing.T) {
 	p, _ := testSetup()
 
-	// Find settings plugin (core, not toggleable)
-	settingsIdx := -1
-	for i, item := range p.items {
-		if item.slug == "settings" {
-			settingsIdx = i
-			break
+	v := p.View(120, 40, 0)
+	if v == "" {
+		t.Error("expected non-empty view")
+	}
+}
+
+func TestViewContentPaneRendersForEachNavItem(t *testing.T) {
+	p, _ := testSetup()
+
+	// Iterate through all nav items and render each content pane
+	total := p.navItemCount()
+	for i := 0; i < total; i++ {
+		p.navCursor = i
+		p.focusZone = FocusContent
+		v := p.View(120, 40, 0)
+		if v == "" {
+			item := p.selectedNavItem()
+			slug := "nil"
+			if item != nil {
+				slug = item.Slug
+			}
+			t.Errorf("expected non-empty view for nav item %d (slug=%s)", i, slug)
 		}
 	}
-	if settingsIdx < 0 {
-		t.Fatal("settings item not found")
-	}
-
-	if p.items[settingsIdx].toggleable {
-		t.Error("expected settings to not be toggleable")
-	}
-
-	// Trying to toggle with space should be a no-op
-	p.cursor = settingsIdx
-	p.HandleKey(tea.KeyMsg{Type: tea.KeySpace})
-	if !p.items[settingsIdx].enabled {
-		t.Error("core plugin should remain enabled after toggle attempt")
-	}
-
-	// Enter opens detail view but doesn't change enabled state
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if !p.items[settingsIdx].enabled {
-		t.Error("core plugin should remain enabled after enter")
-	}
-	if !p.detailView {
-		t.Error("expected detail view to be open after enter")
-	}
 }
 
-func TestNavigateToSubViews(t *testing.T) {
+func TestPaletteCursorNavigation(t *testing.T) {
 	p, _ := testSetup()
 
-	p.NavigateTo("settings/logs", nil)
-	if p.subView != "logs" {
-		t.Errorf("expected logs sub-view, got %q", p.subView)
+	// Navigate to palette
+	palIdx := -1
+	idx := 0
+	for _, cat := range p.navCategories {
+		for _, item := range cat.Items {
+			if item.Slug == "palette" {
+				palIdx = idx
+			}
+			idx++
+		}
+	}
+	if palIdx < 0 {
+		t.Fatal("palette not found in nav")
 	}
 
-	p.NavigateTo("settings/palette", nil)
-	if p.subView != "palette" {
-		t.Errorf("expected palette sub-view, got %q", p.subView)
-	}
+	p.navCursor = palIdx
+	p.focusZone = FocusContent
 
-	// Navigating to "settings" (the tab route) preserves current sub-view
-	p.NavigateTo("settings", nil)
-	if p.subView != "palette" {
-		t.Errorf("expected palette sub-view preserved, got %q", p.subView)
-	}
-}
-
-func TestLogViewDoesNotPanic(t *testing.T) {
-	p, _ := testSetup()
-	p.subView = "logs"
-
-	// Should render without panic even with empty logger
-	v := p.View(120, 40, 0)
-	if v == "" {
-		t.Error("expected non-empty log view")
-	}
-}
-
-func TestPaletteViewDoesNotPanic(t *testing.T) {
-	p, _ := testSetup()
-	p.subView = "palette"
-
-	v := p.View(120, 40, 0)
-	if v == "" {
-		t.Error("expected non-empty palette view")
-	}
-}
-
-func TestPaletteSwitchByKey(t *testing.T) {
-	p, _ := testSetup()
-	p.subView = "palette"
-
-	// Move right
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
-	// In palette mode, 'l' switches to logs. Let's use right arrow instead.
-	p.subView = "palette"
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
+	// Navigate down in palette content
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyDown})
 	if p.paletteCursor != 1 {
 		t.Errorf("expected palette cursor 1, got %d", p.paletteCursor)
 	}
 }
 
-func TestDetailViewOpensAndCloses(t *testing.T) {
+func TestNavCursorUpDown(t *testing.T) {
 	p, _ := testSetup()
+	p.focusZone = FocusNav
+	p.navCursor = 0
 
-	// Open detail view
-	p.cursor = 0
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if !p.detailView {
-		t.Error("expected detail view to open")
+	// Navigate down
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyDown})
+	if p.navCursor != 1 {
+		t.Errorf("expected nav cursor 1, got %d", p.navCursor)
 	}
 
-	// Renders without panic
-	v := p.View(120, 40, 0)
-	if v == "" {
-		t.Error("expected non-empty detail view")
+	// Navigate up
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyUp})
+	if p.navCursor != 0 {
+		t.Errorf("expected nav cursor 0, got %d", p.navCursor)
 	}
 
-	// Esc closes it
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if p.detailView {
-		t.Error("expected detail view to close on esc")
-	}
-}
-
-func TestDetailViewCalendar(t *testing.T) {
-	p, _ := testSetup()
-
-	// Find calendar
-	calIdx := -1
-	for i, item := range p.items {
-		if item.slug == "calendar" {
-			calIdx = i
-			break
-		}
-	}
-	if calIdx < 0 {
-		t.Fatal("calendar item not found")
-	}
-
-	p.cursor = calIdx
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if !p.detailView {
-		t.Error("expected detail view")
-	}
-
-	v := p.View(120, 40, 0)
-	if v == "" {
-		t.Error("expected non-empty calendar detail view")
-	}
-}
-
-func TestDetailViewGitHub(t *testing.T) {
-	p, _ := testSetup()
-
-	// Find github
-	ghIdx := -1
-	for i, item := range p.items {
-		if item.slug == "github" {
-			ghIdx = i
-			break
-		}
-	}
-	if ghIdx < 0 {
-		t.Fatal("github item not found")
-	}
-
-	p.cursor = ghIdx
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if !p.detailView {
-		t.Error("expected detail view")
-	}
-
-	v := p.View(120, 40, 0)
-	if v == "" {
-		t.Error("expected non-empty github detail view")
-	}
-}
-
-func TestSubViewSwitchingByKey(t *testing.T) {
-	p, _ := testSetup()
-
-	// Switch to logs with 'l'
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")})
-	if p.subView != "logs" {
-		t.Errorf("expected logs, got %q", p.subView)
-	}
-
-	// Switch to palette with 'p'
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
-	if p.subView != "palette" {
-		t.Errorf("expected palette, got %q", p.subView)
-	}
-
-	// Switch back to plugins with 's'
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
-	if p.subView != "plugins" {
-		t.Errorf("expected plugins, got %q", p.subView)
+	// Up at 0 stays at 0
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyUp})
+	if p.navCursor != 0 {
+		t.Errorf("expected nav cursor to stay at 0, got %d", p.navCursor)
 	}
 }
