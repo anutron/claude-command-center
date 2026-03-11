@@ -370,7 +370,11 @@ func (p *Plugin) applyToggle(item settingsItem) {
 	case "builtin-plugin":
 		p.cfg.SetPluginEnabled(item.slug, item.enabled)
 		if err := config.Save(p.cfg); err == nil {
-			p.flashMessage = "Restart CCC to apply"
+			if item.enabled {
+				p.flashMessage = item.name + " enabled"
+			} else {
+				p.flashMessage = item.name + " disabled"
+			}
 			p.publishConfigSaved("disabled_plugins")
 		} else {
 			p.flashMessage = "Failed to save: " + err.Error()

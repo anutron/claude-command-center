@@ -28,9 +28,10 @@ const (
 )
 
 type tabEntry struct {
-	label  string
-	plugin plugin.Plugin
-	route  string
+	label     string
+	plugin    plugin.Plugin
+	route     string
+	ownerSlug string // plugin slug that owns this tab, for filtering
 }
 
 // Model is the main Bubbletea model — a thin host that dispatches to plugins.
@@ -47,6 +48,8 @@ type Model struct {
 
 	Launch *LaunchAction
 
+	// allTabs is the full unfiltered tab list; tabs is the current visible subset.
+	allTabs []tabEntry
 	// allPlugins holds every unique plugin for lifecycle management.
 	allPlugins []plugin.Plugin
 
@@ -96,48 +99,73 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	_ = ccPlug.Init(ctx)
 	_ = settingsPlug.Init(ctx)
 
-	var tabs []tabEntry
-
-	if cfg.PluginEnabled("sessions") {
-		tabs = append(tabs,
-			tabEntry{label: "New Session", plugin: sessPlug, route: "new"},
-			tabEntry{label: "Resume", plugin: sessPlug, route: "resume"},
-		)
-	}
-	if cfg.PluginEnabled("commandcenter") {
-		tabs = append(tabs,
-			tabEntry{label: "Command Center", plugin: ccPlug, route: "commandcenter"},
-			tabEntry{label: "Threads", plugin: ccPlug, route: "commandcenter/threads"},
-		)
-	}
-
-	// Append tabs for external plugins.
+	// Build the full tab list (allTabs); rebuildTabs filters to visible.
+	var allTabs []tabEntry
+	allTabs = append(allTabs,
+		tabEntry{label: "New Session", plugin: sessPlug, route: "new", ownerSlug: "sessions"},
+		tabEntry{label: "Resume", plugin: sessPlug, route: "resume", ownerSlug: "sessions"},
+		tabEntry{label: "Command Center", plugin: ccPlug, route: "commandcenter", ownerSlug: "commandcenter"},
+		tabEntry{label: "Threads", plugin: ccPlug, route: "commandcenter/threads", ownerSlug: "commandcenter"},
+	)
 	for _, ep := range extPlugins {
 		routes := ep.Routes()
 		if len(routes) > 0 {
 			for _, r := range routes {
-				tabs = append(tabs, tabEntry{label: r.Description, plugin: ep, route: r.Slug})
+				allTabs = append(allTabs, tabEntry{label: r.Description, plugin: ep, route: r.Slug, ownerSlug: ep.Slug()})
 			}
 		} else {
-			tabs = append(tabs, tabEntry{label: ep.TabName(), plugin: ep, route: ep.Slug()})
+			allTabs = append(allTabs, tabEntry{label: ep.TabName(), plugin: ep, route: ep.Slug(), ownerSlug: ep.Slug()})
 		}
 	}
-
-	// Settings tab at the end.
-	tabs = append(tabs, tabEntry{label: "Settings", plugin: settingsPlug, route: "settings"})
+	allTabs = append(allTabs, tabEntry{label: "Settings", plugin: settingsPlug, route: "settings", ownerSlug: "settings"})
 
 	// Collect all unique plugins for shutdown.
 	allPlugins := []plugin.Plugin{sessPlug, ccPlug, settingsPlug}
 	allPlugins = append(allPlugins, extPlugins...)
 
-	return Model{
+	m := Model{
 		cfg:        cfg,
 		styles:     styles,
 		grad:       grad,
-		tabs:       tabs,
+		allTabs:    allTabs,
 		activeTab:  0,
 		allPlugins: allPlugins,
 		db:         database,
+	}
+	m.rebuildTabs()
+	return m
+}
+
+// rebuildTabs filters allTabs to only enabled plugins, preserving the active tab if possible.
+func (m *Model) rebuildTabs() {
+	currentRoute := ""
+	if int(m.activeTab) < len(m.tabs) {
+		currentRoute = m.tabs[m.activeTab].route
+	}
+
+	var filtered []tabEntry
+	for _, t := range m.allTabs {
+		if m.cfg.PluginEnabled(t.ownerSlug) {
+			filtered = append(filtered, t)
+		}
+	}
+	m.tabs = filtered
+
+	// Try to stay on the same route
+	if currentRoute != "" {
+		for i, t := range m.tabs {
+			if t.route == currentRoute {
+				m.activeTab = tab(i)
+				return
+			}
+		}
+	}
+	// Fallback: clamp to valid range
+	if int(m.activeTab) >= len(m.tabs) {
+		m.activeTab = tab(len(m.tabs) - 1)
+		if m.activeTab < 0 {
+			m.activeTab = 0
+		}
 	}
 }
 
@@ -315,6 +343,9 @@ func (m *Model) activateTab(prevTab tab) tea.Cmd {
 }
 
 func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
+	// Rebuild tabs in case a plugin toggle changed visibility.
+	m.rebuildTabs()
+
 	switch action.Type {
 	case plugin.ActionLaunch:
 		la := &LaunchAction{Dir: action.Args["dir"]}
