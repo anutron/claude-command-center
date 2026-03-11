@@ -1138,37 +1138,3 @@ func renderSwatches(pal config.Palette) string {
 	return strings.Join(parts, " ")
 }
 
-// settingsStyles holds styles for the settings plugin.
-type settingsStyles struct {
-	header    lipgloss.Style
-	muted     lipgloss.Style
-	pointer   lipgloss.Style
-	enabled   lipgloss.Style
-	disabled  lipgloss.Style
-	itemName  lipgloss.Style
-	flash     lipgloss.Style
-	panel     lipgloss.Style
-	activeTab lipgloss.Style
-	logError  lipgloss.Style
-	logWarn   lipgloss.Style
-	logPlugin lipgloss.Style
-}
-
-func newSettingsStyles(p config.Palette) settingsStyles {
-	return settingsStyles{
-		header:    lipgloss.NewStyle().Foreground(lipgloss.Color(p.Cyan)).Bold(true),
-		muted:     lipgloss.NewStyle().Foreground(lipgloss.Color(p.Muted)),
-		pointer:   lipgloss.NewStyle().Foreground(lipgloss.Color(p.Pointer)),
-		enabled:   lipgloss.NewStyle().Foreground(lipgloss.Color(p.Green)),
-		disabled:  lipgloss.NewStyle().Foreground(lipgloss.Color(p.Muted)),
-		itemName:  lipgloss.NewStyle().Foreground(lipgloss.Color(p.White)),
-		flash:     lipgloss.NewStyle().Foreground(lipgloss.Color(p.Green)),
-		activeTab: lipgloss.NewStyle().Foreground(lipgloss.Color(p.Cyan)).Bold(true),
-		panel: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#3b4261")),
-		logError:  lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")),
-		logWarn:   lipgloss.NewStyle().Foreground(lipgloss.Color(p.Yellow)),
-		logPlugin: lipgloss.NewStyle().Foreground(lipgloss.Color(p.Cyan)),
-	}
-}
