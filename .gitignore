@@ -33,3 +33,4 @@ credentials/
 # Config (user-specific)
 config.yaml
 .superpowers/
+.bug-bash/
