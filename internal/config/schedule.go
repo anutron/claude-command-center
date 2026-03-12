@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -71,19 +72,7 @@ func InstallSchedule() error {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
-	// Ensure LaunchAgents directory exists
-	dir := filepath.Dir(plistPath())
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating LaunchAgents dir: %w", err)
-	}
-
-	// Write plist
-	f, err := os.Create(plistPath())
-	if err != nil {
-		return fmt.Errorf("creating plist: %w", err)
-	}
-	defer f.Close()
-
+	// Render plist content to buffer
 	data := struct {
 		Label           string
 		Binary          string
@@ -95,17 +84,37 @@ func InstallSchedule() error {
 		IntervalSeconds: int(interval.Seconds()),
 		LogPath:         logPath,
 	}
-	if err := plistTemplate.Execute(f, data); err != nil {
+	var buf bytes.Buffer
+	if err := plistTemplate.Execute(&buf, data); err != nil {
+		return fmt.Errorf("rendering plist: %w", err)
+	}
+	newContent := buf.Bytes()
+
+	// Compare with existing plist — skip reload if unchanged
+	path := plistPath()
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, newContent) {
+		fmt.Println("Schedule already installed (no changes).")
+		return nil
+	}
+
+	// Ensure LaunchAgents directory exists
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating LaunchAgents dir: %w", err)
+	}
+
+	// Write plist
+	if err := os.WriteFile(path, newContent, 0o644); err != nil {
 		return fmt.Errorf("writing plist: %w", err)
 	}
 
 	// Load with launchctl
-	cmd := exec.Command("launchctl", "load", plistPath())
+	cmd := exec.Command("launchctl", "load", path)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("launchctl load failed: %s — %w", string(out), err)
 	}
 
-	fmt.Printf("Installed: %s\n", plistPath())
+	fmt.Printf("Installed: %s\n", path)
 	fmt.Printf("Refresh interval: %s\n", interval)
 	fmt.Printf("Log file: %s\n", logPath)
 	return nil
