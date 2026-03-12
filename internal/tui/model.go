@@ -54,6 +54,9 @@ type Model struct {
 	// allPlugins holds every unique plugin for lifecycle management.
 	allPlugins []plugin.Plugin
 
+	// confirmQuit is set when the user presses Escape on a non-first tab.
+	confirmQuit bool
+
 	// returnedFromLaunch is set when the TUI restarts after a Claude session.
 	returnedFromLaunch bool
 
@@ -278,6 +281,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyMsg:
+		// Handle quit confirmation mode first.
+		if m.confirmQuit {
+			switch msg.String() {
+			case "y", "Y":
+				return m, tea.Quit
+			default:
+				m.confirmQuit = false
+				return m, nil
+			}
+		}
+
 		switch msg.Type {
 		case tea.KeyTab:
 			prev := m.activeTab
@@ -297,7 +311,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if action.Type != "unhandled" && action.Type != "quit" {
 				return m.processAction(action)
 			}
-			return m, tea.Quit
+			// On first tab, quit immediately; on other tabs, confirm first.
+			if m.activeTab == 0 {
+				return m, tea.Quit
+			}
+			m.confirmQuit = true
+			return m, nil
 		}
 		action := m.activePlugin().HandleKey(msg)
 		return m.processAction(action)
@@ -452,7 +471,13 @@ func (m Model) View() string {
 		contentHeight = 10
 	}
 
-	content := m.activePlugin().View(m.width, contentHeight, m.frame)
+	var content string
+	if m.confirmQuit {
+		prompt := m.styles.TitleBoldC.Render("Quit CCC? (y/n)")
+		content = lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, prompt)
+	} else {
+		content = m.activePlugin().View(m.width, contentHeight, m.frame)
+	}
 
 	sections = append(sections, "", tabBar, "", content)
 	page := lipgloss.JoinVertical(lipgloss.Left, sections...)
