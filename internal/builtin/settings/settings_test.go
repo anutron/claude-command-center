@@ -27,6 +27,7 @@ func testSetup() (*Plugin, *plugin.Registry) {
 			{Name: "Pomodoro", Command: "pomodoro", Enabled: true},
 		},
 	}
+	cfg.MarkLoadedFromFile()
 
 	// Register the settings plugin itself so it appears in the list
 	reg.Register(p)

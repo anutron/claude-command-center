@@ -38,7 +38,8 @@ func main() {
 			}
 			cfg, err := config.Load()
 			if err != nil {
-				cfg = config.DefaultConfig()
+				fmt.Fprintf(os.Stderr, "Error: could not load config: %v\n", err)
+				os.Exit(1)
 			}
 			pal := config.GetPalette(cfg.Palette, cfg.Colors)
 			providers := []plugin.DoctorProvider{
@@ -110,11 +111,15 @@ func main() {
 	_, statErr := os.Stat(config.ConfigPath())
 	isFirstRun := os.IsNotExist(statErr)
 
-	// Load config
+	// Load config — exit on error to prevent defaults from overwriting the user's file.
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not load config: %v\n", err)
-		cfg = config.DefaultConfig()
+		fmt.Fprintf(os.Stderr, "Error: could not load config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Fix the config file at %s, or remove it to start fresh.\n", config.ConfigPath())
+		if bakPath := config.ConfigPath() + ".bak"; fileExists(bakPath) {
+			fmt.Fprintf(os.Stderr, "A backup exists at %s\n", bakPath)
+		}
+		os.Exit(1)
 	}
 
 	// Open database (required — TUI is useless without it)
@@ -236,4 +241,9 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Options:")
 	fmt.Fprintln(os.Stderr, "  -h, --help           Show this help")
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

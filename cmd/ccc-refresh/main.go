@@ -25,8 +25,9 @@ func main() {
 
 	cfg, err := config.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not load config: %v\n", err)
-		cfg = config.DefaultConfig()
+		fmt.Fprintf(os.Stderr, "Error: could not load config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Fix the config file at %s, or remove it to start fresh.\n", config.ConfigPath())
+		os.Exit(1)
 	}
 
 	dbPath := config.DBPath()
