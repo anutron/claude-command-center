@@ -64,12 +64,23 @@ func (p *Plugin) rebuildNav() {
 		"threads":          "Persistent Claude conversation threads for ongoing work",
 	}
 
+	// Build a set of external plugin slugs so we can skip them in the
+	// registry loop (they are shown separately from the config list below).
+	externalSlugs := map[string]bool{}
+	for _, ep := range p.cfg.ExternalPlugins {
+		externalSlugs[strings.ToLower(ep.Name)] = true
+	}
+
 	var pluginItems []NavItem
 	if p.registry != nil {
 		for _, plug := range p.registry.All() {
 			slug := plug.Slug()
 			// Settings itself is not shown as toggleable
 			if slug == "settings" {
+				continue
+			}
+			// Skip external plugins — they are listed from config below
+			if externalSlugs[strings.ToLower(slug)] {
 				continue
 			}
 			enabled := p.cfg.PluginEnabled(slug)
@@ -94,7 +105,7 @@ func (p *Plugin) rebuildNav() {
 		Toggleable:  true,
 	})
 
-	// External plugins
+	// External plugins from config
 	for i, ep := range p.cfg.ExternalPlugins {
 		enabled := ep.Enabled
 		pluginItems = append(pluginItems, NavItem{
