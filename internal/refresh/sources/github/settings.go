@@ -300,13 +300,16 @@ var fetchGHUsername = func() (string, error) {
 
 // fetchGHRepos is a variable for testability.
 var fetchGHRepos = func() ([]ghRepoInfo, error) {
-	out, err := exec.Command(
+	cmd := exec.Command(
 		"gh", "repo", "list",
 		"--json", "nameWithOwner,description",
 		"--limit", "200",
-		"--owner", "@me",
-	).Output()
+	)
+	out, err := cmd.Output()
 	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+			return nil, fmt.Errorf("gh repo list: %s", strings.TrimSpace(string(ee.Stderr)))
+		}
 		return nil, fmt.Errorf("gh repo list: %w", err)
 	}
 	var repos []ghRepoInfo
