@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -29,6 +30,10 @@ type Config struct {
 	// DisabledPlugins lists slugs of built-in plugins the user has turned off.
 	// e.g. ["sessions", "commandcenter"]
 	DisabledPlugins []string `yaml:"disabled_plugins,omitempty"`
+
+	// loadedFromFile is true when the config was successfully loaded from disk.
+	// When false (i.e. defaults), Save will refuse to overwrite an existing file.
+	loadedFromFile bool `yaml:"-"`
 }
 
 // PluginEnabled returns whether a built-in plugin is enabled (not in DisabledPlugins).
@@ -212,21 +217,60 @@ func Load() (*Config, error) {
 
 	cfg := DefaultConfig()
 	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse %s: %w", ConfigPath(), err)
 	}
+	cfg.loadedFromFile = true
 	return cfg, nil
 }
 
+// MarkLoadedFromFile marks a config as having been loaded from or saved to
+// disk, so that subsequent Save calls are allowed to write it. This should
+// only be called after a successful first Save (e.g. during onboarding).
+func (c *Config) MarkLoadedFromFile() {
+	c.loadedFromFile = true
+}
+
 // Save writes the config to ConfigPath(), creating directories as needed.
+// If the config was not loaded from a file (i.e. it is a default config due to
+// a load error), Save refuses to overwrite an existing config file to prevent
+// data loss. It also creates a .bak backup before writing as defense-in-depth.
 func Save(cfg *Config) error {
 	dir := ConfigDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 
+	path := ConfigPath()
+
+	// Safety check: refuse to overwrite an existing config with defaults.
+	// This prevents the scenario where Load() fails, the app falls back to
+	// DefaultConfig(), and then a settings change writes defaults to disk.
+	if !cfg.loadedFromFile {
+		if _, err := os.Stat(path); err == nil {
+			return fmt.Errorf("refusing to overwrite %s: config was not loaded from file (possible data loss)", path)
+		}
+	}
+
+	// Create a backup of the existing file before writing.
+	if existing, err := os.ReadFile(path); err == nil && len(existing) > 0 {
+		_ = os.WriteFile(path+".bak", existing, 0o644)
+	}
+
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(ConfigPath(), data, 0o644)
+
+	// Write to a temp file and rename for atomicity.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		// Rename failed — fall back to direct write.
+		return os.WriteFile(path, data, 0o644)
+	}
+
+	cfg.loadedFromFile = true
+	return nil
 }
