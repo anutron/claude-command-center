@@ -124,7 +124,7 @@ When the user presses `a` on a data source with broken credentials, the content 
 
 - Same structure as Calendar but with:
   - Gmail scopes (`gmail.GmailReadonlyScope`, or `gmail.GmailModifyScope` + `gmail.GmailComposeScope` if `config.Gmail.Advanced`)
-  - Port 3093, redirect URI `http://127.0.0.1:3093/oauth2callback`
+  - Random port on `127.0.0.1:0`, redirect URI set dynamically
   - Credentials written to `~/.gmail-mcp/work.json`
   - Client credential env vars: `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` (not `GOOGLE_*`)
 
@@ -152,9 +152,8 @@ Esc cancellation: the `tea.Cmd` uses a `context.Context`. When the user presses 
 
 **OAuth callback mechanics:**
 
-- Calendar: HTTP server on port 3000, redirect URI `http://localhost:3000/oauth2callback`
-- Gmail: HTTP server on port 3093, redirect URI `http://127.0.0.1:3093/oauth2callback`
-- Port busy → show error: "Port in use — close other auth flows and retry"
+- Both Calendar and Gmail: HTTP server on `127.0.0.1:0` (random available port), redirect URI set dynamically
+- Random port avoids "port in use" conflicts with other processes
 - 5-minute timeout, cancellable with esc
 - On success: credentials file includes client_id + client_secret + tokens (no env fallback needed after this)
 
@@ -265,16 +264,21 @@ The huh form model is stored on the settings `Plugin` struct. The settings `Hand
 
 | File | Changes |
 |------|---------|
-| `internal/config/validate.go` | Replace `error` returns with `ValidationResult`. Structural checks for all data sources. Shared by settings and doctor. |
-| `internal/config/livecheck.go` | New. `LiveCheckCalendar()`/`LiveCheckGmail()` — tokeninfo endpoint + token refresh attempt. Returns `ValidationResult`. |
-| `internal/auth/authflow.go` | New package `internal/auth/`. OAuth flow functions extracted from `refresh/sources/calendar/auth.go`. Non-blocking `authFlowCmd` for TUI use. `GoogleTokenFile` and `LoadGoogleOAuth2Config` also move here to avoid circular deps (`config` and `refresh` both import `auth`). |
-| `internal/auth/dotenv.go` | New. `ReadEnv()`/`WriteEnvValue(key, value)` — read/write `~/.config/ccc/.env` with atomic write (temp file + rename) to avoid races with concurrent `ccc-refresh`. |
-| `internal/builtin/settings/content_datasources.go` | Tiered validation status, fix instructions, `o`/`a`/`r` key handling. Live check tea.Cmd dispatch. |
-| `internal/builtin/settings/auth_form.go` | New. huh form integration for credential input. `FocusForm` zone management. |
+| `internal/plugin/doctor.go` | New. `DoctorProvider` interface, `DoctorCheck`, `DoctorOpts`, `ValidationResult` types. |
 | `internal/plugin/plugin.go` | Extend `SettingsProvider` with `SettingsOpenCmd()` and `HandleSettingsMsg()`. |
-| `internal/doctor/doctor.go` | Use shared `ValidationResult`, add live checks, show fix hints with `[??]` for inconclusive. |
-| `internal/refresh/sources/calendar/auth.go` | Thin wrapper around `internal/auth/` for backward compat. `loadCalendarAuth()` stays here. |
-| `internal/refresh/auth.go` | `GoogleTokenFile`, `LoadGoogleOAuth2Config`, `LoadCalendarCredsFromClaudeConfig` move to `internal/auth/`. This file becomes thin re-exports or is removed. |
+| `internal/auth/types.go` | New. `GoogleTokenFile`, `ToOAuth2Token()` — extracted from `refresh/auth.go`. |
+| `internal/auth/config.go` | New. `LoadGoogleOAuth2Config`, `LoadCalendarCredsFromClaudeConfig`. |
+| `internal/auth/env.go` | New. `LoadEnvFile`, `ReadEnv`, `WriteEnvValue` — atomic write to avoid races with `ccc-refresh`. |
+| `internal/auth/flow.go` | New. `AuthFlowCmd` — generic non-blocking OAuth flow as `tea.Cmd`. Random port on `127.0.0.1:0`. |
+| `internal/refresh/sources/calendar/doctor.go` | New. `ValidateCalendarResult()`, `DoctorChecks()` with live tokeninfo check. |
+| `internal/refresh/sources/gmail/doctor.go` | New. `GmailDoctor`, `ValidateGmailResult()`, `DoctorChecks()` with live tokeninfo check. |
+| `internal/refresh/sources/github/settings.go` | Added `DoctorChecks()` wrapping `gh auth token` check. |
+| `internal/refresh/sources/granola/settings.go` | Added `DoctorChecks()` wrapping account check. |
+| `internal/config/validate.go` | Kept for backward compat — providers are the primary validation source now. |
+| `internal/builtin/settings/content_datasources.go` | Tiered validation status, fix instructions, `o`/`a`/`r` key handling. Live check on pane open. |
+| `internal/builtin/settings/auth_form.go` | New. huh form for client credential input. |
+| `internal/doctor/doctor.go` | Uses `DoctorProvider` loop, `--live` flag, `[??]` for inconclusive. |
+| `internal/refresh/auth.go` | Deleted — contents moved to `internal/auth/`. All callers migrated directly. |
 
 ### Dependency Graph
 

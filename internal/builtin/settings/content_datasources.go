@@ -157,13 +157,18 @@ func isGoogleDatasource(slug string) bool {
 func (p *Plugin) handleDatasourceContentKey(item *NavItem, msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
 	case "r":
-		// Re-check credentials.
+		// Re-check credentials (live for Google datasources).
 		slug := item.Slug
+		live := isGoogleDatasource(slug)
 		cmd := func() tea.Msg {
-			result := p.validateDataSourceResult(slug)
+			result := p.validateDataSourceResult(slug, live)
 			return datasourceRecheckResult{Slug: slug, Result: result}
 		}
-		p.flashMessage = "Re-checking " + item.Label + " credentials..."
+		if live {
+			p.flashMessage = "Live-checking " + item.Label + " credentials..."
+		} else {
+			p.flashMessage = "Re-checking " + item.Label + " credentials..."
+		}
 		p.flashMessageAt = time.Now()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 

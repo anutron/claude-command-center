@@ -486,23 +486,40 @@ func (p *Plugin) validateDataSource(slug string) error {
 // It prefers DoctorProvider checks from the provider, falling back to the
 // top-level ValidateXResult functions for calendar/gmail, and then to the
 // legacy error-based validateDataSource for others.
-func (p *Plugin) validateDataSourceResult(slug string) plugin.ValidationResult {
+func (p *Plugin) validateDataSourceResult(slug string, live bool) plugin.ValidationResult {
+	opts := plugin.DoctorOpts{Live: live}
+
 	// Try DoctorProvider on the SettingsProvider first
 	if sp, ok := p.providers[slug]; ok {
 		if dp, ok := sp.(plugin.DoctorProvider); ok {
-			checks := dp.DoctorChecks(plugin.DoctorOpts{})
+			checks := dp.DoctorChecks(opts)
 			if len(checks) > 0 {
+				// If live, prefer the live check result (last check) over structural
+				if live && len(checks) > 1 {
+					return checks[len(checks)-1].Result
+				}
 				return checks[0].Result
 			}
 		}
+	}
+
+	// Standalone DoctorProvider for Gmail (not in providers map)
+	if slug == "gmail" {
+		doc := gmail.NewDoctor(p.cfg.Gmail)
+		checks := doc.DoctorChecks(opts)
+		if len(checks) > 0 {
+			if live && len(checks) > 1 {
+				return checks[len(checks)-1].Result
+			}
+			return checks[0].Result
+		}
+		return gmail.ValidateGmailResult()
 	}
 
 	// Fallback to standalone ValidateXResult functions
 	switch slug {
 	case "calendar":
 		return calendar.ValidateCalendarResult()
-	case "gmail":
-		return gmail.ValidateGmailResult()
 	case "slack":
 		return validateSlackResult()
 	}

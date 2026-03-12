@@ -138,7 +138,7 @@ func (p *Plugin) rebuildNav() {
 			Toggleable:  ds.toggle,
 		}
 		// Validate credentials using DoctorProvider if available, else legacy check
-		vr := p.validateDataSourceResult(ds.slug)
+		vr := p.validateDataSourceResult(ds.slug, false)
 		item.ValidationStatus = vr.Status
 		item.ValidationMsg = vr.Message
 		item.ValidHint = vr.Hint
@@ -323,9 +323,21 @@ func (p *Plugin) handleNavKey(msg tea.KeyMsg) plugin.Action {
 		}
 	case "enter", "right", "l":
 		p.focusZone = FocusContent
+		var cmds []tea.Cmd
 		// Fire the active provider's SettingsOpenCmd if available.
 		if cmd := p.activeProviderOpenCmd(); cmd != nil {
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+			cmds = append(cmds, cmd)
+		}
+		// For Google datasources, fire an async live credential check on pane open.
+		if item := p.selectedNavItem(); item != nil && item.Kind == "datasource" && isGoogleDatasource(item.Slug) {
+			slug := item.Slug
+			cmds = append(cmds, func() tea.Msg {
+				result := p.validateDataSourceResult(slug, true)
+				return datasourceRecheckResult{Slug: slug, Result: result}
+			})
+		}
+		if len(cmds) > 0 {
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 		}
 	case "esc":
 		return plugin.Action{Type: plugin.ActionUnhandled}
