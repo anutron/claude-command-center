@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -220,6 +221,13 @@ func (p *Plugin) startAuthFlowForDatasource() tea.Cmd {
 	creds := p.pendingAuthCreds
 	slug := p.pendingAuthSlug
 	if creds == nil || slug == "" {
+		return nil
+	}
+
+	// Validate credentials before launching OAuth flow.
+	if err := auth.ValidateClientCredentials(creds.ClientID); err != nil {
+		p.flashMessage = "Invalid credentials: " + err.Error()
+		p.flashMessageAt = time.Now()
 		return nil
 	}
 

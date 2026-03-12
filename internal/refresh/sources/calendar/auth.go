@@ -81,6 +81,9 @@ func RunCalendarAuth() error {
 	if clientID == "" {
 		return fmt.Errorf("no Google Calendar client credentials found")
 	}
+	if err := auth.ValidateClientCredentials(clientID); err != nil {
+		return fmt.Errorf("calendar auth: %w", err)
+	}
 
 	conf := &oauth2.Config{
 		ClientID:     clientID,

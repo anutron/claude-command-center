@@ -15,7 +15,17 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// stubBrowser replaces openBrowser with a no-op for tests and restores it on cleanup.
+func stubBrowser(t *testing.T) {
+	t.Helper()
+	orig := openBrowser
+	openBrowser = func(url string) error { return nil }
+	t.Cleanup(func() { openBrowser = orig })
+}
+
 func TestRunAuthFlow_Success(t *testing.T) {
+	stubBrowser(t)
+
 	// Mock token endpoint that returns a valid token.
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -32,20 +42,20 @@ func TestRunAuthFlow_Success(t *testing.T) {
 	tokenPath := filepath.Join(tmpDir, "credentials.json")
 
 	conf := &oauth2.Config{
-		ClientID:     "test-client-id",
-		ClientSecret: "test-client-secret",
+		ClientID:     "fake-but-realistic-client-id.apps.googleusercontent.com",
+		ClientSecret: "fake-client-secret-for-test",
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "http://localhost/auth", // not used directly in test
 			TokenURL: tokenServer.URL,
 		},
-		Scopes: []string{"test-scope"},
+		Scopes: []string{"https://www.googleapis.com/auth/calendar"},
 	}
 
 	opts := AuthFlowOpts{
 		Config:       conf,
 		TokenPath:    tokenPath,
-		ClientID:     "test-client-id",
-		ClientSecret: "test-client-secret",
+		ClientID:     "fake-but-realistic-client-id.apps.googleusercontent.com",
+		ClientSecret: "fake-client-secret-for-test",
 		Timeout:      10 * time.Second,
 	}
 
@@ -81,6 +91,8 @@ func TestRunAuthFlow_Success(t *testing.T) {
 }
 
 func TestRunAuthFlow_Cancel(t *testing.T) {
+	stubBrowser(t)
+
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Should not be reached
 		t.Error("token endpoint should not be called on cancel")
@@ -88,13 +100,13 @@ func TestRunAuthFlow_Cancel(t *testing.T) {
 	defer tokenServer.Close()
 
 	conf := &oauth2.Config{
-		ClientID:     "test-client-id",
-		ClientSecret: "test-client-secret",
+		ClientID:     "fake-but-realistic-client-id.apps.googleusercontent.com",
+		ClientSecret: "fake-client-secret-for-test",
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "http://localhost/auth",
 			TokenURL: tokenServer.URL,
 		},
-		Scopes: []string{"test-scope"},
+		Scopes: []string{"https://www.googleapis.com/auth/calendar"},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -133,14 +145,16 @@ func TestRunAuthFlow_Cancel(t *testing.T) {
 }
 
 func TestRunAuthFlow_Timeout(t *testing.T) {
+	stubBrowser(t)
+
 	conf := &oauth2.Config{
-		ClientID:     "test-client-id",
-		ClientSecret: "test-client-secret",
+		ClientID:     "fake-but-realistic-client-id.apps.googleusercontent.com",
+		ClientSecret: "fake-client-secret-for-test",
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "http://localhost/auth",
 			TokenURL: "http://localhost/token",
 		},
-		Scopes: []string{"test-scope"},
+		Scopes: []string{"https://www.googleapis.com/auth/calendar"},
 	}
 
 	opts := AuthFlowOpts{
@@ -296,11 +310,13 @@ func TestSaveTokenFile_ZeroExpiryOmitted(t *testing.T) {
 }
 
 func TestAuthFlowCmd_ReturnsResultMsg(t *testing.T) {
+	stubBrowser(t)
+
 	// Verify that AuthFlowCmd wraps runAuthFlow and returns AuthFlowResultMsg.
 	// Use a very short timeout so it returns quickly.
 	conf := &oauth2.Config{
-		ClientID:     "test",
-		ClientSecret: "test",
+		ClientID:     "fake-but-realistic-client-id.apps.googleusercontent.com",
+		ClientSecret: "fake-client-secret-for-test",
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  "http://localhost/auth",
 			TokenURL: "http://localhost/token",
@@ -321,4 +337,73 @@ func TestAuthFlowCmd_ReturnsResultMsg(t *testing.T) {
 		t.Fatal("expected error (timeout), got nil")
 	}
 	fmt.Println("Got expected error:", result.Error)
+}
+
+func TestValidateClientCredentials(t *testing.T) {
+	tests := []struct {
+		name     string
+		clientID string
+		wantErr  bool
+	}{
+		{"empty", "", true},
+		{"whitespace only", "   ", true},
+		{"test-client-id placeholder", "test-client-id", true},
+		{"test placeholder", "test", true},
+		{"placeholder", "placeholder", true},
+		{"your-client-id", "your-client-id", true},
+		{"CLIENT_ID", "CLIENT_ID", true},
+		{"CHANGE_ME", "CHANGE_ME", true},
+		{"realistic Google client ID", "123456789.apps.googleusercontent.com", false},
+		{"some-real-looking-id", "abc123def456", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateClientCredentials(tt.clientID)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateClientCredentials(%q) error = %v, wantErr %v", tt.clientID, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRunAuthFlow_RejectsPlaceholderCredentials(t *testing.T) {
+	// Verify that runAuthFlow refuses to launch with placeholder credentials.
+	// No browser should open.
+	browserOpened := false
+	orig := openBrowser
+	openBrowser = func(url string) error {
+		browserOpened = true
+		return nil
+	}
+	t.Cleanup(func() { openBrowser = orig })
+
+	conf := &oauth2.Config{
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "http://localhost/auth",
+			TokenURL: "http://localhost/token",
+		},
+		Scopes: []string{"test-scope"},
+	}
+
+	opts := AuthFlowOpts{
+		Config:  conf,
+		Timeout: 200 * time.Millisecond,
+	}
+
+	tok, err := runAuthFlow(context.Background(), opts)
+	if err == nil {
+		t.Fatal("expected error for placeholder credentials, got nil")
+	}
+	if !strings.Contains(err.Error(), "placeholder") {
+		t.Fatalf("expected placeholder error, got: %v", err)
+	}
+	if tok != nil {
+		t.Fatal("expected nil token for placeholder credentials")
+	}
+	if browserOpened {
+		t.Fatal("browser should NOT have been opened for placeholder credentials")
+	}
 }
