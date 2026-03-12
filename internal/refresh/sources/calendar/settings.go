@@ -26,6 +26,12 @@ var presetColors = []struct {
 	{"Pink", "#f7768e"},
 }
 
+// calendarFetchResult is a tea.Msg carrying the result of fetching available calendars.
+type calendarFetchResult struct {
+	Calendars []CalendarInfo
+	Err       error
+}
+
 // Settings implements plugin.SettingsProvider for the calendar data source.
 type Settings struct {
 	cfg    *config.Config
@@ -42,6 +48,13 @@ type Settings struct {
 	// Color picker state
 	colorPicking bool
 	colorCursor  int
+
+	// Fetched Google calendars state
+	fetchedCalendars []CalendarInfo
+	fetchLoading     bool
+	fetchError       string
+	fetchMode        bool // browsing fetched calendars
+	fetchCursor      int
 }
 
 type settingsStyles struct {
@@ -91,6 +104,7 @@ func (s *Settings) ResetEditing() {
 	s.cursor = 0
 	s.addMode = false
 	s.colorPicking = false
+	s.fetchMode = false
 	s.idInput.Blur()
 	s.labelInput.Blur()
 }
@@ -133,6 +147,12 @@ func (s *Settings) SettingsView(width, height int) string {
 		return strings.Join(lines, "\n")
 	}
 
+	// Fetch mode: show available Google calendars with add/remove toggles
+	if s.fetchMode {
+		lines = append(lines, s.viewFetchMode()...)
+		return strings.Join(lines, "\n")
+	}
+
 	if len(s.cfg.Calendar.Calendars) == 0 {
 		lines = append(lines, s.styles.muted.Render("  No calendars configured"))
 	} else {
@@ -171,7 +191,23 @@ func (s *Settings) SettingsView(width, height int) string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, s.styles.muted.Render("  ↑↓ navigate · space toggle · c color · a add · x remove"))
+
+	// Show fetch status hint
+	if s.fetchLoading {
+		lines = append(lines, s.styles.muted.Render("  Fetching calendars from Google..."))
+		lines = append(lines, "")
+	} else if s.fetchError != "" {
+		lines = append(lines, s.styles.logError.Render("  Fetch error: "+s.fetchError))
+		lines = append(lines, "")
+	}
+
+	hintParts := "  ↑↓ navigate · space toggle · c color · a add manually · x remove"
+	if len(s.fetchedCalendars) > 0 {
+		hintParts += " · f browse Google calendars"
+	} else if !s.fetchLoading && s.fetchError == "" {
+		hintParts += " · f fetch from Google"
+	}
+	lines = append(lines, s.styles.muted.Render(hintParts))
 
 	return strings.Join(lines, "\n")
 }
@@ -231,6 +267,11 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		return s.handleAddKey(msg)
 	}
 
+	// Fetch/browse mode
+	if s.fetchMode {
+		return s.handleFetchKey(msg)
+	}
+
 	switch msg.String() {
 	case "up", "k":
 		if s.cursor > 0 {
@@ -287,6 +328,26 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		s.labelInput.SetValue("")
 		s.idInput.Focus()
 		return plugin.NoopAction()
+	case "f":
+		// Enter fetch/browse mode — fetch from Google or browse already-fetched calendars
+		if len(s.fetchedCalendars) > 0 {
+			s.fetchMode = true
+			s.fetchCursor = 0
+			return plugin.NoopAction()
+		}
+		// Trigger a fresh fetch
+		credResult := ValidateCalendarResult()
+		if credResult.Status != "ok" {
+			return plugin.Action{Type: plugin.ActionFlash, Payload: "Calendar credentials not configured"}
+		}
+		s.fetchLoading = true
+		s.fetchError = ""
+		cmd := func() tea.Msg {
+			cals, err := ListAvailableCalendars()
+			return calendarFetchResult{Calendars: cals, Err: err}
+		}
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+
 	case "x", "d":
 		if s.cursor < len(s.cfg.Calendar.Calendars) {
 			removed := s.cfg.Calendar.Calendars[s.cursor]
@@ -352,8 +413,140 @@ func (s *Settings) handleColorPickerKey(msg tea.KeyMsg) plugin.Action {
 	return plugin.NoopAction()
 }
 
-func (s *Settings) SettingsOpenCmd() tea.Cmd                          { return nil }
-func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) { return false, plugin.NoopAction() }
+func (s *Settings) SettingsOpenCmd() tea.Cmd {
+	// Auto-fetch available calendars when credentials are configured.
+	credResult := ValidateCalendarResult()
+	if credResult.Status != "ok" {
+		return nil
+	}
+	s.fetchLoading = true
+	s.fetchError = ""
+	return func() tea.Msg {
+		cals, err := ListAvailableCalendars()
+		return calendarFetchResult{Calendars: cals, Err: err}
+	}
+}
+
+func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
+	if result, ok := msg.(calendarFetchResult); ok {
+		s.fetchLoading = false
+		if result.Err != nil {
+			s.fetchError = result.Err.Error()
+		} else {
+			s.fetchedCalendars = result.Calendars
+			s.fetchError = ""
+		}
+		return true, plugin.NoopAction()
+	}
+	return false, plugin.NoopAction()
+}
+
+// isCalendarConfigured returns true if the given calendar ID is already in the config.
+func (s *Settings) isCalendarConfigured(id string) bool {
+	for _, cal := range s.cfg.Calendar.Calendars {
+		if cal.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Settings) viewFetchMode() []string {
+	var lines []string
+	lines = append(lines, "")
+	lines = append(lines, s.styles.header.Render("  GOOGLE CALENDARS"))
+
+	if len(s.fetchedCalendars) == 0 {
+		lines = append(lines, s.styles.muted.Render("  No calendars found"))
+	} else {
+		for i, cal := range s.fetchedCalendars {
+			cursor := "  "
+			if i == s.fetchCursor {
+				cursor = s.styles.pointer.Render("> ")
+			}
+
+			configured := s.isCalendarConfigured(cal.ID)
+			toggle := s.styles.disabled.Render("[ ] ")
+			if configured {
+				toggle = s.styles.enabled.Render("[+] ")
+			}
+
+			label := cal.Summary
+			if label == "" {
+				label = cal.ID
+			}
+			if cal.Primary {
+				label += s.styles.muted.Render(" (primary)")
+			}
+
+			nameStyle := s.styles.itemName
+			if configured {
+				nameStyle = s.styles.enabled
+			}
+
+			lines = append(lines, fmt.Sprintf("  %s%s%s", cursor, toggle, nameStyle.Render(label)))
+		}
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, s.styles.muted.Render("  ↑↓ navigate · space toggle · esc back"))
+
+	return lines
+}
+
+func (s *Settings) handleFetchKey(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "up", "k":
+		if s.fetchCursor > 0 {
+			s.fetchCursor--
+		}
+		return plugin.NoopAction()
+	case "down", "j":
+		if s.fetchCursor < len(s.fetchedCalendars)-1 {
+			s.fetchCursor++
+		}
+		return plugin.NoopAction()
+	case " ", "enter":
+		if s.fetchCursor >= len(s.fetchedCalendars) {
+			return plugin.NoopAction()
+		}
+		cal := s.fetchedCalendars[s.fetchCursor]
+		if s.isCalendarConfigured(cal.ID) {
+			// Remove from config
+			out := s.cfg.Calendar.Calendars[:0]
+			for _, c := range s.cfg.Calendar.Calendars {
+				if c.ID != cal.ID {
+					out = append(out, c)
+				}
+			}
+			s.cfg.Calendar.Calendars = out
+			if s.cursor >= len(s.cfg.Calendar.Calendars) && s.cursor > 0 {
+				s.cursor = len(s.cfg.Calendar.Calendars) - 1
+			}
+			config.Save(s.cfg)
+			label := cal.Summary
+			if label == "" {
+				label = cal.ID
+			}
+			return plugin.Action{Type: plugin.ActionFlash, Payload: "Removed: " + label}
+		}
+		// Add to config
+		label := cal.Summary
+		if label == "" {
+			label = cal.ID
+		}
+		s.cfg.Calendar.Calendars = append(s.cfg.Calendar.Calendars, config.CalendarEntry{
+			ID:    cal.ID,
+			Label: label,
+		})
+		config.Save(s.cfg)
+		return plugin.Action{Type: plugin.ActionFlash, Payload: "Added: " + label}
+	case "esc":
+		s.fetchMode = false
+		return plugin.NoopAction()
+	}
+	return plugin.NoopAction()
+}
 
 func (s *Settings) handleAddKey(msg tea.KeyMsg) plugin.Action {
 	switch msg.Type {
