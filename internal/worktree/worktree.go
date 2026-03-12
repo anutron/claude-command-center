@@ -1,6 +1,7 @@
 package worktree
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"log"
@@ -199,7 +200,7 @@ func RemoveWorktree(repoRoot string, worktreePath string) error {
 	}
 	branch := branchMap[resolvedPath]
 
-	cmd := exec.Command("git", "worktree", "remove", worktreePath)
+	cmd := exec.Command("git", "worktree", "remove", "--force", worktreePath)
 	cmd.Dir = repoRoot
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git worktree remove failed: %s: %w", string(out), err)
@@ -319,11 +320,13 @@ func runSetup(cfg *ProjectConfig, repoRoot, worktreePath, branch string) {
 		"CCC_BRANCH="+branch,
 	)
 	for _, script := range cfg.Setup.Scripts {
-		cmd := exec.Command("sh", "-c", script)
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		cmd := exec.CommandContext(ctx, "sh", "-c", script)
 		cmd.Dir = worktreePath
 		cmd.Env = env
 		if out, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("warning: setup script %q failed: %s: %v", script, string(out), err)
 		}
+		cancel()
 	}
 }

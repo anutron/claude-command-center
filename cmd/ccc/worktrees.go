@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,6 +31,8 @@ func runWorktreesList() error {
 		fmt.Println("No known project paths. Launch some sessions first.")
 		return nil
 	}
+
+	paths = resolveRepoRoots(paths)
 
 	found := false
 	for _, p := range paths {
@@ -68,6 +71,8 @@ func runWorktreesPrune(args []string) error {
 			return err
 		}
 	}
+
+	paths = resolveRepoRoots(paths)
 
 	// Collect all worktrees to prune.
 	type pruneTarget struct {
@@ -125,6 +130,36 @@ func getKnownPaths() ([]string, error) {
 	defer database.Close()
 
 	return db.DBLoadPaths(database)
+}
+
+// gitRepoRootFor resolves a path to its git repository root.
+// Returns the original path if git resolution fails.
+func gitRepoRootFor(dir string) string {
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return dir
+	}
+	root := strings.TrimSpace(string(out))
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		return resolved
+	}
+	return root
+}
+
+// resolveRepoRoots resolves each path to its git repo root and deduplicates.
+func resolveRepoRoots(paths []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, p := range paths {
+		root := gitRepoRootFor(p)
+		if seen[root] {
+			continue
+		}
+		seen[root] = true
+		result = append(result, root)
+	}
+	return result
 }
 
 func formatAge(t time.Time) string {
