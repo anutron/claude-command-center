@@ -73,9 +73,24 @@ func (p *Plugin) renderContentForSlug(item *NavItem, width, height int) string {
 // handleContentKey dispatches key events to the correct content handler based on the selected slug.
 func (p *Plugin) handleContentKey(msg tea.KeyMsg) plugin.Action {
 	// Common escape: return to nav from content.
+	// But first, if the active provider is in editing mode, let it handle esc
+	// so that pressing Escape cancels the edit instead of jumping to nav.
 	if p.focusZone == FocusContent {
 		switch msg.String() {
 		case "esc", "left", "h":
+			// Give the active SettingsProvider a chance to handle esc first
+			// (e.g. to cancel an inline text edit like a GitHub repo input).
+			if sp := p.activeProvider(); sp != nil {
+				action := sp.HandleSettingsKey(msg)
+				if action.Type == plugin.ActionFlash {
+					p.flashMessage = action.Payload
+					p.flashMessageAt = currentTime()
+					return plugin.NoopAction()
+				}
+				if action.Type != plugin.ActionUnhandled {
+					return action
+				}
+			}
 			p.focusZone = FocusNav
 			return plugin.NoopAction()
 		}
