@@ -289,6 +289,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeTab = (m.activeTab + tab(len(m.tabs)) - 1) % tab(len(m.tabs))
 			cmd := m.activateTab(prev)
 			return m, cmd
+		case tea.KeyCtrlZ:
+			return m, tea.Suspend
 		case tea.KeyEsc:
 			// Let active plugin try esc first
 			action := m.activePlugin().HandleKey(msg)
