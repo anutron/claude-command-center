@@ -141,6 +141,10 @@ func migrateSchema(db *sql.DB) error {
 
 	// Add sort_order column to learned paths if missing (added for manual reordering)
 	_, _ = db.Exec(`ALTER TABLE cc_learned_paths ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`)
+
+	// Add worktree columns to bookmarks if missing (added for worktree sessions)
+	_, _ = db.Exec(`ALTER TABLE cc_bookmarks ADD COLUMN worktree_path TEXT`)
+	_, _ = db.Exec(`ALTER TABLE cc_bookmarks ADD COLUMN source_repo TEXT`)
 	// Backfill sort_order from added_at order for existing rows
 	_, _ = db.Exec(`UPDATE cc_learned_paths SET sort_order = (
 		SELECT COUNT(*) FROM cc_learned_paths p2 WHERE p2.added_at < cc_learned_paths.added_at

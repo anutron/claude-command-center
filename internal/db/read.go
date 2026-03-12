@@ -264,7 +264,7 @@ func dbLoadGeneratedAt(db *sql.DB) (time.Time, error) {
 
 // DBLoadBookmarks loads all bookmarked sessions from the database.
 func DBLoadBookmarks(db *sql.DB) ([]Session, error) {
-	rows, err := db.Query(`SELECT session_id, project, repo, branch, label, summary, created_at
+	rows, err := db.Query(`SELECT session_id, project, repo, branch, label, summary, created_at, worktree_path, source_repo
 		FROM cc_bookmarks ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
@@ -274,18 +274,20 @@ func DBLoadBookmarks(db *sql.DB) ([]Session, error) {
 	var sessions []Session
 	for rows.Next() {
 		var sid, createdStr string
-		var project, repo, branch, label, summary sql.NullString
-		if err := rows.Scan(&sid, &project, &repo, &branch, &label, &summary, &createdStr); err != nil {
+		var project, repo, branch, label, summary, worktreePath, sourceRepo sql.NullString
+		if err := rows.Scan(&sid, &project, &repo, &branch, &label, &summary, &createdStr, &worktreePath, &sourceRepo); err != nil {
 			return nil, err
 		}
 		sessions = append(sessions, Session{
-			SessionID: sid,
-			Project:   project.String,
-			Repo:      repo.String,
-			Branch:    branch.String,
-			Summary:   summary.String,
-			Created:   ParseTime(createdStr),
-			Type:      SessionBookmark,
+			SessionID:    sid,
+			Project:      project.String,
+			Repo:         repo.String,
+			Branch:       branch.String,
+			Summary:      summary.String,
+			Created:      ParseTime(createdStr),
+			Type:         SessionBookmark,
+			WorktreePath: worktreePath.String,
+			SourceRepo:   sourceRepo.String,
 		})
 	}
 	return sessions, rows.Err()

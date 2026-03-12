@@ -232,9 +232,10 @@ func DBInsertPendingAction(db *sql.DB, a PendingAction) error {
 // ---------------------------------------------------------------------------
 
 func DBInsertBookmark(db *sql.DB, b Session, label string) error {
-	_, err := db.Exec(`INSERT OR REPLACE INTO cc_bookmarks (session_id, project, repo, branch, label, summary, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		b.SessionID, b.Project, b.Repo, b.Branch, label, b.Summary, FormatTime(b.Created))
+	_, err := db.Exec(`INSERT OR REPLACE INTO cc_bookmarks (session_id, project, repo, branch, label, summary, created_at, worktree_path, source_repo)
+		VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''))`,
+		b.SessionID, b.Project, b.Repo, b.Branch, label, b.Summary, FormatTime(b.Created),
+		b.WorktreePath, b.SourceRepo)
 	if err != nil {
 		return fmt.Errorf("insert bookmark %s: %w", b.SessionID, err)
 	}

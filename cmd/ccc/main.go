@@ -85,6 +85,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "worktrees":
+			if err := runWorktrees(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "-h", "--help", "help":
 			printUsage()
 			return
@@ -199,10 +205,10 @@ func main() {
 			break
 		}
 
-		// Write the launch directory so the shell hook can cd to it after exit.
-		_ = os.WriteFile(filepath.Join(config.DataDir(), "last-dir"), []byte(fm.Launch.Dir), 0o644)
-
-		if err := tui.RunClaude(*fm.Launch); err != nil {
+		resolvedDir, err := tui.RunClaude(*fm.Launch)
+		// Write the resolved launch directory (may be worktree) so the shell hook can cd to it after exit.
+		_ = os.WriteFile(filepath.Join(config.DataDir(), "last-dir"), []byte(resolvedDir), 0o644)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Claude error: %v\n", err)
 		}
 		// Claude exited — loop back to TUI with returnedFromLaunch flag
@@ -224,6 +230,8 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  notify [event]       Notify running instances to reload (default: reload)")
 	fmt.Fprintln(os.Stderr, "  add-todo             Add a todo to the Command Center")
 	fmt.Fprintln(os.Stderr, "  add-bookmark         Save a session bookmark")
+	fmt.Fprintln(os.Stderr, "  worktrees            List CCC-managed git worktrees")
+	fmt.Fprintln(os.Stderr, "  worktrees prune      Remove all CCC worktrees (or prune [path] for one repo)")
 	fmt.Fprintln(os.Stderr, "  sessions             Same as default")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Options:")

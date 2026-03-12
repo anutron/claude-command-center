@@ -19,25 +19,29 @@ const (
 
 // Session represents a resumable Claude Code session (bookmark or winddown).
 type Session struct {
-	Filename  string
-	Project   string
-	Repo      string
-	Branch    string
-	Created   time.Time
-	Summary   string
-	Type      SessionType
-	SessionID string // Claude Code session UUID (bookmarks only)
+	Filename     string
+	Project      string
+	Repo         string
+	Branch       string
+	Created      time.Time
+	Summary      string
+	Type         SessionType
+	SessionID    string // Claude Code session UUID (bookmarks only)
+	WorktreePath string // worktree path if launched via worktree (bookmarks only)
+	SourceRepo   string // main repo path for worktree sessions (bookmarks only)
 }
 
 // Bookmark is the JSON structure stored in bookmarks.json.
 type Bookmark struct {
-	SessionID string `json:"session_id"`
-	Project   string `json:"project"`
-	Repo      string `json:"repo"`
-	Branch    string `json:"branch"`
-	Label     string `json:"label"`
-	Summary   string `json:"summary"`
-	Created   string `json:"created"`
+	SessionID    string `json:"session_id"`
+	Project      string `json:"project"`
+	Repo         string `json:"repo"`
+	Branch       string `json:"branch"`
+	Label        string `json:"label"`
+	Summary      string `json:"summary"`
+	Created      string `json:"created"`
+	WorktreePath string `json:"worktree_path,omitempty"`
+	SourceRepo   string `json:"source_repo,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

@@ -361,6 +361,9 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 		if prompt := action.Args["initial_prompt"]; prompt != "" {
 			la.InitialPrompt = prompt
 		}
+		if action.Args["worktree"] == "true" {
+			la.Worktree = true
+		}
 		m.Launch = la
 		// Broadcast LaunchMsg to all plugins before quitting.
 		var cmds []tea.Cmd
