@@ -455,8 +455,8 @@ func (m *Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // applyPalettePreview rebuilds styles and gradient from the given palette name.
 func (m *Model) applyPalettePreview(name string) {
 	pal := config.GetPalette(name, m.cfg.Colors)
-	m.styles = NewStyles(pal)
-	m.grad = NewGradientColors(pal)
+	*m.styles = NewStyles(pal)
+	*m.grad = NewGradientColors(pal)
 }
 
 // --- Step 3: Data Sources hub ---
