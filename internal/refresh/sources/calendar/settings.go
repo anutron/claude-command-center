@@ -204,7 +204,7 @@ func (s *Settings) SettingsView(width, height int) string {
 	hintParts := "  ↑↓ navigate · space toggle · c color · a add manually · x remove"
 	if len(s.fetchedCalendars) > 0 {
 		hintParts += " · f browse Google calendars"
-	} else if !s.fetchLoading && s.fetchError == "" {
+	} else if !s.fetchLoading {
 		hintParts += " · f fetch from Google"
 	}
 	lines = append(lines, s.styles.muted.Render(hintParts))
