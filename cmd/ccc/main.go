@@ -187,7 +187,7 @@ func main() {
 		if (isFirstRun || forceSetup) && !returnedFromLaunch {
 			m.SetOnboarding()
 		}
-		p := tea.NewProgram(m, tea.WithAltScreen())
+		p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus())
 
 		// Start unix socket listener for cross-instance notifications
 		cleanupNotify := tui.StartNotifyListener(p)

@@ -263,6 +263,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.broadcastMessage(msg, &cmds)
 		return m, tea.Batch(cmds...)
 
+	case tea.FocusMsg:
+		// Terminal regained focus — force a full screen repaint to clear ghost artifacts.
+		var cmds []tea.Cmd
+		cmds = append(cmds, tea.ClearScreen)
+		m.broadcastMessage(msg, &cmds)
+		return m, tea.Batch(cmds...)
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
