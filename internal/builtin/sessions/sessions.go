@@ -18,6 +18,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/ui"
+	"github.com/anutron/claude-command-center/internal/worktree"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -60,6 +61,12 @@ func (i sessionItem) Description() string {
 
 func (i sessionItem) FilterValue() string {
 	return i.session.Repo + " " + i.session.Branch + " " + i.session.Summary
+}
+
+// worktreeItem represents a CCC-managed worktree in the worktrees sub-tab.
+type worktreeItem struct {
+	info    worktree.WorktreeInfo
+	project string // display name (basename of repo root)
 }
 
 // ---------------------------------------------------------------------------
@@ -238,8 +245,15 @@ type Plugin struct {
 	spinner       spinner.Model
 	width         int
 	height        int
-	subTab        string // "new" or "resume"
+	subTab        string // "new", "resume", or "worktrees"
 	frame         int
+
+	// Worktrees sub-tab state
+	worktreeItems         []worktreeItem
+	worktreeCursor        int
+	worktreeWarning       string        // non-empty = show warning overlay
+	worktreeConfirmAction string        // "delete" or "prune"
+	worktreeConfirmTarget string        // display label for confirmation
 
 	pendingLaunchTodo *db.Todo
 }
@@ -360,6 +374,7 @@ func (p *Plugin) Routes() []plugin.Route {
 	return []plugin.Route{
 		{Slug: "new", Description: "New session sub-tab"},
 		{Slug: "resume", Description: "Resume session sub-tab"},
+		{Slug: "worktrees", Description: "Worktrees sub-tab"},
 	}
 }
 
@@ -370,6 +385,9 @@ func (p *Plugin) NavigateTo(route string, args map[string]string) {
 		p.subTab = "new"
 	case "resume":
 		p.subTab = "resume"
+	case "worktrees":
+		p.subTab = "worktrees"
+		p.refreshWorktreeList()
 	}
 	if todoTitle, ok := args["pending_todo_title"]; ok {
 		p.pendingLaunchTodo = &db.Todo{Title: todoTitle}
@@ -389,6 +407,8 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 	return []plugin.KeyBinding{
 		{Key: "n", Description: "New session sub-tab", Promoted: true},
 		{Key: "r", Description: "Resume session sub-tab", Promoted: true},
+		{Key: "t", Description: "Worktrees sub-tab", Promoted: true},
+		{Key: "w", Description: "Launch in worktree", Promoted: true},
 		{Key: "enter", Description: "Launch session", Promoted: true},
 		{Key: "shift+up/down", Description: "Reorder paths", Promoted: true},
 		{Key: "delete", Description: "Remove saved path/session", Promoted: true},
@@ -411,6 +431,16 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	}
 
+	// Handle worktree warning overlay (not a git repo)
+	if p.worktreeWarning != "" {
+		return p.handleWorktreeWarning(msg)
+	}
+
+	// Handle worktree confirm overlay (delete/prune)
+	if p.worktreeConfirmAction != "" {
+		return p.handleWorktreeConfirm(msg)
+	}
+
 	if p.confirming {
 		return p.handleConfirming(msg)
 	}
@@ -422,7 +452,15 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	case "r":
 		p.subTab = "resume"
 		return plugin.NoopAction()
+	case "t":
+		p.subTab = "worktrees"
+		p.refreshWorktreeList()
+		return plugin.NoopAction()
 	case "esc":
+		if p.subTab == "worktrees" {
+			p.subTab = "new"
+			return plugin.NoopAction()
+		}
 		if p.pendingLaunchTodo != nil {
 			p.pendingLaunchTodo = nil
 			if p.bus != nil {
@@ -442,6 +480,8 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleNewTab(msg)
 	case "resume":
 		return p.handleResumeTab(msg)
+	case "worktrees":
+		return p.handleWorktreesTab(msg)
 	}
 	return plugin.NoopAction()
 }
@@ -519,6 +559,8 @@ func (p *Plugin) View(width, height, frame int) string {
 		content = p.viewNewTab()
 	case "resume":
 		content = p.viewResumeTab()
+	case "worktrees":
+		content = p.viewWorktreesTab()
 	}
 
 	return content
@@ -548,6 +590,21 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 			p.pendingLaunchTodo = nil
 		}
 		return plugin.Action{Type: plugin.ActionLaunch, Args: args}
+
+	case "w":
+		item, ok := p.newList.SelectedItem().(newItem)
+		if !ok || item.isBrowse {
+			return plugin.NoopAction()
+		}
+		// Check if path is a git repo
+		if !isGitRepo(item.path) {
+			p.worktreeWarning = item.path
+			return plugin.NoopAction()
+		}
+		return plugin.Action{
+			Type: plugin.ActionLaunch,
+			Args: map[string]string{"dir": item.path, "worktree": "true"},
+		}
 
 	case "shift+up":
 		return p.movePathUp()
@@ -641,6 +698,152 @@ func (p *Plugin) handleConfirming(msg tea.KeyMsg) plugin.Action {
 	return plugin.NoopAction()
 }
 
+func (p *Plugin) handleWorktreesTab(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "enter":
+		if len(p.worktreeItems) == 0 {
+			return plugin.NoopAction()
+		}
+		wt := p.worktreeItems[p.worktreeCursor]
+		return plugin.Action{
+			Type: plugin.ActionLaunch,
+			Args: map[string]string{"dir": wt.info.Path},
+		}
+
+	case "d":
+		if len(p.worktreeItems) == 0 {
+			return plugin.NoopAction()
+		}
+		wt := p.worktreeItems[p.worktreeCursor]
+		label := filepath.Base(wt.info.RepoRoot) + "/" + filepath.Base(wt.info.Path)
+		p.worktreeConfirmAction = "delete"
+		p.worktreeConfirmTarget = label
+		return plugin.NoopAction()
+
+	case "p":
+		if len(p.worktreeItems) == 0 {
+			return plugin.NoopAction()
+		}
+		wt := p.worktreeItems[p.worktreeCursor]
+		// Count worktrees for this project
+		count := 0
+		for _, item := range p.worktreeItems {
+			if item.info.RepoRoot == wt.info.RepoRoot {
+				count++
+			}
+		}
+		p.worktreeConfirmAction = "prune"
+		p.worktreeConfirmTarget = fmt.Sprintf("%s? (%d worktrees)", filepath.Base(wt.info.RepoRoot), count)
+		return plugin.NoopAction()
+
+	case "up", "k":
+		if p.worktreeCursor > 0 {
+			p.worktreeCursor--
+		}
+		return plugin.NoopAction()
+
+	case "down", "j":
+		if p.worktreeCursor < len(p.worktreeItems)-1 {
+			p.worktreeCursor++
+		}
+		return plugin.NoopAction()
+	}
+
+	return plugin.NoopAction()
+}
+
+func (p *Plugin) handleWorktreeWarning(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "enter":
+		// Launch directly in the directory
+		dir := p.worktreeWarning
+		p.worktreeWarning = ""
+		return plugin.Action{
+			Type: plugin.ActionLaunch,
+			Args: map[string]string{"dir": dir},
+		}
+	case "esc":
+		p.worktreeWarning = ""
+		return plugin.NoopAction()
+	}
+	return plugin.NoopAction()
+}
+
+func (p *Plugin) handleWorktreeConfirm(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "y":
+		if len(p.worktreeItems) > 0 {
+			wt := p.worktreeItems[p.worktreeCursor]
+			switch p.worktreeConfirmAction {
+			case "delete":
+				_ = worktree.RemoveWorktree(wt.info.RepoRoot, wt.info.Path)
+				p.refreshWorktreeList()
+			case "prune":
+				_, _ = worktree.PruneWorktrees(wt.info.RepoRoot)
+				p.refreshWorktreeList()
+			}
+		}
+		p.worktreeConfirmAction = ""
+		p.worktreeConfirmTarget = ""
+		return plugin.NoopAction()
+	case "n", "esc":
+		p.worktreeConfirmAction = ""
+		p.worktreeConfirmTarget = ""
+		return plugin.NoopAction()
+	}
+	return plugin.NoopAction()
+}
+
+func (p *Plugin) refreshWorktreeList() {
+	p.worktreeItems = nil
+	seen := map[string]bool{}
+	for _, path := range p.paths {
+		// Resolve to git repo root to avoid duplicates
+		repoRoot := gitRepoRootFor(path)
+		if repoRoot == "" || seen[repoRoot] {
+			continue
+		}
+		seen[repoRoot] = true
+		wts, err := worktree.ListWorktrees(repoRoot)
+		if err != nil {
+			continue
+		}
+		project := filepath.Base(repoRoot)
+		for _, wt := range wts {
+			p.worktreeItems = append(p.worktreeItems, worktreeItem{
+				info:    wt,
+				project: project,
+			})
+		}
+	}
+	if p.worktreeCursor >= len(p.worktreeItems) {
+		p.worktreeCursor = max(0, len(p.worktreeItems)-1)
+	}
+}
+
+// isGitRepo checks if the given directory is inside a git repository.
+func isGitRepo(dir string) bool {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = dir
+	return cmd.Run() == nil
+}
+
+// gitRepoRootFor returns the git repo root for a directory, or "" if not a git repo.
+func gitRepoRootFor(dir string) string {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	root := strings.TrimSpace(string(out))
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return root
+	}
+	return resolved
+}
+
 // ---------------------------------------------------------------------------
 // Internal: views
 // ---------------------------------------------------------------------------
@@ -671,6 +874,74 @@ func (p *Plugin) viewResumeTab() string {
 	return lipgloss.JoinVertical(lipgloss.Left, listView, "", hints)
 }
 
+func (p *Plugin) viewWorktreesTab() string {
+	var lines []string
+
+	if len(p.worktreeItems) == 0 {
+		lines = append(lines, p.styles.hint.Render("  No worktrees found. Press w in the new tab to create one."))
+	} else {
+		currentProject := ""
+		for i, wt := range p.worktreeItems {
+			// Group header
+			if wt.project != currentProject {
+				if currentProject != "" {
+					lines = append(lines, "")
+				}
+				lines = append(lines, p.styles.sectionHeader.Render("  "+wt.project))
+				currentProject = wt.project
+			}
+
+			age := timeAgo(wt.info.CreatedAt)
+			branch := p.styles.branchYellow.Render(wt.info.Branch)
+			ageStr := p.styles.descMuted.Render("  " + age)
+
+			pointer := "  "
+			if i == p.worktreeCursor && p.grad != (ui.GradientColors{}) {
+				pointer = ui.PulsingPointerStyle(&p.grad, p.frame).Render("> ")
+			}
+
+			line := pointer + branch + ageStr
+			if i == p.worktreeCursor {
+				line = pointer + p.styles.selectedItem.Render(
+					p.styles.branchYellow.Render(wt.info.Branch)+"  "+p.styles.descMuted.Render(age),
+				)
+			}
+			lines = append(lines, line)
+		}
+	}
+
+	listView := strings.Join(lines, "\n")
+	hints := p.renderHints()
+	return lipgloss.JoinVertical(lipgloss.Left, listView, "", hints)
+}
+
+// timeAgo returns a human-readable duration since t.
+func timeAgo(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		m := int(d.Minutes())
+		if m == 1 {
+			return "1 min ago"
+		}
+		return fmt.Sprintf("%d mins ago", m)
+	case d < 24*time.Hour:
+		h := int(d.Hours())
+		if h == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", h)
+	default:
+		days := int(d.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	}
+}
+
 func (p *Plugin) renderHints() string {
 	var hints string
 	if p.confirming {
@@ -690,8 +961,29 @@ func (p *Plugin) renderHints() string {
 			noStr = p.styles.activeTab.Render("> no")
 		}
 		hints = p.styles.hint.Render(fmt.Sprintf("Remove %q from saved list?  ", label)) + yesStr + p.styles.hint.Render("  |  ") + noStr
+	} else if p.worktreeWarning != "" {
+		hints = p.styles.sectionHeader.Render("  ⚠ Not a git repository — worktrees require git.") + "\n" +
+			p.styles.hint.Render("  [enter] Launch directly in this directory   [esc] Cancel")
+	} else if p.worktreeConfirmAction != "" {
+		switch p.worktreeConfirmAction {
+		case "delete":
+			hints = p.styles.sectionHeader.Render(fmt.Sprintf("  Delete worktree %s?", p.worktreeConfirmTarget)) + "\n" +
+				p.styles.hint.Render("  [y] Yes, delete   [n] Cancel")
+		case "prune":
+			hints = p.styles.sectionHeader.Render(fmt.Sprintf("  Remove all worktrees for %s", p.worktreeConfirmTarget)) + "\n" +
+				p.styles.hint.Render("  [y] Yes, prune all   [n] Cancel")
+		}
 	} else {
-		hints = p.styles.hint.Render("n/r sub-tab   up/down navigate   shift+up/down reorder   enter launch   del remove   / filter   esc quit")
+		switch p.subTab {
+		case "new":
+			hints = p.styles.hint.Render("enter launch   w worktree   n new   r resume   t worktrees   shift+up/down reorder   del remove   / filter   esc quit")
+		case "resume":
+			hints = p.styles.hint.Render("enter resume   n new   r resume   t worktrees   del remove   / filter   esc quit")
+		case "worktrees":
+			hints = p.styles.hint.Render("enter launch   d delete   p prune   n new   r resume   esc back")
+		default:
+			hints = p.styles.hint.Render("n new   r resume   t worktrees   esc quit")
+		}
 	}
 	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hints)
 }
