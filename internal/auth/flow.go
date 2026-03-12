@@ -9,11 +9,43 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/oauth2"
 )
+
+// openBrowser is a package-level function for opening a URL in the browser.
+// It can be overridden in tests to prevent actual browser launches.
+var openBrowser = func(url string) error {
+	return exec.Command("open", url).Start()
+}
+
+// placeholderClientIDs is a set of known placeholder/test client IDs that should
+// never be used to launch a real OAuth flow.
+var placeholderClientIDs = map[string]bool{
+	"test-client-id": true,
+	"test":           true,
+	"placeholder":    true,
+	"your-client-id": true,
+	"CLIENT_ID":      true,
+	"CHANGE_ME":      true,
+}
+
+// ValidateClientCredentials checks that OAuth client credentials look real
+// before launching a browser-based auth flow. Returns an error if the
+// credentials are empty, placeholder, or obviously fake.
+func ValidateClientCredentials(clientID string) error {
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return fmt.Errorf("OAuth client ID is empty — configure credentials before authenticating")
+	}
+	if placeholderClientIDs[clientID] {
+		return fmt.Errorf("OAuth client ID %q is a placeholder — configure real credentials before authenticating", clientID)
+	}
+	return nil
+}
 
 // AuthFlowResultMsg is the tea.Msg returned when the OAuth flow completes.
 type AuthFlowResultMsg struct {
@@ -46,6 +78,11 @@ func AuthFlowCmd(ctx context.Context, opts AuthFlowOpts) tea.Cmd {
 func runAuthFlow(ctx context.Context, opts AuthFlowOpts) (*oauth2.Token, error) {
 	if opts.Timeout == 0 {
 		opts.Timeout = 5 * time.Minute
+	}
+
+	// Validate credentials before opening a browser.
+	if err := ValidateClientCredentials(opts.Config.ClientID); err != nil {
+		return nil, fmt.Errorf("invalid OAuth credentials: %w", err)
 	}
 
 	// Start listener on a random port.
@@ -86,7 +123,7 @@ func runAuthFlow(ctx context.Context, opts AuthFlowOpts) (*oauth2.Token, error) 
 
 	// Open browser.
 	url := conf.AuthCodeURL("state-token", oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent"))
-	_ = exec.Command("open", url).Start()
+	_ = openBrowser(url)
 
 	// Wait for callback, context cancellation, or timeout.
 	timer := time.NewTimer(opts.Timeout)
