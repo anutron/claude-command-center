@@ -1,6 +1,7 @@
 package github
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -135,8 +136,62 @@ func (s *Settings) SettingsView(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (s *Settings) SettingsOpenCmd() tea.Cmd                          { return nil }
-func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) { return false, plugin.NoopAction() }
+// ghUserFetchResult is the message returned by the async username fetch.
+type ghUserFetchResult struct {
+	Login string
+	Err   error
+}
+
+// fetchGHUsername is a variable for testability.
+var fetchGHUsername = func() (string, error) {
+	out, err := exec.Command("gh", "api", "/user").Output()
+	if err != nil {
+		return "", err
+	}
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := json.Unmarshal(out, &user); err != nil {
+		return "", fmt.Errorf("parse /user response: %w", err)
+	}
+	if user.Login == "" {
+		return "", fmt.Errorf("empty login returned")
+	}
+	return user.Login, nil
+}
+
+func (s *Settings) SettingsOpenCmd() tea.Cmd {
+	// Only fetch if authenticated and username is not already set.
+	if s.cfg.GitHub.Username != "" {
+		return nil
+	}
+	// Quick check: is gh authenticated?
+	if err := exec.Command("gh", "auth", "token").Run(); err != nil {
+		return nil
+	}
+	return func() tea.Msg {
+		login, err := fetchGHUsername()
+		return ghUserFetchResult{Login: login, Err: err}
+	}
+}
+
+func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
+	switch msg := msg.(type) {
+	case ghUserFetchResult:
+		if msg.Err != nil {
+			return true, plugin.Action{Type: plugin.ActionFlash, Payload: "Could not auto-fetch GitHub username: " + msg.Err.Error()}
+		}
+		// Only set if still empty (user may have typed one in the meantime).
+		if s.cfg.GitHub.Username == "" {
+			s.cfg.GitHub.Username = msg.Login
+			s.usernameInput.SetValue(msg.Login)
+			config.Save(s.cfg)
+			return true, plugin.Action{Type: plugin.ActionFlash, Payload: "GitHub username auto-detected: " + msg.Login}
+		}
+		return true, plugin.NoopAction()
+	}
+	return false, plugin.NoopAction()
+}
 
 // DoctorChecks implements plugin.DoctorProvider for GitHub.
 func (s *Settings) DoctorChecks(opts plugin.DoctorOpts) []plugin.DoctorCheck {
