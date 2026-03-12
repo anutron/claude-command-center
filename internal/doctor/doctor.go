@@ -10,18 +10,15 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/plugin"
 )
 
-// DoctorCheck represents a single diagnostic check result.
-type DoctorCheck struct {
-	Name    string
-	OK      bool
-	Message string
-}
-
 // RunDoctor performs all diagnostic checks and prints results.
-func RunDoctor() error {
-	checks := runDoctorChecks()
+// It runs built-in checks (config, database, binaries) plus any checks from
+// registered DoctorProvider instances.
+func RunDoctor(providers []plugin.DoctorProvider, live bool) error {
+	opts := plugin.DoctorOpts{Live: live}
+	checks := runDoctorChecks(providers, opts)
 
 	okCount := 0
 	for _, c := range checks {
@@ -29,6 +26,8 @@ func RunDoctor() error {
 		if c.OK {
 			status = "[OK]"
 			okCount++
+		} else if c.Inconclusive {
+			status = "[??]"
 		}
 		fmt.Printf("  %s %s\n", status, c.Name)
 		if !c.OK && c.Message != "" {
@@ -43,7 +42,15 @@ func RunDoctor() error {
 	return nil
 }
 
-func runDoctorChecks() []DoctorCheck {
+// DoctorCheck represents a single diagnostic check result.
+type DoctorCheck struct {
+	Name         string
+	OK           bool
+	Message      string
+	Inconclusive bool
+}
+
+func runDoctorChecks(providers []plugin.DoctorProvider, opts plugin.DoctorOpts) []DoctorCheck {
 	var checks []DoctorCheck
 
 	// 1. Config file
@@ -52,22 +59,34 @@ func runDoctorChecks() []DoctorCheck {
 	// 2. Database
 	checks = append(checks, checkDatabase())
 
-	// 3. Calendar credentials
-	checks = append(checks, checkCalendar())
+	// 3. Provider checks (calendar, gmail, github, granola, etc.)
+	for _, p := range providers {
+		for _, pc := range p.DoctorChecks(opts) {
+			dc := DoctorCheck{
+				Name:         pc.Name,
+				Inconclusive: pc.Inconclusive,
+			}
+			if pc.Result.Status == "ok" {
+				dc.OK = true
+				dc.Message = pc.Result.Message
+			} else {
+				dc.OK = false
+				dc.Message = pc.Result.Message
+				if pc.Result.Hint != "" {
+					dc.Message += " — " + pc.Result.Hint
+				}
+			}
+			checks = append(checks, dc)
+		}
+	}
 
-	// 4. GitHub CLI
-	checks = append(checks, checkGitHub())
-
-	// 5. Granola
-	checks = append(checks, checkGranola())
-
-	// 6. ccc-refresh binary
+	// 4. ccc-refresh binary
 	checks = append(checks, checkRefreshBinary())
 
-	// 7. claude CLI
+	// 5. claude CLI
 	checks = append(checks, checkClaudeCLI())
 
-	// 8. Data freshness
+	// 6. Data freshness
 	checks = append(checks, checkDataFreshness())
 
 	return checks
@@ -89,27 +108,6 @@ func checkDatabase() DoctorCheck {
 	}
 	database.Close()
 	return DoctorCheck{Name: "Database", OK: true}
-}
-
-func checkCalendar() DoctorCheck {
-	if err := config.ValidateCalendar(); err != nil {
-		return DoctorCheck{Name: "Calendar credentials", OK: false, Message: err.Error()}
-	}
-	return DoctorCheck{Name: "Calendar credentials", OK: true}
-}
-
-func checkGitHub() DoctorCheck {
-	if err := config.ValidateGitHub(); err != nil {
-		return DoctorCheck{Name: "GitHub CLI", OK: false, Message: err.Error()}
-	}
-	return DoctorCheck{Name: "GitHub CLI", OK: true}
-}
-
-func checkGranola() DoctorCheck {
-	if err := config.ValidateGranola(); err != nil {
-		return DoctorCheck{Name: "Granola", OK: false, Message: err.Error()}
-	}
-	return DoctorCheck{Name: "Granola", OK: true}
 }
 
 func checkRefreshBinary() DoctorCheck {

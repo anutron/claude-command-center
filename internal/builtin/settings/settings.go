@@ -5,12 +5,14 @@ package settings
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
 	ghsettings "github.com/anutron/claude-command-center/internal/refresh/sources/github"
+	"github.com/anutron/claude-command-center/internal/refresh/sources/gmail"
 	"github.com/anutron/claude-command-center/internal/refresh/sources/granola"
 	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -218,6 +220,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		p.width = msg.Width
 		p.height = msg.Height
 		return false, plugin.NoopAction()
+	case datasourceRecheckResult:
+		p.applyRecheckResult(msg)
+		return true, plugin.NoopAction()
 	case systemActionResult:
 		p.handleSystemActionResult(msg)
 		return true, plugin.NoopAction()
@@ -344,7 +349,12 @@ func (p *Plugin) View(width, height, frame int) string {
 	case FocusNav:
 		help = p.styles.muted.Render("  up/down navigate  space toggle  enter/right open  esc back")
 	case FocusContent:
-		help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle")
+		item := p.selectedNavItem()
+		if item != nil && item.Kind == "datasource" {
+			help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle  r re-check")
+		} else {
+			help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle")
+		}
 	case FocusEditing:
 		help = p.styles.muted.Render("  enter save  esc cancel")
 	case FocusForm:
@@ -430,6 +440,84 @@ func (p *Plugin) validateDataSource(slug string) error {
 		return config.ValidateGmail()
 	}
 	return nil
+}
+
+// validateDataSourceResult returns a tiered ValidationResult for a data source.
+// It prefers DoctorProvider checks from the provider, falling back to the
+// top-level ValidateXResult functions for calendar/gmail, and then to the
+// legacy error-based validateDataSource for others.
+func (p *Plugin) validateDataSourceResult(slug string) plugin.ValidationResult {
+	// Try DoctorProvider on the SettingsProvider first
+	if sp, ok := p.providers[slug]; ok {
+		if dp, ok := sp.(plugin.DoctorProvider); ok {
+			checks := dp.DoctorChecks(plugin.DoctorOpts{})
+			if len(checks) > 0 {
+				return checks[0].Result
+			}
+		}
+	}
+
+	// Fallback to standalone ValidateXResult functions
+	switch slug {
+	case "calendar":
+		return calendar.ValidateCalendarResult()
+	case "gmail":
+		return gmail.ValidateGmailResult()
+	case "slack":
+		return validateSlackResult()
+	}
+
+	// Final fallback: legacy error-based check
+	if err := p.validateDataSource(slug); err != nil {
+		return plugin.ValidationResult{
+			Status:  "missing",
+			Message: err.Error(),
+			Hint:    err.Error(),
+		}
+	}
+	return plugin.ValidationResult{
+		Status:  "ok",
+		Message: slug + " credentials configured",
+	}
+}
+
+// applyRecheckResult updates the NavItem for a data source after a re-check.
+func (p *Plugin) applyRecheckResult(msg datasourceRecheckResult) {
+	for i := range p.navCategories {
+		for j := range p.navCategories[i].Items {
+			item := &p.navCategories[i].Items[j]
+			if item.Slug == msg.Slug && item.Kind == "datasource" {
+				item.ValidationStatus = msg.Result.Status
+				item.ValidationMsg = msg.Result.Message
+				item.ValidHint = msg.Result.Hint
+				if msg.Result.Status == "ok" {
+					v := true
+					item.Valid = &v
+				} else if msg.Result.Status != "" {
+					v := false
+					item.Valid = &v
+				}
+				p.flashMessage = msg.Result.Message
+				p.flashMessageAt = time.Now()
+				return
+			}
+		}
+	}
+}
+
+// validateSlackResult performs a structural check on Slack credentials.
+func validateSlackResult() plugin.ValidationResult {
+	if os.Getenv("SLACK_BOT_TOKEN") == "" {
+		return plugin.ValidationResult{
+			Status:  "missing",
+			Message: "SLACK_BOT_TOKEN not set",
+			Hint:    "Export SLACK_BOT_TOKEN in your shell profile",
+		}
+	}
+	return plugin.ValidationResult{
+		Status:  "ok",
+		Message: "Slack token configured",
+	}
 }
 
 func renderSwatches(pal config.Palette) string {

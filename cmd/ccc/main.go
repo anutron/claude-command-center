@@ -15,6 +15,10 @@ import (
 	"github.com/anutron/claude-command-center/internal/external"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
+	"github.com/anutron/claude-command-center/internal/refresh/sources/github"
+	"github.com/anutron/claude-command-center/internal/refresh/sources/gmail"
+	"github.com/anutron/claude-command-center/internal/refresh/sources/granola"
 	"github.com/anutron/claude-command-center/internal/tui"
 )
 
@@ -26,7 +30,24 @@ func main() {
 		case "doctor":
 			fmt.Println("Claude Command Center — Doctor")
 			fmt.Println()
-			if err := doctor.RunDoctor(); err != nil {
+			live := false
+			for _, a := range os.Args[2:] {
+				if a == "--live" {
+					live = true
+				}
+			}
+			cfg, err := config.Load()
+			if err != nil {
+				cfg = config.DefaultConfig()
+			}
+			pal := config.GetPalette(cfg.Palette, cfg.Colors)
+			providers := []plugin.DoctorProvider{
+				calendar.NewSettings(cfg, pal),
+				gmail.NewDoctor(cfg.Gmail),
+				github.NewSettings(cfg, pal),
+				granola.NewSettings(cfg, pal),
+			}
+			if err := doctor.RunDoctor(providers, live); err != nil {
 				os.Exit(1)
 			}
 			return
@@ -197,7 +218,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "Commands:")
 	fmt.Fprintln(os.Stderr, "  (default)            Launch session picker")
 	fmt.Fprintln(os.Stderr, "  setup                Run interactive setup wizard")
-	fmt.Fprintln(os.Stderr, "  doctor               Check system health")
+	fmt.Fprintln(os.Stderr, "  doctor [--live]       Check system health (--live hits network endpoints)")
 	fmt.Fprintln(os.Stderr, "  install-schedule     Install launchd plist for background refresh")
 	fmt.Fprintln(os.Stderr, "  uninstall-schedule   Remove background refresh schedule")
 	fmt.Fprintln(os.Stderr, "  notify [event]       Notify running instances to reload (default: reload)")

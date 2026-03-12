@@ -29,14 +29,16 @@ type Category struct {
 
 // NavItem represents a single entry in the sidebar navigation.
 type NavItem struct {
-	Label       string
-	Slug        string // unique: "banner", "palette", "calendar", "system-schedule", etc.
-	Kind        string // "appearance", "plugin", "datasource", "system"
-	Description string // short description shown in content pane
-	Enabled     *bool  // nil = no toggle, non-nil = on/off
-	Toggleable  bool
-	Valid       *bool
-	ValidHint   string
+	Label            string
+	Slug             string // unique: "banner", "palette", "calendar", "system-schedule", etc.
+	Kind             string // "appearance", "plugin", "datasource", "system"
+	Description      string // short description shown in content pane
+	Enabled          *bool  // nil = no toggle, non-nil = on/off
+	Toggleable       bool
+	Valid            *bool
+	ValidHint        string
+	ValidationStatus string // "ok", "missing", "incomplete", "no_client", or "" (unknown)
+	ValidationMsg    string // human-readable validation message
 }
 
 // rebuildNav populates the sidebar categories from config and registry.
@@ -135,13 +137,16 @@ func (p *Plugin) rebuildNav() {
 			Enabled:     &enabled,
 			Toggleable:  ds.toggle,
 		}
-		// Validate credentials
-		if err := p.validateDataSource(ds.slug); err != nil {
-			v := false
-			item.Valid = &v
-			item.ValidHint = err.Error()
-		} else {
+		// Validate credentials using DoctorProvider if available, else legacy check
+		vr := p.validateDataSourceResult(ds.slug)
+		item.ValidationStatus = vr.Status
+		item.ValidationMsg = vr.Message
+		item.ValidHint = vr.Hint
+		if vr.Status == "ok" {
 			v := true
+			item.Valid = &v
+		} else if vr.Status != "" {
+			v := false
 			item.Valid = &v
 		}
 		dsItems = append(dsItems, item)
@@ -237,13 +242,23 @@ func (p *Plugin) viewSidebar(width, height int, focus FocusZone) string {
 				}
 			}
 
-			// Validation indicator
+			// Validation indicator (tiered by status)
 			valid := ""
-			if item.Valid != nil {
-				if *item.Valid {
-					valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")).Render("\u2713")
-				} else {
-					valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Render("\u2717")
+			switch item.ValidationStatus {
+			case "ok":
+				valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")).Render("\u2713")
+			case "incomplete":
+				valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")).Render("\u26a0")
+			case "missing", "no_client":
+				valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Render("\u2717")
+			default:
+				// Fallback to legacy Valid field
+				if item.Valid != nil {
+					if *item.Valid {
+						valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")).Render("\u2713")
+					} else {
+						valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Render("\u2717")
+					}
 				}
 			}
 
