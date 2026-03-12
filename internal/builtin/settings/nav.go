@@ -18,6 +18,7 @@ const (
 	FocusNav FocusZone = iota
 	FocusContent
 	FocusEditing
+	FocusForm
 )
 
 // Category groups NavItems under a heading.

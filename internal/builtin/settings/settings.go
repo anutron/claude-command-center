@@ -15,6 +15,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -48,6 +49,9 @@ type Plugin struct {
 
 	// System content pane cursor positions (keyed by slug)
 	systemCursors map[string]int
+
+	// Active huh form (nil when no form is displayed)
+	activeForm *huh.Form
 
 	// Flash message
 	flashMessage   string
@@ -169,6 +173,41 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleNavKey(msg)
 	case FocusContent, FocusEditing:
 		return p.handleContentKey(msg)
+	case FocusForm:
+		return p.handleFormKey(msg)
+	}
+	return plugin.NoopAction()
+}
+
+// handleFormKey processes key events when a huh form is focused.
+func (p *Plugin) handleFormKey(msg tea.KeyMsg) plugin.Action {
+	if p.activeForm == nil {
+		p.focusZone = FocusContent
+		return plugin.NoopAction()
+	}
+
+	// Allow escape to cancel the form
+	if msg.String() == "esc" {
+		p.activeForm = nil
+		p.focusZone = FocusContent
+		return plugin.NoopAction()
+	}
+
+	// Forward key to the form
+	form, cmd := p.activeForm.Update(msg)
+	if f, ok := form.(*huh.Form); ok {
+		p.activeForm = f
+	}
+
+	// Check if form completed
+	if p.activeForm.State == huh.StateCompleted {
+		// Leave form active for the caller to read values, but return to content
+		p.focusZone = FocusContent
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	}
+
+	if cmd != nil {
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	}
 	return plugin.NoopAction()
 }
@@ -190,6 +229,26 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.bannerNameInput.Blur()
 			p.bannerSubtitleInput.SetValue(p.cfg.Subtitle)
 			p.bannerSubtitleInput.Blur()
+		}
+		// Cancel any active form
+		if p.activeForm != nil {
+			p.activeForm = nil
+			p.focusZone = FocusContent
+		}
+		return true, plugin.NoopAction()
+	}
+
+	// Route non-key messages to the active form when in FocusForm.
+	if p.focusZone == FocusForm && p.activeForm != nil {
+		form, cmd := p.activeForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			p.activeForm = f
+		}
+		if p.activeForm.State == huh.StateCompleted {
+			p.focusZone = FocusContent
+		}
+		if cmd != nil {
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
 		return true, plugin.NoopAction()
 	}
@@ -288,6 +347,8 @@ func (p *Plugin) View(width, height, frame int) string {
 		help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle")
 	case FocusEditing:
 		help = p.styles.muted.Render("  enter save  esc cancel")
+	case FocusForm:
+		help = p.styles.muted.Render("  tab next field  enter submit  esc cancel")
 	}
 
 	parts := []string{layout}

@@ -19,7 +19,7 @@ func (p *Plugin) viewContent(width, height int) string {
 
 	// Pick panel style based on focus zone.
 	var panelStyle lipgloss.Style
-	if p.focusZone == FocusContent || p.focusZone == FocusEditing {
+	if p.focusZone == FocusContent || p.focusZone == FocusEditing || p.focusZone == FocusForm {
 		panelStyle = p.styles.contentFocused
 	} else {
 		panelStyle = p.styles.contentUnfocused
