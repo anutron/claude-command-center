@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/anutron/claude-command-center/internal/refresh"
+	"github.com/anutron/claude-command-center/internal/auth"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	gcal "google.golang.org/api/calendar/v3"
@@ -32,7 +32,7 @@ func loadCalendarAuth() (oauth2.TokenSource, error) {
 	credsPath := filepath.Join(dir, "credentials.json")
 	tokenPath := filepath.Join(dir, "token.json")
 
-	var tf refresh.GoogleTokenFile
+	var tf auth.GoogleTokenFile
 	var clientID, clientSecret string
 
 	if data, err := os.ReadFile(credsPath); err == nil {
@@ -53,14 +53,14 @@ func loadCalendarAuth() (oauth2.TokenSource, error) {
 		clientID = os.Getenv("GOOGLE_CLIENT_ID")
 		clientSecret = os.Getenv("GOOGLE_CLIENT_SECRET")
 		if clientID == "" || clientSecret == "" {
-			clientID, clientSecret = refresh.LoadCalendarCredsFromClaudeConfig()
+			clientID, clientSecret = auth.LoadCalendarCredsFromClaudeConfig()
 		}
 		if clientID == "" || clientSecret == "" {
 			return nil, fmt.Errorf("no Google Calendar client credentials: set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET or migrate to credentials.json")
 		}
 	}
 
-	conf := refresh.LoadGoogleOAuth2Config(clientID, clientSecret, gcal.CalendarScope, gcal.CalendarEventsScope)
+	conf := auth.LoadGoogleOAuth2Config(clientID, clientSecret, gcal.CalendarScope, gcal.CalendarEventsScope)
 	tok := tf.ToOAuth2Token()
 	return conf.TokenSource(context.Background(), tok), nil
 }
@@ -76,7 +76,7 @@ func RunCalendarAuth() error {
 	clientID := os.Getenv("GOOGLE_CLIENT_ID")
 	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
 	if clientID == "" {
-		clientID, clientSecret = refresh.LoadCalendarCredsFromClaudeConfig()
+		clientID, clientSecret = auth.LoadCalendarCredsFromClaudeConfig()
 	}
 	if clientID == "" {
 		return fmt.Errorf("no Google Calendar client credentials found")
@@ -138,7 +138,7 @@ func RunCalendarAuth() error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create credentials dir: %w", err)
 	}
-	creds := refresh.GoogleTokenFile{
+	creds := auth.GoogleTokenFile{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		AccessToken:  tok.AccessToken,
@@ -169,7 +169,7 @@ func MigrateCalendarCredentials() error {
 		return fmt.Errorf("no token.json to migrate: %w", err)
 	}
 
-	var tf refresh.GoogleTokenFile
+	var tf auth.GoogleTokenFile
 	if err := json.Unmarshal(data, &tf); err != nil {
 		return fmt.Errorf("parsing token.json: %w", err)
 	}
@@ -177,7 +177,7 @@ func MigrateCalendarCredentials() error {
 	clientID := os.Getenv("GOOGLE_CLIENT_ID")
 	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
 	if clientID == "" {
-		clientID, clientSecret = refresh.LoadCalendarCredsFromClaudeConfig()
+		clientID, clientSecret = auth.LoadCalendarCredsFromClaudeConfig()
 	}
 	if clientID == "" {
 		return fmt.Errorf("cannot migrate: no Google Calendar client credentials found")

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
@@ -134,7 +135,7 @@ func loadGmailAuth(advanced bool) (oauth2.TokenSource, error) {
 		return nil, fmt.Errorf("no gmail token at %s: %w", path, err)
 	}
 
-	var tf refresh.GoogleTokenFile
+	var tf auth.GoogleTokenFile
 	if err := json.Unmarshal(data, &tf); err != nil {
 		return nil, fmt.Errorf("parsing gmail token: %w", err)
 	}
@@ -156,7 +157,7 @@ func loadGmailAuth(advanced bool) (oauth2.TokenSource, error) {
 		scopes = []string{gmail.GmailReadonlyScope}
 	}
 
-	conf := refresh.LoadGoogleOAuth2Config(clientID, clientSecret, scopes...)
+	conf := auth.LoadGoogleOAuth2Config(clientID, clientSecret, scopes...)
 	tok := tf.ToOAuth2Token()
 	return conf.TokenSource(context.Background(), tok), nil
 }

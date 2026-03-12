@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 )
@@ -30,7 +31,7 @@ func Run(opts Options) error {
 		log.SetOutput(os.Stderr)
 	}
 
-	LoadEnvFile()
+	auth.LoadEnvFile()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
