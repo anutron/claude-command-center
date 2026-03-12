@@ -3,6 +3,7 @@ package external
 import (
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -51,6 +52,17 @@ func (ep *ExternalPlugin) Init(ctx plugin.Context) error {
 }
 
 func (ep *ExternalPlugin) startProcess() error {
+	// Check if the command exists before attempting to launch.
+	// Extract the first word as the binary name (ignore arguments).
+	cmdName := ep.command
+	if parts := strings.Fields(ep.command); len(parts) > 0 {
+		cmdName = parts[0]
+	}
+	if _, err := exec.LookPath(cmdName); err != nil {
+		ep.errState = fmt.Sprintf("command %q not found on PATH", cmdName)
+		return fmt.Errorf("command not found: %w", err)
+	}
+
 	proc := &Process{}
 	if err := proc.Start(ep.command, ep.ctx.Logger); err != nil {
 		ep.errState = fmt.Sprintf("failed to start: %v", err)
@@ -292,14 +304,24 @@ func (ep *ExternalPlugin) NavigateTo(route string, args map[string]string) {
 func (ep *ExternalPlugin) errorView() string {
 	name := ep.slug
 	if name == "" {
+		name = ep.tabName
+	}
+	if name == "" {
 		name = ep.command
 	}
-	lines := fmt.Sprintf(
+
+	notFound := strings.Contains(ep.errState, "not found on PATH") ||
+		strings.Contains(ep.errState, "exit status 127")
+
+	if notFound {
+		return fmt.Sprintf(
+			"\n  Plugin %q — not installed\n\n  Command: %s\n  Error: %s\n\n  Press 'r' to retry\n",
+			name, ep.command, ep.errState,
+		)
+	}
+
+	return fmt.Sprintf(
 		"\n  Plugin %q crashed\n\n  Command: %s\n  Error: %s\n\n  Press 'r' to restart\n",
 		name, ep.command, ep.errState,
 	)
-	if strings.Contains(ep.errState, "exit status 127") {
-		lines += fmt.Sprintf("\n  Hint: command %q not found on PATH\n", ep.command)
-	}
-	return lines
 }

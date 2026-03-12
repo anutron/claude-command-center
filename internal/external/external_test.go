@@ -218,6 +218,35 @@ done
 	}
 }
 
+func TestMissingBinaryGraceful(t *testing.T) {
+	ctx := makeCtx()
+
+	ep := &ExternalPlugin{command: "nonexistent-binary-xyz", tabName: "Missing Plugin"}
+	err := ep.Init(ctx)
+	if err == nil {
+		t.Fatal("expected error for missing binary, got nil")
+	}
+
+	// Should set errState with a clear "not found" message
+	if !strings.Contains(ep.errState, "not found on PATH") {
+		t.Errorf("errState = %q, want it to contain 'not found on PATH'", ep.errState)
+	}
+
+	// Error view should say "not installed", not "crashed"
+	view := ep.errorView()
+	if !strings.Contains(view, "not installed") {
+		t.Errorf("errorView should contain 'not installed', got: %s", view)
+	}
+	if strings.Contains(view, "crashed") {
+		t.Errorf("errorView should NOT contain 'crashed' for missing binary, got: %s", view)
+	}
+
+	// Should use tabName since slug is empty
+	if !strings.Contains(view, "Missing Plugin") {
+		t.Errorf("errorView should show tabName, got: %s", view)
+	}
+}
+
 func TestAsyncEvents(t *testing.T) {
 	script := `#!/bin/bash
 read line
