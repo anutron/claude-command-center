@@ -38,8 +38,8 @@ type tabEntry struct {
 // Model is the main Bubbletea model — a thin host that dispatches to plugins.
 type Model struct {
 	cfg    *config.Config
-	styles Styles
-	grad   GradientColors
+	styles *Styles
+	grad   *GradientColors
 
 	tabs      []tabEntry
 	activeTab tab
@@ -72,8 +72,10 @@ type Model struct {
 // Optional extPlugins are appended as additional tabs.
 func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger plugin.Logger, l llm.LLM, extPlugins ...plugin.Plugin) Model {
 	pal := config.GetPalette(cfg.Palette, cfg.Colors)
-	styles := NewStyles(pal)
-	grad := NewGradientColors(pal)
+	styles := &Styles{}
+	*styles = NewStyles(pal)
+	grad := &GradientColors{}
+	*grad = NewGradientColors(pal)
 
 	sessPlug := &sessions.Plugin{}
 	ccPlug := commandcenter.New()
@@ -92,8 +94,8 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	ctx := plugin.Context{
 		DB:     database,
 		Config: cfg,
-		Styles: &styles,
-		Grad:   &grad,
+		Styles: styles,
+		Grad:   grad,
 		Bus:    bus,
 		Logger: logger,
 		DBPath: config.DBPath(),
@@ -441,11 +443,11 @@ func (m Model) View() string {
 		// During onboarding, always show banner for preview (unless user toggled it off).
 		var banner string
 		if m.cfg.BannerVisible() {
-			banner = topPad + renderGradientBanner(&m.grad, m.cfg.Name, m.cfg.Subtitle, ui.ContentMaxWidth, m.frame)
+			banner = topPad + renderGradientBanner(m.grad, m.cfg.Name, m.cfg.Subtitle, ui.ContentMaxWidth, m.frame)
 		} else {
 			banner = topPad
 		}
-		content := m.onboardingState.view(m.width, m.height, &m.styles, &m.grad, m.cfg, m.frame)
+		content := m.onboardingState.view(m.width, m.height, m.styles, m.grad, m.cfg, m.frame)
 		page := lipgloss.JoinVertical(lipgloss.Left, banner, "", content)
 		if m.width > 0 && m.height > 0 {
 			return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, page)
@@ -455,7 +457,7 @@ func (m Model) View() string {
 
 	var sections []string
 	if m.cfg.BannerVisible() {
-		sections = append(sections, topPad+renderGradientBanner(&m.grad, m.cfg.Name, m.cfg.Subtitle, ui.ContentMaxWidth, m.frame))
+		sections = append(sections, topPad+renderGradientBanner(m.grad, m.cfg.Name, m.cfg.Subtitle, ui.ContentMaxWidth, m.frame))
 	}
 
 	tabBar := m.renderTabBar()
