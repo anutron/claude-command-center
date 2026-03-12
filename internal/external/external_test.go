@@ -247,6 +247,42 @@ func TestMissingBinaryGraceful(t *testing.T) {
 	}
 }
 
+func TestResolveCommandPrefixFallback(t *testing.T) {
+	// Create a temp dir with a "ccc-fakeplug" binary
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "ccc-fakeplug")
+	if err := os.WriteFile(binPath, []byte("#!/bin/bash\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Add temp dir to PATH
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", dir+":"+origPath)
+
+	// "fakeplug" should resolve to "ccc-fakeplug"
+	resolved := resolveCommand("fakeplug")
+	if resolved != "ccc-fakeplug" {
+		t.Errorf("resolveCommand(%q) = %q, want %q", "fakeplug", resolved, "ccc-fakeplug")
+	}
+
+	// "ccc-fakeplug" should stay as-is
+	resolved = resolveCommand("ccc-fakeplug")
+	if resolved != "ccc-fakeplug" {
+		t.Errorf("resolveCommand(%q) = %q, want %q", "ccc-fakeplug", resolved, "ccc-fakeplug")
+	}
+
+	// "nonexistent" should stay as-is (no fallback found)
+	resolved = resolveCommand("nonexistent")
+	if resolved != "nonexistent" {
+		t.Errorf("resolveCommand(%q) = %q, want %q", "nonexistent", resolved, "nonexistent")
+	}
+
+	// "fakeplug --some-arg" should resolve to "ccc-fakeplug --some-arg"
+	resolved = resolveCommand("fakeplug --some-arg")
+	if resolved != "ccc-fakeplug --some-arg" {
+		t.Errorf("resolveCommand(%q) = %q, want %q", "fakeplug --some-arg", resolved, "ccc-fakeplug --some-arg")
+	}
+}
+
 func TestAsyncEvents(t *testing.T) {
 	script := `#!/bin/bash
 read line
