@@ -315,6 +315,55 @@ func DBLoadPaths(db *sql.DB) ([]string, error) {
 	return paths, rows.Err()
 }
 
+// DBLoadSourceSync loads the sync status for a given data source.
+func DBLoadSourceSync(d *sql.DB, source string) (*SourceSync, error) {
+	var ss SourceSync
+	var lastSuccess, lastError sql.NullString
+	var updatedAt string
+	err := d.QueryRow(`SELECT source, last_success, last_error, updated_at FROM cc_source_sync WHERE source = ?`, source).
+		Scan(&ss.Source, &lastSuccess, &lastError, &updatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if lastSuccess.Valid && lastSuccess.String != "" {
+		t := ParseTime(lastSuccess.String)
+		ss.LastSuccess = &t
+	}
+	ss.LastError = lastError.String
+	ss.UpdatedAt = ParseTime(updatedAt)
+	return &ss, nil
+}
+
+// DBLoadAllSourceSync loads sync status for all tracked sources.
+func DBLoadAllSourceSync(d *sql.DB) (map[string]*SourceSync, error) {
+	rows, err := d.Query(`SELECT source, last_success, last_error, updated_at FROM cc_source_sync`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]*SourceSync)
+	for rows.Next() {
+		var ss SourceSync
+		var lastSuccess, lastError sql.NullString
+		var updatedAt string
+		if err := rows.Scan(&ss.Source, &lastSuccess, &lastError, &updatedAt); err != nil {
+			return nil, err
+		}
+		if lastSuccess.Valid && lastSuccess.String != "" {
+			t := ParseTime(lastSuccess.String)
+			ss.LastSuccess = &t
+		}
+		ss.LastError = lastError.String
+		ss.UpdatedAt = ParseTime(updatedAt)
+		result[ss.Source] = &ss
+	}
+	return result, rows.Err()
+}
+
 // DBIsEmpty returns true if no todos exist in the database yet.
 func DBIsEmpty(db *sql.DB) bool {
 	var count int

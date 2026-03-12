@@ -49,6 +49,13 @@ func Run(opts Options) error {
 		warnings []db.Warning
 	)
 
+	// Track per-source sync results for the cc_source_sync table
+	type syncOutcome struct {
+		name string
+		err  error
+	}
+	var syncOutcomes []syncOutcome
+
 	for _, src := range opts.Sources {
 		if !src.Enabled() {
 			continue
@@ -65,11 +72,13 @@ func Run(opts Options) error {
 					Message: err.Error(),
 					At:      time.Now(),
 				})
+				syncOutcomes = append(syncOutcomes, syncOutcome{name: s.Name(), err: err})
 				mu.Unlock()
 				return
 			}
 			mu.Lock()
 			results = append(results, result)
+			syncOutcomes = append(syncOutcomes, syncOutcome{name: s.Name(), err: nil})
 			mu.Unlock()
 			if opts.Verbose {
 				logSourceResult(s.Name(), result)
@@ -78,6 +87,15 @@ func Run(opts Options) error {
 	}
 
 	wg.Wait()
+
+	// Record per-source sync status in the database
+	if opts.DB != nil {
+		for _, outcome := range syncOutcomes {
+			if err := db.DBUpsertSourceSync(opts.DB, outcome.name, outcome.err); err != nil {
+				log.Printf("warning: recording sync status for %s: %v", outcome.name, err)
+			}
+		}
+	}
 
 	fresh := combineResults(results)
 	// Collect warnings from successful source results

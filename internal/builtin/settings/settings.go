@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"database/sql"
+
 	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -30,6 +32,7 @@ import (
 // Plugin implements the plugin.Plugin interface for Settings.
 type Plugin struct {
 	cfg      *config.Config
+	database *sql.DB
 	logger   plugin.Logger
 	registry *plugin.Registry
 	bus      plugin.EventBus
@@ -107,6 +110,7 @@ func (p *Plugin) Shutdown()                       {}
 
 func (p *Plugin) Init(ctx plugin.Context) error {
 	p.cfg = ctx.Config
+	p.database = ctx.DB
 	p.logger = ctx.Logger
 	p.bus = ctx.Bus
 	p.sharedStyles = ctx.Styles

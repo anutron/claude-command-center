@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -39,6 +40,7 @@ type NavItem struct {
 	ValidHint        string
 	ValidationStatus string // "ok", "missing", "incomplete", "no_client", or "" (unknown)
 	ValidationMsg    string // human-readable validation message
+	SyncStatus       *db.SourceSync // last sync status from the database (nil = never synced)
 }
 
 // rebuildNav populates the sidebar categories from config and registry.
@@ -126,6 +128,15 @@ func (p *Plugin) rebuildNav() {
 		{"Slack", "slack", "Unread messages and mentions from Slack channels", p.cfg.Slack.Enabled, true},
 		{"Gmail", "gmail", "Recent emails and threads from Gmail", p.cfg.Gmail.Enabled, true},
 	}
+	// Load sync status from the database
+	var syncMap map[string]*db.SourceSync
+	if p.database != nil {
+		syncMap, _ = db.DBLoadAllSourceSync(p.database)
+	}
+	if syncMap == nil {
+		syncMap = make(map[string]*db.SourceSync)
+	}
+
 	var dsItems []NavItem
 	for _, ds := range dataSources {
 		enabled := ds.enabled
@@ -142,9 +153,32 @@ func (p *Plugin) rebuildNav() {
 		item.ValidationStatus = vr.Status
 		item.ValidationMsg = vr.Message
 		item.ValidHint = vr.Hint
+
+		// Load sync status from database
+		item.SyncStatus = syncMap[ds.slug]
+
+		// Override validation indicator based on actual sync results:
+		// Credentials may look "ok" structurally but if sync has never succeeded
+		// or last sync failed, downgrade the status.
 		if vr.Status == "ok" {
-			v := true
-			item.Valid = &v
+			ss := item.SyncStatus
+			if ss == nil || ss.LastSuccess == nil {
+				// Credentials look fine but never synced successfully
+				item.ValidationStatus = "incomplete"
+				item.ValidationMsg = "Credentials configured but never synced"
+				item.ValidHint = "Run ccc-refresh or wait for next auto-refresh"
+				v := false
+				item.Valid = &v
+			} else if ss.LastError != "" {
+				// Last sync failed even though credentials look ok
+				item.ValidationStatus = "incomplete"
+				item.ValidationMsg = "Last sync failed: " + ss.LastError
+				v := false
+				item.Valid = &v
+			} else {
+				v := true
+				item.Valid = &v
+			}
 		} else if vr.Status != "" {
 			v := false
 			item.Valid = &v

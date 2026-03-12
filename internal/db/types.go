@@ -137,6 +137,14 @@ type PendingAction struct {
 	RequestedAt     time.Time `json:"requested_at"`
 }
 
+// SourceSync tracks the last sync status for a data source.
+type SourceSync struct {
+	Source      string     `json:"source"`
+	LastSuccess *time.Time `json:"last_success,omitempty"`
+	LastError   string     `json:"last_error,omitempty"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
 // ---------------------------------------------------------------------------
 // ID generation
 // ---------------------------------------------------------------------------

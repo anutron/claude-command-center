@@ -145,6 +145,14 @@ func migrateSchema(db *sql.DB) error {
 	// Add worktree columns to bookmarks if missing (added for worktree sessions)
 	_, _ = db.Exec(`ALTER TABLE cc_bookmarks ADD COLUMN worktree_path TEXT`)
 	_, _ = db.Exec(`ALTER TABLE cc_bookmarks ADD COLUMN source_repo TEXT`)
+
+	// Source sync tracking table (added for BUG-015: data source connectivity validation)
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_source_sync (
+		source TEXT PRIMARY KEY,
+		last_success TEXT,
+		last_error TEXT,
+		updated_at TEXT NOT NULL
+	)`)
 	// Backfill sort_order from added_at order for existing rows
 	_, _ = db.Exec(`UPDATE cc_learned_paths SET sort_order = (
 		SELECT COUNT(*) FROM cc_learned_paths p2 WHERE p2.added_at < cc_learned_paths.added_at

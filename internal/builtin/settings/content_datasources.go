@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/auth"
+	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -136,6 +137,32 @@ func (p *Plugin) viewValidationStatus(item *NavItem) string {
 				}
 			}
 		}
+	}
+
+	// Show last sync status
+	if item.SyncStatus != nil {
+		lines = append(lines, "")
+		ss := item.SyncStatus
+		if ss.LastSuccess != nil {
+			syncTime := db.RelativeTime(*ss.LastSuccess)
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				p.styles.muted.Render("Last sync:"),
+				p.styles.enabled.Render(syncTime)))
+		} else {
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				p.styles.muted.Render("Last sync:"),
+				p.styles.logError.Render("Never")))
+		}
+		if ss.LastError != "" {
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				p.styles.muted.Render("Last error:"),
+				p.styles.logError.Render(ss.LastError)))
+		}
+	} else {
+		lines = append(lines, "")
+		lines = append(lines, fmt.Sprintf("  %s %s",
+			p.styles.muted.Render("Last sync:"),
+			p.styles.logWarn.Render("Never synced")))
 	}
 
 	lines = append(lines, "")
