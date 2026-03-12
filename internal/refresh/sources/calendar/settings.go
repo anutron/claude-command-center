@@ -109,8 +109,9 @@ func (s *Settings) SettingsView(width, height int) string {
 		s.styles.muted.Render("Enabled:"),
 		statusStyle.Render(statusText)))
 
+	credResult := ValidateCalendarResult()
 	credStatus := s.styles.enabled.Render("Configured")
-	if err := config.ValidateCalendar(); err != nil {
+	if credResult.Status != "ok" {
 		credStatus = s.styles.logError.Render("Not configured")
 	}
 	lines = append(lines, fmt.Sprintf("  %s %s",

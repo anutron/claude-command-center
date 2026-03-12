@@ -2,6 +2,8 @@ package granola
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/config"
@@ -54,8 +56,9 @@ func (s *Settings) SettingsView(width, height int) string {
 		s.styles.muted.Render("Enabled:"),
 		statusStyle.Render(statusText+" (space to toggle)")))
 
+	checks := s.DoctorChecks(plugin.DoctorOpts{})
 	credStatus := s.styles.enabled.Render("Token found")
-	if err := config.ValidateGranola(); err != nil {
+	if len(checks) > 0 && checks[0].Result.Status != "ok" {
 		credStatus = s.styles.logError.Render("Not configured")
 	}
 	lines = append(lines, fmt.Sprintf("  %s %s",
@@ -66,6 +69,37 @@ func (s *Settings) SettingsView(width, height int) string {
 	lines = append(lines, s.styles.muted.Render("  Open Granola app to refresh token"))
 
 	return strings.Join(lines, "\n")
+}
+
+// DoctorChecks implements plugin.DoctorProvider for Granola.
+func (s *Settings) DoctorChecks(opts plugin.DoctorOpts) []plugin.DoctorCheck {
+	check := plugin.DoctorCheck{Name: "Granola"}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		check.Result = plugin.ValidationResult{
+			Status:  "missing",
+			Message: "Cannot determine home directory",
+			Hint:    fmt.Sprintf("Error: %v", err),
+		}
+		return []plugin.DoctorCheck{check}
+	}
+
+	accountsPath := filepath.Join(home, "Library", "Application Support", "Granola", "stored-accounts.json")
+	if _, err := os.Stat(accountsPath); err != nil {
+		check.Result = plugin.ValidationResult{
+			Status:  "missing",
+			Message: "Granola not configured",
+			Hint:    "Open Granola app to set up",
+		}
+	} else {
+		check.Result = plugin.ValidationResult{
+			Status:  "ok",
+			Message: "Granola accounts found",
+		}
+	}
+
+	return []plugin.DoctorCheck{check}
 }
 
 func (s *Settings) SettingsOpenCmd() tea.Cmd                          { return nil }

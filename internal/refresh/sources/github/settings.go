@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/config"
@@ -86,8 +87,9 @@ func (s *Settings) SettingsView(width, height int) string {
 		s.styles.muted.Render("Enabled:"),
 		statusStyle.Render(statusText+" (space to toggle)")))
 
+	checks := s.DoctorChecks(plugin.DoctorOpts{})
 	credStatus := s.styles.enabled.Render("Authenticated")
-	if err := config.ValidateGitHub(); err != nil {
+	if len(checks) > 0 && checks[0].Result.Status != "ok" {
 		credStatus = s.styles.logError.Render("Not authenticated")
 	}
 	lines = append(lines, fmt.Sprintf("  %s %s",
@@ -135,6 +137,27 @@ func (s *Settings) SettingsView(width, height int) string {
 
 func (s *Settings) SettingsOpenCmd() tea.Cmd                          { return nil }
 func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) { return false, plugin.NoopAction() }
+
+// DoctorChecks implements plugin.DoctorProvider for GitHub.
+func (s *Settings) DoctorChecks(opts plugin.DoctorOpts) []plugin.DoctorCheck {
+	check := plugin.DoctorCheck{Name: "GitHub CLI"}
+
+	cmd := exec.Command("gh", "auth", "token")
+	if err := cmd.Run(); err != nil {
+		check.Result = plugin.ValidationResult{
+			Status:  "missing",
+			Message: "GitHub CLI not authenticated",
+			Hint:    "Run 'gh auth login' to authenticate",
+		}
+	} else {
+		check.Result = plugin.ValidationResult{
+			Status:  "ok",
+			Message: "GitHub CLI authenticated",
+		}
+	}
+
+	return []plugin.DoctorCheck{check}
+}
 
 func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 	// If editing a text input, route keys there
