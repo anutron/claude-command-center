@@ -108,6 +108,14 @@ type Starter interface {
 type SettingsProvider interface {
 	SettingsView(width, height int) string
 	HandleSettingsKey(msg tea.KeyMsg) Action
+	// SettingsOpenCmd is called when the user navigates to this provider's
+	// settings pane. It returns a Cmd for async initialization (e.g., a live
+	// credential check). Return nil if no async work is needed.
+	SettingsOpenCmd() tea.Cmd
+	// HandleSettingsMsg routes a tea.Msg to the provider for async result
+	// handling. Returns (handled, action) — handled=true means the message
+	// was consumed by this provider.
+	HandleSettingsMsg(msg tea.Msg) (bool, Action)
 }
 
 // NotifyMsg is sent when an external process notifies the TUI to reload.

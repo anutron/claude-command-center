@@ -133,6 +133,9 @@ func (s *Settings) SettingsView(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
+func (s *Settings) SettingsOpenCmd() tea.Cmd                          { return nil }
+func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) { return false, plugin.NoopAction() }
+
 func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 	// If editing a text input, route keys there
 	if s.repoEditing {

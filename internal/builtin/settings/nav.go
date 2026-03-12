@@ -307,6 +307,10 @@ func (p *Plugin) handleNavKey(msg tea.KeyMsg) plugin.Action {
 		}
 	case "enter", "right", "l":
 		p.focusZone = FocusContent
+		// Fire the active provider's SettingsOpenCmd if available.
+		if cmd := p.activeProviderOpenCmd(); cmd != nil {
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
 	case "esc":
 		return plugin.Action{Type: plugin.ActionUnhandled}
 	}

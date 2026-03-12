@@ -194,12 +194,57 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		return true, plugin.NoopAction()
 	}
 
+	// Route to active provider's HandleSettingsMsg when content is focused.
+	if p.focusZone == FocusContent || p.focusZone == FocusEditing {
+		if sp := p.activeProvider(); sp != nil {
+			if handled, action := sp.HandleSettingsMsg(msg); handled {
+				if action.Type == plugin.ActionFlash {
+					p.flashMessage = action.Payload
+					p.flashMessageAt = time.Now()
+					return true, plugin.NoopAction()
+				}
+				return true, action
+			}
+		}
+	}
+
 	// Clear flash after 10 seconds
 	if p.flashMessage != "" && time.Since(p.flashMessageAt) > 10*time.Second {
 		p.flashMessage = ""
 	}
 
 	return false, plugin.NoopAction()
+}
+
+// activeProvider returns the SettingsProvider for the currently selected nav item,
+// or nil if there is none.
+func (p *Plugin) activeProvider() plugin.SettingsProvider {
+	item := p.selectedNavItem()
+	if item == nil {
+		return nil
+	}
+	// Data source providers
+	if sp, ok := p.providers[item.Slug]; ok {
+		return sp
+	}
+	// Plugin providers (from registry)
+	if item.Kind == "plugin" {
+		if plug, ok := p.registry.BySlug(item.Slug); ok {
+			if sp, ok := plug.(plugin.SettingsProvider); ok {
+				return sp
+			}
+		}
+	}
+	return nil
+}
+
+// activeProviderOpenCmd returns the SettingsOpenCmd for the currently selected
+// nav item's provider, or nil if there is none.
+func (p *Plugin) activeProviderOpenCmd() tea.Cmd {
+	if sp := p.activeProvider(); sp != nil {
+		return sp.SettingsOpenCmd()
+	}
+	return nil
 }
 
 func (p *Plugin) View(width, height, frame int) string {

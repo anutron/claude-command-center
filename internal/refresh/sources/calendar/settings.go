@@ -351,6 +351,9 @@ func (s *Settings) handleColorPickerKey(msg tea.KeyMsg) plugin.Action {
 	return plugin.NoopAction()
 }
 
+func (s *Settings) SettingsOpenCmd() tea.Cmd                          { return nil }
+func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) { return false, plugin.NoopAction() }
+
 func (s *Settings) handleAddKey(msg tea.KeyMsg) plugin.Action {
 	switch msg.Type {
 	case tea.KeyEsc:
