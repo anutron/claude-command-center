@@ -4,10 +4,13 @@
 package settings
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
@@ -19,6 +22,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/oauth2"
+	gcal "google.golang.org/api/calendar/v3"
+	gm "google.golang.org/api/gmail/v1"
 )
 
 // Plugin implements the plugin.Plugin interface for Settings.
@@ -54,6 +60,11 @@ type Plugin struct {
 
 	// Active huh form (nil when no form is displayed)
 	activeForm *huh.Form
+
+	// Pending OAuth auth state
+	pendingAuthCreds *clientCredentials // credentials from the form
+	pendingAuthSlug  string            // data source slug being authenticated
+	authCancel       context.CancelFunc // cancel function for in-progress OAuth flow
 
 	// Flash message
 	flashMessage   string
@@ -188,10 +199,13 @@ func (p *Plugin) handleFormKey(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 
-	// Allow escape to cancel the form
+	// Allow escape to cancel the form and any pending auth
 	if msg.String() == "esc" {
 		p.activeForm = nil
 		p.focusZone = FocusContent
+		p.cancelAuthFlow()
+		p.pendingAuthCreds = nil
+		p.pendingAuthSlug = ""
 		return plugin.NoopAction()
 	}
 
@@ -203,8 +217,16 @@ func (p *Plugin) handleFormKey(msg tea.KeyMsg) plugin.Action {
 
 	// Check if form completed
 	if p.activeForm.State == huh.StateCompleted {
-		// Leave form active for the caller to read values, but return to content
+		p.activeForm = nil
 		p.focusZone = FocusContent
+
+		// If this was a credential form for OAuth, chain to the auth flow.
+		if p.pendingAuthCreds != nil && p.pendingAuthSlug != "" {
+			authCmd := p.startAuthFlowForDatasource()
+			if authCmd != nil {
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: authCmd}
+			}
+		}
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	}
 
@@ -226,6 +248,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case systemActionResult:
 		p.handleSystemActionResult(msg)
 		return true, plugin.NoopAction()
+	case auth.AuthFlowResultMsg:
+		p.handleAuthFlowResult(msg)
+		return true, plugin.NoopAction()
 	case plugin.TabLeaveMsg:
 		// Cancel any active banner editing when leaving the tab
 		if p.bannerEditing {
@@ -240,6 +265,8 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.activeForm = nil
 			p.focusZone = FocusContent
 		}
+		// Cancel any in-progress OAuth flow
+		p.cancelAuthFlow()
 		return true, plugin.NoopAction()
 	}
 
@@ -250,7 +277,16 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.activeForm = f
 		}
 		if p.activeForm.State == huh.StateCompleted {
+			p.activeForm = nil
 			p.focusZone = FocusContent
+
+			// Chain to OAuth flow if credential form completed.
+			if p.pendingAuthCreds != nil && p.pendingAuthSlug != "" {
+				authCmd := p.startAuthFlowForDatasource()
+				if authCmd != nil {
+					return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: authCmd}
+				}
+			}
 		}
 		if cmd != nil {
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
@@ -351,7 +387,11 @@ func (p *Plugin) View(width, height, frame int) string {
 	case FocusContent:
 		item := p.selectedNavItem()
 		if item != nil && item.Kind == "datasource" {
-			help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle  r re-check")
+			if isGoogleDatasource(item.Slug) {
+				help = p.styles.muted.Render("  esc/left sidebar  r re-check  a authenticate  o cloud console")
+			} else {
+				help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle  r re-check")
+			}
 		} else {
 			help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle")
 		}
@@ -518,6 +558,63 @@ func validateSlackResult() plugin.ValidationResult {
 		Status:  "ok",
 		Message: "Slack token configured",
 	}
+}
+
+// authFlowCmdFunc is a variable for testability — wraps auth.AuthFlowCmd.
+var authFlowCmdFunc = func(ctx context.Context, conf *oauth2.Config, tokenPath, clientID, clientSecret string) tea.Cmd {
+	return auth.AuthFlowCmd(ctx, auth.AuthFlowOpts{
+		Config:       conf,
+		TokenPath:    tokenPath,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+	})
+}
+
+// oauthConfigForSlug returns the OAuth2 config and token path for a data source.
+func (p *Plugin) oauthConfigForSlug(slug, clientID, clientSecret string) (*oauth2.Config, string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, ""
+	}
+
+	switch slug {
+	case "calendar":
+		return auth.LoadGoogleOAuth2Config(clientID, clientSecret,
+			gcal.CalendarScope, gcal.CalendarEventsScope,
+		), filepath.Join(home, ".config", "google-calendar-mcp", "credentials.json")
+	case "gmail":
+		return auth.LoadGoogleOAuth2Config(clientID, clientSecret,
+			gm.GmailReadonlyScope,
+		), filepath.Join(home, ".gmail-mcp", "work.json")
+	}
+	return nil, ""
+}
+
+// handleAuthFlowResult processes the result of a browser-based OAuth flow.
+func (p *Plugin) handleAuthFlowResult(msg auth.AuthFlowResultMsg) {
+	p.authCancel = nil
+	slug := p.pendingAuthSlug
+	p.pendingAuthCreds = nil
+	p.pendingAuthSlug = ""
+
+	if msg.Error != nil {
+		p.flashMessage = "Auth failed: " + msg.Error.Error()
+	} else {
+		p.flashMessage = "Authenticated! Token saved for " + slug
+		// Re-validate to update the nav status.
+		p.rebuildNav()
+	}
+	p.flashMessageAt = time.Now()
+}
+
+// cancelAuthFlow cancels any in-progress OAuth flow.
+func (p *Plugin) cancelAuthFlow() {
+	if p.authCancel != nil {
+		p.authCancel()
+		p.authCancel = nil
+	}
+	p.pendingAuthCreds = nil
+	p.pendingAuthSlug = ""
 }
 
 func renderSwatches(pal config.Palette) string {
