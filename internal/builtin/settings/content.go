@@ -11,7 +11,15 @@ func (p *Plugin) viewContent(width, height int) string {
 	item := p.selectedNavItem()
 
 	var body string
-	if item == nil {
+	if p.focusZone == FocusForm && p.activeForm != nil {
+		// Render the huh form above the normal content
+		formView := p.activeForm.View()
+		body = formView
+		if item != nil {
+			// Show a condensed version of the datasource content below the form
+			body = formView + "\n\n" + p.renderContentForSlug(item, width, height)
+		}
+	} else if item == nil {
 		body = p.styles.muted.Render("  Select an item from the sidebar")
 	} else {
 		body = p.renderContentForSlug(item, width, height)
