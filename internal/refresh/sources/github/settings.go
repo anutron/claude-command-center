@@ -13,6 +13,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// ghRepoInfo represents a fetched GitHub repo.
+type ghRepoInfo struct {
+	NameWithOwner string `json:"nameWithOwner"`
+	Description   string `json:"description"`
+}
+
+// ghRepoFetchResult is a tea.Msg carrying the result of fetching available repos.
+type ghRepoFetchResult struct {
+	Repos []ghRepoInfo
+	Err   error
+}
+
 // Settings implements plugin.SettingsProvider for the GitHub data source.
 type Settings struct {
 	cfg    *config.Config
@@ -23,6 +35,15 @@ type Settings struct {
 	repoEditing     bool
 	usernameInput   textinput.Model
 	usernameEditing bool
+
+	// Browse mode: fetched repos with filter
+	fetchedRepos []ghRepoInfo
+	fetchLoading bool
+	fetchError   string
+	fetchMode    bool // browsing fetched repos
+	fetchCursor  int
+	filterInput  textinput.Model
+	filtering    bool // whether filter input is focused
 }
 
 type settingsStyles struct {
@@ -58,11 +79,17 @@ func NewSettings(cfg *config.Config, pal config.Palette) *Settings {
 	ui.CharLimit = 50
 	ui.SetValue(cfg.GitHub.Username)
 
+	fi := textinput.New()
+	fi.Placeholder = "Type to filter repos..."
+	fi.CharLimit = 100
+	fi.Width = 40
+
 	return &Settings{
 		cfg:           cfg,
 		styles:        newSettingsStyles(pal),
 		repoInput:     ri,
 		usernameInput: ui,
+		filterInput:   fi,
 	}
 }
 
@@ -72,6 +99,10 @@ func (s *Settings) ResetEditing() {
 	s.repoEditing = false
 	s.usernameEditing = false
 	s.usernameInput.SetValue(s.cfg.GitHub.Username)
+	s.fetchMode = false
+	s.filtering = false
+	s.filterInput.SetValue("")
+	s.filterInput.Blur()
 }
 
 func (s *Settings) SettingsView(width, height int) string {
@@ -113,6 +144,13 @@ func (s *Settings) SettingsView(width, height int) string {
 	// Repos
 	lines = append(lines, "")
 	lines = append(lines, s.styles.header.Render("  REPOS"))
+
+	// Browse mode: show fetched repos with filter
+	if s.fetchMode {
+		lines = append(lines, s.viewFetchMode()...)
+		return strings.Join(lines, "\n")
+	}
+
 	if len(s.cfg.GitHub.Repos) == 0 {
 		lines = append(lines, s.styles.muted.Render("  No repos configured"))
 	} else {
@@ -130,10 +168,110 @@ func (s *Settings) SettingsView(width, height int) string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, s.styles.muted.Render("  a add repo · x remove · u edit username"))
+
+	// Show fetch status hint
+	if s.fetchLoading {
+		lines = append(lines, s.styles.muted.Render("  Fetching repos from GitHub..."))
+		lines = append(lines, "")
+	} else if s.fetchError != "" {
+		lines = append(lines, s.styles.logError.Render("  Fetch error: "+s.fetchError))
+		lines = append(lines, "")
+	}
+
+	hintParts := "  a add repo · x remove · u edit username"
+	if len(s.fetchedRepos) > 0 {
+		hintParts += " · f browse repos"
+	} else if !s.fetchLoading && s.fetchError == "" {
+		hintParts += " · f fetch from GitHub"
+	}
+	lines = append(lines, s.styles.muted.Render(hintParts))
 	lines = append(lines, s.styles.muted.Render("  Run 'gh auth login' to authenticate"))
 
 	return strings.Join(lines, "\n")
+}
+
+// filteredRepos returns the subset of fetchedRepos matching the current filter.
+func (s *Settings) filteredRepos() []ghRepoInfo {
+	query := strings.ToLower(strings.TrimSpace(s.filterInput.Value()))
+	if query == "" {
+		return s.fetchedRepos
+	}
+	var out []ghRepoInfo
+	for _, r := range s.fetchedRepos {
+		if strings.Contains(strings.ToLower(r.NameWithOwner), query) ||
+			strings.Contains(strings.ToLower(r.Description), query) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// isRepoConfigured returns true if the given repo name is already tracked.
+func (s *Settings) isRepoConfigured(nameWithOwner string) bool {
+	for _, r := range s.cfg.GitHub.Repos {
+		if strings.EqualFold(r, nameWithOwner) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Settings) viewFetchMode() []string {
+	var lines []string
+	lines = append(lines, "")
+	lines = append(lines, "  "+s.filterInput.View())
+	lines = append(lines, "")
+
+	filtered := s.filteredRepos()
+
+	if len(filtered) == 0 {
+		if s.filterInput.Value() != "" {
+			lines = append(lines, s.styles.muted.Render("  No repos match filter"))
+		} else {
+			lines = append(lines, s.styles.muted.Render("  No repos found"))
+		}
+	} else {
+		for i, repo := range filtered {
+			cursor := "  "
+			if i == s.fetchCursor {
+				cursor = s.styles.pointer.Render("> ")
+			}
+
+			configured := s.isRepoConfigured(repo.NameWithOwner)
+			toggle := s.styles.disabled.Render("[ ] ")
+			if configured {
+				toggle = s.styles.enabled.Render("[+] ")
+			}
+
+			nameStyle := s.styles.itemName
+			if configured {
+				nameStyle = s.styles.enabled
+			}
+
+			label := repo.NameWithOwner
+			if repo.Description != "" {
+				label += s.styles.muted.Render(" — "+repo.Description)
+			}
+
+			lines = append(lines, fmt.Sprintf("  %s%s%s", cursor, toggle, nameStyle.Render(repo.NameWithOwner)+
+				func() string {
+					if repo.Description != "" {
+						return " " + s.styles.muted.Render(repo.Description)
+					}
+					return ""
+				}()))
+		}
+	}
+
+	lines = append(lines, "")
+	countInfo := fmt.Sprintf("  %d repos", len(filtered))
+	if len(filtered) != len(s.fetchedRepos) {
+		countInfo += fmt.Sprintf(" (of %d total)", len(s.fetchedRepos))
+	}
+	lines = append(lines, s.styles.muted.Render(countInfo))
+	lines = append(lines, s.styles.muted.Render("  / filter · ↑↓ navigate · space toggle · esc back"))
+
+	return lines
 }
 
 // ghUserFetchResult is the message returned by the async username fetch.
@@ -158,6 +296,24 @@ var fetchGHUsername = func() (string, error) {
 		return "", fmt.Errorf("empty login returned")
 	}
 	return user.Login, nil
+}
+
+// fetchGHRepos is a variable for testability.
+var fetchGHRepos = func() ([]ghRepoInfo, error) {
+	out, err := exec.Command(
+		"gh", "repo", "list",
+		"--json", "nameWithOwner,description",
+		"--limit", "200",
+		"--owner", "@me",
+	).Output()
+	if err != nil {
+		return nil, fmt.Errorf("gh repo list: %w", err)
+	}
+	var repos []ghRepoInfo
+	if err := json.Unmarshal(out, &repos); err != nil {
+		return nil, fmt.Errorf("parse repo list: %w", err)
+	}
+	return repos, nil
 }
 
 func (s *Settings) SettingsOpenCmd() tea.Cmd {
@@ -187,6 +343,21 @@ func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
 			s.usernameInput.SetValue(msg.Login)
 			config.Save(s.cfg)
 			return true, plugin.Action{Type: plugin.ActionFlash, Payload: "GitHub username auto-detected: " + msg.Login}
+		}
+		return true, plugin.NoopAction()
+	case ghRepoFetchResult:
+		s.fetchLoading = false
+		if msg.Err != nil {
+			s.fetchError = msg.Err.Error()
+		} else {
+			s.fetchedRepos = msg.Repos
+			s.fetchError = ""
+			// Auto-enter browse mode when repos arrive
+			s.fetchMode = true
+			s.fetchCursor = 0
+			s.filterInput.SetValue("")
+			s.filterInput.Focus()
+			s.filtering = true
 		}
 		return true, plugin.NoopAction()
 	}
@@ -257,6 +428,11 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 
+	// Browse/fetch mode
+	if s.fetchMode {
+		return s.handleFetchKey(msg)
+	}
+
 	switch msg.String() {
 	case "a":
 		s.repoEditing = true
@@ -267,6 +443,27 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		s.usernameInput.SetValue(s.cfg.GitHub.Username)
 		s.usernameInput.Focus()
 		return plugin.NoopAction()
+	case "f":
+		// Enter fetch/browse mode
+		if len(s.fetchedRepos) > 0 {
+			s.fetchMode = true
+			s.fetchCursor = 0
+			s.filterInput.SetValue("")
+			s.filterInput.Focus()
+			s.filtering = true
+			return plugin.NoopAction()
+		}
+		// Trigger a fresh fetch
+		if err := exec.Command("gh", "auth", "token").Run(); err != nil {
+			return plugin.Action{Type: plugin.ActionFlash, Payload: "GitHub CLI not authenticated"}
+		}
+		s.fetchLoading = true
+		s.fetchError = ""
+		cmd := func() tea.Msg {
+			repos, err := fetchGHRepos()
+			return ghRepoFetchResult{Repos: repos, Err: err}
+		}
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	case "x", "d":
 		if s.cursor < len(s.cfg.GitHub.Repos) {
 			removed := s.cfg.GitHub.Repos[s.cursor]
@@ -294,4 +491,95 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 	}
 
 	return plugin.Action{Type: plugin.ActionUnhandled}
+}
+
+func (s *Settings) handleFetchKey(msg tea.KeyMsg) plugin.Action {
+	filtered := s.filteredRepos()
+
+	// When filter input is focused, most keys go to the text input
+	if s.filtering {
+		switch msg.String() {
+		case "esc":
+			if s.filterInput.Value() != "" {
+				// First esc clears filter
+				s.filterInput.SetValue("")
+				s.fetchCursor = 0
+				return plugin.NoopAction()
+			}
+			// Second esc exits browse mode
+			s.fetchMode = false
+			s.filtering = false
+			s.filterInput.Blur()
+			return plugin.NoopAction()
+		case "enter":
+			// Switch from filter to navigation mode
+			s.filtering = false
+			s.filterInput.Blur()
+			s.fetchCursor = 0
+			return plugin.NoopAction()
+		case "down":
+			// Switch to navigation
+			s.filtering = false
+			s.filterInput.Blur()
+			s.fetchCursor = 0
+			return plugin.NoopAction()
+		default:
+			oldVal := s.filterInput.Value()
+			s.filterInput, _ = s.filterInput.Update(msg)
+			// Reset cursor if filter changed
+			if s.filterInput.Value() != oldVal {
+				s.fetchCursor = 0
+			}
+			return plugin.NoopAction()
+		}
+	}
+
+	// Navigation mode (filter not focused)
+	switch msg.String() {
+	case "up", "k":
+		if s.fetchCursor > 0 {
+			s.fetchCursor--
+		}
+		return plugin.NoopAction()
+	case "down", "j":
+		if s.fetchCursor < len(filtered)-1 {
+			s.fetchCursor++
+		}
+		return plugin.NoopAction()
+	case " ", "enter":
+		if s.fetchCursor >= len(filtered) {
+			return plugin.NoopAction()
+		}
+		repo := filtered[s.fetchCursor]
+		if s.isRepoConfigured(repo.NameWithOwner) {
+			// Remove from config
+			out := s.cfg.GitHub.Repos[:0]
+			for _, r := range s.cfg.GitHub.Repos {
+				if !strings.EqualFold(r, repo.NameWithOwner) {
+					out = append(out, r)
+				}
+			}
+			s.cfg.GitHub.Repos = out
+			if s.cursor >= len(s.cfg.GitHub.Repos) && s.cursor > 0 {
+				s.cursor = len(s.cfg.GitHub.Repos) - 1
+			}
+			config.Save(s.cfg)
+			return plugin.Action{Type: plugin.ActionFlash, Payload: "Removed: " + repo.NameWithOwner}
+		}
+		// Add to config
+		s.cfg.GitHub.Repos = append(s.cfg.GitHub.Repos, repo.NameWithOwner)
+		config.Save(s.cfg)
+		return plugin.Action{Type: plugin.ActionFlash, Payload: "Added: " + repo.NameWithOwner}
+	case "/":
+		// Focus the filter input
+		s.filtering = true
+		s.filterInput.Focus()
+		return plugin.NoopAction()
+	case "esc":
+		s.fetchMode = false
+		s.filtering = false
+		s.filterInput.Blur()
+		return plugin.NoopAction()
+	}
+	return plugin.NoopAction()
 }
