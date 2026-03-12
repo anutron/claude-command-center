@@ -448,6 +448,29 @@ func DBSetMeta(d *sql.DB, key, value string) error {
 	return nil
 }
 
+// DBUpsertSourceSync records a sync result (success or failure) for a data source.
+func DBUpsertSourceSync(d *sql.DB, source string, syncErr error) error {
+	now := FormatTime(time.Now())
+	if syncErr == nil {
+		// Success: update last_success, clear last_error
+		_, err := d.Exec(`INSERT OR REPLACE INTO cc_source_sync (source, last_success, last_error, updated_at)
+			VALUES (?, ?, '', ?)`, source, now, now)
+		if err != nil {
+			return fmt.Errorf("upsert source sync %s: %w", source, err)
+		}
+	} else {
+		// Failure: keep existing last_success, update last_error
+		_, err := d.Exec(`INSERT INTO cc_source_sync (source, last_success, last_error, updated_at)
+			VALUES (?, NULL, ?, ?)
+			ON CONFLICT(source) DO UPDATE SET last_error = ?, updated_at = ?`,
+			source, syncErr.Error(), now, syncErr.Error(), now)
+		if err != nil {
+			return fmt.Errorf("upsert source sync %s: %w", source, err)
+		}
+	}
+	return nil
+}
+
 // DBClearPendingActions removes all pending actions.
 func DBClearPendingActions(d *sql.DB) error {
 	_, err := d.Exec(`DELETE FROM cc_pending_actions`)
