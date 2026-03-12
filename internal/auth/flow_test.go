@@ -230,6 +230,71 @@ func TestSaveTokenFile_CreatesDir(t *testing.T) {
 	}
 }
 
+func TestSaveTokenFile_PermissionsAreRestricted(t *testing.T) {
+	tmpDir := t.TempDir()
+	tokenPath := filepath.Join(tmpDir, "restricted.json")
+
+	tok := &oauth2.Token{
+		AccessToken:  "secret-access",
+		RefreshToken: "secret-refresh",
+		TokenType:    "Bearer",
+	}
+	opts := AuthFlowOpts{
+		TokenPath:    tokenPath,
+		ClientID:     "id",
+		ClientSecret: "secret",
+	}
+
+	if err := saveTokenFile(opts, tok); err != nil {
+		t.Fatalf("saveTokenFile: %v", err)
+	}
+
+	info, err := os.Stat(tokenPath)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+
+	// File should be owner-read-write only (0600)
+	perm := info.Mode().Perm()
+	if perm != 0o600 {
+		t.Errorf("expected permissions 0600, got %04o", perm)
+	}
+}
+
+func TestSaveTokenFile_ZeroExpiryOmitted(t *testing.T) {
+	tmpDir := t.TempDir()
+	tokenPath := filepath.Join(tmpDir, "noexpiry.json")
+
+	tok := &oauth2.Token{
+		AccessToken: "access",
+		TokenType:   "Bearer",
+		// Expiry is zero
+	}
+	opts := AuthFlowOpts{
+		TokenPath:    tokenPath,
+		ClientID:     "id",
+		ClientSecret: "secret",
+	}
+
+	if err := saveTokenFile(opts, tok); err != nil {
+		t.Fatalf("saveTokenFile: %v", err)
+	}
+
+	data, err := os.ReadFile(tokenPath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	var tf GoogleTokenFile
+	if err := json.Unmarshal(data, &tf); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if tf.ExpiryDate != 0 {
+		t.Errorf("expected ExpiryDate=0 for zero expiry, got %d", tf.ExpiryDate)
+	}
+}
+
 func TestAuthFlowCmd_ReturnsResultMsg(t *testing.T) {
 	// Verify that AuthFlowCmd wraps runAuthFlow and returns AuthFlowResultMsg.
 	// Use a very short timeout so it returns quickly.

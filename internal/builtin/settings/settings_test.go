@@ -1,11 +1,14 @@
 package settings
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
+	"golang.org/x/oauth2"
 )
 
 func testSetup() (*Plugin, *plugin.Registry) {
@@ -645,4 +648,527 @@ func TestAppearanceItemsNotToggleable(t *testing.T) {
 			}
 		}
 	}
+}
+
+// --- Validation status tests ---
+
+func TestDataSourcesHaveValidationStatus(t *testing.T) {
+	p, _ := testSetup()
+	for _, cat := range p.navCategories {
+		if cat.Label != "DATA SOURCES" {
+			continue
+		}
+		for _, item := range cat.Items {
+			if item.ValidationStatus == "" {
+				t.Errorf("expected data source %q to have non-empty ValidationStatus", item.Slug)
+			}
+			// Status should be one of the known values
+			switch item.ValidationStatus {
+			case "ok", "missing", "incomplete", "no_client":
+				// valid
+			default:
+				t.Errorf("unexpected ValidationStatus %q for %s", item.ValidationStatus, item.Slug)
+			}
+		}
+	}
+}
+
+func TestGoogleDatasourcesIdentified(t *testing.T) {
+	if !isGoogleDatasource("calendar") {
+		t.Error("calendar should be a Google datasource")
+	}
+	if !isGoogleDatasource("gmail") {
+		t.Error("gmail should be a Google datasource")
+	}
+	if isGoogleDatasource("github") {
+		t.Error("github should not be a Google datasource")
+	}
+	if isGoogleDatasource("slack") {
+		t.Error("slack should not be a Google datasource")
+	}
+	if isGoogleDatasource("granola") {
+		t.Error("granola should not be a Google datasource")
+	}
+}
+
+// --- Datasource recheck tests ---
+
+func TestRecheckUpdatesNavItem(t *testing.T) {
+	p, _ := testSetup()
+
+	// Apply a recheck result for calendar
+	msg := datasourceRecheckResult{
+		Slug: "calendar",
+		Result: plugin.ValidationResult{
+			Status:  "incomplete",
+			Message: "Token expired",
+			Hint:    "Press 'a' to re-authenticate",
+		},
+	}
+	p.applyRecheckResult(msg)
+
+	// Find the calendar nav item and verify it was updated
+	calIdx := findNavIndex(p, "calendar")
+	if calIdx < 0 {
+		t.Fatal("calendar not found")
+	}
+	p.navCursor = calIdx
+	item := p.selectedNavItem()
+	if item.ValidationStatus != "incomplete" {
+		t.Errorf("expected ValidationStatus 'incomplete', got %q", item.ValidationStatus)
+	}
+	if item.ValidationMsg != "Token expired" {
+		t.Errorf("expected ValidationMsg 'Token expired', got %q", item.ValidationMsg)
+	}
+	if item.ValidHint != "Press 'a' to re-authenticate" {
+		t.Errorf("expected ValidHint, got %q", item.ValidHint)
+	}
+	if item.Valid == nil || *item.Valid {
+		t.Error("expected Valid=false for incomplete status")
+	}
+	if p.flashMessage != "Token expired" {
+		t.Errorf("expected flash message, got %q", p.flashMessage)
+	}
+}
+
+func TestRecheckOKUpdatesValid(t *testing.T) {
+	p, _ := testSetup()
+
+	msg := datasourceRecheckResult{
+		Slug: "gmail",
+		Result: plugin.ValidationResult{
+			Status:  "ok",
+			Message: "Gmail token is valid",
+		},
+	}
+	p.applyRecheckResult(msg)
+
+	gmailIdx := findNavIndex(p, "gmail")
+	p.navCursor = gmailIdx
+	item := p.selectedNavItem()
+	if item.ValidationStatus != "ok" {
+		t.Errorf("expected 'ok', got %q", item.ValidationStatus)
+	}
+	if item.Valid == nil || !*item.Valid {
+		t.Error("expected Valid=true for ok status")
+	}
+}
+
+// --- Content key handler tests ---
+
+func TestRKeyFiresRecheck(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+
+	action := p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if action.TeaCmd == nil {
+		t.Error("expected 'r' key to return a tea.Cmd for recheck")
+	}
+	if p.flashMessage == "" {
+		t.Error("expected flash message for recheck")
+	}
+}
+
+func TestRKeyLiveCheckForGoogle(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+
+	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if p.flashMessage != "Live-checking Calendar credentials..." {
+		t.Errorf("expected live-check flash for Google datasource, got %q", p.flashMessage)
+	}
+}
+
+func TestRKeyStructuralCheckForNonGoogle(t *testing.T) {
+	p, _ := testSetup()
+
+	ghIdx := findNavIndex(p, "github")
+	p.navCursor = ghIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+
+	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if p.flashMessage != "Re-checking GitHub credentials..." {
+		t.Errorf("expected structural recheck flash for non-Google, got %q", p.flashMessage)
+	}
+}
+
+func TestAKeyTriggersFormForGoogle(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+
+	action := p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm after 'a', got %d", p.focusZone)
+	}
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be set")
+	}
+	if p.pendingAuthSlug != "calendar" {
+		t.Errorf("expected pendingAuthSlug 'calendar', got %q", p.pendingAuthSlug)
+	}
+	if p.pendingAuthCreds == nil {
+		t.Error("expected pendingAuthCreds to be set")
+	}
+	if action.TeaCmd == nil {
+		t.Error("expected tea.Cmd from form init")
+	}
+}
+
+func TestAKeyNoopForNonGoogle(t *testing.T) {
+	p, _ := testSetup()
+
+	ghIdx := findNavIndex(p, "github")
+	p.navCursor = ghIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+
+	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if p.focusZone != FocusContent {
+		t.Errorf("expected focus to stay on Content for non-Google 'a', got %d", p.focusZone)
+	}
+	if p.activeForm != nil {
+		t.Error("expected no form for non-Google datasource")
+	}
+}
+
+func TestOKeyNoopForNonGoogle(t *testing.T) {
+	p, _ := testSetup()
+
+	slackIdx := findNavIndex(p, "slack")
+	p.navCursor = slackIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+
+	action := p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	// Should be noop for non-Google
+	if action.Type != plugin.ActionNoop {
+		t.Errorf("expected noop action for 'o' on non-Google datasource, got %v", action.Type)
+	}
+}
+
+// --- FocusForm key handling tests ---
+
+func TestEscCancelsFormAndReturnsToContent(t *testing.T) {
+	p, _ := testSetup()
+
+	// Trigger form
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+
+	if p.focusZone != FocusForm {
+		t.Fatal("expected FocusForm")
+	}
+
+	// Esc cancels
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if p.focusZone != FocusContent {
+		t.Errorf("expected FocusContent after esc, got %d", p.focusZone)
+	}
+	if p.activeForm != nil {
+		t.Error("expected activeForm to be nil after esc")
+	}
+	if p.pendingAuthCreds != nil {
+		t.Error("expected pendingAuthCreds to be nil after esc")
+	}
+	if p.pendingAuthSlug != "" {
+		t.Error("expected pendingAuthSlug to be empty after esc")
+	}
+}
+
+func TestFormFocusWithNilFormFallsBackToContent(t *testing.T) {
+	p, _ := testSetup()
+
+	p.focusZone = FocusForm
+	p.activeForm = nil
+
+	// Should gracefully fall back to content
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if p.focusZone != FocusContent {
+		t.Errorf("expected FocusContent when form is nil, got %d", p.focusZone)
+	}
+}
+
+// --- TabLeave tests ---
+
+func TestTabLeaveCancelsForm(t *testing.T) {
+	p, _ := testSetup()
+
+	// Set up form state
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+
+	if p.activeForm == nil {
+		t.Fatal("expected form to be active")
+	}
+
+	// Tab leave
+	p.HandleMessage(plugin.TabLeaveMsg{})
+	if p.activeForm != nil {
+		t.Error("expected form to be cleared on tab leave")
+	}
+	if p.focusZone != FocusContent {
+		t.Errorf("expected FocusContent on tab leave, got %d", p.focusZone)
+	}
+}
+
+// --- Content view rendering tests ---
+
+func TestViewValidationStatusRendersAllStatuses(t *testing.T) {
+	p, _ := testSetup()
+
+	statuses := []struct {
+		status string
+		expect string // substring to find in output
+	}{
+		{"ok", "Credentials configured"},
+		{"incomplete", "Credentials incomplete"},
+		{"no_client", "OAuth client credentials missing"},
+		{"missing", "Credentials not found"},
+	}
+
+	for _, tc := range statuses {
+		item := &NavItem{
+			Slug:             "calendar",
+			ValidationStatus: tc.status,
+			ValidationMsg:    "test message",
+			ValidHint:        "test hint",
+		}
+		output := p.viewValidationStatus(item)
+		if output == "" {
+			t.Errorf("expected non-empty output for status %q", tc.status)
+		}
+		// Check that the expected text appears somewhere in the ANSI-styled output
+		// (lipgloss adds ANSI codes, so we check for substrings)
+		if len(output) < 10 {
+			t.Errorf("output too short for status %q: %q", tc.status, output)
+		}
+	}
+}
+
+func TestViewValidationStatusShowsGoogleActions(t *testing.T) {
+	p, _ := testSetup()
+
+	item := &NavItem{
+		Slug:             "calendar",
+		ValidationStatus: "ok",
+	}
+	output := p.viewValidationStatus(item)
+
+	// Should show Google-specific actions
+	if !containsStr(output, "authenticate") {
+		t.Error("expected 'authenticate' action for Google datasource")
+	}
+	if !containsStr(output, "Google Cloud Console") {
+		t.Error("expected 'Google Cloud Console' action for Google datasource")
+	}
+}
+
+func TestViewValidationStatusHidesGoogleActionsForNonGoogle(t *testing.T) {
+	p, _ := testSetup()
+
+	item := &NavItem{
+		Slug:             "github",
+		ValidationStatus: "ok",
+	}
+	output := p.viewValidationStatus(item)
+
+	if containsStr(output, "authenticate") {
+		t.Error("should not show 'authenticate' for non-Google datasource")
+	}
+}
+
+// --- Help line tests ---
+
+func TestHelpLineShowsGoogleActionsInContent(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusContent
+
+	v := p.View(120, 40, 0)
+	if !containsStr(v, "re-check") {
+		t.Error("expected 're-check' in help line for Google datasource")
+	}
+	if !containsStr(v, "authenticate") {
+		t.Error("expected 'authenticate' in help line for Google datasource")
+	}
+	if !containsStr(v, "cloud console") {
+		t.Error("expected 'cloud console' in help line for Google datasource")
+	}
+}
+
+func TestHelpLineShowsFormHintsInFormMode(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+
+	if p.focusZone != FocusForm {
+		t.Fatal("expected FocusForm")
+	}
+
+	v := p.View(120, 40, 0)
+	if !containsStr(v, "tab") {
+		t.Error("expected 'tab' in help line during form mode")
+	}
+	if !containsStr(v, "esc cancel") {
+		t.Error("expected 'esc cancel' in help line during form mode")
+	}
+}
+
+// --- Auth flow result handling tests ---
+
+func TestAuthFlowResultSuccess(t *testing.T) {
+	p, _ := testSetup()
+
+	p.pendingAuthSlug = "calendar"
+	p.pendingAuthCreds = &clientCredentials{ClientID: "id", ClientSecret: "secret"}
+
+	msg := auth.AuthFlowResultMsg{
+		Token: &oauth2.Token{AccessToken: "new-token"},
+		Error: nil,
+	}
+
+	handled, _ := p.HandleMessage(msg)
+	if !handled {
+		t.Error("expected AuthFlowResultMsg to be handled")
+	}
+	if p.flashMessage == "" {
+		t.Error("expected flash message on success")
+	}
+	if !containsStr(p.flashMessage, "Authenticated") {
+		t.Errorf("expected success flash, got %q", p.flashMessage)
+	}
+	// Pending state should be cleared
+	if p.pendingAuthSlug != "" {
+		t.Error("expected pendingAuthSlug to be cleared")
+	}
+	if p.pendingAuthCreds != nil {
+		t.Error("expected pendingAuthCreds to be cleared")
+	}
+}
+
+func TestAuthFlowResultError(t *testing.T) {
+	p, _ := testSetup()
+
+	p.pendingAuthSlug = "gmail"
+	p.pendingAuthCreds = &clientCredentials{ClientID: "id", ClientSecret: "secret"}
+
+	msg := auth.AuthFlowResultMsg{
+		Error: fmt.Errorf("token exchange failed"),
+	}
+
+	handled, _ := p.HandleMessage(msg)
+	if !handled {
+		t.Error("expected AuthFlowResultMsg to be handled")
+	}
+	if !containsStr(p.flashMessage, "Auth failed") {
+		t.Errorf("expected failure flash, got %q", p.flashMessage)
+	}
+}
+
+func TestCancelAuthFlow(t *testing.T) {
+	p, _ := testSetup()
+
+	cancelled := false
+	p.authCancel = func() { cancelled = true }
+	p.pendingAuthSlug = "calendar"
+	p.pendingAuthCreds = &clientCredentials{}
+
+	p.cancelAuthFlow()
+
+	if !cancelled {
+		t.Error("expected cancel function to be called")
+	}
+	if p.authCancel != nil {
+		t.Error("expected authCancel to be nil after cancel")
+	}
+	if p.pendingAuthSlug != "" {
+		t.Error("expected pendingAuthSlug to be cleared")
+	}
+	if p.pendingAuthCreds != nil {
+		t.Error("expected pendingAuthCreds to be cleared")
+	}
+}
+
+func TestOAuthConfigForCalendar(t *testing.T) {
+	p, _ := testSetup()
+
+	conf, path := p.oauthConfigForSlug("calendar", "test-id", "test-secret")
+	if conf == nil {
+		t.Fatal("expected non-nil config for calendar")
+	}
+	if conf.ClientID != "test-id" {
+		t.Errorf("expected ClientID 'test-id', got %q", conf.ClientID)
+	}
+	if path == "" {
+		t.Error("expected non-empty token path for calendar")
+	}
+	if !containsStr(path, "google-calendar-mcp") {
+		t.Errorf("expected calendar path to contain 'google-calendar-mcp', got %q", path)
+	}
+}
+
+func TestOAuthConfigForGmail(t *testing.T) {
+	p, _ := testSetup()
+
+	conf, path := p.oauthConfigForSlug("gmail", "test-id", "test-secret")
+	if conf == nil {
+		t.Fatal("expected non-nil config for gmail")
+	}
+	if path == "" {
+		t.Error("expected non-empty token path for gmail")
+	}
+	if !containsStr(path, "gmail-mcp") {
+		t.Errorf("expected gmail path to contain 'gmail-mcp', got %q", path)
+	}
+}
+
+func TestOAuthConfigForUnknown(t *testing.T) {
+	p, _ := testSetup()
+
+	conf, path := p.oauthConfigForSlug("unknown", "id", "secret")
+	if conf != nil {
+		t.Error("expected nil config for unknown slug")
+	}
+	if path != "" {
+		t.Error("expected empty path for unknown slug")
+	}
+}
+
+// containsStr is a simple substring check for test assertions.
+func containsStr(s, substr string) bool {
+	return len(s) >= len(substr) && searchStr(s, substr)
+}
+
+func searchStr(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
