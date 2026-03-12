@@ -35,6 +35,11 @@ type Plugin struct {
 	bus      plugin.EventBus
 	styles   settingsStyles
 
+	// Shared style pointers from plugin.Context — updated in-place on palette change
+	// so the TUI host and all plugins see the new styles immediately.
+	sharedStyles *ui.Styles
+	sharedGrad   *ui.GradientColors
+
 	// SettingsProvider implementations for data sources
 	providers map[string]plugin.SettingsProvider
 
@@ -104,6 +109,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.cfg = ctx.Config
 	p.logger = ctx.Logger
 	p.bus = ctx.Bus
+	p.sharedStyles = ctx.Styles
+	p.sharedGrad = ctx.Grad
 
 	pal := config.GetPalette(p.cfg.Palette, p.cfg.Colors)
 	p.styles = newSettingsStyles(pal)

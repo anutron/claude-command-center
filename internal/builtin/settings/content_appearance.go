@@ -6,6 +6,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -125,6 +126,16 @@ func (p *Plugin) handlePaletteContentKey(msg tea.KeyMsg) plugin.Action {
 		previous := p.cfg.Palette
 		p.cfg.Palette = selected
 		if err := config.Save(p.cfg); err == nil {
+			// Rebuild all styles so the palette change is visible immediately.
+			newPal := config.GetPalette(selected, p.cfg.Colors)
+			p.styles = newSettingsStyles(newPal)
+			if p.sharedStyles != nil {
+				*p.sharedStyles = ui.NewStyles(newPal)
+			}
+			if p.sharedGrad != nil {
+				*p.sharedGrad = ui.NewGradientColors(newPal)
+			}
+
 			p.flashMessage = "Palette saved: " + selected
 			p.publishConfigSaved("palette")
 			if p.bus != nil {
