@@ -340,18 +340,22 @@ func ensureCC(cc **db.CommandCenter) {
 }
 
 func (p *Plugin) normalMaxVisibleTodos() int {
+	// Must match the maxVisibleTodos calculation in renderCommandCenterView.
+	// viewCommandTab passes height = p.height - 14 to the render function.
+	// renderCommandCenterView uses usedHeight ~= 4 (base, no warnings/suggestions),
+	// panelHeight = height - usedHeight, maxVisibleTodos = (panelHeight - 3) / 2, min 5.
 	viewHeight := p.height - 14
 	if viewHeight < 10 {
 		viewHeight = 10
 	}
-	usedHeight := 16
+	usedHeight := 4
 	panelHeight := viewHeight - usedHeight
-	if panelHeight < 8 {
-		panelHeight = 8
+	if panelHeight < 10 {
+		panelHeight = 10
 	}
 	max := (panelHeight - 3) / 2
-	if max < 3 {
-		max = 3
+	if max < 5 {
+		max = 5
 	}
 	return max
 }
