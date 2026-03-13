@@ -750,13 +750,13 @@ func TestRecheckOKUpdatesValid(t *testing.T) {
 	gmailIdx := findNavIndex(p, "gmail")
 	p.navCursor = gmailIdx
 	item := p.selectedNavItem()
-	// With no database (nil), sync status is unknown so "ok" credentials
-	// are downgraded to "incomplete" (never synced).
-	if item.ValidationStatus != "incomplete" {
-		t.Errorf("expected 'incomplete' (no sync data), got %q", item.ValidationStatus)
+	// After a live recheck returns "ok", credentials are valid — the nav
+	// should show a green check regardless of sync history.
+	if item.ValidationStatus != "ok" {
+		t.Errorf("expected 'ok' (credentials valid), got %q", item.ValidationStatus)
 	}
-	if item.Valid == nil || *item.Valid {
-		t.Error("expected Valid=false when sync status unknown")
+	if item.Valid == nil || !*item.Valid {
+		t.Error("expected Valid=true when credentials check returns ok")
 	}
 }
 
@@ -776,7 +776,8 @@ func TestRecheckOKWithSyncError(t *testing.T) {
 		UpdatedAt:   now,
 	}
 
-	// Recheck says credentials are "ok" but sync status has an error
+	// Recheck says credentials are "ok" — even if sync had an error,
+	// the credential check result takes precedence for the nav indicator.
 	msg := datasourceRecheckResult{
 		Slug: "gmail",
 		Result: plugin.ValidationResult{
@@ -787,11 +788,11 @@ func TestRecheckOKWithSyncError(t *testing.T) {
 	p.applyRecheckResult(msg)
 
 	item = p.selectedNavItem()
-	if item.ValidationStatus != "incomplete" {
-		t.Errorf("expected 'incomplete' when sync has error, got %q", item.ValidationStatus)
+	if item.ValidationStatus != "ok" {
+		t.Errorf("expected 'ok' (credentials valid), got %q", item.ValidationStatus)
 	}
-	if item.Valid == nil || *item.Valid {
-		t.Error("expected Valid=false when last sync had error")
+	if item.Valid == nil || !*item.Valid {
+		t.Error("expected Valid=true when credentials check returns ok")
 	}
 }
 
@@ -1093,7 +1094,7 @@ func TestAuthFlowResultSuccess(t *testing.T) {
 		Error: nil,
 	}
 
-	handled, _ := p.HandleMessage(msg)
+	handled, action := p.HandleMessage(msg)
 	if !handled {
 		t.Error("expected AuthFlowResultMsg to be handled")
 	}
@@ -1109,6 +1110,10 @@ func TestAuthFlowResultSuccess(t *testing.T) {
 	}
 	if p.pendingAuthCreds != nil {
 		t.Error("expected pendingAuthCreds to be cleared")
+	}
+	// After successful auth, a live recheck cmd should be returned
+	if action.TeaCmd == nil {
+		t.Error("expected TeaCmd for async live recheck after successful auth")
 	}
 }
 

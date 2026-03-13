@@ -261,7 +261,10 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		p.handleSystemActionResult(msg)
 		return true, plugin.NoopAction()
 	case auth.AuthFlowResultMsg:
-		p.handleAuthFlowResult(msg)
+		cmd := p.handleAuthFlowResult(msg)
+		if cmd != nil {
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
 		return true, plugin.NoopAction()
 	case plugin.TabLeaveMsg:
 		// Cancel any active banner editing when leaving the tab
@@ -568,25 +571,12 @@ func (p *Plugin) applyRecheckResult(msg datasourceRecheckResult) {
 					}
 				}
 
-				// Override validation indicator based on sync results,
-				// matching the same logic used in rebuildNav.
+				// Set Valid flag based on credential check result.
+				// When credentials are "ok", keep the green check — sync
+				// status is shown separately in the content pane.
 				if msg.Result.Status == "ok" {
-					ss := item.SyncStatus
-					if ss == nil || ss.LastSuccess == nil {
-						item.ValidationStatus = "incomplete"
-						item.ValidationMsg = "Credentials configured but never synced"
-						item.ValidHint = "Run ccc-refresh or wait for next auto-refresh"
-						v := false
-						item.Valid = &v
-					} else if ss.LastError != "" {
-						item.ValidationStatus = "incomplete"
-						item.ValidationMsg = "Last sync failed: " + ss.LastError
-						v := false
-						item.Valid = &v
-					} else {
-						v := true
-						item.Valid = &v
-					}
+					v := true
+					item.Valid = &v
 				} else if msg.Result.Status != "" {
 					v := false
 					item.Valid = &v
@@ -645,7 +635,9 @@ func (p *Plugin) oauthConfigForSlug(slug, clientID, clientSecret string) (*oauth
 }
 
 // handleAuthFlowResult processes the result of a browser-based OAuth flow.
-func (p *Plugin) handleAuthFlowResult(msg auth.AuthFlowResultMsg) {
+// Returns a tea.Cmd to trigger an async live recheck of the authenticated
+// data source, or nil on failure.
+func (p *Plugin) handleAuthFlowResult(msg auth.AuthFlowResultMsg) tea.Cmd {
 	p.authCancel = nil
 	slug := p.pendingAuthSlug
 	p.pendingAuthCreds = nil
@@ -653,12 +645,21 @@ func (p *Plugin) handleAuthFlowResult(msg auth.AuthFlowResultMsg) {
 
 	if msg.Error != nil {
 		p.flashMessage = "Auth failed: " + msg.Error.Error()
-	} else {
-		p.flashMessage = "Authenticated! Token saved for " + slug
-		// Re-validate to update the nav status.
-		p.rebuildNav()
+		p.flashMessageAt = time.Now()
+		return nil
 	}
+
+	p.flashMessage = "Authenticated! Token saved for " + slug
 	p.flashMessageAt = time.Now()
+
+	// Rebuild nav first (structural), then fire an async live recheck so
+	// the nav indicator updates to reflect the freshly-saved token.
+	p.rebuildNav()
+	recheckSlug := slug
+	return func() tea.Msg {
+		result := p.validateDataSourceResult(recheckSlug, true)
+		return datasourceRecheckResult{Slug: recheckSlug, Result: result}
+	}
 }
 
 // cancelAuthFlow cancels any in-progress OAuth flow.
