@@ -574,12 +574,27 @@ func (p *Plugin) applyRecheckResult(msg datasourceRecheckResult) {
 					}
 				}
 
-				// Set Valid flag based on credential check result.
-				// When credentials are "ok", keep the green check — sync
-				// status is shown separately in the content pane.
+				// Apply the same sync-aware downgrade as rebuildNav():
+				// credentials may look "ok" structurally but if sync has
+				// never succeeded or last sync failed, downgrade to
+				// "incomplete" with a warning indicator (BUG-030).
 				if msg.Result.Status == "ok" {
-					v := true
-					item.Valid = &v
+					ss := item.SyncStatus
+					if ss == nil || ss.LastSuccess == nil {
+						item.ValidationStatus = "unverified"
+						item.ValidationMsg = "Token configured — run ccc-refresh to verify"
+						item.ValidHint = "Run ccc-refresh or wait for next auto-refresh"
+						v := false
+						item.Valid = &v
+					} else if ss.LastError != "" {
+						item.ValidationStatus = "incomplete"
+						item.ValidationMsg = "Last sync failed: " + ss.LastError
+						v := false
+						item.Valid = &v
+					} else {
+						v := true
+						item.Valid = &v
+					}
 				} else if msg.Result.Status != "" {
 					v := false
 					item.Valid = &v

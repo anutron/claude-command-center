@@ -68,11 +68,27 @@ func (p *Plugin) viewValidationStatus(item *NavItem) string {
 
 	switch item.ValidationStatus {
 	case "ok":
+		label := "Token verified"
+		if item.SyncStatus != nil && item.SyncStatus.LastSuccess != nil {
+			label = "Token verified — last sync " + db.RelativeTime(*item.SyncStatus.LastSuccess)
+		}
 		lines = append(lines, fmt.Sprintf("  %s %s",
 			greenCheck,
-			p.styles.enabled.Render("Credentials configured")))
+			p.styles.enabled.Render(label)))
 		if item.ValidationMsg != "" {
 			lines = append(lines, "  "+p.styles.muted.Render(item.ValidationMsg))
+		}
+
+	case "unverified":
+		lines = append(lines, fmt.Sprintf("  %s %s",
+			yellowWarn,
+			p.styles.logWarn.Render("Token not yet verified")))
+		if item.ValidationMsg != "" {
+			lines = append(lines, "  "+p.styles.muted.Render(item.ValidationMsg))
+		}
+		if item.ValidHint != "" {
+			lines = append(lines, "")
+			lines = append(lines, "  "+p.styles.logWarn.Render("Next: ")+p.styles.muted.Render(item.ValidHint))
 		}
 
 	case "incomplete":
