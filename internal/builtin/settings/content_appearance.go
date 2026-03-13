@@ -66,8 +66,17 @@ func (p *Plugin) viewBannerContent(width, height int) string {
 	lines = append(lines, fmt.Sprintf("%s%s %s",
 		cursor, status, p.styles.itemName.Render("Show Banner")))
 
+	// Top padding (number of blank lines above banner)
+	cursor = "  "
+	if p.bannerField == 3 {
+		cursor = p.styles.pointer.Render("> ")
+	}
+	padVal := fmt.Sprintf("%d", p.cfg.GetBannerTopPadding())
+	lines = append(lines, fmt.Sprintf("%s%s %s",
+		cursor, p.styles.muted.Render("Top Padding:"), p.styles.itemName.Render(padVal)))
+
 	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  enter edit  space toggle  esc back"))
+	lines = append(lines, p.styles.muted.Render("  enter edit  space toggle  +/- adjust padding  esc back"))
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }

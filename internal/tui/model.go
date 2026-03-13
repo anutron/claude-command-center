@@ -437,7 +437,7 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	topPad := "\n\n\n\n\n\n"
+	topPad := strings.Repeat("\n", m.cfg.GetBannerTopPadding())
 
 	if m.onboarding {
 		// During onboarding, always show banner for preview (unless user toggled it off).

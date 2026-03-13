@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"database/sql"
@@ -55,8 +56,9 @@ type Plugin struct {
 	// Banner editing state (used by content_appearance)
 	bannerNameInput     textinput.Model
 	bannerSubtitleInput textinput.Model
-	bannerField         int  // 0=name, 1=subtitle, 2=show/hide
+	bannerField         int  // 0=name, 1=subtitle, 2=show/hide, 3=top padding
 	bannerEditing       bool // true when a text field is focused
+	bannerPaddingInput  textinput.Model
 
 	// Palette state (used by content_appearance)
 	paletteCursor int
@@ -148,6 +150,12 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	si.CharLimit = 30
 	si.SetValue(p.cfg.Subtitle)
 	p.bannerSubtitleInput = si
+
+	pi := textinput.New()
+	pi.Placeholder = "10"
+	pi.CharLimit = 3
+	pi.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
+	p.bannerPaddingInput = pi
 
 	// Build sidebar navigation
 	p.rebuildNav()
@@ -274,6 +282,8 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.bannerNameInput.Blur()
 			p.bannerSubtitleInput.SetValue(p.cfg.Subtitle)
 			p.bannerSubtitleInput.Blur()
+			p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
+			p.bannerPaddingInput.Blur()
 		}
 		// Cancel any active form
 		if p.activeForm != nil {
@@ -693,12 +703,20 @@ func (p *Plugin) handleBannerKey(msg tea.KeyMsg) plugin.Action {
 			// Save the value and exit editing.
 			p.bannerEditing = false
 			p.focusZone = FocusContent
-			if p.bannerField == 0 {
+			switch p.bannerField {
+			case 0:
 				p.bannerNameInput.Blur()
 				p.cfg.Name = p.bannerNameInput.Value()
-			} else {
+			case 1:
 				p.bannerSubtitleInput.Blur()
 				p.cfg.Subtitle = p.bannerSubtitleInput.Value()
+			case 3:
+				p.bannerPaddingInput.Blur()
+				if v, err := strconv.Atoi(p.bannerPaddingInput.Value()); err == nil {
+					p.cfg.SetBannerTopPadding(v)
+				}
+				// Sync the input back to the clamped value
+				p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
 			}
 			if err := config.Save(p.cfg); err == nil {
 				p.flashMessage = "Banner saved"
@@ -712,19 +730,26 @@ func (p *Plugin) handleBannerKey(msg tea.KeyMsg) plugin.Action {
 			// Cancel editing, restore original value.
 			p.bannerEditing = false
 			p.focusZone = FocusContent
-			if p.bannerField == 0 {
+			switch p.bannerField {
+			case 0:
 				p.bannerNameInput.SetValue(p.cfg.Name)
 				p.bannerNameInput.Blur()
-			} else {
+			case 1:
 				p.bannerSubtitleInput.SetValue(p.cfg.Subtitle)
 				p.bannerSubtitleInput.Blur()
+			case 3:
+				p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
+				p.bannerPaddingInput.Blur()
 			}
 			return plugin.NoopAction()
 		default:
-			if p.bannerField == 0 {
+			switch p.bannerField {
+			case 0:
 				p.bannerNameInput, _ = p.bannerNameInput.Update(msg)
-			} else {
+			case 1:
 				p.bannerSubtitleInput, _ = p.bannerSubtitleInput.Update(msg)
+			case 3:
+				p.bannerPaddingInput, _ = p.bannerPaddingInput.Update(msg)
 			}
 			return plugin.NoopAction()
 		}
@@ -737,11 +762,12 @@ func (p *Plugin) handleBannerKey(msg tea.KeyMsg) plugin.Action {
 			p.bannerField--
 		}
 	case "down", "j":
-		if p.bannerField < 2 {
+		if p.bannerField < 3 {
 			p.bannerField++
 		}
 	case "enter":
-		if p.bannerField <= 1 {
+		switch {
+		case p.bannerField <= 1:
 			// Start editing text field.
 			p.bannerEditing = true
 			p.focusZone = FocusEditing
@@ -750,6 +776,11 @@ func (p *Plugin) handleBannerKey(msg tea.KeyMsg) plugin.Action {
 			} else {
 				p.bannerSubtitleInput.Focus()
 			}
+		case p.bannerField == 3:
+			// Start editing top padding.
+			p.bannerEditing = true
+			p.focusZone = FocusEditing
+			p.bannerPaddingInput.Focus()
 		}
 	case " ":
 		if p.bannerField == 2 {
@@ -761,6 +792,30 @@ func (p *Plugin) handleBannerKey(msg tea.KeyMsg) plugin.Action {
 				} else {
 					p.flashMessage = "Banner hidden"
 				}
+				p.publishConfigSaved("banner")
+			} else {
+				p.flashMessage = "Failed to save: " + err.Error()
+			}
+			p.flashMessageAt = time.Now()
+		}
+	case "+", "=":
+		if p.bannerField == 3 {
+			p.cfg.SetBannerTopPadding(p.cfg.GetBannerTopPadding() + 1)
+			p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
+			if err := config.Save(p.cfg); err == nil {
+				p.flashMessage = fmt.Sprintf("Top padding: %d", p.cfg.GetBannerTopPadding())
+				p.publishConfigSaved("banner")
+			} else {
+				p.flashMessage = "Failed to save: " + err.Error()
+			}
+			p.flashMessageAt = time.Now()
+		}
+	case "-":
+		if p.bannerField == 3 {
+			p.cfg.SetBannerTopPadding(p.cfg.GetBannerTopPadding() - 1)
+			p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
+			if err := config.Save(p.cfg); err == nil {
+				p.flashMessage = fmt.Sprintf("Top padding: %d", p.cfg.GetBannerTopPadding())
 				p.publishConfigSaved("banner")
 			} else {
 				p.flashMessage = "Failed to save: " + err.Error()

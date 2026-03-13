@@ -14,6 +14,7 @@ type Config struct {
 	HomeDir         string        `yaml:"home_dir,omitempty"`
 	Subtitle        string        `yaml:"subtitle,omitempty"`
 	ShowBanner      *bool         `yaml:"show_banner,omitempty"`
+	BannerTopPadding *int        `yaml:"banner_top_padding,omitempty"`
 	Palette         string        `yaml:"palette"`
 	Colors          *CustomColors `yaml:"colors,omitempty"`
 	RefreshInterval string        `yaml:"refresh_interval,omitempty"`
@@ -158,6 +159,23 @@ func (c *Config) BannerVisible() bool {
 // SetShowBanner sets the ShowBanner field.
 func (c *Config) SetShowBanner(v bool) {
 	c.ShowBanner = &v
+}
+
+// GetBannerTopPadding returns the number of blank lines above the banner.
+// Defaults to 10 if not set.
+func (c *Config) GetBannerTopPadding() int {
+	if c.BannerTopPadding == nil {
+		return 10
+	}
+	return *c.BannerTopPadding
+}
+
+// SetBannerTopPadding sets the BannerTopPadding field.
+func (c *Config) SetBannerTopPadding(v int) {
+	if v < 0 {
+		v = 0
+	}
+	c.BannerTopPadding = &v
 }
 
 // DefaultConfig returns a Config with sensible defaults.
