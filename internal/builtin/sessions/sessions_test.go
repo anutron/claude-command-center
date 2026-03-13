@@ -27,6 +27,7 @@ func testConfig() *config.Config {
 
 func setupPlugin(t *testing.T) *Plugin {
 	t.Helper()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	database, err := db.OpenDB(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -50,6 +51,7 @@ func setupPlugin(t *testing.T) *Plugin {
 }
 
 func TestInitLoadsPaths(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	database, err := db.OpenDB(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatalf("open db: %v", err)

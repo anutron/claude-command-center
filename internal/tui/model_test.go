@@ -11,7 +11,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func testConfig() *config.Config {
+func testSetup(t *testing.T) *config.Config {
+	t.Helper()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	return &config.Config{
 		Name:    "Test Center",
 		Palette: "aurora",
@@ -21,13 +23,13 @@ func testConfig() *config.Config {
 }
 
 func TestNewModel(t *testing.T) {
+	cfg := testSetup(t)
 	database, err := db.OpenDB(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
 
-	cfg := testConfig()
 	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
 	if m.cfg.Name != "Test Center" {
@@ -45,13 +47,14 @@ func TestNewModel(t *testing.T) {
 }
 
 func TestTabNavigationWithKeyTab(t *testing.T) {
+	cfg := testSetup(t)
 	database, err := db.OpenDB(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
 	// Tab forward
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -88,13 +91,14 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 }
 
 func TestWindowResize(t *testing.T) {
+	cfg := testSetup(t)
 	database, err := db.OpenDB(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	m = result.(Model)
@@ -104,13 +108,14 @@ func TestWindowResize(t *testing.T) {
 }
 
 func TestViewDoesNotPanic(t *testing.T) {
+	cfg := testSetup(t)
 	database, err := db.OpenDB(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 	m.width = 120
 	m.height = 40
 
@@ -177,13 +182,14 @@ func TestSubtitleFromText(t *testing.T) {
 }
 
 func TestEscQuits(t *testing.T) {
+	cfg := testSetup(t)
 	database, err := db.OpenDB(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Error("expected non-nil cmd (tea.Quit) on esc")
@@ -191,13 +197,14 @@ func TestEscQuits(t *testing.T) {
 }
 
 func TestPluginTabMapping(t *testing.T) {
+	cfg := testSetup(t)
 	database, err := db.OpenDB(t.TempDir() + "/test.db")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer database.Close()
 
-	m := NewModel(database, testConfig(), plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
 	// First two tabs should be sessions plugin
 	if m.tabs[0].plugin.Slug() != "sessions" {

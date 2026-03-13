@@ -8,6 +8,7 @@ import (
 
 func TestValidateCalendar_MissingCredentials(t *testing.T) {
 	// Set HOME to a temp dir so credentials won't be found
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 
 	err := ValidateCalendar()
@@ -27,6 +28,7 @@ func TestValidateGitHub_MissingCLI(t *testing.T) {
 }
 
 func TestValidateGranola_MissingAccounts(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 
 	err := ValidateGranola()
@@ -36,6 +38,7 @@ func TestValidateGranola_MissingAccounts(t *testing.T) {
 }
 
 func TestValidateGmail_MissingCredentials(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 
 	err := ValidateGmail()
@@ -46,6 +49,7 @@ func TestValidateGmail_MissingCredentials(t *testing.T) {
 
 func TestValidateGmail_ValidCredentials(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 
 	// Create the expected credentials file
@@ -66,6 +70,7 @@ func TestValidateGmail_ValidCredentials(t *testing.T) {
 
 func TestValidateGmail_MalformedCredentials(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 
 	gmailDir := filepath.Join(tmpHome, ".gmail-mcp")
@@ -93,6 +98,7 @@ func TestValidateSlack_MissingToken(t *testing.T) {
 }
 
 func TestIsScheduleInstalled_Missing(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 
 	if IsScheduleInstalled() {

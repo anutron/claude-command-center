@@ -23,7 +23,9 @@ func writeTestPlugin(t *testing.T, script string) string {
 	return path
 }
 
-func makeCtx() plugin.Context {
+func makeCtx(t *testing.T) plugin.Context {
+	t.Helper()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	return plugin.Context{
 		Config: config.DefaultConfig(),
 		Bus:    plugin.NewBus(),
@@ -44,7 +46,7 @@ while read line; do
 done
 `
 	path := writeTestPlugin(t, script)
-	ctx := makeCtx()
+	ctx := makeCtx(t)
 
 	ep := &ExternalPlugin{command: path}
 	if err := ep.Init(ctx); err != nil {
@@ -91,7 +93,7 @@ while read line; do
 done
 `
 	path := writeTestPlugin(t, script)
-	ctx := makeCtx()
+	ctx := makeCtx(t)
 
 	ep := &ExternalPlugin{command: path}
 	if err := ep.Init(ctx); err != nil {
@@ -118,7 +120,7 @@ while read line; do
 done
 `
 	path := writeTestPlugin(t, script)
-	ctx := makeCtx()
+	ctx := makeCtx(t)
 
 	ep := &ExternalPlugin{command: path}
 	if err := ep.Init(ctx); err != nil {
@@ -142,7 +144,7 @@ echo '{"type":"ready","slug":"crash-test","tab_name":"Crash","routes":[],"key_bi
 exit 1
 `
 	path := writeTestPlugin(t, script)
-	ctx := makeCtx()
+	ctx := makeCtx(t)
 
 	ep := &ExternalPlugin{command: path}
 	if err := ep.Init(ctx); err != nil {
@@ -203,7 +205,7 @@ while read line; do
 done
 `
 	path := writeTestPlugin(t, script)
-	ctx := makeCtx()
+	ctx := makeCtx(t)
 
 	ep := &ExternalPlugin{command: path}
 	if err := ep.Init(ctx); err != nil {
@@ -219,7 +221,7 @@ done
 }
 
 func TestMissingBinaryGraceful(t *testing.T) {
-	ctx := makeCtx()
+	ctx := makeCtx(t)
 
 	ep := &ExternalPlugin{command: "nonexistent-binary-xyz", tabName: "Missing Plugin"}
 	err := ep.Init(ctx)

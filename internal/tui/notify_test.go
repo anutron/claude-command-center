@@ -10,6 +10,7 @@ import (
 )
 
 func TestSocketPath(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	path := SocketPath()
 	if path == "" {
 		t.Error("SocketPath() returned empty string")

@@ -10,6 +10,7 @@ import (
 )
 
 func TestGranolaDoctorChecks_Missing(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 
 	s := &Settings{cfg: &config.Config{}}
@@ -27,6 +28,7 @@ func TestGranolaDoctorChecks_Missing(t *testing.T) {
 
 func TestGranolaDoctorChecks_OK(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 
 	dir := filepath.Join(tmpHome, "Library", "Application Support", "Granola")

@@ -24,6 +24,7 @@ func testDB(t *testing.T) *sql.DB {
 
 func testPlugin(t *testing.T) *Plugin {
 	t.Helper()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	p := New()
 	database := testDB(t)
 	t.Cleanup(func() { database.Close() })

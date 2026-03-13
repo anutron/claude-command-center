@@ -10,6 +10,7 @@ import (
 )
 
 func TestValidateCalendarResult_Missing(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 
 	result := ValidateCalendarResult()
@@ -20,6 +21,7 @@ func TestValidateCalendarResult_Missing(t *testing.T) {
 
 func TestValidateCalendarResult_ValidCredentials(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 
 	dir := filepath.Join(tmpHome, ".config", "google-calendar-mcp")
@@ -46,6 +48,7 @@ func TestValidateCalendarResult_ValidCredentials(t *testing.T) {
 
 func TestValidateCalendarResult_MalformedCredentials(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 
 	dir := filepath.Join(tmpHome, ".config", "google-calendar-mcp")
@@ -64,6 +67,7 @@ func TestValidateCalendarResult_MalformedCredentials(t *testing.T) {
 
 func TestValidateCalendarResult_LegacyToken(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 
 	dir := filepath.Join(tmpHome, ".config", "google-calendar-mcp")
@@ -85,6 +89,7 @@ func TestValidateCalendarResult_LegacyToken(t *testing.T) {
 }
 
 func TestCalendarDoctorChecks_Structural(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 
 	s := &Settings{}

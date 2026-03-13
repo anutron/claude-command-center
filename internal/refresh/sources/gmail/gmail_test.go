@@ -38,6 +38,7 @@ func TestEnabled(t *testing.T) {
 }
 
 func TestLoadGmailAuthMissingFile(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	_, err := loadGmailAuth(false)
 	if err == nil {
@@ -50,6 +51,7 @@ func TestLoadGmailAuthMissingFile(t *testing.T) {
 
 func TestLoadGmailAuthBadJSON(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", home)
 	dir := home + "/.gmail-mcp"
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -69,6 +71,7 @@ func TestLoadGmailAuthBadJSON(t *testing.T) {
 
 func TestLoadGmailAuthMissingClientID(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", home)
 	t.Setenv("GMAIL_CLIENT_ID", "")
 	dir := home + "/.gmail-mcp"
@@ -90,6 +93,7 @@ func TestLoadGmailAuthMissingClientID(t *testing.T) {
 func TestLoadGmailAuthAdvancedScope(t *testing.T) {
 	// Verify that advanced=true doesn't error differently than advanced=false
 	// (both should fail the same way with missing file)
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	_, err := loadGmailAuth(true)
 	if err == nil {

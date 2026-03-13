@@ -11,6 +11,7 @@ import (
 )
 
 func TestValidateGmailResult_Missing(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 
 	result := ValidateGmailResult()
@@ -21,6 +22,7 @@ func TestValidateGmailResult_Missing(t *testing.T) {
 
 func TestValidateGmailResult_ValidCredentials(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 
 	dir := filepath.Join(tmpHome, ".gmail-mcp")
@@ -47,6 +49,7 @@ func TestValidateGmailResult_ValidCredentials(t *testing.T) {
 
 func TestValidateGmailResult_MalformedCredentials(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 
 	dir := filepath.Join(tmpHome, ".gmail-mcp")
@@ -65,6 +68,7 @@ func TestValidateGmailResult_MalformedCredentials(t *testing.T) {
 
 func TestValidateGmailResult_NoClientCredentials(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("GMAIL_CLIENT_ID", "")
 
@@ -91,6 +95,7 @@ func TestValidateGmailResult_NoClientCredentials(t *testing.T) {
 
 func TestValidateGmailResult_ClientFromEnv(t *testing.T) {
 	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("GMAIL_CLIENT_ID", "env-client-id")
 
@@ -116,6 +121,7 @@ func TestValidateGmailResult_ClientFromEnv(t *testing.T) {
 }
 
 func TestGmailDoctorChecks_Structural(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 
 	d := NewDoctor(config.GmailConfig{})
