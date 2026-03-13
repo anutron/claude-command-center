@@ -1487,6 +1487,50 @@ func TestLogsViewChangesWithScroll(t *testing.T) {
 	}
 }
 
+func TestLogsScrollFromNavMode(t *testing.T) {
+	p, _ := testSetup()
+	logger := p.logger.(*plugin.FileLogger)
+	for i := 0; i < 50; i++ {
+		logger.Info("test", fmt.Sprintf("Log message %d", i))
+	}
+
+	logsIdx := findNavIndex(p, "system-logs")
+	p.navCursor = logsIdx
+	p.focusZone = FocusNav // User is in nav mode, not content mode
+	p.height = 40
+	p.width = 120
+
+	// Pressing j while in FocusNav on the logs pane should scroll logs, not move nav cursor
+	v1 := p.View(120, 40, 0)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	v2 := p.View(120, 40, 0)
+
+	if v1 == v2 {
+		t.Error("expected view to change after pressing j in FocusNav on logs pane")
+	}
+
+	if p.logOffset != 1 {
+		t.Errorf("expected logOffset 1 after j from nav mode, got %d", p.logOffset)
+	}
+
+	// Nav cursor should NOT have moved
+	if p.navCursor != logsIdx {
+		t.Errorf("expected navCursor to stay at %d, got %d", logsIdx, p.navCursor)
+	}
+
+	// k should scroll back
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if p.logOffset != 0 {
+		t.Errorf("expected logOffset 0 after k, got %d", p.logOffset)
+	}
+
+	// ctrl+f should page forward from nav mode
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlF})
+	if p.logOffset == 0 {
+		t.Error("expected logOffset > 0 after ctrl+f from nav mode")
+	}
+}
+
 func TestLogsFilterSlashActivates(t *testing.T) {
 	p, _ := testSetup()
 	logger := p.logger.(*plugin.FileLogger)

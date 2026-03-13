@@ -358,6 +358,17 @@ func (p *Plugin) viewSidebar(width, height int, focus FocusZone) string {
 // handleNavKey processes key events when the nav sidebar is focused.
 // Returns a plugin.Action indicating what happened.
 func (p *Plugin) handleNavKey(msg tea.KeyMsg) plugin.Action {
+	// When the logs pane is selected, forward scroll keys directly to the
+	// logs content handler so the user can scroll without pressing Enter first.
+	// This fixes a long-standing bug where j/k/arrows moved the nav cursor
+	// instead of scrolling the visible log output.
+	if item := p.selectedNavItem(); item != nil && item.Slug == "system-logs" {
+		switch msg.String() {
+		case "up", "k", "down", "j", "ctrl+f", "ctrl+b", "ctrl+d", "ctrl+u":
+			return p.handleLogsContentKey(msg)
+		}
+	}
+
 	switch msg.String() {
 	case "up", "k":
 		p.navCursorUp()
