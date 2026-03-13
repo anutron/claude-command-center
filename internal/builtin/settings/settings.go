@@ -133,7 +133,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.providers = make(map[string]plugin.SettingsProvider)
 	}
 	p.providers["calendar"] = calendar.NewSettings(p.cfg, pal)
-	p.providers["github"] = ghsettings.NewSettings(p.cfg, pal)
+	p.providers["github"] = ghsettings.NewSettings(p.cfg, pal, p.logger)
 	p.providers["granola"] = granola.NewSettings(p.cfg, pal)
 
 	// Banner text inputs

@@ -183,23 +183,41 @@ func isGoogleDatasource(slug string) bool {
 }
 
 func (p *Plugin) handleDatasourceContentKey(item *NavItem, msg tea.KeyMsg) plugin.Action {
-	switch msg.String() {
-	case "r":
-		// Re-check credentials (live for Google datasources).
+	// For 'r' (refresh), give the provider a chance to add extra work (e.g.
+	// re-fetching a username) alongside the standard credential recheck.
+	if msg.String() == "r" {
 		slug := item.Slug
 		live := isGoogleDatasource(slug)
-		cmd := func() tea.Msg {
+		var cmds []tea.Cmd
+
+		// Let the provider handle 'r' first for provider-specific refresh logic.
+		if sp, ok := p.providers[slug]; ok {
+			action := sp.HandleSettingsKey(msg)
+			if action.Type == plugin.ActionFlash {
+				p.flashMessage = action.Payload
+				p.flashMessageAt = currentTime()
+			}
+			if action.TeaCmd != nil {
+				cmds = append(cmds, action.TeaCmd)
+			}
+		}
+
+		// Always run the credential recheck.
+		cmds = append(cmds, func() tea.Msg {
 			result := p.validateDataSourceResult(slug, live)
 			return datasourceRecheckResult{Slug: slug, Result: result}
-		}
+		})
+
 		if live {
 			p.flashMessage = "Live-checking " + item.Label + " credentials..."
 		} else {
 			p.flashMessage = "Re-checking " + item.Label + " credentials..."
 		}
-		p.flashMessageAt = time.Now()
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		p.flashMessageAt = currentTime()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
+	}
 
+	switch msg.String() {
 	case "a":
 		// Authenticate: show credential form for Google data sources.
 		if !isGoogleDatasource(item.Slug) {
@@ -213,7 +231,7 @@ func (p *Plugin) handleDatasourceContentKey(item *NavItem, msg tea.KeyMsg) plugi
 		// Initialize the form via its Init cmd.
 		initCmd := p.activeForm.Init()
 		p.flashMessage = "Enter OAuth client credentials for " + item.Label
-		p.flashMessageAt = time.Now()
+		p.flashMessageAt = currentTime()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: initCmd}
 
 	case "o":
@@ -223,7 +241,7 @@ func (p *Plugin) handleDatasourceContentKey(item *NavItem, msg tea.KeyMsg) plugi
 		}
 		_ = exec.Command("open", "https://console.cloud.google.com/apis/credentials").Start()
 		p.flashMessage = "Opening Google Cloud Console..."
-		p.flashMessageAt = time.Now()
+		p.flashMessageAt = currentTime()
 		return plugin.NoopAction()
 	}
 
@@ -232,7 +250,7 @@ func (p *Plugin) handleDatasourceContentKey(item *NavItem, msg tea.KeyMsg) plugi
 		action := sp.HandleSettingsKey(msg)
 		if action.Type == plugin.ActionFlash {
 			p.flashMessage = action.Payload
-			p.flashMessageAt = time.Now()
+			p.flashMessageAt = currentTime()
 			return plugin.NoopAction()
 		}
 		if action.Type != plugin.ActionUnhandled {

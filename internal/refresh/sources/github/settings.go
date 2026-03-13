@@ -28,6 +28,7 @@ type ghRepoFetchResult struct {
 // Settings implements plugin.SettingsProvider for the GitHub data source.
 type Settings struct {
 	cfg    *config.Config
+	logger plugin.Logger
 	styles settingsStyles
 
 	cursor          int
@@ -71,7 +72,7 @@ func newSettingsStyles(pal config.Palette) settingsStyles {
 }
 
 // NewSettings creates a GitHub SettingsProvider.
-func NewSettings(cfg *config.Config, pal config.Palette) *Settings {
+func NewSettings(cfg *config.Config, pal config.Palette, logger plugin.Logger) *Settings {
 	ri := textinput.New()
 	ri.Placeholder = "owner/repo"
 	ri.CharLimit = 100
@@ -88,10 +89,23 @@ func NewSettings(cfg *config.Config, pal config.Palette) *Settings {
 
 	return &Settings{
 		cfg:           cfg,
+		logger:        logger,
 		styles:        newSettingsStyles(pal),
 		repoInput:     ri,
 		usernameInput: ui,
 		filterInput:   fi,
+	}
+}
+
+func (s *Settings) logInfo(msg string, fields ...interface{}) {
+	if s.logger != nil {
+		s.logger.Info("github", msg, fields...)
+	}
+}
+
+func (s *Settings) logError(msg string, fields ...interface{}) {
+	if s.logger != nil {
+		s.logger.Error("github", msg, fields...)
 	}
 }
 
@@ -375,12 +389,15 @@ var fetchGHRepos = func() ([]ghRepoInfo, error) {
 func (s *Settings) SettingsOpenCmd() tea.Cmd {
 	// Only fetch if authenticated and username is not already set.
 	if s.cfg.GitHub.Username != "" {
+		s.logInfo("settings opened, username already set", "username", s.cfg.GitHub.Username)
 		return nil
 	}
 	// Quick check: is gh authenticated?
 	if err := exec.Command("gh", "auth", "token").Run(); err != nil {
+		s.logError("gh CLI not authenticated, skipping username auto-fetch")
 		return nil
 	}
+	s.logInfo("auto-fetching GitHub username via gh API")
 	return func() tea.Msg {
 		login, err := fetchGHUsername()
 		return ghUserFetchResult{Login: login, Err: err}
@@ -391,6 +408,7 @@ func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
 	switch msg := msg.(type) {
 	case ghUserFetchResult:
 		if msg.Err != nil {
+			s.logError("username auto-fetch failed", "error", msg.Err)
 			return true, plugin.Action{Type: plugin.ActionFlash, Payload: "Could not auto-fetch GitHub username: " + msg.Err.Error()}
 		}
 		// Only set if still empty (user may have typed one in the meantime).
@@ -398,13 +416,16 @@ func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
 			s.cfg.GitHub.Username = msg.Login
 			s.usernameInput.SetValue(msg.Login)
 			config.Save(s.cfg)
+			s.logInfo("username auto-detected", "login", msg.Login)
 			return true, plugin.Action{Type: plugin.ActionFlash, Payload: "GitHub username auto-detected: " + msg.Login}
 		}
+		s.logInfo("username auto-fetch returned but username already set", "fetched", msg.Login, "current", s.cfg.GitHub.Username)
 		return true, plugin.NoopAction()
 	case ghRepoFetchResult:
 		s.fetchLoading = false
 		if msg.Err != nil {
 			s.fetchError = msg.Err.Error()
+			s.logError("repo fetch failed", "error", msg.Err)
 		} else {
 			s.fetchedRepos = msg.Repos
 			s.fetchError = ""
@@ -415,6 +436,7 @@ func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
 			s.filterInput.SetValue("")
 			s.filterInput.Focus()
 			s.filtering = true
+			s.logInfo("repos fetched", "count", len(msg.Repos))
 		}
 		return true, plugin.NoopAction()
 	}
@@ -432,11 +454,13 @@ func (s *Settings) DoctorChecks(opts plugin.DoctorOpts) []plugin.DoctorCheck {
 			Message: "GitHub CLI not authenticated",
 			Hint:    "Run 'gh auth login' to authenticate",
 		}
+		s.logError("doctor check: gh CLI not authenticated")
 	} else {
 		check.Result = plugin.ValidationResult{
 			Status:  "ok",
 			Message: "GitHub CLI authenticated",
 		}
+		s.logInfo("doctor check: gh CLI authenticated")
 	}
 
 	return []plugin.DoctorCheck{check}
@@ -451,6 +475,7 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 			if val != "" {
 				s.cfg.GitHub.Repos = append(s.cfg.GitHub.Repos, val)
 				config.Save(s.cfg)
+				s.logInfo("repo added", "repo", val)
 			}
 			s.repoInput.SetValue("")
 			s.repoEditing = false
@@ -475,6 +500,7 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 			config.Save(s.cfg)
 			s.usernameEditing = false
 			s.usernameInput.Blur()
+			s.logInfo("username saved", "username", s.cfg.GitHub.Username)
 			return plugin.Action{Type: plugin.ActionFlash, Payload: "Username saved"}
 		case "esc":
 			s.usernameEditing = false
@@ -500,9 +526,30 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		s.usernameInput.SetValue(s.cfg.GitHub.Username)
 		s.usernameInput.Focus()
 		return plugin.NoopAction()
+	case "r":
+		// Refresh: re-check credentials and re-fetch username if empty.
+		s.logInfo("refresh triggered")
+		var cmds []tea.Cmd
+		// Re-fetch username if empty and gh is authenticated.
+		if s.cfg.GitHub.Username == "" {
+			if err := exec.Command("gh", "auth", "token").Run(); err == nil {
+				s.logInfo("refreshing: fetching username")
+				cmds = append(cmds, func() tea.Msg {
+					login, err := fetchGHUsername()
+					return ghUserFetchResult{Login: login, Err: err}
+				})
+			}
+		}
+		if len(cmds) > 0 {
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
+		}
+		// If username is already set, just let the datasource-level r handler
+		// do the credential recheck (return unhandled so it falls through).
+		return plugin.Action{Type: plugin.ActionUnhandled}
 	case "f":
 		// Enter fetch/browse mode
 		if len(s.fetchedRepos) > 0 {
+			s.logInfo("entering repo browse mode")
 			s.fetchMode = true
 			s.fetchCursor = 0
 			s.fetchScrollOffset = 0
@@ -513,10 +560,12 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		}
 		// Trigger a fresh fetch
 		if err := exec.Command("gh", "auth", "token").Run(); err != nil {
+			s.logError("repo fetch aborted: gh CLI not authenticated")
 			return plugin.Action{Type: plugin.ActionFlash, Payload: "GitHub CLI not authenticated"}
 		}
 		s.fetchLoading = true
 		s.fetchError = ""
+		s.logInfo("fetching repos from GitHub")
 		cmd := func() tea.Msg {
 			repos, err := fetchGHRepos()
 			return ghRepoFetchResult{Repos: repos, Err: err}
@@ -533,6 +582,7 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 			if s.cursor >= len(s.cfg.GitHub.Repos) && s.cursor > 0 {
 				s.cursor--
 			}
+			s.logInfo("repo removed", "repo", removed)
 			return plugin.Action{Type: plugin.ActionFlash, Payload: "Removed: " + removed}
 		}
 		return plugin.NoopAction()
