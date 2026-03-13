@@ -45,7 +45,7 @@ func main() {
 			providers := []plugin.DoctorProvider{
 				calendar.NewSettings(cfg, pal),
 				gmail.NewDoctor(cfg.Gmail),
-				github.NewSettings(cfg, pal),
+				github.NewSettings(cfg, pal, nil),
 				granola.NewSettings(cfg, pal),
 			}
 			if err := doctor.RunDoctor(providers, live); err != nil {
