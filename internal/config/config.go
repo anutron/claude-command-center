@@ -113,9 +113,24 @@ func (e *CalendarEntry) SetEnabled(v bool) {
 }
 
 type GitHubConfig struct {
-	Enabled  bool     `yaml:"enabled"`
-	Repos    []string `yaml:"repos"`
-	Username string   `yaml:"username"`
+	Enabled     bool     `yaml:"enabled"`
+	Repos       []string `yaml:"repos"`
+	Username    string   `yaml:"username"`
+	TrackMyPRs  *bool    `yaml:"track_my_prs,omitempty"`
+}
+
+// IsTrackMyPRs returns whether "all my PRs" mode is enabled.
+// Defaults to true if not explicitly set.
+func (g GitHubConfig) IsTrackMyPRs() bool {
+	if g.TrackMyPRs == nil {
+		return true
+	}
+	return *g.TrackMyPRs
+}
+
+// SetTrackMyPRs sets the TrackMyPRs field.
+func (g *GitHubConfig) SetTrackMyPRs(v bool) {
+	g.TrackMyPRs = &v
 }
 
 type TodosConfig struct {

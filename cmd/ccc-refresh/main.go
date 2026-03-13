@@ -67,7 +67,7 @@ func main() {
 	sources := []refresh.DataSource{
 		calendarsrc.New(cfg.Calendar.Enabled, calendarIDs, nil),
 		gmailsrc.New(cfg.Gmail, l),
-		githubsrc.New(cfg.GitHub.Enabled, cfg.GitHub.Repos, cfg.GitHub.Username),
+		githubsrc.New(cfg.GitHub.Enabled, cfg.GitHub.Repos, cfg.GitHub.Username, cfg.GitHub.IsTrackMyPRs()),
 		slacksrc.New(l),
 		granolasrc.New(cfg.Granola.Enabled, l),
 	}
