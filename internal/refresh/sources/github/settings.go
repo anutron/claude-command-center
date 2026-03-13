@@ -159,10 +159,14 @@ func (s *Settings) SettingsView(width, height int) string {
 		lines = append(lines, "  "+s.usernameInput.View())
 	}
 
-	// Track My PRs
+	lines = append(lines, "")
+
+	// Track My PRs — prominent section
+	lines = append(lines, s.styles.header.Render("  MODE"))
 	trackText := "[off]"
 	trackStyle := s.styles.disabled
-	if s.cfg.GitHub.IsTrackMyPRs() {
+	trackMyPRs := s.cfg.GitHub.IsTrackMyPRs()
+	if trackMyPRs {
 		trackText = "[on] "
 		trackStyle = s.styles.enabled
 	}
@@ -170,59 +174,67 @@ func (s *Settings) SettingsView(width, height int) string {
 		s.styles.muted.Render("Track My PRs:"),
 		trackStyle.Render(trackText+" (t to toggle)")))
 	lines = append(lines, s.styles.muted.Render("    Show all PRs assigned, review-requested, or authored by you"))
-
-	// Repos
-	lines = append(lines, "")
-	lines = append(lines, s.styles.header.Render("  REPOS"))
-
-	// Browse mode: show fetched repos with filter
-	if s.fetchMode {
-		s.lastHeight = height
-		// Lines so far consume space; remaining height available for fetch mode.
-		// Each line above takes 1 row. Account for the lines we've already added.
-		remainingHeight := height - len(lines)
-		if remainingHeight < 5 {
-			remainingHeight = 5
-		}
-		lines = append(lines, s.viewFetchMode(remainingHeight)...)
-		return strings.Join(lines, "\n")
+	if trackMyPRs {
+		lines = append(lines, s.styles.muted.Render("    No repo selection needed — all your PRs are tracked automatically"))
 	}
 
-	if len(s.cfg.GitHub.Repos) == 0 {
-		lines = append(lines, s.styles.muted.Render("  No repos configured"))
-	} else {
-		for i, repo := range s.cfg.GitHub.Repos {
-			cursor := "  "
-			if i == s.cursor {
-				cursor = s.styles.pointer.Render("> ")
+	// When Track My PRs is on, hide the repo selection section entirely
+	if !trackMyPRs {
+		lines = append(lines, "")
+		lines = append(lines, s.styles.header.Render("  REPOS"))
+
+		// Browse mode: show fetched repos with filter
+		if s.fetchMode {
+			s.lastHeight = height
+			remainingHeight := height - len(lines)
+			if remainingHeight < 5 {
+				remainingHeight = 5
 			}
-			lines = append(lines, fmt.Sprintf("  %s%s", cursor, s.styles.itemName.Render(repo)))
+			lines = append(lines, s.viewFetchMode(remainingHeight)...)
+			return strings.Join(lines, "\n")
+		}
+
+		if len(s.cfg.GitHub.Repos) == 0 {
+			lines = append(lines, s.styles.muted.Render("  No repos configured"))
+		} else {
+			for i, repo := range s.cfg.GitHub.Repos {
+				cursor := "  "
+				if i == s.cursor {
+					cursor = s.styles.pointer.Render("> ")
+				}
+				lines = append(lines, fmt.Sprintf("  %s%s", cursor, s.styles.itemName.Render(repo)))
+			}
+		}
+
+		if s.repoEditing {
+			lines = append(lines, "  "+s.repoInput.View())
+		}
+
+		lines = append(lines, "")
+
+		// Show fetch status hint
+		if s.fetchLoading {
+			lines = append(lines, s.styles.muted.Render("  Fetching repos from GitHub..."))
+			lines = append(lines, "")
+		} else if s.fetchError != "" {
+			lines = append(lines, s.styles.logError.Render("  Fetch error: "+s.fetchError))
+			lines = append(lines, "")
 		}
 	}
 
-	if s.repoEditing {
-		lines = append(lines, "  "+s.repoInput.View())
-	}
-
+	// Key hints
 	lines = append(lines, "")
-
-	// Show fetch status hint
-	if s.fetchLoading {
-		lines = append(lines, s.styles.muted.Render("  Fetching repos from GitHub..."))
-		lines = append(lines, "")
-	} else if s.fetchError != "" {
-		lines = append(lines, s.styles.logError.Render("  Fetch error: "+s.fetchError))
-		lines = append(lines, "")
+	if trackMyPRs {
+		lines = append(lines, s.styles.muted.Render("  t track my PRs · u username"))
+	} else {
+		hintParts := "  t track my PRs · a add repo · x remove · u username"
+		if len(s.fetchedRepos) > 0 {
+			hintParts += " · f browse repos"
+		} else if !s.fetchLoading && s.fetchError == "" {
+			hintParts += " · f fetch from GitHub"
+		}
+		lines = append(lines, s.styles.muted.Render(hintParts))
 	}
-
-	hintParts := "  t track my PRs · a add repo · x remove · u username"
-	if len(s.fetchedRepos) > 0 {
-		hintParts += " · f browse repos"
-	} else if !s.fetchLoading && s.fetchError == "" {
-		hintParts += " · f fetch from GitHub"
-	}
-	lines = append(lines, s.styles.muted.Render(hintParts))
-	lines = append(lines, s.styles.muted.Render("  Run 'gh auth login' to authenticate"))
 
 	return strings.Join(lines, "\n")
 }
@@ -603,6 +615,10 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		s.logInfo("track my PRs toggled", "enabled", newVal)
 		return plugin.Action{Type: plugin.ActionFlash, Payload: "Track My PRs " + label}
 	case "a":
+		// Ignore repo-add when Track My PRs is on (repos section hidden)
+		if s.cfg.GitHub.IsTrackMyPRs() {
+			return plugin.NoopAction()
+		}
 		s.repoEditing = true
 		s.repoInput.Focus()
 		return plugin.NoopAction()
@@ -632,6 +648,10 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		// do the credential recheck (return unhandled so it falls through).
 		return plugin.Action{Type: plugin.ActionUnhandled}
 	case "f":
+		// Ignore fetch/browse when Track My PRs is on (repos section hidden)
+		if s.cfg.GitHub.IsTrackMyPRs() {
+			return plugin.NoopAction()
+		}
 		// Enter fetch/browse mode
 		if len(s.fetchedRepos) > 0 {
 			s.logInfo("entering repo browse mode")
@@ -657,6 +677,10 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	case "x", "d":
+		// Ignore repo-remove when Track My PRs is on (repos section hidden)
+		if s.cfg.GitHub.IsTrackMyPRs() {
+			return plugin.NoopAction()
+		}
 		if s.cursor < len(s.cfg.GitHub.Repos) {
 			removed := s.cfg.GitHub.Repos[s.cursor]
 			s.cfg.GitHub.Repos = append(
