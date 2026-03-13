@@ -386,6 +386,17 @@ func (p *Plugin) handleNavKey(msg tea.KeyMsg) plugin.Action {
 		}
 	case "esc":
 		return plugin.Action{Type: plugin.ActionUnhandled}
+	default:
+		// Forward unrecognized keys to the content handler so that
+		// content-specific shortcuts (e.g. f/r/a/o for data sources)
+		// work without requiring the user to first enter the content pane.
+		item := p.selectedNavItem()
+		if item != nil {
+			action := p.handleContentKey(msg)
+			if action.Type != plugin.ActionNoop || action.TeaCmd != nil {
+				return action
+			}
+		}
 	}
 	return plugin.NoopAction()
 }
