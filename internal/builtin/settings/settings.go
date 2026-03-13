@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"database/sql"
@@ -740,7 +741,7 @@ func (p *Plugin) saveSlackToken() tea.Cmd {
 		return nil
 	}
 
-	p.cfg.Slack.BotToken = tok.BotToken
+	p.cfg.Slack.BotToken = strings.TrimSpace(tok.BotToken)
 	if err := config.Save(p.cfg); err != nil {
 		p.flashMessage = "Failed to save token: " + err.Error()
 		p.flashMessageAt = time.Now()

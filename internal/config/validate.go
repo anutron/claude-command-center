@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // ValidateCalendar checks that Google Calendar credentials exist and parse.
@@ -53,10 +54,10 @@ func LoadSlackToken() string {
 	// Check config file first
 	cfg, err := Load()
 	if err == nil && cfg.Slack.BotToken != "" {
-		return cfg.Slack.BotToken
+		return strings.TrimSpace(cfg.Slack.BotToken)
 	}
 	// Fall back to environment variable
-	return os.Getenv("SLACK_BOT_TOKEN")
+	return strings.TrimSpace(os.Getenv("SLACK_BOT_TOKEN"))
 }
 
 // ValidateGmail checks that Gmail MCP server credentials exist.
