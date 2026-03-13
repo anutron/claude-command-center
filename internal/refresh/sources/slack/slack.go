@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/refresh"
@@ -19,22 +18,23 @@ import (
 
 // SlackSource fetches Slack messages with commitment language and uses LLM to extract todos.
 type SlackSource struct {
-	enabled bool
-	LLM     llm.LLM
+	enabled  bool
+	botToken string
+	LLM      llm.LLM
 }
 
-// New creates a SlackSource with the given LLM.
-func New(enabled bool, l llm.LLM) *SlackSource {
-	return &SlackSource{enabled: enabled, LLM: l}
+// New creates a SlackSource with the given token and LLM.
+func New(enabled bool, botToken string, l llm.LLM) *SlackSource {
+	return &SlackSource{enabled: enabled, botToken: botToken, LLM: l}
 }
 
 func (s *SlackSource) Name() string  { return "slack" }
 func (s *SlackSource) Enabled() bool { return s.enabled }
 
 func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) {
-	token, err := loadSlackToken()
-	if err != nil {
-		return nil, fmt.Errorf("slack auth: %w", err)
+	token := strings.TrimSpace(s.botToken)
+	if token == "" {
+		return nil, fmt.Errorf("slack auth: bot token not configured")
 	}
 
 	candidates, err := fetchSlackCandidates(ctx, token)
@@ -55,14 +55,6 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 	}
 
 	return &refresh.SourceResult{Todos: todos}, nil
-}
-
-func loadSlackToken() (string, error) {
-	tok := config.LoadSlackToken()
-	if tok == "" {
-		return "", fmt.Errorf("SLACK_BOT_TOKEN not set")
-	}
-	return tok, nil
 }
 
 // slackCandidate is a Slack message that may contain a commitment.
