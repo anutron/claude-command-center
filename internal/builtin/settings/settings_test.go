@@ -7,6 +7,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/oauth2"
 )
@@ -1157,6 +1158,77 @@ func TestOAuthConfigForUnknown(t *testing.T) {
 	}
 	if path != "" {
 		t.Error("expected empty path for unknown slug")
+	}
+}
+
+// --- Calendar f key fetch tests ---
+
+func TestFKeyFromNavForwardsToContentHandler(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusNav
+
+	// Get the calendar settings provider and verify fetchLoading is false
+	sp := p.providers["calendar"].(*calendar.Settings)
+	if sp.FetchLoading() {
+		t.Fatal("expected fetchLoading to be false initially")
+	}
+
+	// Press f from nav — should forward to content handler and trigger fetch
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+
+	// The action should carry a TeaCmd (the fetch command)
+	// OR fetchLoading should be true (flash was set for credential error)
+	if action.TeaCmd == nil && !sp.FetchLoading() {
+		t.Error("expected 'f' from nav to trigger fetch (TeaCmd) or show credential error")
+	}
+}
+
+func TestFKeyFromContentTriggersCalendarFetch(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusContent
+
+	sp := p.providers["calendar"].(*calendar.Settings)
+	if sp.FetchLoading() {
+		t.Fatal("expected fetchLoading to be false initially")
+	}
+
+	// Press f from content pane
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+
+	// Should trigger fetch or show credential error
+	if action.TeaCmd == nil && !sp.FetchLoading() {
+		t.Error("expected 'f' from content to trigger fetch (TeaCmd) or show credential error")
+	}
+}
+
+func TestCalendarFetchResultUpdatesState(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusContent
+
+	sp := p.providers["calendar"].(*calendar.Settings)
+
+	// Simulate fetch result arriving
+	result := calendar.CalendarFetchResultMsg{
+		Calendars: []calendar.CalendarInfo{
+			{ID: "test@group.calendar.google.com", Summary: "Test Calendar", Primary: true},
+		},
+	}
+
+	handled, _ := p.HandleMessage(result)
+	if !handled {
+		t.Error("expected calendarFetchResult to be handled")
+	}
+	if sp.FetchLoading() {
+		t.Error("expected fetchLoading to be false after result")
 	}
 }
 

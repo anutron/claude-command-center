@@ -26,8 +26,8 @@ var presetColors = []struct {
 	{"Pink", "#f7768e"},
 }
 
-// calendarFetchResult is a tea.Msg carrying the result of fetching available calendars.
-type calendarFetchResult struct {
+// CalendarFetchResultMsg is a tea.Msg carrying the result of fetching available calendars.
+type CalendarFetchResultMsg struct {
 	Calendars []CalendarInfo
 	Err       error
 }
@@ -98,6 +98,15 @@ func NewSettings(cfg *config.Config, pal config.Palette) *Settings {
 		labelInput: labelInput,
 	}
 }
+
+// FetchLoading returns whether the calendar list is currently being fetched.
+func (s *Settings) FetchLoading() bool { return s.fetchLoading }
+
+// FetchError returns the last fetch error message, or empty string if none.
+func (s *Settings) FetchError() string { return s.fetchError }
+
+// FetchedCalendars returns the fetched calendar list.
+func (s *Settings) FetchedCalendars() []CalendarInfo { return s.fetchedCalendars }
 
 // ResetEditing resets editing state when the detail view is opened.
 func (s *Settings) ResetEditing() {
@@ -344,7 +353,7 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		s.fetchError = ""
 		cmd := func() tea.Msg {
 			cals, err := ListAvailableCalendars()
-			return calendarFetchResult{Calendars: cals, Err: err}
+			return CalendarFetchResultMsg{Calendars: cals, Err: err}
 		}
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 
@@ -423,12 +432,12 @@ func (s *Settings) SettingsOpenCmd() tea.Cmd {
 	s.fetchError = ""
 	return func() tea.Msg {
 		cals, err := ListAvailableCalendars()
-		return calendarFetchResult{Calendars: cals, Err: err}
+		return CalendarFetchResultMsg{Calendars: cals, Err: err}
 	}
 }
 
 func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
-	if result, ok := msg.(calendarFetchResult); ok {
+	if result, ok := msg.(CalendarFetchResultMsg); ok {
 		s.fetchLoading = false
 		if result.Err != nil {
 			s.fetchError = result.Err.Error()
