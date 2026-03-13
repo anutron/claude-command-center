@@ -364,7 +364,7 @@ func (p *Plugin) handleNavKey(msg tea.KeyMsg) plugin.Action {
 	// instead of scrolling the visible log output.
 	if item := p.selectedNavItem(); item != nil && item.Slug == "system-logs" {
 		switch msg.String() {
-		case "up", "k", "down", "j", "ctrl+f", "ctrl+b", "ctrl+d", "ctrl+u":
+		case "up", "k", "down", "j", "f", "b", "d", "u":
 			return p.handleLogsContentKey(msg)
 		}
 	}
