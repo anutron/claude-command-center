@@ -311,10 +311,10 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 
 	// Route async result messages to the active provider regardless of focus
 	// zone. The provider's HandleSettingsMsg only claims messages it owns
-	// (e.g. CalendarFetchResultMsg), so this is safe. Without this, a fetch
-	// triggered from the nav sidebar (via key forwarding) or one whose result
-	// arrives after the user navigates back to nav would be silently dropped,
-	// leaving fetchLoading=true forever (BUG-023).
+	// (e.g. CalendarFetchResultMsg, ghRepoFetchResult), so this is safe.
+	// Without this, a fetch triggered from nav (via key forwarding) or one
+	// whose result arrives after navigating back to nav would be silently
+	// dropped, leaving fetchLoading=true forever (BUG-023, BUG-026).
 	if sp := p.activeProvider(); sp != nil {
 		if handled, action := sp.HandleSettingsMsg(msg); handled {
 			if action.Type == plugin.ActionFlash {
