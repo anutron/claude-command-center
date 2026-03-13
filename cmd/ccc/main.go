@@ -43,7 +43,7 @@ func main() {
 			}
 			pal := config.GetPalette(cfg.Palette, cfg.Colors)
 			providers := []plugin.DoctorProvider{
-				calendar.NewSettings(cfg, pal),
+				calendar.NewSettings(cfg, pal, nil),
 				gmail.NewDoctor(cfg.Gmail),
 				github.NewSettings(cfg, pal, nil),
 				granola.NewSettings(cfg, pal),
