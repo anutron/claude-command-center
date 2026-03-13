@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
@@ -83,23 +85,33 @@ var commitmentPhrases = []string{
 	"i'll create", "i'll put", "i'll share", "i'll reach out",
 }
 
-type slackSearchResponse struct {
-	OK       bool `json:"ok"`
-	Messages struct {
-		Matches []slackMessage `json:"matches"`
-	} `json:"messages"`
-	Error string `json:"error,omitempty"`
+// API response types for bot-compatible endpoints.
+
+type slackConversationsListResponse struct {
+	OK       bool           `json:"ok"`
+	Channels []slackChannel `json:"channels"`
+	Error    string         `json:"error,omitempty"`
+	Meta     struct {
+		NextCursor string `json:"next_cursor"`
+	} `json:"response_metadata"`
 }
 
-type slackMessage struct {
-	Text      string `json:"text"`
-	Permalink string `json:"permalink"`
-	Timestamp string `json:"ts"`
-	Channel   struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	} `json:"channel"`
-	Username string `json:"username"`
+type slackChannel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type slackHistoryResponse struct {
+	OK       bool                `json:"ok"`
+	Messages []slackHistoryEntry `json:"messages"`
+	Error    string              `json:"error,omitempty"`
+}
+
+type slackHistoryEntry struct {
+	Type string `json:"type"`
+	User string `json:"user"`
+	Text string `json:"text"`
+	TS   string `json:"ts"`
 }
 
 type slackReply struct {
@@ -114,64 +126,122 @@ type slackRepliesResponse struct {
 	Error    string       `json:"error,omitempty"`
 }
 
-func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, error) {
-	params := url.Values{
-		"query": {"from:me after:3days"},
-		"sort":  {"timestamp"},
-		"count": {"50"},
-	}
-
+// slackAPIGet performs a GET request to the Slack API and decodes the response.
+func slackAPIGet(ctx context.Context, token, endpoint string, params url.Values, dest interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		"https://slack.com/api/search.messages?"+params.Encode(), nil)
+		"https://slack.com/api/"+endpoint+"?"+params.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var result slackSearchResponse
-	if err := json.Unmarshal(body, &result); err != nil {
+	return json.Unmarshal(body, dest)
+}
+
+// fetchChannels retrieves the list of channels the bot has access to.
+func fetchChannels(ctx context.Context, token string) ([]slackChannel, error) {
+	params := url.Values{
+		"types":            {"public_channel,private_channel"},
+		"exclude_archived": {"true"},
+		"limit":            {"200"},
+	}
+
+	var result slackConversationsListResponse
+	if err := slackAPIGet(ctx, token, "conversations.list", params, &result); err != nil {
 		return nil, err
 	}
 	if !result.OK {
-		return nil, fmt.Errorf("slack API error: %s", result.Error)
+		return nil, fmt.Errorf("conversations.list error: %s", result.Error)
 	}
 
+	return result.Channels, nil
+}
+
+// fetchChannelHistory retrieves recent messages from a channel since the given timestamp.
+func fetchChannelHistory(ctx context.Context, token, channelID string, oldest string) ([]slackHistoryEntry, error) {
+	params := url.Values{
+		"channel": {channelID},
+		"oldest":  {oldest},
+		"limit":   {"100"},
+	}
+
+	var result slackHistoryResponse
+	if err := slackAPIGet(ctx, token, "conversations.history", params, &result); err != nil {
+		return nil, err
+	}
+	if !result.OK {
+		return nil, fmt.Errorf("conversations.history error: %s", result.Error)
+	}
+
+	return result.Messages, nil
+}
+
+// buildPermalink constructs a Slack message permalink from channel ID and timestamp.
+// Format: https://slack.com/archives/{channelID}/p{ts_without_dot}
+func buildPermalink(channelID, ts string) string {
+	// Slack permalinks use the timestamp without the dot
+	tsNoDot := strings.Replace(ts, ".", "", 1)
+	return fmt.Sprintf("https://app.slack.com/archives/%s/p%s", channelID, tsNoDot)
+}
+
+func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, error) {
+	// Get channels the bot has access to
+	channels, err := fetchChannels(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("listing channels: %w", err)
+	}
+
+	// Look back 3 days (matching the old search.messages "after:3days" filter)
+	oldest := strconv.FormatInt(time.Now().Add(-3*24*time.Hour).Unix(), 10)
+
 	var candidates []slackCandidate
-	for _, msg := range result.Messages.Matches {
-		if !hasCommitmentLanguage(msg.Text) {
+	for _, ch := range channels {
+		messages, err := fetchChannelHistory(ctx, token, ch.ID, oldest)
+		if err != nil {
+			// Skip channels we can't read (permissions, etc.) — non-fatal
 			continue
 		}
 
-		c := slackCandidate{
-			Message:   msg.Text,
-			Permalink: msg.Permalink,
-			Channel:   msg.Channel.Name,
-			ChannelID: msg.Channel.ID,
-			Timestamp: msg.Timestamp,
-		}
-
-		thread, err := fetchThreadContext(ctx, token, msg.Channel.ID, msg.Timestamp)
-		if err == nil && len(thread) > 1 {
-			var sb strings.Builder
-			for _, reply := range thread {
-				sb.WriteString(reply.Text)
-				sb.WriteString("\n")
+		for _, msg := range messages {
+			if msg.Type != "message" || msg.Text == "" {
+				continue
 			}
-			c.ThreadContext = sb.String()
-		}
+			if !hasCommitmentLanguage(msg.Text) {
+				continue
+			}
 
-		candidates = append(candidates, c)
+			c := slackCandidate{
+				Message:   msg.Text,
+				Permalink: buildPermalink(ch.ID, msg.TS),
+				Channel:   ch.Name,
+				ChannelID: ch.ID,
+				Timestamp: msg.TS,
+			}
+
+			// Fetch thread context if this message is part of a thread
+			thread, err := fetchThreadContext(ctx, token, ch.ID, msg.TS)
+			if err == nil && len(thread) > 1 {
+				var sb strings.Builder
+				for _, reply := range thread {
+					sb.WriteString(reply.Text)
+					sb.WriteString("\n")
+				}
+				c.ThreadContext = sb.String()
+			}
+
+			candidates = append(candidates, c)
+		}
 	}
 
 	return candidates, nil
@@ -184,26 +254,8 @@ func fetchThreadContext(ctx context.Context, token, channelID, ts string) ([]sla
 		"limit":   {"20"},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		"https://slack.com/api/conversations.replies?"+params.Encode(), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
 	var result slackRepliesResponse
-	if err := json.Unmarshal(body, &result); err != nil {
+	if err := slackAPIGet(ctx, token, "conversations.replies", params, &result); err != nil {
 		return nil, err
 	}
 	if !result.OK {
