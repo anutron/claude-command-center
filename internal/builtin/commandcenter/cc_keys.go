@@ -26,6 +26,11 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleDetailView(msg)
 	}
 
+	// Quick todo entry
+	if p.addingTodoQuick {
+		return p.handleAddingTodoQuick(msg)
+	}
+
 	// Rich todo creation
 	if p.addingTodoRich {
 		return p.handleAddingTodoRich(msg)
@@ -361,6 +366,14 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		cmd := p.todoTextArea.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 
+	case "t":
+		ensureCC(&p.cc)
+		p.addingTodoQuick = true
+		p.flashMessage = ""
+		p.quickTodoTextArea.Reset()
+		cmd := p.quickTodoTextArea.Focus()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+
 	case "b":
 		p.showBacklog = !p.showBacklog
 		return plugin.NoopAction()
@@ -489,6 +502,52 @@ func (p *Plugin) handleAddingTodoRich(msg tea.KeyMsg) plugin.Action {
 
 	var cmd tea.Cmd
 	p.todoTextArea, cmd = p.todoTextArea.Update(msg)
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+func (p *Plugin) handleAddingTodoQuick(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "ctrl+d":
+		text := strings.TrimSpace(p.quickTodoTextArea.Value())
+		if text == "" {
+			p.addingTodoQuick = false
+			p.quickTodoTextArea.Blur()
+			return plugin.NoopAction()
+		}
+		ensureCC(&p.cc)
+		var dbCmds []tea.Cmd
+		var count int
+		for _, line := range strings.Split(text, "\n") {
+			title := strings.TrimSpace(line)
+			if title == "" {
+				continue
+			}
+			todo := p.cc.AddTodo(title)
+			t := *todo
+			count++
+			p.publishEvent("todo.created", map[string]interface{}{"id": t.ID, "title": t.Title, "source": "quick"})
+			dbCmds = append(dbCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBInsertTodo(database, t) }))
+		}
+		p.addingTodoQuick = false
+		p.quickTodoTextArea.Blur()
+		if count > 0 {
+			p.flashMessage = fmt.Sprintf("Added %d todo(s)", count)
+			p.flashMessageAt = time.Now()
+			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
+				dbCmds = append(dbCmds, focusCmd)
+			}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmds...)}
+		}
+		return plugin.NoopAction()
+
+	case "esc":
+		p.addingTodoQuick = false
+		p.quickTodoTextArea.Blur()
+		return plugin.NoopAction()
+	}
+
+	var cmd tea.Cmd
+	p.quickTodoTextArea, cmd = p.quickTodoTextArea.Update(msg)
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
