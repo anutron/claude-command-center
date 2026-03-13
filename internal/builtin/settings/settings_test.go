@@ -1408,7 +1408,7 @@ func TestLogsScrollJK(t *testing.T) {
 	}
 }
 
-func TestLogsScrollCtrlFB(t *testing.T) {
+func TestLogsScrollFB(t *testing.T) {
 	p, _ := testSetup()
 	logger := p.logger.(*plugin.FileLogger)
 	for i := 0; i < 50; i++ {
@@ -1425,20 +1425,20 @@ func TestLogsScrollCtrlFB(t *testing.T) {
 		t.Fatalf("logsMaxVisible returned %d", maxVis)
 	}
 
-	// ctrl+f should page forward
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlF})
+	// f should page forward
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	if p.logOffset != maxVis {
-		t.Errorf("expected logOffset %d after ctrl+f, got %d", maxVis, p.logOffset)
+		t.Errorf("expected logOffset %d after f, got %d", maxVis, p.logOffset)
 	}
 
-	// ctrl+b should page back
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlB})
+	// b should page back
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
 	if p.logOffset != 0 {
-		t.Errorf("expected logOffset 0 after ctrl+b, got %d", p.logOffset)
+		t.Errorf("expected logOffset 0 after b, got %d", p.logOffset)
 	}
 }
 
-func TestLogsScrollCtrlDU(t *testing.T) {
+func TestLogsScrollDU(t *testing.T) {
 	p, _ := testSetup()
 	logger := p.logger.(*plugin.FileLogger)
 	for i := 0; i < 50; i++ {
@@ -1452,16 +1452,16 @@ func TestLogsScrollCtrlDU(t *testing.T) {
 
 	half := p.logsMaxVisible() / 2
 
-	// ctrl+d should half-page forward
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlD})
+	// d should half-page forward
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	if p.logOffset != half {
-		t.Errorf("expected logOffset %d after ctrl+d, got %d", half, p.logOffset)
+		t.Errorf("expected logOffset %d after d, got %d", half, p.logOffset)
 	}
 
-	// ctrl+u should half-page back
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlU})
+	// u should half-page back
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if p.logOffset != 0 {
-		t.Errorf("expected logOffset 0 after ctrl+u, got %d", p.logOffset)
+		t.Errorf("expected logOffset 0 after u, got %d", p.logOffset)
 	}
 }
 
@@ -1524,10 +1524,10 @@ func TestLogsScrollFromNavMode(t *testing.T) {
 		t.Errorf("expected logOffset 0 after k, got %d", p.logOffset)
 	}
 
-	// ctrl+f should page forward from nav mode
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlF})
+	// f should page forward from nav mode
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	if p.logOffset == 0 {
-		t.Error("expected logOffset > 0 after ctrl+f from nav mode")
+		t.Error("expected logOffset > 0 after f from nav mode")
 	}
 }
 

@@ -123,7 +123,7 @@ func (p *Plugin) viewLogsContent(width, height int) string {
 	if p.logFilterMode {
 		lines = append(lines, p.styles.muted.Render("  enter apply  esc cancel"))
 	} else {
-		lines = append(lines, p.styles.muted.Render("  j/k scroll  ctrl+f/b page  ctrl+d/u half-page  / filter  esc back"))
+		lines = append(lines, p.styles.muted.Render("  j/k scroll  f/b page  d/u half-page  / filter  esc back"))
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
@@ -171,16 +171,16 @@ func (p *Plugin) handleLogsContentKey(msg tea.KeyMsg) plugin.Action {
 		}
 	case "down", "j":
 		p.logOffset++
-	case "ctrl+f":
+	case "f":
 		p.logOffset += p.logsMaxVisible()
-	case "ctrl+b":
+	case "b":
 		p.logOffset -= p.logsMaxVisible()
 		if p.logOffset < 0 {
 			p.logOffset = 0
 		}
-	case "ctrl+d":
+	case "d":
 		p.logOffset += p.logsMaxVisible() / 2
-	case "ctrl+u":
+	case "u":
 		p.logOffset -= p.logsMaxVisible() / 2
 		if p.logOffset < 0 {
 			p.logOffset = 0
