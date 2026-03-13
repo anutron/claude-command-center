@@ -35,6 +35,7 @@ type CalendarFetchResultMsg struct {
 // Settings implements plugin.SettingsProvider for the calendar data source.
 type Settings struct {
 	cfg    *config.Config
+	logger plugin.Logger
 	styles settingsStyles
 
 	cursor int // cursor within the calendar list
@@ -80,7 +81,7 @@ func newSettingsStyles(pal config.Palette) settingsStyles {
 }
 
 // NewSettings creates a calendar SettingsProvider.
-func NewSettings(cfg *config.Config, pal config.Palette) *Settings {
+func NewSettings(cfg *config.Config, pal config.Palette, logger plugin.Logger) *Settings {
 	idInput := textinput.New()
 	idInput.Placeholder = "calendar-id@group.calendar.google.com"
 	idInput.CharLimit = 120
@@ -93,6 +94,7 @@ func NewSettings(cfg *config.Config, pal config.Palette) *Settings {
 
 	return &Settings{
 		cfg:        cfg,
+		logger:     logger,
 		styles:     newSettingsStyles(pal),
 		idInput:    idInput,
 		labelInput: labelInput,
@@ -347,10 +349,12 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		// Trigger a fresh fetch
 		credResult := ValidateCalendarResult()
 		if credResult.Status != "ok" {
+			s.log("fetch skipped: credentials not configured (status=%s)", credResult.Status)
 			return plugin.Action{Type: plugin.ActionFlash, Payload: "Calendar credentials not configured"}
 		}
 		s.fetchLoading = true
 		s.fetchError = ""
+		s.log("fetch started (manual)")
 		cmd := func() tea.Msg {
 			cals, err := ListAvailableCalendars()
 			return CalendarFetchResultMsg{Calendars: cals, Err: err}
@@ -430,6 +434,7 @@ func (s *Settings) SettingsOpenCmd() tea.Cmd {
 	}
 	s.fetchLoading = true
 	s.fetchError = ""
+	s.log("fetch started (auto on pane open)")
 	return func() tea.Msg {
 		cals, err := ListAvailableCalendars()
 		return CalendarFetchResultMsg{Calendars: cals, Err: err}
@@ -441,16 +446,25 @@ func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
 		s.fetchLoading = false
 		if result.Err != nil {
 			s.fetchError = result.Err.Error()
+			s.log("fetch failed: %s", result.Err)
 		} else {
 			s.fetchedCalendars = result.Calendars
 			s.fetchError = ""
 			// Auto-enter browse mode when calendars arrive
 			s.fetchMode = true
 			s.fetchCursor = 0
+			s.log("fetch succeeded: %d calendars", len(result.Calendars))
 		}
 		return true, plugin.NoopAction()
 	}
 	return false, plugin.NoopAction()
+}
+
+// log writes an info message to the plugin logger if available.
+func (s *Settings) log(format string, args ...interface{}) {
+	if s.logger != nil {
+		s.logger.Info("calendar", fmt.Sprintf(format, args...))
+	}
 }
 
 // isCalendarConfigured returns true if the given calendar ID is already in the config.

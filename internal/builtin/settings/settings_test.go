@@ -1271,6 +1271,61 @@ func TestCalendarFetchResultUpdatesState(t *testing.T) {
 	}
 }
 
+func TestCalendarFetchResultHandledFromNav(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusNav // BUG-023: fetch triggered from nav sidebar
+
+	sp := p.providers["calendar"].(*calendar.Settings)
+
+	// Simulate that a fetch was started (e.g. from nav key forwarding)
+	// and the result arrives while still on the nav sidebar.
+	result := calendar.CalendarFetchResultMsg{
+		Calendars: []calendar.CalendarInfo{
+			{ID: "test@group.calendar.google.com", Summary: "Test Calendar", Primary: true},
+		},
+	}
+
+	handled, _ := p.HandleMessage(result)
+	if !handled {
+		t.Error("expected CalendarFetchResultMsg to be handled even when focusZone is FocusNav")
+	}
+	if sp.FetchLoading() {
+		t.Error("expected fetchLoading to be false after result")
+	}
+	if len(sp.FetchedCalendars()) != 1 {
+		t.Errorf("expected 1 fetched calendar, got %d", len(sp.FetchedCalendars()))
+	}
+}
+
+func TestCalendarFetchResultErrorHandledFromNav(t *testing.T) {
+	p, _ := testSetup()
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusNav
+
+	sp := p.providers["calendar"].(*calendar.Settings)
+
+	// Simulate a fetch error arriving while on nav
+	result := calendar.CalendarFetchResultMsg{
+		Err: fmt.Errorf("invalid_client: The OAuth client was not found"),
+	}
+
+	handled, _ := p.HandleMessage(result)
+	if !handled {
+		t.Error("expected CalendarFetchResultMsg error to be handled from nav")
+	}
+	if sp.FetchLoading() {
+		t.Error("expected fetchLoading to be false after error result")
+	}
+	if sp.FetchError() == "" {
+		t.Error("expected fetchError to be set after error result")
+	}
+}
+
 // containsStr is a simple substring check for test assertions.
 func containsStr(s, substr string) bool {
 	return len(s) >= len(substr) && searchStr(s, substr)
