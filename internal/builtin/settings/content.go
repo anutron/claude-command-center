@@ -36,6 +36,16 @@ func (p *Plugin) viewContent(width, height int) string {
 	return panelStyle.Width(width).Height(height).Render(body)
 }
 
+// renderPaneHeader renders a styled header title with an optional dimmed description line below it.
+func (p *Plugin) renderPaneHeader(title, description string) []string {
+	lines := []string{p.styles.header.Render(title)}
+	if description != "" {
+		lines = append(lines, "  "+p.styles.muted.Render(description))
+	}
+	lines = append(lines, "")
+	return lines
+}
+
 // renderContentForSlug dispatches to the correct content renderer for a given nav item.
 func (p *Plugin) renderContentForSlug(item *NavItem, width, height int) string {
 	switch item.Slug {
