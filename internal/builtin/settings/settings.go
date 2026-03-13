@@ -157,7 +157,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.bannerSubtitleInput = si
 
 	pi := textinput.New()
-	pi.Placeholder = "10"
+	pi.Placeholder = "2"
 	pi.CharLimit = 3
 	pi.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
 	p.bannerPaddingInput = pi
