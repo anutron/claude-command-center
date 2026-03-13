@@ -444,6 +444,9 @@ func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
 		} else {
 			s.fetchedCalendars = result.Calendars
 			s.fetchError = ""
+			// Auto-enter browse mode when calendars arrive
+			s.fetchMode = true
+			s.fetchCursor = 0
 		}
 		return true, plugin.NoopAction()
 	}
