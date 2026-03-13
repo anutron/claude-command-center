@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/config"
@@ -263,6 +264,11 @@ func (s *Settings) viewFetchMode(availableHeight int) []string {
 		if maxVisible < 3 {
 			maxVisible = 3
 		}
+		// Hard cap to prevent the list from dominating the screen.
+		const maxVisibleCap = 8
+		if maxVisible > maxVisibleCap {
+			maxVisible = maxVisibleCap
+		}
 		if maxVisible > len(filtered) {
 			maxVisible = len(filtered)
 		}
@@ -365,25 +371,82 @@ var fetchGHUsername = func() (string, error) {
 	return user.Login, nil
 }
 
-// fetchGHRepos is a variable for testability.
-var fetchGHRepos = func() ([]ghRepoInfo, error) {
-	cmd := exec.Command(
-		"gh", "repo", "list",
-		"--json", "nameWithOwner,description",
-		"--limit", "200",
-	)
+// fetchGHRepoList fetches repos for a given owner (empty string = authenticated user).
+func fetchGHRepoList(owner string) ([]ghRepoInfo, error) {
+	args := []string{"repo", "list"}
+	if owner != "" {
+		args = append(args, owner)
+	}
+	args = append(args, "--json", "nameWithOwner,description", "--limit", "200")
+	cmd := exec.Command("gh", args...)
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return nil, fmt.Errorf("gh repo list: %s", strings.TrimSpace(string(ee.Stderr)))
+			return nil, fmt.Errorf("gh repo list %s: %s", owner, strings.TrimSpace(string(ee.Stderr)))
 		}
-		return nil, fmt.Errorf("gh repo list: %w", err)
+		return nil, fmt.Errorf("gh repo list %s: %w", owner, err)
 	}
 	var repos []ghRepoInfo
 	if err := json.Unmarshal(out, &repos); err != nil {
-		return nil, fmt.Errorf("parse repo list: %w", err)
+		return nil, fmt.Errorf("parse repo list %s: %w", owner, err)
 	}
 	return repos, nil
+}
+
+// fetchGHOrgs returns the login names of orgs the authenticated user belongs to.
+func fetchGHOrgs() ([]string, error) {
+	cmd := exec.Command("gh", "api", "user/orgs", "--jq", ".[].login")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var orgs []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			orgs = append(orgs, line)
+		}
+	}
+	return orgs, nil
+}
+
+// fetchGHRepos is a variable for testability.
+var fetchGHRepos = func() ([]ghRepoInfo, error) {
+	// Fetch personal repos.
+	repos, err := fetchGHRepoList("")
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch org memberships and their repos.
+	orgs, orgErr := fetchGHOrgs()
+	if orgErr == nil {
+		for _, org := range orgs {
+			orgRepos, err := fetchGHRepoList(org)
+			if err != nil {
+				continue // Skip orgs that fail (permissions, etc.)
+			}
+			repos = append(repos, orgRepos...)
+		}
+	}
+
+	// Deduplicate by nameWithOwner (case-insensitive).
+	seen := make(map[string]bool, len(repos))
+	deduped := make([]ghRepoInfo, 0, len(repos))
+	for _, r := range repos {
+		key := strings.ToLower(r.NameWithOwner)
+		if !seen[key] {
+			seen[key] = true
+			deduped = append(deduped, r)
+		}
+	}
+
+	// Sort by nameWithOwner.
+	sort.Slice(deduped, func(i, j int) bool {
+		return strings.ToLower(deduped[i].NameWithOwner) < strings.ToLower(deduped[j].NameWithOwner)
+	})
+
+	return deduped, nil
 }
 
 func (s *Settings) SettingsOpenCmd() tea.Cmd {
