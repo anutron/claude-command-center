@@ -14,6 +14,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
 	ghsettings "github.com/anutron/claude-command-center/internal/refresh/sources/github"
@@ -558,14 +559,39 @@ func (p *Plugin) applyRecheckResult(msg datasourceRecheckResult) {
 				item.ValidationStatus = msg.Result.Status
 				item.ValidationMsg = msg.Result.Message
 				item.ValidHint = msg.Result.Hint
+
+				// Reload sync status from the database so the indicator
+				// reflects actual sync results, not just credential checks.
+				if p.database != nil {
+					if syncMap, err := db.DBLoadAllSourceSync(p.database); err == nil && syncMap != nil {
+						item.SyncStatus = syncMap[item.Slug]
+					}
+				}
+
+				// Override validation indicator based on sync results,
+				// matching the same logic used in rebuildNav.
 				if msg.Result.Status == "ok" {
-					v := true
-					item.Valid = &v
+					ss := item.SyncStatus
+					if ss == nil || ss.LastSuccess == nil {
+						item.ValidationStatus = "incomplete"
+						item.ValidationMsg = "Credentials configured but never synced"
+						item.ValidHint = "Run ccc-refresh or wait for next auto-refresh"
+						v := false
+						item.Valid = &v
+					} else if ss.LastError != "" {
+						item.ValidationStatus = "incomplete"
+						item.ValidationMsg = "Last sync failed: " + ss.LastError
+						v := false
+						item.Valid = &v
+					} else {
+						v := true
+						item.Valid = &v
+					}
 				} else if msg.Result.Status != "" {
 					v := false
 					item.Valid = &v
 				}
-				p.flashMessage = msg.Result.Message
+				p.flashMessage = item.ValidationMsg
 				p.flashMessageAt = time.Now()
 				return
 			}

@@ -3,9 +3,11 @@ package settings
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/oauth2"
@@ -747,11 +749,48 @@ func TestRecheckOKUpdatesValid(t *testing.T) {
 	gmailIdx := findNavIndex(p, "gmail")
 	p.navCursor = gmailIdx
 	item := p.selectedNavItem()
-	if item.ValidationStatus != "ok" {
-		t.Errorf("expected 'ok', got %q", item.ValidationStatus)
+	// With no database (nil), sync status is unknown so "ok" credentials
+	// are downgraded to "incomplete" (never synced).
+	if item.ValidationStatus != "incomplete" {
+		t.Errorf("expected 'incomplete' (no sync data), got %q", item.ValidationStatus)
 	}
-	if item.Valid == nil || !*item.Valid {
-		t.Error("expected Valid=true for ok status")
+	if item.Valid == nil || *item.Valid {
+		t.Error("expected Valid=false when sync status unknown")
+	}
+}
+
+func TestRecheckOKWithSyncError(t *testing.T) {
+	p, _ := testSetup()
+
+	// Simulate a sync record with an error by setting SyncStatus directly
+	// on the nav item (since we have no database in tests).
+	gmailIdx := findNavIndex(p, "gmail")
+	p.navCursor = gmailIdx
+	item := p.selectedNavItem()
+	now := time.Now()
+	item.SyncStatus = &db.SourceSync{
+		Source:      "gmail",
+		LastSuccess: &now,
+		LastError:   "auth: token expired",
+		UpdatedAt:   now,
+	}
+
+	// Recheck says credentials are "ok" but sync status has an error
+	msg := datasourceRecheckResult{
+		Slug: "gmail",
+		Result: plugin.ValidationResult{
+			Status:  "ok",
+			Message: "Gmail token is valid",
+		},
+	}
+	p.applyRecheckResult(msg)
+
+	item = p.selectedNavItem()
+	if item.ValidationStatus != "incomplete" {
+		t.Errorf("expected 'incomplete' when sync has error, got %q", item.ValidationStatus)
+	}
+	if item.Valid == nil || *item.Valid {
+		t.Error("expected Valid=false when last sync had error")
 	}
 }
 
