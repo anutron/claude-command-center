@@ -77,6 +77,9 @@ type Plugin struct {
 	pendingAuthSlug  string            // data source slug being authenticated
 	authCancel       context.CancelFunc // cancel function for in-progress OAuth flow
 
+	// Pending Slack token state
+	pendingSlackToken *slackTokenValue
+
 	// Flash message
 	flashMessage   string
 	flashMessageAt time.Time
@@ -225,6 +228,7 @@ func (p *Plugin) handleFormKey(msg tea.KeyMsg) plugin.Action {
 		p.focusZone = FocusContent
 		p.cancelAuthFlow()
 		p.pendingAuthCreds = nil
+		p.pendingSlackToken = nil
 		p.pendingAuthSlug = ""
 		return plugin.NoopAction()
 	}
@@ -239,6 +243,15 @@ func (p *Plugin) handleFormKey(msg tea.KeyMsg) plugin.Action {
 	if p.activeForm.State == huh.StateCompleted {
 		p.activeForm = nil
 		p.focusZone = FocusContent
+
+		// If this was a Slack token form, save and recheck.
+		if p.pendingSlackToken != nil && p.pendingAuthSlug == "slack" {
+			recheckCmd := p.saveSlackToken()
+			if recheckCmd != nil {
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: recheckCmd}
+			}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
 
 		// If this was a credential form for OAuth, chain to the auth flow.
 		if p.pendingAuthCreds != nil && p.pendingAuthSlug != "" {
@@ -304,6 +317,14 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		if p.activeForm.State == huh.StateCompleted {
 			p.activeForm = nil
 			p.focusZone = FocusContent
+
+			// If this was a Slack token form, save and recheck.
+			if p.pendingSlackToken != nil && p.pendingAuthSlug == "slack" {
+				recheckCmd := p.saveSlackToken()
+				if recheckCmd != nil {
+					return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: recheckCmd}
+				}
+			}
 
 			// Chain to OAuth flow if credential form completed.
 			if p.pendingAuthCreds != nil && p.pendingAuthSlug != "" {
@@ -417,6 +438,8 @@ func (p *Plugin) View(width, height, frame int) string {
 		if item != nil && item.Kind == "datasource" {
 			if isGoogleDatasource(item.Slug) {
 				help = p.styles.muted.Render("  esc/left sidebar  r re-check  a authenticate  o cloud console")
+			} else if item.Slug == "slack" {
+				help = p.styles.muted.Render("  esc/left sidebar  r re-check  a enter token")
 			} else {
 				help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle  r re-check")
 			}
@@ -619,11 +642,11 @@ func (p *Plugin) applyRecheckResult(msg datasourceRecheckResult) {
 
 // validateSlackResult performs a structural check on Slack credentials.
 func validateSlackResult() plugin.ValidationResult {
-	if os.Getenv("SLACK_BOT_TOKEN") == "" {
+	if config.LoadSlackToken() == "" {
 		return plugin.ValidationResult{
 			Status:  "missing",
-			Message: "SLACK_BOT_TOKEN not set",
-			Hint:    "Export SLACK_BOT_TOKEN in your shell profile",
+			Message: "Slack bot token not configured",
+			Hint:    "Press 'a' to enter token or export SLACK_BOT_TOKEN",
 		}
 	}
 	return plugin.ValidationResult{
@@ -687,6 +710,38 @@ func (p *Plugin) handleAuthFlowResult(msg auth.AuthFlowResultMsg) tea.Cmd {
 	return func() tea.Msg {
 		result := p.validateDataSourceResult(recheckSlug, true)
 		return datasourceRecheckResult{Slug: recheckSlug, Result: result}
+	}
+}
+
+// saveSlackToken saves the pending Slack bot token to config, triggers a
+// nav rebuild, and returns a tea.Cmd that rechecks credential status.
+func (p *Plugin) saveSlackToken() tea.Cmd {
+	tok := p.pendingSlackToken
+	slug := p.pendingAuthSlug
+	p.pendingSlackToken = nil
+	p.pendingAuthSlug = ""
+
+	if tok == nil || tok.BotToken == "" {
+		p.flashMessage = "No token provided"
+		p.flashMessageAt = time.Now()
+		return nil
+	}
+
+	p.cfg.Slack.BotToken = tok.BotToken
+	if err := config.Save(p.cfg); err != nil {
+		p.flashMessage = "Failed to save token: " + err.Error()
+		p.flashMessageAt = time.Now()
+		return nil
+	}
+
+	p.flashMessage = "Slack bot token saved"
+	p.flashMessageAt = time.Now()
+	p.publishConfigSaved("slack")
+	p.rebuildNav()
+
+	return func() tea.Msg {
+		result := p.validateDataSourceResult(slug, false)
+		return datasourceRecheckResult{Slug: slug, Result: result}
 	}
 }
 

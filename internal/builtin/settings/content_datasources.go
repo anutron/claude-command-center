@@ -179,10 +179,12 @@ func (p *Plugin) viewValidationStatus(item *NavItem) string {
 	lines = append(lines, "")
 	lines = append(lines, "  "+p.styles.muted.Render("r re-check credentials"))
 
-	// Show OAuth actions for Google data sources.
+	// Show auth actions for data sources that support them.
 	if isGoogleDatasource(item.Slug) {
 		lines = append(lines, "  "+p.styles.muted.Render("a authenticate (enter client credentials + OAuth)"))
 		lines = append(lines, "  "+p.styles.muted.Render("o open Google Cloud Console"))
+	} else if item.Slug == "slack" {
+		lines = append(lines, "  "+p.styles.muted.Render("a enter Slack bot token"))
 	}
 
 	return strings.Join(lines, "\n")
@@ -230,7 +232,18 @@ func (p *Plugin) handleDatasourceContentKey(item *NavItem, msg tea.KeyMsg) plugi
 
 	switch msg.String() {
 	case "a":
-		// Authenticate: show credential form for Google data sources.
+		// Authenticate: show credential form for Google data sources or Slack.
+		if item.Slug == "slack" {
+			form, tok := newSlackTokenForm()
+			p.activeForm = form
+			p.pendingSlackToken = tok
+			p.pendingAuthSlug = item.Slug
+			p.focusZone = FocusForm
+			initCmd := p.activeForm.Init()
+			p.flashMessage = "Enter Slack bot token"
+			p.flashMessageAt = currentTime()
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: initCmd}
+		}
 		if !isGoogleDatasource(item.Slug) {
 			break
 		}

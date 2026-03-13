@@ -131,7 +131,8 @@ type GranolaConfig struct {
 }
 
 type SlackConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled  bool   `yaml:"enabled"`
+	BotToken string `yaml:"bot_token,omitempty"`
 }
 
 type GmailConfig struct {

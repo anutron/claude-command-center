@@ -38,12 +38,25 @@ func ValidateGitHub() error {
 	return nil
 }
 
-// ValidateSlack checks that the SLACK_BOT_TOKEN environment variable is set.
+// ValidateSlack checks that a Slack bot token is available.
+// It checks the config file first, then falls back to the SLACK_BOT_TOKEN env var.
 func ValidateSlack() error {
-	if os.Getenv("SLACK_BOT_TOKEN") == "" {
-		return fmt.Errorf("SLACK_BOT_TOKEN not set — export SLACK_BOT_TOKEN in your shell profile")
+	if LoadSlackToken() == "" {
+		return fmt.Errorf("Slack bot token not configured — press 'a' to enter token or export SLACK_BOT_TOKEN")
 	}
 	return nil
+}
+
+// LoadSlackToken returns the Slack bot token from config or environment.
+// Config file token takes precedence over the environment variable.
+func LoadSlackToken() string {
+	// Check config file first
+	cfg, err := Load()
+	if err == nil && cfg.Slack.BotToken != "" {
+		return cfg.Slack.BotToken
+	}
+	// Fall back to environment variable
+	return os.Getenv("SLACK_BOT_TOKEN")
 }
 
 // ValidateGmail checks that Gmail MCP server credentials exist.

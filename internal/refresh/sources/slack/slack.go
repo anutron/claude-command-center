@@ -7,9 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
+	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/refresh"
@@ -55,7 +55,7 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 }
 
 func loadSlackToken() (string, error) {
-	tok := os.Getenv("SLACK_BOT_TOKEN")
+	tok := config.LoadSlackToken()
 	if tok == "" {
 		return "", fmt.Errorf("SLACK_BOT_TOKEN not set")
 	}
