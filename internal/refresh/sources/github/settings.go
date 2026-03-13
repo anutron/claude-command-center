@@ -41,9 +41,11 @@ type Settings struct {
 	fetchLoading bool
 	fetchError   string
 	fetchMode    bool // browsing fetched repos
-	fetchCursor  int
-	filterInput  textinput.Model
-	filtering    bool // whether filter input is focused
+	fetchCursor       int
+	fetchScrollOffset int
+	filterInput       textinput.Model
+	filtering         bool // whether filter input is focused
+	lastHeight        int  // last known content height for scroll calc
 }
 
 type settingsStyles struct {
@@ -101,6 +103,7 @@ func (s *Settings) ResetEditing() {
 	s.usernameInput.SetValue(s.cfg.GitHub.Username)
 	s.fetchMode = false
 	s.filtering = false
+	s.fetchScrollOffset = 0
 	s.filterInput.SetValue("")
 	s.filterInput.Blur()
 }
@@ -147,7 +150,14 @@ func (s *Settings) SettingsView(width, height int) string {
 
 	// Browse mode: show fetched repos with filter
 	if s.fetchMode {
-		lines = append(lines, s.viewFetchMode()...)
+		s.lastHeight = height
+		// Lines so far consume space; remaining height available for fetch mode.
+		// Each line above takes 1 row. Account for the lines we've already added.
+		remainingHeight := height - len(lines)
+		if remainingHeight < 5 {
+			remainingHeight = 5
+		}
+		lines = append(lines, s.viewFetchMode(remainingHeight)...)
 		return strings.Join(lines, "\n")
 	}
 
@@ -216,7 +226,7 @@ func (s *Settings) isRepoConfigured(nameWithOwner string) bool {
 	return false
 }
 
-func (s *Settings) viewFetchMode() []string {
+func (s *Settings) viewFetchMode(availableHeight int) []string {
 	var lines []string
 	lines = append(lines, "")
 	lines = append(lines, "  "+s.filterInput.View())
@@ -231,7 +241,33 @@ func (s *Settings) viewFetchMode() []string {
 			lines = append(lines, s.styles.muted.Render("  No repos found"))
 		}
 	} else {
-		for i, repo := range filtered {
+		// Calculate how many repo lines fit in the available space.
+		// We use: 3 lines above (blank + filter + blank), plus 3 lines below
+		// (blank + count + hints). The rest is for repo items.
+		chrome := 3 + 3 // filter area + footer area
+		maxVisible := availableHeight - chrome
+		if maxVisible < 3 {
+			maxVisible = 3
+		}
+		if maxVisible > len(filtered) {
+			maxVisible = len(filtered)
+		}
+
+		// Ensure scroll offset keeps cursor visible.
+		s.clampFetchScroll(len(filtered), maxVisible)
+
+		visStart := s.fetchScrollOffset
+		visEnd := s.fetchScrollOffset + maxVisible
+		if visEnd > len(filtered) {
+			visEnd = len(filtered)
+		}
+
+		if visStart > 0 {
+			lines = append(lines, s.styles.muted.Render(fmt.Sprintf("  ▲ %d more above", visStart)))
+		}
+
+		for i := visStart; i < visEnd; i++ {
+			repo := filtered[i]
 			cursor := "  "
 			if i == s.fetchCursor {
 				cursor = s.styles.pointer.Render("> ")
@@ -248,18 +284,16 @@ func (s *Settings) viewFetchMode() []string {
 				nameStyle = s.styles.enabled
 			}
 
-			label := repo.NameWithOwner
+			desc := ""
 			if repo.Description != "" {
-				label += s.styles.muted.Render(" — "+repo.Description)
+				desc = " " + s.styles.muted.Render(repo.Description)
 			}
 
-			lines = append(lines, fmt.Sprintf("  %s%s%s", cursor, toggle, nameStyle.Render(repo.NameWithOwner)+
-				func() string {
-					if repo.Description != "" {
-						return " " + s.styles.muted.Render(repo.Description)
-					}
-					return ""
-				}()))
+			lines = append(lines, fmt.Sprintf("  %s%s%s", cursor, toggle, nameStyle.Render(repo.NameWithOwner)+desc))
+		}
+
+		if visEnd < len(filtered) {
+			lines = append(lines, s.styles.muted.Render(fmt.Sprintf("  ▼ %d more below", len(filtered)-visEnd)))
 		}
 	}
 
@@ -272,6 +306,25 @@ func (s *Settings) viewFetchMode() []string {
 	lines = append(lines, s.styles.muted.Render("  / filter · ↑↓ navigate · space toggle · esc back"))
 
 	return lines
+}
+
+// clampFetchScroll adjusts fetchScrollOffset so fetchCursor is visible.
+func (s *Settings) clampFetchScroll(total, maxVisible int) {
+	if s.fetchCursor < s.fetchScrollOffset {
+		s.fetchScrollOffset = s.fetchCursor
+	}
+	if s.fetchCursor >= s.fetchScrollOffset+maxVisible {
+		s.fetchScrollOffset = s.fetchCursor - maxVisible + 1
+	}
+	if s.fetchScrollOffset < 0 {
+		s.fetchScrollOffset = 0
+	}
+	if s.fetchScrollOffset > total-maxVisible {
+		s.fetchScrollOffset = total - maxVisible
+	}
+	if s.fetchScrollOffset < 0 {
+		s.fetchScrollOffset = 0
+	}
 }
 
 // ghUserFetchResult is the message returned by the async username fetch.
@@ -358,6 +411,7 @@ func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
 			// Auto-enter browse mode when repos arrive
 			s.fetchMode = true
 			s.fetchCursor = 0
+			s.fetchScrollOffset = 0
 			s.filterInput.SetValue("")
 			s.filterInput.Focus()
 			s.filtering = true
@@ -451,6 +505,7 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		if len(s.fetchedRepos) > 0 {
 			s.fetchMode = true
 			s.fetchCursor = 0
+			s.fetchScrollOffset = 0
 			s.filterInput.SetValue("")
 			s.filterInput.Focus()
 			s.filtering = true
@@ -507,6 +562,7 @@ func (s *Settings) handleFetchKey(msg tea.KeyMsg) plugin.Action {
 				// First esc clears filter
 				s.filterInput.SetValue("")
 				s.fetchCursor = 0
+				s.fetchScrollOffset = 0
 				return plugin.NoopAction()
 			}
 			// Second esc exits browse mode
@@ -519,19 +575,22 @@ func (s *Settings) handleFetchKey(msg tea.KeyMsg) plugin.Action {
 			s.filtering = false
 			s.filterInput.Blur()
 			s.fetchCursor = 0
+			s.fetchScrollOffset = 0
 			return plugin.NoopAction()
 		case "down":
 			// Switch to navigation
 			s.filtering = false
 			s.filterInput.Blur()
 			s.fetchCursor = 0
+			s.fetchScrollOffset = 0
 			return plugin.NoopAction()
 		default:
 			oldVal := s.filterInput.Value()
 			s.filterInput, _ = s.filterInput.Update(msg)
-			// Reset cursor if filter changed
+			// Reset cursor and scroll if filter changed
 			if s.filterInput.Value() != oldVal {
 				s.fetchCursor = 0
+				s.fetchScrollOffset = 0
 			}
 			return plugin.NoopAction()
 		}
