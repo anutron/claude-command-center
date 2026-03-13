@@ -11,9 +11,12 @@ import (
 // --- Logs content (sidebar layout) ---
 
 func (p *Plugin) viewLogsContent(width, height int) string {
-	var lines []string
-	lines = append(lines, p.styles.header.Render("LOGS"))
-	lines = append(lines, "")
+	item := p.selectedNavItem()
+	desc := ""
+	if item != nil {
+		desc = item.Description
+	}
+	lines := p.renderPaneHeader("LOGS", desc)
 
 	if p.logger == nil {
 		lines = append(lines, p.styles.muted.Render("  No logger available"))

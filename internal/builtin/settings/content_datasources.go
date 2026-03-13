@@ -23,12 +23,7 @@ type datasourceRecheckResult struct {
 // --- Data source content (sidebar layout) ---
 
 func (p *Plugin) viewDatasourceContent(item *NavItem, width, height int) string {
-	var lines []string
-	lines = append(lines, p.styles.header.Render(strings.ToUpper(item.Label)))
-	if item.Description != "" {
-		lines = append(lines, "  "+p.styles.muted.Render(item.Description))
-	}
-	lines = append(lines, "")
+	lines := p.renderPaneHeader(strings.ToUpper(item.Label), item.Description)
 
 	// Check for a SettingsProvider
 	if sp, ok := p.providers[item.Slug]; ok {

@@ -14,9 +14,12 @@ import (
 // --- Banner content (sidebar layout) ---
 
 func (p *Plugin) viewBannerContent(width, height int) string {
-	var lines []string
-	lines = append(lines, p.styles.header.Render("BANNER"))
-	lines = append(lines, "")
+	item := p.selectedNavItem()
+	desc := ""
+	if item != nil {
+		desc = item.Description
+	}
+	lines := p.renderPaneHeader("BANNER", desc)
 
 	fields := []struct {
 		label string
@@ -76,9 +79,12 @@ func (p *Plugin) handleBannerContentKey(msg tea.KeyMsg) plugin.Action {
 // --- Palette content (sidebar layout) ---
 
 func (p *Plugin) viewPaletteContent(width, height int) string {
-	var lines []string
-	lines = append(lines, p.styles.header.Render("PALETTE"))
-	lines = append(lines, "")
+	item := p.selectedNavItem()
+	desc := ""
+	if item != nil {
+		desc = item.Description
+	}
+	lines := p.renderPaneHeader("PALETTE", desc)
 
 	names := config.PaletteNames()
 	for i, name := range names {

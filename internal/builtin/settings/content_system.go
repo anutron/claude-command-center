@@ -43,9 +43,12 @@ func (p *Plugin) setSystemCursor(slug string, v int) {
 // ============================================================
 
 func (p *Plugin) viewScheduleContent(width, height int) string {
-	var lines []string
-	lines = append(lines, p.styles.header.Render("REFRESH SCHEDULE"))
-	lines = append(lines, "")
+	item := p.selectedNavItem()
+	desc := ""
+	if item != nil {
+		desc = item.Description
+	}
+	lines := p.renderPaneHeader("REFRESH SCHEDULE", desc)
 
 	installed := config.IsScheduleInstalled()
 	if installed {
@@ -111,9 +114,12 @@ func (p *Plugin) handleScheduleContentKey(msg tea.KeyMsg) plugin.Action {
 // ============================================================
 
 func (p *Plugin) viewMCPContent(width, height int) string {
-	var lines []string
-	lines = append(lines, p.styles.header.Render("MCP SERVERS"))
-	lines = append(lines, "")
+	item := p.selectedNavItem()
+	desc := ""
+	if item != nil {
+		desc = item.Description
+	}
+	lines := p.renderPaneHeader("MCP SERVERS", desc)
 
 	status := config.IsMCPBuilt()
 	for _, name := range []string{"gmail"} {
@@ -165,9 +171,12 @@ func (p *Plugin) handleMCPContentKey(msg tea.KeyMsg) plugin.Action {
 // ============================================================
 
 func (p *Plugin) viewSkillsContent(width, height int) string {
-	var lines []string
-	lines = append(lines, p.styles.header.Render("SKILLS"))
-	lines = append(lines, "")
+	item := p.selectedNavItem()
+	desc := ""
+	if item != nil {
+		desc = item.Description
+	}
+	lines := p.renderPaneHeader("SKILLS", desc)
 
 	names := config.SkillNames()
 	if len(names) == 0 {
@@ -238,9 +247,12 @@ func (p *Plugin) handleSkillsContentKey(msg tea.KeyMsg) plugin.Action {
 // ============================================================
 
 func (p *Plugin) viewShellContent(width, height int) string {
-	var lines []string
-	lines = append(lines, p.styles.header.Render("SHELL INTEGRATION"))
-	lines = append(lines, "")
+	item := p.selectedNavItem()
+	desc := ""
+	if item != nil {
+		desc = item.Description
+	}
+	lines := p.renderPaneHeader("SHELL INTEGRATION", desc)
 
 	installed := config.IsShellHookInstalled()
 	if installed {
