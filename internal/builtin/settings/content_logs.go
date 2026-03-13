@@ -2,6 +2,7 @@ package settings
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
@@ -9,6 +10,28 @@ import (
 )
 
 // --- Logs content (sidebar layout) ---
+
+// filteredLogEntries returns log entries matching the current filter.
+// If no filter is active, returns all entries.
+func (p *Plugin) filteredLogEntries() []plugin.LogEntry {
+	if p.logger == nil {
+		return nil
+	}
+	entries := p.logger.Recent(100)
+	filter := strings.TrimSpace(p.logFilterInput.Value())
+	if filter == "" {
+		return entries
+	}
+	lowerFilter := strings.ToLower(filter)
+	var filtered []plugin.LogEntry
+	for _, e := range entries {
+		text := strings.ToLower(e.Level + " " + e.Plugin + " " + e.Message)
+		if strings.Contains(text, lowerFilter) {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
 
 func (p *Plugin) viewLogsContent(width, height int) string {
 	item := p.selectedNavItem()
@@ -18,14 +41,32 @@ func (p *Plugin) viewLogsContent(width, height int) string {
 	}
 	lines := p.renderPaneHeader("LOGS", desc)
 
+	// Show filter input when active, or filter value when set
+	if p.logFilterMode {
+		lines = append(lines, "  "+p.logFilterInput.View())
+		lines = append(lines, "")
+	} else if strings.TrimSpace(p.logFilterInput.Value()) != "" {
+		lines = append(lines, p.styles.muted.Render(fmt.Sprintf("  filter: %s  (/ to edit, esc to clear)", p.logFilterInput.Value())))
+		lines = append(lines, "")
+	}
+
 	if p.logger == nil {
 		lines = append(lines, p.styles.muted.Render("  No logger available"))
 	} else {
-		entries := p.logger.Recent(100)
+		entries := p.filteredLogEntries()
 		if len(entries) == 0 {
-			lines = append(lines, p.styles.muted.Render("  No log entries"))
+			if strings.TrimSpace(p.logFilterInput.Value()) != "" {
+				lines = append(lines, p.styles.muted.Render("  No matching log entries"))
+			} else {
+				lines = append(lines, p.styles.muted.Render("  No log entries"))
+			}
 		} else {
-			maxVisible := height - 8
+			// Account for header, filter line, hint line, and padding
+			extraLines := 4
+			if p.logFilterMode || strings.TrimSpace(p.logFilterInput.Value()) != "" {
+				extraLines += 2 // filter line + blank line
+			}
+			maxVisible := height - extraLines - 4
 			if maxVisible < 5 {
 				maxVisible = 5
 			}
@@ -63,11 +104,27 @@ func (p *Plugin) viewLogsContent(width, height int) string {
 				)
 				lines = append(lines, line)
 			}
+
+			// Scroll position indicator
+			if len(entries) > maxVisible {
+				topEntry := len(entries) - p.logOffset
+				bottomEntry := topEntry - maxVisible + 1
+				if bottomEntry < 1 {
+					bottomEntry = 1
+				}
+				posInfo := fmt.Sprintf("  showing %d-%d of %d", bottomEntry, topEntry, len(entries))
+				lines = append(lines, "")
+				lines = append(lines, p.styles.muted.Render(posInfo))
+			}
 		}
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  j/k scroll  ctrl+f/b page  ctrl+d/u half-page  esc back"))
+	if p.logFilterMode {
+		lines = append(lines, p.styles.muted.Render("  enter apply  esc cancel"))
+	} else {
+		lines = append(lines, p.styles.muted.Render("  j/k scroll  ctrl+f/b page  ctrl+d/u half-page  / filter  esc back"))
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
@@ -85,6 +142,28 @@ func (p *Plugin) logsMaxVisible() int {
 }
 
 func (p *Plugin) handleLogsContentKey(msg tea.KeyMsg) plugin.Action {
+	// When filter input is focused, route keys there
+	if p.logFilterMode {
+		switch msg.Type {
+		case tea.KeyEnter:
+			// Apply filter and exit filter mode
+			p.logFilterMode = false
+			p.logFilterInput.Blur()
+			p.logOffset = 0 // reset scroll when filter changes
+			return plugin.NoopAction()
+		case tea.KeyEsc:
+			// Cancel filter: clear the filter text and exit filter mode
+			p.logFilterMode = false
+			p.logFilterInput.SetValue("")
+			p.logFilterInput.Blur()
+			p.logOffset = 0
+			return plugin.NoopAction()
+		default:
+			p.logFilterInput, _ = p.logFilterInput.Update(msg)
+			return plugin.NoopAction()
+		}
+	}
+
 	switch msg.String() {
 	case "up", "k":
 		if p.logOffset > 0 {
@@ -106,6 +185,10 @@ func (p *Plugin) handleLogsContentKey(msg tea.KeyMsg) plugin.Action {
 		if p.logOffset < 0 {
 			p.logOffset = 0
 		}
+	case "/":
+		p.logFilterMode = true
+		p.logFilterInput.Focus()
+		return plugin.NoopAction()
 	}
 	return plugin.NoopAction()
 }

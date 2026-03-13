@@ -1365,6 +1365,257 @@ func TestCalendarFetchResultErrorHandledFromNav(t *testing.T) {
 	}
 }
 
+// --- Logs scrolling tests ---
+
+func TestLogsScrollJK(t *testing.T) {
+	p, _ := testSetup()
+	// Add plenty of log entries
+	logger := p.logger.(*plugin.FileLogger)
+	for i := 0; i < 50; i++ {
+		logger.Info("test", fmt.Sprintf("Log message %d", i))
+	}
+
+	logsIdx := findNavIndex(p, "system-logs")
+	if logsIdx < 0 {
+		t.Fatal("system-logs not found")
+	}
+	p.navCursor = logsIdx
+	p.focusZone = FocusContent
+	p.height = 40
+	p.width = 120
+
+	// Initial offset should be 0
+	if p.logOffset != 0 {
+		t.Errorf("expected initial logOffset 0, got %d", p.logOffset)
+	}
+
+	// Press j to scroll down
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if p.logOffset != 1 {
+		t.Errorf("expected logOffset 1 after j, got %d", p.logOffset)
+	}
+
+	// Press k to scroll up
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if p.logOffset != 0 {
+		t.Errorf("expected logOffset 0 after k, got %d", p.logOffset)
+	}
+
+	// k at 0 stays at 0
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if p.logOffset != 0 {
+		t.Errorf("expected logOffset to stay at 0, got %d", p.logOffset)
+	}
+}
+
+func TestLogsScrollCtrlFB(t *testing.T) {
+	p, _ := testSetup()
+	logger := p.logger.(*plugin.FileLogger)
+	for i := 0; i < 50; i++ {
+		logger.Info("test", fmt.Sprintf("Log message %d", i))
+	}
+
+	logsIdx := findNavIndex(p, "system-logs")
+	p.navCursor = logsIdx
+	p.focusZone = FocusContent
+	p.height = 40
+
+	maxVis := p.logsMaxVisible()
+	if maxVis <= 0 {
+		t.Fatalf("logsMaxVisible returned %d", maxVis)
+	}
+
+	// ctrl+f should page forward
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlF})
+	if p.logOffset != maxVis {
+		t.Errorf("expected logOffset %d after ctrl+f, got %d", maxVis, p.logOffset)
+	}
+
+	// ctrl+b should page back
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlB})
+	if p.logOffset != 0 {
+		t.Errorf("expected logOffset 0 after ctrl+b, got %d", p.logOffset)
+	}
+}
+
+func TestLogsScrollCtrlDU(t *testing.T) {
+	p, _ := testSetup()
+	logger := p.logger.(*plugin.FileLogger)
+	for i := 0; i < 50; i++ {
+		logger.Info("test", fmt.Sprintf("Log message %d", i))
+	}
+
+	logsIdx := findNavIndex(p, "system-logs")
+	p.navCursor = logsIdx
+	p.focusZone = FocusContent
+	p.height = 40
+
+	half := p.logsMaxVisible() / 2
+
+	// ctrl+d should half-page forward
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlD})
+	if p.logOffset != half {
+		t.Errorf("expected logOffset %d after ctrl+d, got %d", half, p.logOffset)
+	}
+
+	// ctrl+u should half-page back
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyCtrlU})
+	if p.logOffset != 0 {
+		t.Errorf("expected logOffset 0 after ctrl+u, got %d", p.logOffset)
+	}
+}
+
+func TestLogsViewChangesWithScroll(t *testing.T) {
+	p, _ := testSetup()
+	logger := p.logger.(*plugin.FileLogger)
+	for i := 0; i < 50; i++ {
+		logger.Info("test", fmt.Sprintf("Log message %d", i))
+	}
+
+	logsIdx := findNavIndex(p, "system-logs")
+	p.navCursor = logsIdx
+	p.focusZone = FocusContent
+	p.height = 40
+	p.width = 120
+
+	v1 := p.View(120, 40, 0)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	v2 := p.View(120, 40, 0)
+
+	if v1 == v2 {
+		t.Error("expected view to change after scroll with j")
+	}
+}
+
+func TestLogsFilterSlashActivates(t *testing.T) {
+	p, _ := testSetup()
+	logger := p.logger.(*plugin.FileLogger)
+	for i := 0; i < 10; i++ {
+		logger.Info("test", fmt.Sprintf("Log message %d", i))
+	}
+
+	logsIdx := findNavIndex(p, "system-logs")
+	p.navCursor = logsIdx
+	p.focusZone = FocusContent
+	p.height = 40
+
+	// Press / to activate filter
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if !p.logFilterMode {
+		t.Error("expected logFilterMode to be true after /")
+	}
+}
+
+func TestLogsFilterEnterApplies(t *testing.T) {
+	p, _ := testSetup()
+	logger := p.logger.(*plugin.FileLogger)
+	logger.Info("test", "hello world")
+	logger.Error("test", "bad thing happened")
+
+	logsIdx := findNavIndex(p, "system-logs")
+	p.navCursor = logsIdx
+	p.focusZone = FocusContent
+	p.height = 40
+
+	// Activate filter and type "ERROR"
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	for _, r := range "ERROR" {
+		p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if p.logFilterMode {
+		t.Error("expected logFilterMode to be false after enter")
+	}
+	if p.logFilterInput.Value() != "ERROR" {
+		t.Errorf("expected filter value 'ERROR', got %q", p.logFilterInput.Value())
+	}
+
+	// Filtered entries should only include errors
+	entries := p.filteredLogEntries()
+	if len(entries) != 1 {
+		t.Errorf("expected 1 filtered entry, got %d", len(entries))
+	}
+}
+
+func TestLogsFilterEscClears(t *testing.T) {
+	p, _ := testSetup()
+	logger := p.logger.(*plugin.FileLogger)
+	logger.Info("test", "hello")
+
+	logsIdx := findNavIndex(p, "system-logs")
+	p.navCursor = logsIdx
+	p.focusZone = FocusContent
+	p.height = 40
+
+	// Activate filter and type something
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+
+	// Esc should cancel and clear filter
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if p.logFilterMode {
+		t.Error("expected logFilterMode to be false after esc")
+	}
+	if p.logFilterInput.Value() != "" {
+		t.Errorf("expected empty filter value after esc, got %q", p.logFilterInput.Value())
+	}
+}
+
+func TestLogsFilterResetsScroll(t *testing.T) {
+	p, _ := testSetup()
+	logger := p.logger.(*plugin.FileLogger)
+	for i := 0; i < 50; i++ {
+		logger.Info("test", fmt.Sprintf("Log message %d", i))
+	}
+
+	logsIdx := findNavIndex(p, "system-logs")
+	p.navCursor = logsIdx
+	p.focusZone = FocusContent
+	p.height = 40
+
+	// Scroll down first
+	p.logOffset = 10
+
+	// Activate and apply filter — should reset offset
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if p.logOffset != 0 {
+		t.Errorf("expected logOffset 0 after filter apply, got %d", p.logOffset)
+	}
+}
+
+func TestLogsEscClearsFilterBeforeNav(t *testing.T) {
+	p, _ := testSetup()
+	logger := p.logger.(*plugin.FileLogger)
+	logger.Info("test", "hello")
+
+	logsIdx := findNavIndex(p, "system-logs")
+	p.navCursor = logsIdx
+	p.focusZone = FocusContent
+	p.height = 40
+
+	// Set a filter (apply it, not in filter mode)
+	p.logFilterInput.SetValue("hello")
+
+	// First esc should clear filter, not go back to nav
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if p.focusZone != FocusContent {
+		t.Error("expected to stay in FocusContent after clearing filter")
+	}
+	if p.logFilterInput.Value() != "" {
+		t.Errorf("expected filter cleared, got %q", p.logFilterInput.Value())
+	}
+
+	// Second esc should go back to nav
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if p.focusZone != FocusNav {
+		t.Errorf("expected FocusNav after second esc, got %d", p.focusZone)
+	}
+}
+
 // containsStr is a simple substring check for test assertions.
 func containsStr(s, substr string) bool {
 	return len(s) >= len(substr) && searchStr(s, substr)
