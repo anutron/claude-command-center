@@ -309,17 +309,20 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		return true, plugin.NoopAction()
 	}
 
-	// Route to active provider's HandleSettingsMsg when content is focused.
-	if p.focusZone == FocusContent || p.focusZone == FocusEditing {
-		if sp := p.activeProvider(); sp != nil {
-			if handled, action := sp.HandleSettingsMsg(msg); handled {
-				if action.Type == plugin.ActionFlash {
-					p.flashMessage = action.Payload
-					p.flashMessageAt = time.Now()
-					return true, plugin.NoopAction()
-				}
-				return true, action
+	// Route async result messages to the active provider regardless of focus
+	// zone. The provider's HandleSettingsMsg only claims messages it owns
+	// (e.g. ghRepoFetchResult), so this is safe. Without this, a fetch
+	// triggered from the content pane whose result arrives after the user
+	// navigates back to nav would be silently dropped, leaving
+	// fetchLoading=true forever (BUG-023, BUG-026).
+	if sp := p.activeProvider(); sp != nil {
+		if handled, action := sp.HandleSettingsMsg(msg); handled {
+			if action.Type == plugin.ActionFlash {
+				p.flashMessage = action.Payload
+				p.flashMessageAt = time.Now()
+				return true, plugin.NoopAction()
 			}
+			return true, action
 		}
 	}
 
