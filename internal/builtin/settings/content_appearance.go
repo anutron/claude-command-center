@@ -71,9 +71,14 @@ func (p *Plugin) viewBannerContent(width, height int) string {
 	if p.bannerField == 3 {
 		cursor = p.styles.pointer.Render("> ")
 	}
-	padVal := fmt.Sprintf("%d", p.cfg.GetBannerTopPadding())
-	lines = append(lines, fmt.Sprintf("%s%s %s",
-		cursor, p.styles.muted.Render("Top Padding:"), p.styles.itemName.Render(padVal)))
+	if p.bannerEditing && p.bannerField == 3 {
+		lines = append(lines, fmt.Sprintf("%s%s %s",
+			cursor, p.styles.muted.Render("Top Padding:"), p.bannerPaddingInput.View()))
+	} else {
+		padVal := fmt.Sprintf("%d", p.cfg.GetBannerTopPadding())
+		lines = append(lines, fmt.Sprintf("%s%s %s",
+			cursor, p.styles.muted.Render("Top Padding:"), p.styles.itemName.Render(padVal)))
+	}
 
 	lines = append(lines, "")
 	lines = append(lines, p.styles.muted.Render("  enter edit  space toggle  +/- adjust padding  esc back"))
