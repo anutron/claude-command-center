@@ -89,6 +89,10 @@ type Plugin struct {
 	todoTextArea        textarea.Model
 	commandConversation []commandTurn
 
+	// Quick todo entry (t key)
+	addingTodoQuick    bool
+	quickTodoTextArea  textarea.Model
+
 	// Background claude processing
 	claudeLoading     bool
 	claudeLoadingMsg  string
@@ -211,6 +215,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "x", Description: "Mark todo done", Promoted: true},
 		{Key: "u", Description: "Undo last action", Promoted: true},
 		{Key: "c", Description: "Command — tell Claude what to do", Promoted: true},
+		{Key: "t", Description: "Quick add todos", Promoted: true},
 		{Key: "X", Description: "Dismiss todo"},
 		{Key: "d", Description: "Defer todo"},
 		{Key: "p", Description: "Promote todo to top"},
@@ -265,6 +270,18 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
 	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(p.styles.ColorMuted)
 	p.todoTextArea = ta
+
+	// Set up quick todo textarea
+	qta := textarea.New()
+	qta.Placeholder = "One todo per line (ctrl+d submit, esc cancel)"
+	qta.CharLimit = 2000
+	qta.SetWidth(80)
+	qta.SetHeight(5)
+	qta.FocusedStyle.Base = qta.FocusedStyle.Base.Foreground(p.styles.ColorWhite)
+	qta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
+	qta.FocusedStyle.CursorLine = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
+	qta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(p.styles.ColorMuted)
+	p.quickTodoTextArea = qta
 
 	// Set up spinner
 	s := spinner.New()
@@ -455,6 +472,10 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	if p.flashMessage != "" {
 		flash := lipgloss.NewStyle().Foreground(p.styles.ColorGreen).Render("  > " + p.flashMessage)
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", flash)
+	}
+	if p.addingTodoQuick {
+		inputLine := p.styles.SectionHeader.Render("QUICK TODO (one per line, ctrl+d submit, esc cancel):") + "\n" + p.quickTodoTextArea.View()
+		view = lipgloss.JoinVertical(lipgloss.Left, view, "", inputLine)
 	}
 	if p.addingTodoRich {
 		inputLine := p.styles.SectionHeader.Render("COMMAND (ctrl+d submit, esc cancel):") + "\n" + p.todoTextArea.View()

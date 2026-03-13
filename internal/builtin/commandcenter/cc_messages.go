@@ -78,6 +78,14 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	}
 
 	// Pass through to textarea / textinput if active
+	if p.addingTodoQuick {
+		var cmd tea.Cmd
+		p.quickTodoTextArea, cmd = p.quickTodoTextArea.Update(msg)
+		if cmd != nil {
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
+		return true, plugin.NoopAction()
+	}
 	if p.addingTodoRich {
 		var cmd tea.Cmd
 		p.todoTextArea, cmd = p.todoTextArea.Update(msg)

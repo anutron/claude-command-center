@@ -629,7 +629,7 @@ func renderCCFooter(s *ccStyles, generatedAt time.Time, width int, refreshing bo
 	} else {
 		left = s.RefreshInfo.Render("refreshed " + db.RelativeTime(generatedAt))
 	}
-	right := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 c command \u00b7 ? help")
+	right := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 t add \u00b7 c command \u00b7 ? help")
 
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 2 {
@@ -828,6 +828,7 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 			{"d", "Defer todo to bottom of list"},
 			{"p", "Promote todo to top of list"},
 			{"c", "Command — tell Claude what to do"},
+			{"t", "Quick add todos (one per line)"},
 			{"s", "Schedule time block for todo"},
 			{"b", "Toggle completed backlog"},
 			{"r", "Refresh from all sources"},
