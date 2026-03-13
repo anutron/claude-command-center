@@ -296,11 +296,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.Type {
 		case tea.KeyTab:
+			// Let the active plugin try Tab first — forms and inline editors
+			// need Tab to navigate between fields (BUG-041).
+			action := m.activePlugin().HandleKey(msg)
+			if action.Type == plugin.ActionConsumed || action.TeaCmd != nil {
+				return m.processAction(action)
+			}
 			prev := m.activeTab
 			m.activeTab = (m.activeTab + 1) % tab(len(m.tabs))
 			cmd := m.activateTab(prev)
 			return m, cmd
 		case tea.KeyShiftTab:
+			// Let the active plugin try Shift+Tab first (same as Tab above).
+			action := m.activePlugin().HandleKey(msg)
+			if action.Type == plugin.ActionConsumed || action.TeaCmd != nil {
+				return m.processAction(action)
+			}
 			prev := m.activeTab
 			m.activeTab = (m.activeTab + tab(len(m.tabs)) - 1) % tab(len(m.tabs))
 			cmd := m.activateTab(prev)
