@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"strings"
+
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -88,6 +90,13 @@ func (p *Plugin) handleContentKey(msg tea.KeyMsg) plugin.Action {
 	if p.focusZone == FocusContent {
 		switch msg.String() {
 		case "esc", "left", "h":
+			// If the logs filter is active, let the logs handler handle esc
+			// so it clears the filter instead of jumping to nav.
+			if p.logFilterMode {
+				if item := p.selectedNavItem(); item != nil && item.Slug == "system-logs" {
+					return p.handleLogsContentKey(msg)
+				}
+			}
 			// Give the active SettingsProvider a chance to handle esc first
 			// (e.g. to cancel an inline text edit like a GitHub repo input).
 			if sp := p.activeProvider(); sp != nil {
@@ -99,6 +108,15 @@ func (p *Plugin) handleContentKey(msg tea.KeyMsg) plugin.Action {
 				}
 				if action.Type != plugin.ActionUnhandled {
 					return action
+				}
+			}
+			// If filter has text but filter mode is off, and user presses esc
+			// on the logs pane, clear the filter first before going back to nav.
+			if item := p.selectedNavItem(); item != nil && item.Slug == "system-logs" {
+				if strings.TrimSpace(p.logFilterInput.Value()) != "" {
+					p.logFilterInput.SetValue("")
+					p.logOffset = 0
+					return plugin.NoopAction()
 				}
 			}
 			p.focusZone = FocusNav

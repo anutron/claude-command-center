@@ -64,7 +64,9 @@ type Plugin struct {
 	paletteCursor int
 
 	// Logs state (used by content_logs)
-	logOffset int
+	logOffset      int
+	logFilterInput textinput.Model
+	logFilterMode  bool // true when filter input is focused
 
 	// System content pane cursor positions (keyed by slug)
 	systemCursors map[string]int
@@ -159,6 +161,13 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	pi.CharLimit = 3
 	pi.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
 	p.bannerPaddingInput = pi
+
+	// Log filter input
+	fi := textinput.New()
+	fi.Placeholder = "filter logs..."
+	fi.CharLimit = 100
+	fi.Prompt = "/ "
+	p.logFilterInput = fi
 
 	// Build sidebar navigation
 	p.rebuildNav()
