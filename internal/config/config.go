@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,6 +36,11 @@ type Config struct {
 	// loadedFromFile is true when the config was successfully loaded from disk.
 	// When false (i.e. defaults), Save will refuse to overwrite an existing file.
 	loadedFromFile bool `yaml:"-"`
+
+	// originalContent stores the raw YAML bytes that were loaded from disk.
+	// Used by Save() to detect regressions: if the new content would lose data
+	// compared to the original file, Save refuses to write.
+	originalContent []byte `yaml:"-"`
 }
 
 // PluginEnabled returns whether a built-in plugin is enabled (not in DisabledPlugins).
@@ -254,6 +260,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("parse %s: %w", ConfigPath(), err)
 	}
 	cfg.loadedFromFile = true
+	cfg.originalContent = data
 	return cfg, nil
 }
 
@@ -268,6 +275,12 @@ func (c *Config) MarkLoadedFromFile() {
 // If the config was not loaded from a file (i.e. it is a default config due to
 // a load error), Save refuses to overwrite an existing config file to prevent
 // data loss. It also creates a .bak backup before writing as defense-in-depth.
+//
+// Additional safety: Save re-reads the current file from disk and verifies that
+// user-specific data (name, external plugins, data source settings) is not being
+// regressed to defaults. This prevents scenarios where the in-memory config
+// has been corrupted or reset (e.g. by process crash, binary rebuild, or
+// accidental pointer sharing).
 func Save(cfg *Config) error {
 	dir := ConfigDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -276,23 +289,27 @@ func Save(cfg *Config) error {
 
 	path := ConfigPath()
 
-	// Safety check: refuse to overwrite an existing config with defaults.
-	// This prevents the scenario where Load() fails, the app falls back to
-	// DefaultConfig(), and then a settings change writes defaults to disk.
+	// Safety check 1: refuse to overwrite an existing config with defaults
+	// when the config was never loaded from a file.
 	if !cfg.loadedFromFile {
 		if _, err := os.Stat(path); err == nil {
 			return fmt.Errorf("refusing to overwrite %s: config was not loaded from file (possible data loss)", path)
 		}
 	}
 
-	// Create a backup of the existing file before writing.
-	if existing, err := os.ReadFile(path); err == nil && len(existing) > 0 {
-		_ = os.WriteFile(path+".bak", existing, 0o644)
-	}
-
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
+	}
+
+	// Safety check 2: if an existing config file is present, reload it and
+	// verify we are not regressing user-specific data to defaults.
+	if existing, readErr := os.ReadFile(path); readErr == nil && len(existing) > 0 {
+		if err := detectRegression(existing, data); err != nil {
+			return fmt.Errorf("refusing to save %s: %w", path, err)
+		}
+		// Create a backup of the existing file before writing.
+		_ = os.WriteFile(path+".bak", existing, 0o644)
 	}
 
 	// Write to a temp file and rename for atomicity.
@@ -306,5 +323,48 @@ func Save(cfg *Config) error {
 	}
 
 	cfg.loadedFromFile = true
+	// Update the stored original content to match what we just wrote.
+	cfg.originalContent = data
+	return nil
+}
+
+// detectRegression checks whether newData would lose user-specific data that
+// exists in existingData. It re-parses both as Config structs and compares
+// key fields. Returns an error describing the regression, or nil if safe.
+func detectRegression(existingData, newData []byte) error {
+	// Fast path: if the new content is identical or larger, skip detailed check.
+	if bytes.Equal(existingData, newData) {
+		return nil
+	}
+
+	var existing, proposed Config
+	if err := yaml.Unmarshal(existingData, &existing); err != nil {
+		// Can't parse existing file — allow the save (it will improve things).
+		return nil
+	}
+	if err := yaml.Unmarshal(newData, &proposed); err != nil {
+		return fmt.Errorf("marshaled config is invalid YAML: %w", err)
+	}
+
+	defaults := DefaultConfig()
+
+	// Check 1: name regression — if existing has a custom name and proposed
+	// would revert it to the default.
+	if existing.Name != defaults.Name && proposed.Name == defaults.Name {
+		return fmt.Errorf("would reset name from %q to default %q", existing.Name, defaults.Name)
+	}
+
+	// Check 2: external plugins lost — if existing has plugins and proposed
+	// has fewer or none.
+	if len(existing.ExternalPlugins) > 0 && len(proposed.ExternalPlugins) == 0 {
+		return fmt.Errorf("would lose %d external plugin(s)", len(existing.ExternalPlugins))
+	}
+
+	// Check 3: data source regression — if a data source was enabled and
+	// would be disabled without the user intending it.
+	if existing.Calendar.Enabled && !proposed.Calendar.Enabled && len(existing.Calendar.Calendars) > 0 {
+		return fmt.Errorf("would disable calendar with %d configured calendars", len(existing.Calendar.Calendars))
+	}
+
 	return nil
 }

@@ -191,6 +191,184 @@ func TestCustomPalette(t *testing.T) {
 	}
 }
 
+func TestSaveRefusesDefaultsOverCustomConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", dir)
+
+	// Write a user config with custom settings
+	userConfig := `name: My Custom Dashboard
+palette: dracula
+calendar:
+    enabled: true
+    calendars:
+        - id: work@example.com
+          label: Work
+github:
+    enabled: true
+    repos:
+        - owner/repo1
+    username: myuser
+todos:
+    enabled: true
+threads:
+    enabled: false
+granola:
+    enabled: false
+slack:
+    enabled: false
+gmail:
+    enabled: false
+external_plugins:
+    - name: Pomodoro
+      command: pomodoro
+      enabled: true
+`
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(userConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Attempt to save a default config over it (simulating the bug scenario)
+	defaults := DefaultConfig()
+	defaults.loadedFromFile = true // pretend it was loaded
+	err := Save(defaults)
+	if err == nil {
+		t.Fatal("Save should have refused to overwrite custom config with defaults")
+	}
+	t.Logf("Save correctly refused: %v", err)
+
+	// Verify the original file is intact
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Name != "My Custom Dashboard" {
+		t.Errorf("Name was changed: got %q, want %q", loaded.Name, "My Custom Dashboard")
+	}
+	if len(loaded.ExternalPlugins) != 1 {
+		t.Errorf("ExternalPlugins lost: got %d, want 1", len(loaded.ExternalPlugins))
+	}
+}
+
+func TestSaveAllowsLegitimateChanges(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", dir)
+
+	// Write a user config
+	userConfig := `name: My Dashboard
+palette: aurora
+calendar:
+    enabled: false
+    calendars: []
+github:
+    enabled: false
+    repos: []
+    username: ""
+todos:
+    enabled: true
+threads:
+    enabled: true
+granola:
+    enabled: false
+slack:
+    enabled: false
+gmail:
+    enabled: false
+external_plugins:
+    - name: Pomodoro
+      command: pomodoro
+      enabled: true
+`
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(userConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load, make a legitimate change, and save
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Palette = "dracula"
+	if err := Save(cfg); err != nil {
+		t.Fatalf("Save should allow legitimate changes: %v", err)
+	}
+
+	// Verify the change was saved
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Palette != "dracula" {
+		t.Errorf("Palette: got %q, want %q", loaded.Palette, "dracula")
+	}
+	if loaded.Name != "My Dashboard" {
+		t.Errorf("Name should be preserved: got %q, want %q", loaded.Name, "My Dashboard")
+	}
+	if len(loaded.ExternalPlugins) != 1 {
+		t.Errorf("ExternalPlugins should be preserved: got %d, want 1", len(loaded.ExternalPlugins))
+	}
+}
+
+func TestSaveRoundTripPreservesAllFields(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", dir)
+
+	// Write a config with all fields populated
+	fullConfig := `name: Test Center
+palette: aurora
+calendar:
+    enabled: true
+    calendars: []
+github:
+    enabled: false
+    repos: []
+    username: ""
+todos:
+    enabled: true
+threads:
+    enabled: false
+granola:
+    enabled: false
+slack:
+    enabled: false
+gmail:
+    enabled: false
+external_plugins:
+    - name: Pomodoro
+      command: pomodoro
+      enabled: true
+`
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(fullConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Load and immediately save (no changes)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(cfg); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Load again and verify everything survived
+	cfg2, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.Name != "Test Center" {
+		t.Errorf("Name: got %q, want %q", cfg2.Name, "Test Center")
+	}
+	if cfg2.Threads.Enabled != false {
+		t.Error("Threads.Enabled should still be false")
+	}
+	if len(cfg2.ExternalPlugins) != 1 {
+		t.Errorf("ExternalPlugins: got %d, want 1", len(cfg2.ExternalPlugins))
+	}
+	if cfg2.ExternalPlugins[0].Name != "Pomodoro" {
+		t.Errorf("ExternalPlugins[0].Name: got %q, want %q", cfg2.ExternalPlugins[0].Name, "Pomodoro")
+	}
+}
+
 func TestParseRefreshInterval(t *testing.T) {
 	tests := []struct {
 		name     string
