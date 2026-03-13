@@ -14,7 +14,12 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func testSetup() (*Plugin, *plugin.Registry) {
+func testSetup(t *testing.T) (*Plugin, *plugin.Registry) {
+	t.Helper()
+	// Redirect config writes to a temp dir so tests never touch the real
+	// user config at ~/.config/ccc/config.yaml (root cause of BUG-046).
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
+
 	reg := plugin.NewRegistry()
 	p := New(reg)
 
@@ -74,7 +79,7 @@ func findNavItemInCategory(p *Plugin, categoryLabel, slug string) bool {
 }
 
 func TestSlugAndTabName(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	if p.Slug() != "settings" {
 		t.Errorf("expected slug 'settings', got %q", p.Slug())
 	}
@@ -84,7 +89,7 @@ func TestSlugAndTabName(t *testing.T) {
 }
 
 func TestRoutesReturnsOne(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	routes := p.Routes()
 	if len(routes) != 1 {
 		t.Errorf("expected 1 route, got %d", len(routes))
@@ -94,7 +99,7 @@ func TestRoutesReturnsOne(t *testing.T) {
 // --- Nav model tests ---
 
 func TestNavCategoriesPopulated(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	if len(p.navCategories) == 0 {
 		t.Error("expected nav categories to be populated")
 	}
@@ -112,14 +117,14 @@ func TestNavCategoriesPopulated(t *testing.T) {
 }
 
 func TestNavCategoryCount(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	if len(p.navCategories) != 4 {
 		t.Errorf("expected 4 categories, got %d", len(p.navCategories))
 	}
 }
 
 func TestNavAppearanceItems(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	for _, cat := range p.navCategories {
 		if cat.Label == "APPEARANCE" {
 			if len(cat.Items) != 2 {
@@ -142,7 +147,7 @@ func TestNavAppearanceItems(t *testing.T) {
 }
 
 func TestNavDataSourcesItems(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	for _, cat := range p.navCategories {
 		if cat.Label == "DATA SOURCES" {
 			expected := []string{"calendar", "github", "granola", "slack", "gmail"}
@@ -165,14 +170,14 @@ func TestNavDataSourcesItems(t *testing.T) {
 }
 
 func TestNavGmailInDataSources(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	if !findNavItemInCategory(p, "DATA SOURCES", "gmail") {
 		t.Error("expected gmail in DATA SOURCES category")
 	}
 }
 
 func TestNavSystemItems(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	for _, cat := range p.navCategories {
 		if cat.Label == "SYSTEM" {
 			expected := []string{"system-schedule", "system-mcp", "system-skills", "system-shell", "system-logs"}
@@ -195,7 +200,7 @@ func TestNavSystemItems(t *testing.T) {
 }
 
 func TestNavPluginsCategory(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	// With only settings registered (excluded) + threads + 1 external plugin, PLUGINS should have 2 items
 	for _, cat := range p.navCategories {
 		if cat.Label == "PLUGINS" {
@@ -219,14 +224,14 @@ func TestNavPluginsCategory(t *testing.T) {
 }
 
 func TestNavThreadsInPlugins(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	if !findNavItemInCategory(p, "PLUGINS", "threads") {
 		t.Error("expected Threads in PLUGINS category")
 	}
 }
 
 func TestNavHasExpectedItems(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	slugs := map[string]bool{}
 	for _, cat := range p.navCategories {
@@ -257,7 +262,7 @@ func TestNavHasExpectedItems(t *testing.T) {
 }
 
 func TestNavItemCount(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	// APPEARANCE(2) + PLUGINS(2: threads + external) + DATA SOURCES(5) + SYSTEM(5) = 14
 	expected := 14
 	if got := p.navItemCount(); got != expected {
@@ -266,7 +271,7 @@ func TestNavItemCount(t *testing.T) {
 }
 
 func TestSelectedNavItemReturnsCorrectItem(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	// First item should be banner (first item of APPEARANCE)
 	p.navCursor = 0
@@ -292,7 +297,7 @@ func TestSelectedNavItemReturnsCorrectItem(t *testing.T) {
 }
 
 func TestSelectedNavItemOutOfRange(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.navCursor = 999
 	item := p.selectedNavItem()
 	if item != nil {
@@ -303,7 +308,7 @@ func TestSelectedNavItemOutOfRange(t *testing.T) {
 // --- Navigation tests ---
 
 func TestNavCursorUpDown(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.focusZone = FocusNav
 	p.navCursor = 0
 
@@ -327,7 +332,7 @@ func TestNavCursorUpDown(t *testing.T) {
 }
 
 func TestNavCursorClampsAtBottom(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.focusZone = FocusNav
 	maxIdx := p.navItemCount() - 1
 	p.navCursor = maxIdx
@@ -340,7 +345,7 @@ func TestNavCursorClampsAtBottom(t *testing.T) {
 }
 
 func TestNavCursorJK(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.focusZone = FocusNav
 	p.navCursor = 0
 
@@ -358,7 +363,7 @@ func TestNavCursorJK(t *testing.T) {
 }
 
 func TestNavSkipsCategoryHeaders(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.focusZone = FocusNav
 
 	// Navigate from last APPEARANCE item (index 1 = palette) to first PLUGINS item (index 2)
@@ -381,7 +386,7 @@ func TestNavSkipsCategoryHeaders(t *testing.T) {
 // --- Focus transition tests ---
 
 func TestFocusSwitching(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.focusZone = FocusNav
 
 	// Enter should switch to content
@@ -398,7 +403,7 @@ func TestFocusSwitching(t *testing.T) {
 }
 
 func TestFocusRightToContent(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.focusZone = FocusNav
 
 	// Right arrow should switch to content
@@ -409,7 +414,7 @@ func TestFocusRightToContent(t *testing.T) {
 }
 
 func TestFocusLeftToNav(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.focusZone = FocusContent
 
 	// Left arrow should switch back to nav
@@ -420,7 +425,7 @@ func TestFocusLeftToNav(t *testing.T) {
 }
 
 func TestFocusLToContent(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.focusZone = FocusNav
 
 	// 'l' should switch to content (vim-style)
@@ -431,7 +436,7 @@ func TestFocusLToContent(t *testing.T) {
 }
 
 func TestFocusHToNav(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	p.focusZone = FocusContent
 
 	// 'h' should switch back to nav (vim-style)
@@ -444,7 +449,7 @@ func TestFocusHToNav(t *testing.T) {
 // --- Toggle tests ---
 
 func TestToggleDataSourceViaSidebar(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	if calIdx < 0 {
@@ -470,7 +475,7 @@ func TestToggleDataSourceViaSidebar(t *testing.T) {
 }
 
 func TestToggleExternalPluginViaSidebar(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	extIdx := findNavIndex(p, "external-0")
 	if extIdx < 0 {
@@ -497,7 +502,7 @@ func TestToggleExternalPluginViaSidebar(t *testing.T) {
 }
 
 func TestSpaceOnNonToggleable(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	// Banner is not toggleable
 	bannerIdx := findNavIndex(p, "banner")
@@ -518,7 +523,7 @@ func TestSpaceOnNonToggleable(t *testing.T) {
 }
 
 func TestToggleGmailDataSource(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	gmailIdx := findNavIndex(p, "gmail")
 	if gmailIdx < 0 {
@@ -545,7 +550,7 @@ func TestToggleGmailDataSource(t *testing.T) {
 // --- View rendering tests ---
 
 func TestViewRendersWithoutPanic(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	v := p.View(120, 40, 0)
 	if v == "" {
@@ -554,7 +559,7 @@ func TestViewRendersWithoutPanic(t *testing.T) {
 }
 
 func TestViewContentPaneRendersForEachNavItem(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	// Iterate through all nav items and render each content pane
 	total := p.navItemCount()
@@ -574,7 +579,7 @@ func TestViewContentPaneRendersForEachNavItem(t *testing.T) {
 }
 
 func TestPaletteCursorNavigation(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	palIdx := findNavIndex(p, "palette")
 	if palIdx < 0 {
@@ -594,7 +599,7 @@ func TestPaletteCursorNavigation(t *testing.T) {
 // --- Data source validation status ---
 
 func TestDataSourcesHaveValidField(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	for _, cat := range p.navCategories {
 		if cat.Label != "DATA SOURCES" {
 			continue
@@ -608,7 +613,7 @@ func TestDataSourcesHaveValidField(t *testing.T) {
 }
 
 func TestDataSourcesAreToggleable(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	for _, cat := range p.navCategories {
 		if cat.Label != "DATA SOURCES" {
 			continue
@@ -627,7 +632,7 @@ func TestDataSourcesAreToggleable(t *testing.T) {
 // --- System items are not toggleable ---
 
 func TestSystemItemsNotToggleable(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	for _, cat := range p.navCategories {
 		if cat.Label != "SYSTEM" {
 			continue
@@ -641,7 +646,7 @@ func TestSystemItemsNotToggleable(t *testing.T) {
 }
 
 func TestAppearanceItemsNotToggleable(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	for _, cat := range p.navCategories {
 		if cat.Label != "APPEARANCE" {
 			continue
@@ -657,7 +662,7 @@ func TestAppearanceItemsNotToggleable(t *testing.T) {
 // --- Validation status tests ---
 
 func TestDataSourcesHaveValidationStatus(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	for _, cat := range p.navCategories {
 		if cat.Label != "DATA SOURCES" {
 			continue
@@ -698,7 +703,7 @@ func TestGoogleDatasourcesIdentified(t *testing.T) {
 // --- Datasource recheck tests ---
 
 func TestRecheckUpdatesNavItem(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	// Apply a recheck result for calendar
 	msg := datasourceRecheckResult{
@@ -736,7 +741,7 @@ func TestRecheckUpdatesNavItem(t *testing.T) {
 }
 
 func TestRecheckOKUpdatesValid(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	msg := datasourceRecheckResult{
 		Slug: "gmail",
@@ -762,7 +767,7 @@ func TestRecheckOKUpdatesValid(t *testing.T) {
 }
 
 func TestRecheckOKWithSuccessfulSync(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	// Set up a successful sync record
 	gmailIdx := findNavIndex(p, "gmail")
@@ -795,7 +800,7 @@ func TestRecheckOKWithSuccessfulSync(t *testing.T) {
 }
 
 func TestRecheckOKWithSyncError(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	// Simulate a sync record with an error by setting SyncStatus directly
 	// on the nav item (since we have no database in tests).
@@ -833,7 +838,7 @@ func TestRecheckOKWithSyncError(t *testing.T) {
 // --- Content key handler tests ---
 
 func TestRKeyFiresRecheck(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -850,7 +855,7 @@ func TestRKeyFiresRecheck(t *testing.T) {
 }
 
 func TestRKeyLiveCheckForGoogle(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -864,7 +869,7 @@ func TestRKeyLiveCheckForGoogle(t *testing.T) {
 }
 
 func TestRKeyStructuralCheckForNonGoogle(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	ghIdx := findNavIndex(p, "github")
 	p.navCursor = ghIdx
@@ -878,7 +883,7 @@ func TestRKeyStructuralCheckForNonGoogle(t *testing.T) {
 }
 
 func TestAKeyTriggersFormForGoogle(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -904,7 +909,7 @@ func TestAKeyTriggersFormForGoogle(t *testing.T) {
 }
 
 func TestAKeyNoopForNonGoogle(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	ghIdx := findNavIndex(p, "github")
 	p.navCursor = ghIdx
@@ -921,7 +926,7 @@ func TestAKeyNoopForNonGoogle(t *testing.T) {
 }
 
 func TestOKeyNoopForNonGoogle(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	slackIdx := findNavIndex(p, "slack")
 	p.navCursor = slackIdx
@@ -938,7 +943,7 @@ func TestOKeyNoopForNonGoogle(t *testing.T) {
 // --- FocusForm key handling tests ---
 
 func TestEscCancelsFormAndReturnsToContent(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	// Trigger form
 	calIdx := findNavIndex(p, "calendar")
@@ -968,7 +973,7 @@ func TestEscCancelsFormAndReturnsToContent(t *testing.T) {
 }
 
 func TestFormFocusWithNilFormFallsBackToContent(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	p.focusZone = FocusForm
 	p.activeForm = nil
@@ -983,7 +988,7 @@ func TestFormFocusWithNilFormFallsBackToContent(t *testing.T) {
 // --- TabLeave tests ---
 
 func TestTabLeaveCancelsForm(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	// Set up form state
 	calIdx := findNavIndex(p, "calendar")
@@ -1009,7 +1014,7 @@ func TestTabLeaveCancelsForm(t *testing.T) {
 // --- Content view rendering tests ---
 
 func TestViewValidationStatusRendersAllStatuses(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	statuses := []struct {
 		status string
@@ -1041,7 +1046,7 @@ func TestViewValidationStatusRendersAllStatuses(t *testing.T) {
 }
 
 func TestViewValidationStatusShowsGoogleActions(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	item := &NavItem{
 		Slug:             "calendar",
@@ -1059,7 +1064,7 @@ func TestViewValidationStatusShowsGoogleActions(t *testing.T) {
 }
 
 func TestViewValidationStatusHidesGoogleActionsForNonGoogle(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	item := &NavItem{
 		Slug:             "github",
@@ -1075,7 +1080,7 @@ func TestViewValidationStatusHidesGoogleActionsForNonGoogle(t *testing.T) {
 // --- Help line tests ---
 
 func TestHelpLineShowsGoogleActionsInContent(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -1094,7 +1099,7 @@ func TestHelpLineShowsGoogleActionsInContent(t *testing.T) {
 }
 
 func TestHelpLineShowsFormHintsInFormMode(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -1118,7 +1123,7 @@ func TestHelpLineShowsFormHintsInFormMode(t *testing.T) {
 // --- Auth flow result handling tests ---
 
 func TestAuthFlowResultSuccess(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	p.pendingAuthSlug = "calendar"
 	p.pendingAuthCreds = &clientCredentials{ClientID: "id", ClientSecret: "secret"}
@@ -1152,7 +1157,7 @@ func TestAuthFlowResultSuccess(t *testing.T) {
 }
 
 func TestAuthFlowResultError(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	p.pendingAuthSlug = "gmail"
 	p.pendingAuthCreds = &clientCredentials{ClientID: "id", ClientSecret: "secret"}
@@ -1171,7 +1176,7 @@ func TestAuthFlowResultError(t *testing.T) {
 }
 
 func TestCancelAuthFlow(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	cancelled := false
 	p.authCancel = func() { cancelled = true }
@@ -1195,7 +1200,7 @@ func TestCancelAuthFlow(t *testing.T) {
 }
 
 func TestOAuthConfigForCalendar(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	conf, path := p.oauthConfigForSlug("calendar", "test-id", "test-secret")
 	if conf == nil {
@@ -1213,7 +1218,7 @@ func TestOAuthConfigForCalendar(t *testing.T) {
 }
 
 func TestOAuthConfigForGmail(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	conf, path := p.oauthConfigForSlug("gmail", "test-id", "test-secret")
 	if conf == nil {
@@ -1228,7 +1233,7 @@ func TestOAuthConfigForGmail(t *testing.T) {
 }
 
 func TestOAuthConfigForUnknown(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	conf, path := p.oauthConfigForSlug("unknown", "id", "secret")
 	if conf != nil {
@@ -1242,7 +1247,7 @@ func TestOAuthConfigForUnknown(t *testing.T) {
 // --- Calendar f key fetch tests ---
 
 func TestFKeyFromNavForwardsToContentHandler(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -1265,7 +1270,7 @@ func TestFKeyFromNavForwardsToContentHandler(t *testing.T) {
 }
 
 func TestFKeyFromContentTriggersCalendarFetch(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -1286,7 +1291,7 @@ func TestFKeyFromContentTriggersCalendarFetch(t *testing.T) {
 }
 
 func TestCalendarFetchResultUpdatesState(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -1311,7 +1316,7 @@ func TestCalendarFetchResultUpdatesState(t *testing.T) {
 }
 
 func TestCalendarFetchResultHandledFromNav(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -1340,7 +1345,7 @@ func TestCalendarFetchResultHandledFromNav(t *testing.T) {
 }
 
 func TestCalendarFetchResultErrorHandledFromNav(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
@@ -1368,7 +1373,7 @@ func TestCalendarFetchResultErrorHandledFromNav(t *testing.T) {
 // --- Logs scrolling tests ---
 
 func TestLogsScrollJK(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	// Add plenty of log entries
 	logger := p.logger.(*plugin.FileLogger)
 	for i := 0; i < 50; i++ {
@@ -1409,7 +1414,7 @@ func TestLogsScrollJK(t *testing.T) {
 }
 
 func TestLogsScrollFB(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	logger := p.logger.(*plugin.FileLogger)
 	for i := 0; i < 50; i++ {
 		logger.Info("test", fmt.Sprintf("Log message %d", i))
@@ -1439,7 +1444,7 @@ func TestLogsScrollFB(t *testing.T) {
 }
 
 func TestLogsScrollDU(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	logger := p.logger.(*plugin.FileLogger)
 	for i := 0; i < 50; i++ {
 		logger.Info("test", fmt.Sprintf("Log message %d", i))
@@ -1466,7 +1471,7 @@ func TestLogsScrollDU(t *testing.T) {
 }
 
 func TestLogsViewChangesWithScroll(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	logger := p.logger.(*plugin.FileLogger)
 	for i := 0; i < 50; i++ {
 		logger.Info("test", fmt.Sprintf("Log message %d", i))
@@ -1488,7 +1493,7 @@ func TestLogsViewChangesWithScroll(t *testing.T) {
 }
 
 func TestLogsScrollFromNavMode(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	logger := p.logger.(*plugin.FileLogger)
 	for i := 0; i < 50; i++ {
 		logger.Info("test", fmt.Sprintf("Log message %d", i))
@@ -1532,7 +1537,7 @@ func TestLogsScrollFromNavMode(t *testing.T) {
 }
 
 func TestLogsFilterSlashActivates(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	logger := p.logger.(*plugin.FileLogger)
 	for i := 0; i < 10; i++ {
 		logger.Info("test", fmt.Sprintf("Log message %d", i))
@@ -1551,7 +1556,7 @@ func TestLogsFilterSlashActivates(t *testing.T) {
 }
 
 func TestLogsFilterEnterApplies(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	logger := p.logger.(*plugin.FileLogger)
 	logger.Info("test", "hello world")
 	logger.Error("test", "bad thing happened")
@@ -1583,7 +1588,7 @@ func TestLogsFilterEnterApplies(t *testing.T) {
 }
 
 func TestLogsFilterEscClears(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	logger := p.logger.(*plugin.FileLogger)
 	logger.Info("test", "hello")
 
@@ -1608,7 +1613,7 @@ func TestLogsFilterEscClears(t *testing.T) {
 }
 
 func TestLogsFilterResetsScroll(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	logger := p.logger.(*plugin.FileLogger)
 	for i := 0; i < 50; i++ {
 		logger.Info("test", fmt.Sprintf("Log message %d", i))
@@ -1632,7 +1637,7 @@ func TestLogsFilterResetsScroll(t *testing.T) {
 }
 
 func TestLogsEscClearsFilterBeforeNav(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 	logger := p.logger.(*plugin.FileLogger)
 	logger.Info("test", "hello")
 
@@ -1661,7 +1666,7 @@ func TestLogsEscClearsFilterBeforeNav(t *testing.T) {
 }
 
 func TestSlackTokenFormCompletionCallsSave(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	slackIdx := findNavIndex(p, "slack")
 	if slackIdx < 0 {
@@ -1767,7 +1772,7 @@ func TestSlackTokenFormCompletionCallsSave(t *testing.T) {
 }
 
 func TestTabKeyReturnedConsumedWhenFormActive(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	slackIdx := findNavIndex(p, "slack")
 	p.navCursor = slackIdx
@@ -1788,7 +1793,7 @@ func TestTabKeyReturnedConsumedWhenFormActive(t *testing.T) {
 }
 
 func TestTabLeaveCleansPendingSlackToken(t *testing.T) {
-	p, _ := testSetup()
+	p, _ := testSetup(t)
 
 	slackIdx := findNavIndex(p, "slack")
 	p.navCursor = slackIdx
