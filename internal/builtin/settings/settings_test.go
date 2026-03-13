@@ -1616,6 +1616,157 @@ func TestLogsEscClearsFilterBeforeNav(t *testing.T) {
 	}
 }
 
+func TestSlackTokenFormCompletionCallsSave(t *testing.T) {
+	p, _ := testSetup()
+
+	slackIdx := findNavIndex(p, "slack")
+	if slackIdx < 0 {
+		t.Fatal("slack nav item not found")
+	}
+	p.navCursor = slackIdx
+	p.focusZone = FocusContent
+
+	item := p.selectedNavItem()
+	if item == nil || item.Slug != "slack" {
+		t.Fatalf("expected slack nav item, got %v", item)
+	}
+
+	// Press 'a' to open the Slack token form
+	action := p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if p.focusZone != FocusForm {
+		t.Fatalf("expected FocusForm after 'a', got %d", p.focusZone)
+	}
+	if p.activeForm == nil {
+		t.Fatal("expected activeForm to be set")
+	}
+	if p.pendingSlackToken == nil {
+		t.Fatal("expected pendingSlackToken to be set")
+	}
+	if p.pendingAuthSlug != "slack" {
+		t.Fatalf("expected pendingAuthSlug 'slack', got %q", p.pendingAuthSlug)
+	}
+
+	// Process init cmd
+	if action.TeaCmd != nil {
+		msg := action.TeaCmd()
+		if msg != nil {
+			p.HandleMessage(msg)
+		}
+	}
+
+	// Type a token into the form
+	for _, r := range "xoxb-test-token" {
+		p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+
+	// Verify the token value is bound
+	if p.pendingSlackToken.BotToken != "xoxb-test-token" {
+		t.Fatalf("expected token 'xoxb-test-token', got %q", p.pendingSlackToken.BotToken)
+	}
+
+	// Press Enter to submit the form
+	enterAction := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// The huh form doesn't complete synchronously — it needs multiple
+	// message cycles (nextFieldMsg -> nextGroupMsg -> StateCompleted).
+	// Simulate bubbletea's event loop by processing cmds.
+	var pendingCmds []tea.Cmd
+	if enterAction.TeaCmd != nil {
+		pendingCmds = append(pendingCmds, enterAction.TeaCmd)
+	}
+	for cycles := 0; cycles < 20 && len(pendingCmds) > 0; cycles++ {
+		cmd := pendingCmds[0]
+		pendingCmds = pendingCmds[1:]
+		msg := cmd()
+		if msg == nil {
+			continue
+		}
+		// Check if it's a batch msg (tea.BatchMsg)
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			for _, c := range batch {
+				if c != nil {
+					pendingCmds = append(pendingCmds, c)
+				}
+			}
+			continue
+		}
+		_, nextAction := p.HandleMessage(msg)
+		if nextAction.TeaCmd != nil {
+			pendingCmds = append(pendingCmds, nextAction.TeaCmd)
+		}
+		if p.activeForm == nil {
+			break // Form completed
+		}
+	}
+
+	// After form completion, saveSlackToken should have been called
+	if p.activeForm != nil {
+		t.Fatal("expected form to complete after processing message chain")
+	}
+	if p.focusZone != FocusContent {
+		t.Errorf("expected FocusContent after form completion, got %d", p.focusZone)
+	}
+	if p.pendingSlackToken != nil {
+		t.Error("expected pendingSlackToken to be cleared after save")
+	}
+	if p.pendingAuthSlug != "" {
+		t.Errorf("expected pendingAuthSlug to be empty, got %q", p.pendingAuthSlug)
+	}
+	if !containsStr(p.flashMessage, "Slack bot token saved") {
+		t.Errorf("expected flash 'Slack bot token saved', got %q", p.flashMessage)
+	}
+	// Nav should have been rebuilt with updated validation
+	slackItem := p.selectedNavItem()
+	if slackItem == nil || slackItem.Slug != "slack" {
+		t.Fatal("expected to still be on slack nav item")
+	}
+}
+
+func TestTabKeyReturnedConsumedWhenFormActive(t *testing.T) {
+	p, _ := testSetup()
+
+	slackIdx := findNavIndex(p, "slack")
+	p.navCursor = slackIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+
+	// Open the Slack token form
+	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if p.focusZone != FocusForm {
+		t.Fatal("expected FocusForm")
+	}
+
+	// Press Tab while form is active — should be consumed, not switch tabs
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyTab})
+	if action.Type != plugin.ActionConsumed && action.TeaCmd == nil {
+		t.Errorf("expected Tab to be consumed when form is active, got type=%v", action.Type)
+	}
+}
+
+func TestTabLeaveCleansPendingSlackToken(t *testing.T) {
+	p, _ := testSetup()
+
+	slackIdx := findNavIndex(p, "slack")
+	p.navCursor = slackIdx
+	p.focusZone = FocusContent
+	item := p.selectedNavItem()
+
+	// Open the Slack token form
+	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if p.pendingSlackToken == nil {
+		t.Fatal("expected pendingSlackToken to be set")
+	}
+
+	// Tab leave should clean up
+	p.HandleMessage(plugin.TabLeaveMsg{})
+	if p.pendingSlackToken != nil {
+		t.Error("expected pendingSlackToken to be nil after tab leave")
+	}
+	if p.activeForm != nil {
+		t.Error("expected activeForm to be nil after tab leave")
+	}
+}
+
 // containsStr is a simple substring check for test assertions.
 func containsStr(s, substr string) bool {
 	return len(s) >= len(substr) && searchStr(s, substr)

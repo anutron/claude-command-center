@@ -25,6 +25,7 @@ type Context struct {
 // Action type constants.
 const (
 	ActionNoop      = "noop"
+	ActionConsumed  = "consumed" // key was handled, no further action needed
 	ActionOpenURL   = "open_url"
 	ActionFlash     = "flash"
 	ActionLaunch    = "launch"
@@ -44,6 +45,13 @@ type Action struct {
 // NoopAction returns an action that does nothing.
 func NoopAction() Action {
 	return Action{Type: ActionNoop}
+}
+
+// ConsumedAction signals that the plugin handled the key but needs no host
+// action. Unlike NoopAction, this prevents the host from applying its own
+// default behaviour for the key (e.g. Tab switching tabs).
+func ConsumedAction() Action {
+	return Action{Type: ActionConsumed}
 }
 
 // Route declares a navigable sub-route within a plugin.

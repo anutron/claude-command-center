@@ -275,7 +275,10 @@ func (p *Plugin) handleFormKey(msg tea.KeyMsg) plugin.Action {
 	if cmd != nil {
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	}
-	return plugin.NoopAction()
+	// Form is active but the key produced no cmd (e.g. Tab on a single-field
+	// form). Return a consumed action so the TUI host doesn't switch tabs
+	// while a form is visible (BUG-041).
+	return plugin.ConsumedAction()
 }
 
 func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
@@ -312,8 +315,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.activeForm = nil
 			p.focusZone = FocusContent
 		}
-		// Cancel any in-progress OAuth flow
+		// Cancel any in-progress OAuth flow and clear pending token state
 		p.cancelAuthFlow()
+		p.pendingSlackToken = nil
 		return true, plugin.NoopAction()
 	}
 
