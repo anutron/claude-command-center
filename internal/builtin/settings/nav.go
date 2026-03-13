@@ -62,6 +62,7 @@ func (p *Plugin) rebuildNav() {
 		"sessions":         "Start new Claude sessions and resume previous ones",
 		"commandcenter":    "AI-powered todo management, calendar view, and quick commands",
 		"threads":          "Persistent Claude conversation threads for ongoing work",
+		"pomodoro":         "Sample external plugin for demonstration purposes",
 	}
 
 	// Build a set of external plugin slugs so we can skip them in the
@@ -108,11 +109,16 @@ func (p *Plugin) rebuildNav() {
 	// External plugins from config
 	for i, ep := range p.cfg.ExternalPlugins {
 		enabled := ep.Enabled
+		desc := ep.Description
+		if desc == "" {
+			// Fall back to well-known plugin descriptions
+			desc = pluginDescriptions[strings.ToLower(ep.Name)]
+		}
 		pluginItems = append(pluginItems, NavItem{
 			Label:       ep.Name,
 			Slug:        fmt.Sprintf("external-%d", i),
 			Kind:        "plugin",
-			Description: ep.Description,
+			Description: desc,
 			Enabled:     &enabled,
 			Toggleable:  true,
 		})
@@ -208,7 +214,7 @@ func (p *Plugin) rebuildNav() {
 			{Label: "Schedule", Slug: "system-schedule", Kind: "system", Description: "Configure auto-refresh interval for data sources"},
 			{Label: "MCP Servers", Slug: "system-mcp", Kind: "system", Description: "Model Context Protocol server connections"},
 			{Label: "Skills", Slug: "system-skills", Kind: "system", Description: "Installed Claude Code skills and shortcuts"},
-			{Label: "Shell Integration", Slug: "system-shell", Kind: "system", Description: "Shell hooks and terminal integration status"},
+			{Label: "Shell Integration", Slug: "system-shell", Kind: "system", Description: "Automatically starts this interface when you open a new terminal"},
 			{Label: "Logs", Slug: "system-logs", Kind: "system", Description: "Plugin and system log messages"},
 		},
 	}
