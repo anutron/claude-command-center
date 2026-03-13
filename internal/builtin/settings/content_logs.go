@@ -67,9 +67,21 @@ func (p *Plugin) viewLogsContent(width, height int) string {
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, p.styles.muted.Render("  up/down scroll  esc back"))
+	lines = append(lines, p.styles.muted.Render("  j/k scroll  ctrl+f/b page  ctrl+d/u half-page  esc back"))
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (p *Plugin) logsMaxVisible() int {
+	panelHeight := p.height - 4
+	if panelHeight < 10 {
+		panelHeight = 10
+	}
+	maxVisible := panelHeight - 8
+	if maxVisible < 5 {
+		maxVisible = 5
+	}
+	return maxVisible
 }
 
 func (p *Plugin) handleLogsContentKey(msg tea.KeyMsg) plugin.Action {
@@ -80,6 +92,20 @@ func (p *Plugin) handleLogsContentKey(msg tea.KeyMsg) plugin.Action {
 		}
 	case "down", "j":
 		p.logOffset++
+	case "ctrl+f":
+		p.logOffset += p.logsMaxVisible()
+	case "ctrl+b":
+		p.logOffset -= p.logsMaxVisible()
+		if p.logOffset < 0 {
+			p.logOffset = 0
+		}
+	case "ctrl+d":
+		p.logOffset += p.logsMaxVisible() / 2
+	case "ctrl+u":
+		p.logOffset -= p.logsMaxVisible() / 2
+		if p.logOffset < 0 {
+			p.logOffset = 0
+		}
 	}
 	return plugin.NoopAction()
 }
