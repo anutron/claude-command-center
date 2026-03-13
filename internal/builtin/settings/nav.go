@@ -180,9 +180,11 @@ func (p *Plugin) rebuildNav() {
 		if vr.Status == "ok" {
 			ss := item.SyncStatus
 			if ss == nil || ss.LastSuccess == nil {
-				// Credentials look fine but never synced successfully
-				item.ValidationStatus = "incomplete"
-				item.ValidationMsg = "Credentials configured but never synced"
+				// Credentials look fine but never synced — show as
+				// "unverified" (yellow warning, not green check) so the
+				// user knows the token hasn't been proven to work yet.
+				item.ValidationStatus = "unverified"
+				item.ValidationMsg = "Token configured — run ccc-refresh to verify"
 				item.ValidHint = "Run ccc-refresh or wait for next auto-refresh"
 				v := false
 				item.Valid = &v
@@ -298,7 +300,7 @@ func (p *Plugin) viewSidebar(width, height int, focus FocusZone) string {
 			switch item.ValidationStatus {
 			case "ok":
 				valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")).Render("\u2713")
-			case "incomplete":
+			case "incomplete", "unverified":
 				valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")).Render("\u26a0")
 			case "missing", "no_client":
 				valid = " " + lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")).Render("\u2717")

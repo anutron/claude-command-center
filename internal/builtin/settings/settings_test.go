@@ -668,7 +668,7 @@ func TestDataSourcesHaveValidationStatus(t *testing.T) {
 			}
 			// Status should be one of the known values
 			switch item.ValidationStatus {
-			case "ok", "missing", "incomplete", "no_client":
+			case "ok", "missing", "incomplete", "no_client", "unverified":
 				// valid
 			default:
 				t.Errorf("unexpected ValidationStatus %q for %s", item.ValidationStatus, item.Slug)
@@ -750,13 +750,47 @@ func TestRecheckOKUpdatesValid(t *testing.T) {
 	gmailIdx := findNavIndex(p, "gmail")
 	p.navCursor = gmailIdx
 	item := p.selectedNavItem()
-	// After a live recheck returns "ok", credentials are valid — the nav
-	// should show a green check regardless of sync history.
+	// BUG-030: When credentials check returns "ok" but there's no sync
+	// history, status should be "unverified" (yellow) not "ok" (green).
+	// Green check is reserved for tokens proven to work via successful sync.
+	if item.ValidationStatus != "unverified" {
+		t.Errorf("expected 'unverified' (no sync history), got %q", item.ValidationStatus)
+	}
+	if item.Valid == nil || *item.Valid {
+		t.Error("expected Valid=false when credentials ok but never synced")
+	}
+}
+
+func TestRecheckOKWithSuccessfulSync(t *testing.T) {
+	p, _ := testSetup()
+
+	// Set up a successful sync record
+	gmailIdx := findNavIndex(p, "gmail")
+	p.navCursor = gmailIdx
+	item := p.selectedNavItem()
+	now := time.Now()
+	item.SyncStatus = &db.SourceSync{
+		Source:      "gmail",
+		LastSuccess: &now,
+		UpdatedAt:   now,
+	}
+
+	// Recheck returns "ok" and sync succeeded — should be green
+	msg := datasourceRecheckResult{
+		Slug: "gmail",
+		Result: plugin.ValidationResult{
+			Status:  "ok",
+			Message: "Gmail token is valid",
+		},
+	}
+	p.applyRecheckResult(msg)
+
+	item = p.selectedNavItem()
 	if item.ValidationStatus != "ok" {
-		t.Errorf("expected 'ok' (credentials valid), got %q", item.ValidationStatus)
+		t.Errorf("expected 'ok' (verified via sync), got %q", item.ValidationStatus)
 	}
 	if item.Valid == nil || !*item.Valid {
-		t.Error("expected Valid=true when credentials check returns ok")
+		t.Error("expected Valid=true when credentials ok and sync succeeded")
 	}
 }
 
@@ -776,8 +810,8 @@ func TestRecheckOKWithSyncError(t *testing.T) {
 		UpdatedAt:   now,
 	}
 
-	// Recheck says credentials are "ok" — even if sync had an error,
-	// the credential check result takes precedence for the nav indicator.
+	// BUG-030: When credentials check returns "ok" but last sync had an
+	// error, status should be "incomplete" (yellow) to indicate the problem.
 	msg := datasourceRecheckResult{
 		Slug: "gmail",
 		Result: plugin.ValidationResult{
@@ -788,11 +822,11 @@ func TestRecheckOKWithSyncError(t *testing.T) {
 	p.applyRecheckResult(msg)
 
 	item = p.selectedNavItem()
-	if item.ValidationStatus != "ok" {
-		t.Errorf("expected 'ok' (credentials valid), got %q", item.ValidationStatus)
+	if item.ValidationStatus != "incomplete" {
+		t.Errorf("expected 'incomplete' (sync error), got %q", item.ValidationStatus)
 	}
-	if item.Valid == nil || !*item.Valid {
-		t.Error("expected Valid=true when credentials check returns ok")
+	if item.Valid == nil || *item.Valid {
+		t.Error("expected Valid=false when last sync had an error")
 	}
 }
 
