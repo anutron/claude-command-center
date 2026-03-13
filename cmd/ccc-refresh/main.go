@@ -68,7 +68,7 @@ func main() {
 		calendarsrc.New(cfg.Calendar.Enabled, calendarIDs, nil),
 		gmailsrc.New(cfg.Gmail, l),
 		githubsrc.New(cfg.GitHub.Enabled, cfg.GitHub.Repos, cfg.GitHub.Username, cfg.GitHub.IsTrackMyPRs()),
-		slacksrc.New(l),
+		slacksrc.New(cfg.Slack.Enabled, l),
 		granolasrc.New(cfg.Granola.Enabled, l),
 	}
 

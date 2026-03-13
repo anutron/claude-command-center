@@ -84,6 +84,7 @@ func TestValidateGmail_MalformedCredentials(t *testing.T) {
 
 func TestValidateSlack_MissingToken(t *testing.T) {
 	t.Setenv("SLACK_BOT_TOKEN", "")
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 
 	err := ValidateSlack()
 	if err == nil {

@@ -17,16 +17,17 @@ import (
 
 // SlackSource fetches Slack messages with commitment language and uses LLM to extract todos.
 type SlackSource struct {
-	LLM llm.LLM
+	enabled bool
+	LLM     llm.LLM
 }
 
 // New creates a SlackSource with the given LLM.
-func New(l llm.LLM) *SlackSource {
-	return &SlackSource{LLM: l}
+func New(enabled bool, l llm.LLM) *SlackSource {
+	return &SlackSource{enabled: enabled, LLM: l}
 }
 
 func (s *SlackSource) Name() string  { return "slack" }
-func (s *SlackSource) Enabled() bool { return true } // always enabled; auth check in Fetch
+func (s *SlackSource) Enabled() bool { return s.enabled }
 
 func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) {
 	token, err := loadSlackToken()
