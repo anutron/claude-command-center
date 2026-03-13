@@ -11,19 +11,22 @@ import (
 	"github.com/anutron/claude-command-center/internal/refresh"
 )
 
-// GitHubSource fetches open PRs authored by the user from configured repos.
+// GitHubSource fetches open PRs authored by the user from configured repos,
+// and optionally all PRs requiring the user's attention across all repos.
 type GitHubSource struct {
-	Repos    []string
-	Username string
-	enabled  bool
+	Repos      []string
+	Username   string
+	TrackMyPRs bool
+	enabled    bool
 }
 
 // New creates a GitHubSource with the given config.
-func New(enabled bool, repos []string, username string) *GitHubSource {
+func New(enabled bool, repos []string, username string, trackMyPRs bool) *GitHubSource {
 	return &GitHubSource{
-		Repos:    repos,
-		Username: username,
-		enabled:  enabled,
+		Repos:      repos,
+		Username:   username,
+		TrackMyPRs: trackMyPRs,
+		enabled:    enabled,
 	}
 }
 
@@ -31,12 +34,32 @@ func (s *GitHubSource) Name() string  { return "github" }
 func (s *GitHubSource) Enabled() bool { return s.enabled }
 
 func (s *GitHubSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) {
-	threads, err := fetchGitHubThreads(ctx, s.Repos)
-	if err != nil {
-		return nil, fmt.Errorf("fetch failed: %w", err)
+	var allThreads []db.Thread
+
+	// Fetch PRs from explicitly configured repos (authored by user).
+	if len(s.Repos) > 0 {
+		repoThreads, err := fetchGitHubThreads(ctx, s.Repos)
+		if err != nil {
+			return nil, fmt.Errorf("repo fetch failed: %w", err)
+		}
+		allThreads = append(allThreads, repoThreads...)
 	}
 
-	return &refresh.SourceResult{Threads: threads}, nil
+	// Fetch all PRs requiring the user's attention across all repos.
+	if s.TrackMyPRs {
+		myThreads, err := searchMyPRs(ctx)
+		if err != nil {
+			// Non-fatal: log but continue with repo-specific results.
+			_ = err
+		} else {
+			allThreads = append(allThreads, myThreads...)
+		}
+	}
+
+	// Deduplicate by URL.
+	allThreads = deduplicateThreads(allThreads)
+
+	return &refresh.SourceResult{Threads: allThreads}, nil
 }
 
 type ghPR struct {
@@ -120,6 +143,106 @@ func listMyPRs(_ context.Context, repo string) ([]ghPR, error) {
 		})
 	}
 	return prs, nil
+}
+
+// ghSearchPR represents a PR returned by `gh search prs`.
+type ghSearchPR struct {
+	Number     int    `json:"number"`
+	Title      string `json:"title"`
+	URL        string `json:"url"`
+	State      string `json:"state"`
+	IsDraft    bool   `json:"isDraft"`
+	Repository struct {
+		NameWithOwner string `json:"nameWithOwner"`
+	} `json:"repository"`
+}
+
+// searchMyPRsFn is a variable for testability.
+var searchMyPRsFn = func(ctx context.Context) ([]db.Thread, error) {
+	var allPRs []ghSearchPR
+
+	// Search for PRs where review is requested from the user.
+	reviewPRs, err := ghSearchPRs("--review-requested=@me")
+	if err == nil {
+		allPRs = append(allPRs, reviewPRs...)
+	}
+
+	// Search for PRs assigned to the user.
+	assignedPRs, err := ghSearchPRs("--assignee=@me")
+	if err == nil {
+		allPRs = append(allPRs, assignedPRs...)
+	}
+
+	// Search for PRs authored by the user.
+	authoredPRs, err := ghSearchPRs("--author=@me")
+	if err == nil {
+		allPRs = append(allPRs, authoredPRs...)
+	}
+
+	// Deduplicate by URL.
+	seen := make(map[string]bool)
+	var threads []db.Thread
+	for _, pr := range allPRs {
+		if seen[pr.URL] {
+			continue
+		}
+		seen[pr.URL] = true
+
+		repo := pr.Repository.NameWithOwner
+		summary := "Open"
+		if pr.IsDraft {
+			summary = "Draft"
+		}
+
+		threads = append(threads, db.Thread{
+			Type:    "pr",
+			Title:   fmt.Sprintf("#%d %s", pr.Number, pr.Title),
+			URL:     pr.URL,
+			Repo:    repo,
+			Summary: summary,
+		})
+	}
+
+	return threads, nil
+}
+
+func searchMyPRs(ctx context.Context) ([]db.Thread, error) {
+	return searchMyPRsFn(ctx)
+}
+
+// ghSearchPRs runs `gh search prs` with the given filter flag and returns results.
+func ghSearchPRs(filter string) ([]ghSearchPR, error) {
+	out, err := exec.Command("gh", "search", "prs",
+		filter,
+		"--state=open",
+		"--json", "number,title,url,isDraft,repository",
+		"--limit", "50",
+	).Output()
+	if err != nil {
+		return nil, fmt.Errorf("gh search prs %s: %w", filter, err)
+	}
+
+	var prs []ghSearchPR
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return nil, err
+	}
+	return prs, nil
+}
+
+// deduplicateThreads removes duplicate threads by URL, keeping the first occurrence.
+func deduplicateThreads(threads []db.Thread) []db.Thread {
+	seen := make(map[string]bool, len(threads))
+	out := make([]db.Thread, 0, len(threads))
+	for _, t := range threads {
+		if t.URL != "" && seen[t.URL] {
+			continue
+		}
+		if t.URL != "" {
+			seen[t.URL] = true
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func summarizePR(_ context.Context, repo string, pr ghPR) string {

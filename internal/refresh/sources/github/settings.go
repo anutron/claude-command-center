@@ -159,6 +159,18 @@ func (s *Settings) SettingsView(width, height int) string {
 		lines = append(lines, "  "+s.usernameInput.View())
 	}
 
+	// Track My PRs
+	trackText := "[off]"
+	trackStyle := s.styles.disabled
+	if s.cfg.GitHub.IsTrackMyPRs() {
+		trackText = "[on] "
+		trackStyle = s.styles.enabled
+	}
+	lines = append(lines, fmt.Sprintf("  %s %s",
+		s.styles.muted.Render("Track My PRs:"),
+		trackStyle.Render(trackText+" (t to toggle)")))
+	lines = append(lines, s.styles.muted.Render("    Show all PRs assigned, review-requested, or authored by you"))
+
 	// Repos
 	lines = append(lines, "")
 	lines = append(lines, s.styles.header.Render("  REPOS"))
@@ -203,7 +215,7 @@ func (s *Settings) SettingsView(width, height int) string {
 		lines = append(lines, "")
 	}
 
-	hintParts := "  a add repo · x remove · u edit username"
+	hintParts := "  t track my PRs · a add repo · x remove · u username"
 	if len(s.fetchedRepos) > 0 {
 		hintParts += " · f browse repos"
 	} else if !s.fetchLoading && s.fetchError == "" {
@@ -580,6 +592,16 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 	}
 
 	switch msg.String() {
+	case "t":
+		newVal := !s.cfg.GitHub.IsTrackMyPRs()
+		s.cfg.GitHub.SetTrackMyPRs(newVal)
+		config.Save(s.cfg)
+		label := "disabled"
+		if newVal {
+			label = "enabled"
+		}
+		s.logInfo("track my PRs toggled", "enabled", newVal)
+		return plugin.Action{Type: plugin.ActionFlash, Payload: "Track My PRs " + label}
 	case "a":
 		s.repoEditing = true
 		s.repoInput.Focus()
