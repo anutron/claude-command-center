@@ -184,10 +184,10 @@ func (c *Config) SetShowBanner(v bool) {
 }
 
 // GetBannerTopPadding returns the number of blank lines above the banner.
-// Defaults to 10 if not set.
+// Defaults to 2 if not set.
 func (c *Config) GetBannerTopPadding() int {
 	if c.BannerTopPadding == nil {
-		return 10
+		return 2
 	}
 	return *c.BannerTopPadding
 }
