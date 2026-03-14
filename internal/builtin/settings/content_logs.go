@@ -34,12 +34,7 @@ func (p *Plugin) filteredLogEntries() []plugin.LogEntry {
 }
 
 func (p *Plugin) viewLogsContent(width, height int) string {
-	item := p.selectedNavItem()
-	desc := ""
-	if item != nil {
-		desc = item.Description
-	}
-	lines := p.renderPaneHeader("LOGS", desc)
+	var lines []string
 
 	// Show filter input when active, or filter value when set
 	if p.logFilterMode {
@@ -165,6 +160,15 @@ func (p *Plugin) handleLogsContentKey(msg tea.KeyMsg) plugin.Action {
 	}
 
 	switch msg.String() {
+	case "esc", "left", "h":
+		// If filter has text, clear it first before going back to nav.
+		if strings.TrimSpace(p.logFilterInput.Value()) != "" {
+			p.logFilterInput.SetValue("")
+			p.logOffset = 0
+			return plugin.NoopAction()
+		}
+		p.focusZone = FocusNav
+		return plugin.NoopAction()
 	case "up", "k":
 		if p.logOffset > 0 {
 			p.logOffset--

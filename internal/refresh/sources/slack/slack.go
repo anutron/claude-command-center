@@ -187,10 +187,23 @@ func buildPermalink(channelID, ts string) string {
 	return fmt.Sprintf("https://app.slack.com/archives/%s/p%s", channelID, tsNoDot)
 }
 
+// isMissingScopeError checks if a Slack API error indicates a missing OAuth scope.
+func isMissingScopeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "missing_scope") || strings.Contains(err.Error(), "not_allowed_token_type")
+}
+
 func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, error) {
-	// Get channels the bot has access to
+	// Try conversations-based approach first (requires channels:read scope).
+	// If it fails due to missing scope, fall back to search.messages (requires search:read only).
 	channels, err := fetchChannels(ctx, token)
 	if err != nil {
+		if isMissingScopeError(err) {
+			// Fall back to search.messages which only requires search:read scope
+			return fetchSlackCandidatesViaSearch(ctx, token)
+		}
 		return nil, fmt.Errorf("listing channels: %w", err)
 	}
 
@@ -221,9 +234,9 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 				Timestamp: msg.TS,
 			}
 
-			// Fetch thread context if this message is part of a thread
-			thread, err := fetchThreadContext(ctx, token, ch.ID, msg.TS)
-			if err == nil && len(thread) > 1 {
+			// Fetch thread context if this message is part of a thread — non-fatal if scope missing
+			thread, threadErr := fetchThreadContext(ctx, token, ch.ID, msg.TS)
+			if threadErr == nil && len(thread) > 1 {
 				var sb strings.Builder
 				for _, reply := range thread {
 					sb.WriteString(reply.Text)
@@ -237,6 +250,89 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 	}
 
 	return candidates, nil
+}
+
+// slackSearchResponse is the response from search.messages API.
+type slackSearchResponse struct {
+	OK       bool   `json:"ok"`
+	Error    string `json:"error,omitempty"`
+	Messages struct {
+		Matches []slackSearchMatch `json:"matches"`
+	} `json:"messages"`
+}
+
+type slackSearchMatch struct {
+	Text      string `json:"text"`
+	Timestamp string `json:"ts"`
+	Permalink string `json:"permalink"`
+	Channel   struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"channel"`
+}
+
+// fetchSlackCandidatesViaSearch uses the search.messages API (requires only search:read scope)
+// to find commitment-language messages. This is the fallback when conversations.list is unavailable.
+func fetchSlackCandidatesViaSearch(ctx context.Context, token string) ([]slackCandidate, error) {
+	var allCandidates []slackCandidate
+
+	// Search for commitment phrases in batches — Slack search supports basic query strings
+	// We group related phrases to minimize API calls
+	searchQueries := []string{
+		"i'll",
+		"i will",
+		"action item",
+		"follow up",
+		"let me",
+	}
+
+	seen := make(map[string]bool)
+	for _, query := range searchQueries {
+		params := url.Values{
+			"query": {fmt.Sprintf("%s after:3d", query)},
+			"count": {"50"},
+			"sort":  {"timestamp"},
+		}
+
+		var result slackSearchResponse
+		if err := slackAPIGet(ctx, token, "search.messages", params, &result); err != nil {
+			return nil, fmt.Errorf("search.messages: %w", err)
+		}
+		if !result.OK {
+			return nil, fmt.Errorf("search.messages error: %s", result.Error)
+		}
+
+		for _, match := range result.Messages.Matches {
+			if match.Text == "" {
+				continue
+			}
+			// Deduplicate by timestamp+channel
+			key := match.Channel.ID + ":" + match.Timestamp
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+
+			if !hasCommitmentLanguage(match.Text) {
+				continue
+			}
+
+			permalink := match.Permalink
+			if permalink == "" {
+				permalink = buildPermalink(match.Channel.ID, match.Timestamp)
+			}
+
+			allCandidates = append(allCandidates, slackCandidate{
+				Message:   match.Text,
+				Permalink: permalink,
+				Channel:   match.Channel.Name,
+				ChannelID: match.Channel.ID,
+				Timestamp: match.Timestamp,
+			})
+		}
+	}
+
+	return allCandidates, nil
 }
 
 func fetchThreadContext(ctx context.Context, token, channelID, ts string) ([]slackReply, error) {

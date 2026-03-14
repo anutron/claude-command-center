@@ -5,7 +5,7 @@ import (
 )
 
 func TestNewClientCredForm_ReturnsFormAndCreds(t *testing.T) {
-	form, creds := newClientCredForm()
+	form, creds := newClientCredForm(nil)
 	if form == nil {
 		t.Fatal("expected non-nil form")
 	}
@@ -15,7 +15,7 @@ func TestNewClientCredForm_ReturnsFormAndCreds(t *testing.T) {
 }
 
 func TestNewClientCredForm_CredsStartEmpty(t *testing.T) {
-	_, creds := newClientCredForm()
+	_, creds := newClientCredForm(nil)
 	if creds.ClientID != "" {
 		t.Errorf("expected empty ClientID, got %q", creds.ClientID)
 	}
@@ -25,7 +25,7 @@ func TestNewClientCredForm_CredsStartEmpty(t *testing.T) {
 }
 
 func TestNewClientCredForm_BindsToCredsStruct(t *testing.T) {
-	_, creds := newClientCredForm()
+	_, creds := newClientCredForm(nil)
 
 	// Simulate filling in credentials by writing directly to the struct.
 	// In actual huh usage, the form updates these via pointer binding.

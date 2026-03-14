@@ -16,10 +16,15 @@ import (
 type FocusZone int
 
 const (
-	FocusNav FocusZone = iota
-	FocusContent
-	FocusEditing
-	FocusForm
+	FocusNav  FocusZone = 0
+	FocusForm FocusZone = 1
+	FocusLogs FocusZone = 2
+
+	// Legacy aliases — kept so that existing content handlers and tests that
+	// reference FocusContent or FocusEditing continue to compile. Both map to
+	// FocusForm, which is the single "right-pane active" zone now.
+	FocusContent = FocusForm
+	FocusEditing = FocusForm
 )
 
 // Category groups NavItems under a heading.
@@ -265,6 +270,50 @@ func (p *Plugin) navCursorDown() {
 	}
 }
 
+// navCursorLineIndex returns the line index (within the full rendered sidebar
+// lines) that corresponds to the current navCursor position. This accounts
+// for category headers and blank separator lines between categories.
+func (p *Plugin) navCursorLineIndex() int {
+	line := 0
+	itemIdx := 0
+	for i, cat := range p.navCategories {
+		// Category header line
+		if itemIdx > p.navCursor {
+			break
+		}
+		line++ // category header
+
+		for range cat.Items {
+			if itemIdx == p.navCursor {
+				return line
+			}
+			line++
+			itemIdx++
+		}
+
+		// Blank separator line between categories (except after the last)
+		if i < len(p.navCategories)-1 {
+			line++
+		}
+	}
+	return line
+}
+
+// ensureCursorVisible adjusts navScrollOffset so the cursor is within the
+// visible window of the given height.
+func (p *Plugin) ensureCursorVisible(visibleHeight int) {
+	if visibleHeight <= 0 {
+		return
+	}
+	cursorLine := p.navCursorLineIndex()
+	if cursorLine < p.navScrollOffset {
+		p.navScrollOffset = cursorLine
+	}
+	if cursorLine >= p.navScrollOffset+visibleHeight {
+		p.navScrollOffset = cursorLine - visibleHeight + 1
+	}
+}
+
 // viewSidebar renders the sidebar navigation panel.
 func (p *Plugin) viewSidebar(width, height int, focus FocusZone) string {
 	var lines []string
@@ -342,6 +391,20 @@ func (p *Plugin) viewSidebar(width, height int, focus FocusZone) string {
 		lines = lines[:len(lines)-1]
 	}
 
+	// Apply scroll windowing: ensure cursor is visible, then slice to fit.
+	p.ensureCursorVisible(height)
+	if len(lines) > height {
+		end := p.navScrollOffset + height
+		if end > len(lines) {
+			end = len(lines)
+			p.navScrollOffset = end - height
+			if p.navScrollOffset < 0 {
+				p.navScrollOffset = 0
+			}
+		}
+		lines = lines[p.navScrollOffset:end]
+	}
+
 	content := strings.Join(lines, "\n")
 
 	// Apply sidebar panel style based on focus
@@ -358,17 +421,6 @@ func (p *Plugin) viewSidebar(width, height int, focus FocusZone) string {
 // handleNavKey processes key events when the nav sidebar is focused.
 // Returns a plugin.Action indicating what happened.
 func (p *Plugin) handleNavKey(msg tea.KeyMsg) plugin.Action {
-	// When the logs pane is selected, forward scroll keys directly to the
-	// logs content handler so the user can scroll without pressing Enter first.
-	// This fixes a long-standing bug where j/k/arrows moved the nav cursor
-	// instead of scrolling the visible log output.
-	if item := p.selectedNavItem(); item != nil && item.Slug == "system-logs" {
-		switch msg.String() {
-		case "up", "k", "down", "j", "f", "b", "d", "u":
-			return p.handleLogsContentKey(msg)
-		}
-	}
-
 	switch msg.String() {
 	case "up", "k":
 		p.navCursorUp()
@@ -386,14 +438,33 @@ func (p *Plugin) handleNavKey(msg tea.KeyMsg) plugin.Action {
 			p.applyNavToggle(item)
 		}
 	case "enter", "right", "l":
-		p.focusZone = FocusContent
+		item := p.selectedNavItem()
+		// Route logs to the dedicated FocusLogs zone
+		if item != nil && item.Slug == "system-logs" {
+			p.focusZone = FocusLogs
+			return plugin.NoopAction()
+		}
+
+		p.focusZone = FocusForm
 		var cmds []tea.Cmd
+
+		// Build a huh form for the selected item (if one exists for this slug).
+		if item != nil {
+			if form, formCmd := p.buildFormForSlug(item); form != nil {
+				p.activeForm = form
+				p.activeFormSlug = item.Slug
+				if formCmd != nil {
+					cmds = append(cmds, formCmd)
+				}
+			}
+		}
+
 		// Fire the active provider's SettingsOpenCmd if available.
 		if cmd := p.activeProviderOpenCmd(); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 		// For Google datasources, fire an async live credential check on pane open.
-		if item := p.selectedNavItem(); item != nil && item.Kind == "datasource" && isGoogleDatasource(item.Slug) {
+		if item != nil && item.Kind == "datasource" && isGoogleDatasource(item.Slug) {
 			slug := item.Slug
 			cmds = append(cmds, func() tea.Msg {
 				result := p.validateDataSourceResult(slug, true)
@@ -405,17 +476,6 @@ func (p *Plugin) handleNavKey(msg tea.KeyMsg) plugin.Action {
 		}
 	case "esc":
 		return plugin.Action{Type: plugin.ActionUnhandled}
-	default:
-		// Forward unrecognized keys to the content handler so that
-		// content-specific shortcuts (e.g. f/r/a/o for data sources)
-		// work without requiring the user to first enter the content pane.
-		item := p.selectedNavItem()
-		if item != nil {
-			action := p.handleContentKey(msg)
-			if action.Type != plugin.ActionNoop || action.TeaCmd != nil {
-				return action
-			}
-		}
 	}
 	return plugin.NoopAction()
 }

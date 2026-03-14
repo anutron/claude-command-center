@@ -3,39 +3,97 @@ package settings
 import (
 	"strings"
 
-	"github.com/anutron/claude-command-center/internal/plugin"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // viewContent renders the content pane based on the currently selected nav item.
 func (p *Plugin) viewContent(width, height int) string {
-	item := p.selectedNavItem()
+	selected := p.selectedNavItem()
+
+	// Check if the selected nav item is the logs pane — render logs content
+	// even from FocusNav so scrolling via forwarded keys is visible.
+	isLogs := selected != nil && selected.Slug == "system-logs"
+
+	// Build header from the currently selected nav item.
+	var header string
+	if selected != nil {
+		headerLines := p.renderPaneHeader(strings.ToUpper(selected.Label), selected.Description)
+		header = strings.Join(headerLines, "\n")
+	}
 
 	var body string
-	if p.focusZone == FocusForm && p.activeForm != nil {
-		// Render the huh form above the normal content
-		formView := p.activeForm.View()
-		body = formView
-		if item != nil {
-			// Show a condensed version of the datasource content below the form
-			body = formView + "\n\n" + p.renderContentForSlug(item, width, height)
+	switch {
+	case p.activeForm != nil && (selected == nil || p.activeFormSlug == selected.Slug):
+		body = p.viewActiveFormContent(width, height)
+	case p.focusZone == FocusLogs || isLogs:
+		body = p.viewLogsContent(width, height)
+	default:
+		// When navigating the sidebar, show a read-only preview of the
+		// currently highlighted item's form content. The form is built
+		// transiently — it is NOT stored as p.activeForm so it won't
+		// receive key events or Init commands (BUG-046).
+		if item := p.selectedNavItem(); item != nil {
+			body = p.viewPreviewContent(item, width, height)
+		} else {
+			body = p.styles.muted.Render("  Select an item from the sidebar")
 		}
-	} else if item == nil {
-		body = p.styles.muted.Render("  Select an item from the sidebar")
-	} else {
-		body = p.renderContentForSlug(item, width, height)
+	}
+
+	// Prepend header to body for all pane types.
+	if header != "" {
+		body = header + "\n" + body
 	}
 
 	// Pick panel style based on focus zone.
 	var panelStyle lipgloss.Style
-	if p.focusZone == FocusContent || p.focusZone == FocusEditing || p.focusZone == FocusForm {
+	if p.focusZone == FocusForm || p.focusZone == FocusLogs {
 		panelStyle = p.styles.contentFocused
 	} else {
 		panelStyle = p.styles.contentUnfocused
 	}
 
 	return panelStyle.Width(width).Height(height).Render(body)
+}
+
+// viewActiveFormContent renders the content pane when a huh form is active.
+// For datasources with a SettingsProvider, the provider's interactive view is
+// rendered above the form so it remains interactive (BUG-050).
+func (p *Plugin) viewActiveFormContent(width, height int) string {
+	item := p.selectedNavItem()
+	if item != nil && item.Kind == "datasource" {
+		if sp, ok := p.providers[item.Slug]; ok {
+			providerView := sp.SettingsView(width, height)
+			return providerView + "\n\n" + p.activeForm.View()
+		}
+	}
+	return p.activeForm.View()
+}
+
+// viewPreviewContent renders a read-only preview of the currently highlighted
+// nav item. For datasources with providers, the provider view is shown above
+// the transient form preview.
+func (p *Plugin) viewPreviewContent(item *NavItem, width, height int) string {
+	form, initCmd := p.buildFormForSlug(item)
+	if form == nil {
+		return p.styles.muted.Render("  Select an item from the sidebar")
+	}
+
+	// Process Init commands so the form's internal state (focus, field
+	// rendering) is fully set up. Without this, Select and Note fields
+	// with DescriptionFunc don't render their content (BUG-062).
+	if initCmd != nil {
+		if msg := initCmd(); msg != nil {
+			form.Update(msg)
+		}
+	}
+
+	if item.Kind == "datasource" {
+		if sp, ok := p.providers[item.Slug]; ok {
+			providerView := sp.SettingsView(width, height)
+			return providerView + "\n\n" + form.View()
+		}
+	}
+	return form.View()
 }
 
 // renderPaneHeader renders a styled header title with an optional dimmed description line below it.
@@ -47,112 +105,3 @@ func (p *Plugin) renderPaneHeader(title, description string) []string {
 	lines = append(lines, "")
 	return lines
 }
-
-// renderContentForSlug dispatches to the correct content renderer for a given nav item.
-func (p *Plugin) renderContentForSlug(item *NavItem, width, height int) string {
-	switch item.Slug {
-	// --- Appearance ---
-	case "banner":
-		return p.viewBannerContent(width, height)
-	case "palette":
-		return p.viewPaletteContent(width, height)
-
-	// --- System ---
-	case "system-schedule":
-		return p.viewScheduleContent(width, height)
-	case "system-mcp":
-		return p.viewMCPContent(width, height)
-	case "system-skills":
-		return p.viewSkillsContent(width, height)
-	case "system-shell":
-		return p.viewShellContent(width, height)
-	case "system-logs":
-		return p.viewLogsContent(width, height)
-
-	default:
-		// Plugin or data source — dispatch by kind.
-		switch item.Kind {
-		case "plugin":
-			return p.viewPluginContent(item, width, height)
-		case "datasource":
-			return p.viewDatasourceContent(item, width, height)
-		}
-	}
-
-	return p.styles.muted.Render("  Select an item from the sidebar")
-}
-
-// handleContentKey dispatches key events to the correct content handler based on the selected slug.
-func (p *Plugin) handleContentKey(msg tea.KeyMsg) plugin.Action {
-	// Common escape: return to nav from content.
-	// But first, if the active provider is in editing mode, let it handle esc
-	// so that pressing Escape cancels the edit instead of jumping to nav.
-	if p.focusZone == FocusContent {
-		switch msg.String() {
-		case "esc", "left", "h":
-			// If the logs filter is active, let the logs handler handle esc
-			// so it clears the filter instead of jumping to nav.
-			if p.logFilterMode {
-				if item := p.selectedNavItem(); item != nil && item.Slug == "system-logs" {
-					return p.handleLogsContentKey(msg)
-				}
-			}
-			// Give the active SettingsProvider a chance to handle esc first
-			// (e.g. to cancel an inline text edit like a GitHub repo input).
-			if sp := p.activeProvider(); sp != nil {
-				action := sp.HandleSettingsKey(msg)
-				if action.Type == plugin.ActionFlash {
-					p.flashMessage = action.Payload
-					p.flashMessageAt = currentTime()
-					return plugin.NoopAction()
-				}
-				if action.Type != plugin.ActionUnhandled {
-					return action
-				}
-			}
-			// If filter has text but filter mode is off, and user presses esc
-			// on the logs pane, clear the filter first before going back to nav.
-			if item := p.selectedNavItem(); item != nil && item.Slug == "system-logs" {
-				if strings.TrimSpace(p.logFilterInput.Value()) != "" {
-					p.logFilterInput.SetValue("")
-					p.logOffset = 0
-					return plugin.NoopAction()
-				}
-			}
-			p.focusZone = FocusNav
-			return plugin.NoopAction()
-		}
-	}
-
-	item := p.selectedNavItem()
-	if item == nil {
-		return plugin.NoopAction()
-	}
-
-	switch item.Slug {
-	case "banner":
-		return p.handleBannerContentKey(msg)
-	case "palette":
-		return p.handlePaletteContentKey(msg)
-	case "system-logs":
-		return p.handleLogsContentKey(msg)
-	case "system-schedule":
-		return p.handleScheduleContentKey(msg)
-	case "system-mcp":
-		return p.handleMCPContentKey(msg)
-	case "system-skills":
-		return p.handleSkillsContentKey(msg)
-	case "system-shell":
-		return p.handleShellContentKey(msg)
-	default:
-		switch item.Kind {
-		case "plugin":
-			return p.handlePluginContentKey(item, msg)
-		case "datasource":
-			return p.handleDatasourceContentKey(item, msg)
-		}
-	}
-
-	return plugin.NoopAction()
-}
-

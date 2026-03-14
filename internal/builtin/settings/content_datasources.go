@@ -11,6 +11,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -18,44 +19,146 @@ import (
 type datasourceRecheckResult struct {
 	Slug   string
 	Result plugin.ValidationResult
+	Live   bool // true when the result came from a real API call (not just structural check)
 }
 
-// --- Data source content (sidebar layout) ---
+// datasourceFormValues holds the selected action from a datasource pane form.
+type datasourceFormValues struct {
+	Action string
+}
 
-func (p *Plugin) viewDatasourceContent(item *NavItem, width, height int) string {
-	lines := p.renderPaneHeader(strings.ToUpper(item.Label), item.Description)
+// --- Data source form ---
 
-	// Check for a SettingsProvider
-	if sp, ok := p.providers[item.Slug]; ok {
-		lines = append(lines, sp.SettingsView(width, height))
-		// Append validation status + recheck hint below the provider view
-		lines = append(lines, "")
-		lines = append(lines, p.viewValidationStatus(item))
-		return lipgloss.JoinVertical(lipgloss.Left, lines...)
+func (p *Plugin) buildDatasourceForm(item *NavItem) *huh.Form {
+	p.datasourceValues = &datasourceFormValues{}
+
+	// Build contextual action options
+	options := []huh.Option[string]{
+		huh.NewOption("Verify credentials", "recheck"),
+	}
+	if isGoogleDatasource(item.Slug) {
+		options = append(options,
+			huh.NewOption("Authenticate (enter client credentials + OAuth)", "auth"),
+			huh.NewOption("Open Google Cloud Console", "console"),
+		)
+	} else if item.Slug == "slack" {
+		options = append(options,
+			huh.NewOption("Enter Slack token", "auth"),
+		)
 	}
 
-	// Default data source info
-	lines = append(lines, fmt.Sprintf("  %s %s",
-		p.styles.muted.Render("Source:"),
-		p.styles.itemName.Render(item.Slug)))
+	vals := p.datasourceValues
 
-	if item.Enabled != nil {
-		statusText := "Disabled"
-		statusStyle := p.styles.disabled
-		if *item.Enabled {
-			statusText = "Enabled"
-			statusStyle = p.styles.enabled
+	// The form contains only the validation status Note and action Select.
+	// Provider views (calendar list, GitHub repos, etc.) are rendered
+	// separately above the form in viewContent so they remain interactive —
+	// wrapping them in a huh.Note made them read-only (BUG-050).
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewNote().
+				DescriptionFunc(func() string {
+					return p.viewValidationStatus(item)
+				}, &vals.Action),
+			huh.NewSelect[string]().
+				Title("ACTIONS").
+				Options(options...).
+				Value(&p.datasourceValues.Action),
+		),
+	).WithShowHelp(false).WithShowErrors(true).WithTheme(p.styles.huhTheme)
+
+	return form
+}
+
+func (p *Plugin) handleDatasourceFormCompletion(slug string) tea.Cmd {
+	if p.datasourceValues == nil {
+		return nil
+	}
+	action := p.datasourceValues.Action
+	p.datasourceValues = nil
+
+	item := p.findNavItem(slug)
+
+	switch action {
+	case "recheck":
+		var cmds []tea.Cmd
+
+		// Let the provider handle recheck for provider-specific refresh logic.
+		if sp, ok := p.providers[slug]; ok {
+			provAction := sp.HandleSettingsKey(tea.KeyMsg{})
+			if provAction.TeaCmd != nil {
+				cmds = append(cmds, provAction.TeaCmd)
+			}
 		}
-		lines = append(lines, fmt.Sprintf("  %s %s",
-			p.styles.muted.Render("Status:"),
-			statusStyle.Render(statusText)))
+
+		// Always run a live credential recheck (hits the actual API).
+		cmds = append(cmds, func() tea.Msg {
+			result := p.validateDataSourceResult(slug, true)
+			return datasourceRecheckResult{Slug: slug, Result: result, Live: true}
+		})
+
+		label := slug
+		if item != nil {
+			label = item.Label
+		}
+		p.flashMessage = "Verifying " + label + " credentials..."
+		p.flashMessageAt = currentTime()
+
+		// Rebuild form so it stays on screen
+		if item != nil {
+			form := p.buildDatasourceForm(item)
+			p.activeForm = form
+			p.activeFormSlug = slug
+			cmds = append(cmds, form.Init())
+		}
+
+		return tea.Batch(cmds...)
+
+	case "auth":
+		if slug == "slack" {
+			form, tok := newSlackTokenForm(p.styles.huhTheme)
+			p.activeForm = form
+			p.activeFormSlug = slug
+			p.pendingSlackToken = tok
+			p.pendingAuthSlug = slug
+			p.focusZone = FocusForm
+			initCmd := p.activeForm.Init()
+			p.flashMessage = "Enter Slack token"
+			p.flashMessageAt = currentTime()
+			return initCmd
+		}
+		if isGoogleDatasource(slug) {
+			form, creds := newClientCredForm(p.styles.huhTheme)
+			p.activeForm = form
+			p.activeFormSlug = slug
+			p.pendingAuthCreds = creds
+			p.pendingAuthSlug = slug
+			p.focusZone = FocusForm
+			initCmd := p.activeForm.Init()
+			label := slug
+			if item != nil {
+				label = item.Label
+			}
+			p.flashMessage = "Enter OAuth client credentials for " + label
+			p.flashMessageAt = currentTime()
+			return initCmd
+		}
+
+	case "console":
+		if isGoogleDatasource(slug) {
+			_ = exec.Command("open", "https://console.cloud.google.com/apis/credentials").Start()
+			p.flashMessage = "Opening Google Cloud Console..."
+			p.flashMessageAt = currentTime()
+			// Rebuild form so it stays on screen
+			if item != nil {
+				form := p.buildDatasourceForm(item)
+				p.activeForm = form
+				p.activeFormSlug = slug
+				return form.Init()
+			}
+		}
 	}
 
-	// Tiered validation display
-	lines = append(lines, "")
-	lines = append(lines, p.viewValidationStatus(item))
-
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	return nil
 }
 
 // viewValidationStatus renders the tiered credential validation status and instructions.
@@ -72,77 +175,77 @@ func (p *Plugin) viewValidationStatus(item *NavItem) string {
 		if item.SyncStatus != nil && item.SyncStatus.LastSuccess != nil {
 			label = "Token verified — last sync " + db.RelativeTime(*item.SyncStatus.LastSuccess)
 		}
-		lines = append(lines, fmt.Sprintf("  %s %s",
+		lines = append(lines, fmt.Sprintf("%s %s",
 			greenCheck,
 			p.styles.enabled.Render(label)))
 		if item.ValidationMsg != "" {
-			lines = append(lines, "  "+p.styles.muted.Render(item.ValidationMsg))
+			lines = append(lines, p.styles.muted.Render(item.ValidationMsg))
 		}
 
 	case "unverified":
-		lines = append(lines, fmt.Sprintf("  %s %s",
+		lines = append(lines, fmt.Sprintf("%s %s",
 			yellowWarn,
 			p.styles.logWarn.Render("Token not yet verified")))
 		if item.ValidationMsg != "" {
-			lines = append(lines, "  "+p.styles.muted.Render(item.ValidationMsg))
+			lines = append(lines, p.styles.muted.Render(item.ValidationMsg))
 		}
 		if item.ValidHint != "" {
 			lines = append(lines, "")
-			lines = append(lines, "  "+p.styles.logWarn.Render("Next: ")+p.styles.muted.Render(item.ValidHint))
+			lines = append(lines, p.styles.logWarn.Render("Next: ")+p.styles.muted.Render(item.ValidHint))
 		}
 
 	case "incomplete":
-		lines = append(lines, fmt.Sprintf("  %s %s",
+		lines = append(lines, fmt.Sprintf("%s %s",
 			yellowWarn,
 			p.styles.logWarn.Render("Credentials incomplete")))
 		if item.ValidationMsg != "" {
-			lines = append(lines, "  "+p.styles.muted.Render(item.ValidationMsg))
+			lines = append(lines, p.styles.muted.Render(item.ValidationMsg))
 		}
 		if item.ValidHint != "" {
 			lines = append(lines, "")
-			lines = append(lines, "  "+p.styles.logWarn.Render("Fix: ")+p.styles.muted.Render(item.ValidHint))
+			lines = append(lines, p.styles.logWarn.Render("Fix: ")+p.styles.muted.Render(item.ValidHint))
 		}
 
 	case "no_client":
-		lines = append(lines, fmt.Sprintf("  %s %s",
+		lines = append(lines, fmt.Sprintf("%s %s",
 			redX,
 			p.styles.logError.Render("OAuth client credentials missing")))
 		if item.ValidationMsg != "" {
-			lines = append(lines, "  "+p.styles.muted.Render(item.ValidationMsg))
+			lines = append(lines, p.styles.muted.Render(item.ValidationMsg))
 		}
 		lines = append(lines, "")
-		lines = append(lines, "  "+p.styles.muted.Render("To fix:"))
-		lines = append(lines, "  "+p.styles.muted.Render("1. Create OAuth credentials in Google Cloud Console"))
-		lines = append(lines, "  "+p.styles.muted.Render("2. Add clientId and clientSecret to your credential file"))
+		lines = append(lines, p.styles.muted.Render("To fix:"))
+		lines = append(lines, p.styles.muted.Render("1. Create OAuth credentials in Google Cloud Console"))
+		lines = append(lines, p.styles.muted.Render("2. Add clientId and clientSecret to your credential file"))
 		if item.ValidHint != "" {
-			lines = append(lines, "  "+p.styles.muted.Render("   "+item.ValidHint))
+			lines = append(lines, p.styles.muted.Render("   "+item.ValidHint))
 		}
 
 	case "missing":
-		lines = append(lines, fmt.Sprintf("  %s %s",
+		lines = append(lines, fmt.Sprintf("%s %s",
 			redX,
 			p.styles.logError.Render("Credentials not found")))
 		if item.ValidationMsg != "" {
-			lines = append(lines, "  "+p.styles.muted.Render(item.ValidationMsg))
+			lines = append(lines, p.styles.muted.Render(item.ValidationMsg))
 		}
 		if item.ValidHint != "" {
 			lines = append(lines, "")
-			lines = append(lines, "  "+p.styles.muted.Render("Setup: ")+p.styles.muted.Render(item.ValidHint))
+			lines = append(lines, p.styles.muted.Render("Setup: ")+p.styles.muted.Render(item.ValidHint))
 		}
 
 	default:
 		// Legacy fallback
 		if item.Valid != nil {
 			if *item.Valid {
-				lines = append(lines, fmt.Sprintf("  %s %s",
+				lines = append(lines, fmt.Sprintf("%s %s",
 					p.styles.muted.Render("Credentials:"),
 					p.styles.enabled.Render("Valid")))
 			} else {
-				lines = append(lines, fmt.Sprintf("  %s %s",
+				lines = append(lines, fmt.Sprintf("%s %s",
 					p.styles.muted.Render("Credentials:"),
 					p.styles.logError.Render("Invalid")))
 				if item.ValidHint != "" {
-					lines = append(lines, fmt.Sprintf("  %s %s",
+					lines = append(lines, fmt.Sprintf("%s %s",
 						p.styles.muted.Render("Hint:"),
 						p.styles.logWarn.Render(item.ValidHint)))
 				}
@@ -156,35 +259,24 @@ func (p *Plugin) viewValidationStatus(item *NavItem) string {
 		ss := item.SyncStatus
 		if ss.LastSuccess != nil {
 			syncTime := db.RelativeTime(*ss.LastSuccess)
-			lines = append(lines, fmt.Sprintf("  %s %s",
+			lines = append(lines, fmt.Sprintf("%s %s",
 				p.styles.muted.Render("Last sync:"),
 				p.styles.enabled.Render(syncTime)))
 		} else {
-			lines = append(lines, fmt.Sprintf("  %s %s",
+			lines = append(lines, fmt.Sprintf("%s %s",
 				p.styles.muted.Render("Last sync:"),
 				p.styles.logError.Render("Never")))
 		}
 		if ss.LastError != "" {
-			lines = append(lines, fmt.Sprintf("  %s %s",
+			lines = append(lines, fmt.Sprintf("%s %s",
 				p.styles.muted.Render("Last error:"),
 				p.styles.logError.Render(ss.LastError)))
 		}
 	} else {
 		lines = append(lines, "")
-		lines = append(lines, fmt.Sprintf("  %s %s",
+		lines = append(lines, fmt.Sprintf("%s %s",
 			p.styles.muted.Render("Last sync:"),
 			p.styles.logWarn.Render("Never synced")))
-	}
-
-	lines = append(lines, "")
-	lines = append(lines, "  "+p.styles.muted.Render("r re-check credentials"))
-
-	// Show auth actions for data sources that support them.
-	if isGoogleDatasource(item.Slug) {
-		lines = append(lines, "  "+p.styles.muted.Render("a authenticate (enter client credentials + OAuth)"))
-		lines = append(lines, "  "+p.styles.muted.Render("o open Google Cloud Console"))
-	} else if item.Slug == "slack" {
-		lines = append(lines, "  "+p.styles.muted.Render("a enter Slack bot token"))
 	}
 
 	return strings.Join(lines, "\n")
@@ -193,95 +285,6 @@ func (p *Plugin) viewValidationStatus(item *NavItem) string {
 // isGoogleDatasource returns true for data sources that use Google OAuth.
 func isGoogleDatasource(slug string) bool {
 	return slug == "calendar" || slug == "gmail"
-}
-
-func (p *Plugin) handleDatasourceContentKey(item *NavItem, msg tea.KeyMsg) plugin.Action {
-	// For 'r' (refresh), give the provider a chance to add extra work (e.g.
-	// re-fetching a username) alongside the standard credential recheck.
-	if msg.String() == "r" {
-		slug := item.Slug
-		live := isGoogleDatasource(slug)
-		var cmds []tea.Cmd
-
-		// Let the provider handle 'r' first for provider-specific refresh logic.
-		if sp, ok := p.providers[slug]; ok {
-			action := sp.HandleSettingsKey(msg)
-			if action.Type == plugin.ActionFlash {
-				p.flashMessage = action.Payload
-				p.flashMessageAt = currentTime()
-			}
-			if action.TeaCmd != nil {
-				cmds = append(cmds, action.TeaCmd)
-			}
-		}
-
-		// Always run the credential recheck.
-		cmds = append(cmds, func() tea.Msg {
-			result := p.validateDataSourceResult(slug, live)
-			return datasourceRecheckResult{Slug: slug, Result: result}
-		})
-
-		if live {
-			p.flashMessage = "Live-checking " + item.Label + " credentials..."
-		} else {
-			p.flashMessage = "Re-checking " + item.Label + " credentials..."
-		}
-		p.flashMessageAt = currentTime()
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
-	}
-
-	switch msg.String() {
-	case "a":
-		// Authenticate: show credential form for Google data sources or Slack.
-		if item.Slug == "slack" {
-			form, tok := newSlackTokenForm()
-			p.activeForm = form
-			p.pendingSlackToken = tok
-			p.pendingAuthSlug = item.Slug
-			p.focusZone = FocusForm
-			initCmd := p.activeForm.Init()
-			p.flashMessage = "Enter Slack bot token"
-			p.flashMessageAt = currentTime()
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: initCmd}
-		}
-		if !isGoogleDatasource(item.Slug) {
-			break
-		}
-		form, creds := newClientCredForm()
-		p.activeForm = form
-		p.pendingAuthCreds = creds
-		p.pendingAuthSlug = item.Slug
-		p.focusZone = FocusForm
-		// Initialize the form via its Init cmd.
-		initCmd := p.activeForm.Init()
-		p.flashMessage = "Enter OAuth client credentials for " + item.Label
-		p.flashMessageAt = currentTime()
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: initCmd}
-
-	case "o":
-		// Open Google Cloud Console.
-		if !isGoogleDatasource(item.Slug) {
-			break
-		}
-		_ = exec.Command("open", "https://console.cloud.google.com/apis/credentials").Start()
-		p.flashMessage = "Opening Google Cloud Console..."
-		p.flashMessageAt = currentTime()
-		return plugin.NoopAction()
-	}
-
-	// Delegate to SettingsProvider if available.
-	if sp, ok := p.providers[item.Slug]; ok {
-		action := sp.HandleSettingsKey(msg)
-		if action.Type == plugin.ActionFlash {
-			p.flashMessage = action.Payload
-			p.flashMessageAt = currentTime()
-			return plugin.NoopAction()
-		}
-		if action.Type != plugin.ActionUnhandled {
-			return action
-		}
-	}
-	return plugin.NoopAction()
 }
 
 // startAuthFlowForDatasource begins the OAuth flow for the pending data source

@@ -5,10 +5,11 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -50,30 +51,34 @@ type Plugin struct {
 	providers map[string]plugin.SettingsProvider
 
 	// Sidebar nav state
-	navCategories []Category
-	navCursor     int
-	focusZone     FocusZone
+	navCategories   []Category
+	navCursor       int
+	navScrollOffset int // scroll offset for sidebar when items exceed panel height
+	focusZone       FocusZone
 
-	// Banner editing state (used by content_appearance)
-	bannerNameInput     textinput.Model
-	bannerSubtitleInput textinput.Model
-	bannerField         int  // 0=name, 1=subtitle, 2=show/hide, 3=top padding
-	bannerEditing       bool // true when a text field is focused
-	bannerPaddingInput  textinput.Model
+	// Banner form values (bound to active huh form)
+	bannerValues *bannerFormValues
 
-	// Palette state (used by content_appearance)
-	paletteCursor int
+	// Palette form values (bound to active huh form)
+	paletteValues *paletteFormValues
+
+	// System form values (bound to active huh form for system panes)
+	systemValues *systemFormValues
+
+	// Datasource form values (bound to active huh form for datasource panes)
+	datasourceValues *datasourceFormValues
+
+	// Plugin form values (bound to active huh form for plugin panes)
+	pluginValues *pluginFormValues
 
 	// Logs state (used by content_logs)
 	logOffset      int
 	logFilterInput textinput.Model
 	logFilterMode  bool // true when filter input is focused
 
-	// System content pane cursor positions (keyed by slug)
-	systemCursors map[string]int
-
 	// Active huh form (nil when no form is displayed)
-	activeForm *huh.Form
+	activeForm     *huh.Form
+	activeFormSlug string // slug of the nav item the form belongs to
 
 	// Pending OAuth auth state
 	pendingAuthCreds *clientCredentials // credentials from the form
@@ -128,14 +133,6 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	pal := config.GetPalette(p.cfg.Palette, p.cfg.Colors)
 	p.styles = newSettingsStyles(pal)
 
-	// Set palette cursor to current palette
-	for i, name := range config.PaletteNames() {
-		if name == p.cfg.Palette {
-			p.paletteCursor = i
-			break
-		}
-	}
-
 	// Initialize providers map and register data source settings providers.
 	if p.providers == nil {
 		p.providers = make(map[string]plugin.SettingsProvider)
@@ -143,25 +140,6 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.providers["calendar"] = calendar.NewSettings(p.cfg, pal, p.logger)
 	p.providers["github"] = ghsettings.NewSettings(p.cfg, pal, p.logger)
 	p.providers["granola"] = granola.NewSettings(p.cfg, pal)
-
-	// Banner text inputs
-	ni := textinput.New()
-	ni.Placeholder = "Claude Command"
-	ni.CharLimit = 20
-	ni.SetValue(p.cfg.Name)
-	p.bannerNameInput = ni
-
-	si := textinput.New()
-	si.Placeholder = "Center"
-	si.CharLimit = 30
-	si.SetValue(p.cfg.Subtitle)
-	p.bannerSubtitleInput = si
-
-	pi := textinput.New()
-	pi.Placeholder = "2"
-	pi.CharLimit = 3
-	pi.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
-	p.bannerPaddingInput = pi
 
 	// Log filter input
 	fi := textinput.New()
@@ -217,10 +195,19 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	switch p.focusZone {
 	case FocusNav:
 		return p.handleNavKey(msg)
-	case FocusContent, FocusEditing:
-		return p.handleContentKey(msg)
 	case FocusForm:
-		return p.handleFormKey(msg)
+		// If a huh form is active, route keys to the form handler.
+		if p.activeForm != nil {
+			return p.handleFormKey(msg)
+		}
+		// No active form — esc/left/h returns to nav.
+		switch msg.String() {
+		case "esc", "left", "h":
+			p.focusZone = FocusNav
+		}
+		return plugin.NoopAction()
+	case FocusLogs:
+		return p.handleLogsContentKey(msg)
 	}
 	return plugin.NoopAction()
 }
@@ -228,19 +215,67 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 // handleFormKey processes key events when a huh form is focused.
 func (p *Plugin) handleFormKey(msg tea.KeyMsg) plugin.Action {
 	if p.activeForm == nil {
-		p.focusZone = FocusContent
+		p.focusZone = FocusForm
 		return plugin.NoopAction()
 	}
 
-	// Allow escape to cancel the form and any pending auth
+	// Left arrow navigates back to the nav sidebar, unless the focused field
+	// is a text input (huh.Input) where left arrow moves the cursor.
+	if msg.String() == "left" {
+		if _, isInput := p.activeForm.GetFocusedField().(*huh.Input); !isInput {
+			slug := p.activeFormSlug
+			if shouldAutoSaveOnExit(slug) {
+				p.handleFormCompletion(slug)
+			}
+			p.focusZone = FocusNav
+			return plugin.NoopAction()
+		}
+	}
+
+	// Allow escape to cancel the form and any pending auth.
+	// For datasource providers, esc returns to nav only if the provider
+	// doesn't consume it (e.g., color picker or fetch mode use esc internally).
 	if msg.String() == "esc" {
+		// Let the provider handle esc first (color picker cancel, fetch mode exit, etc.)
+		if sp, ok := p.providers[p.activeFormSlug]; ok {
+			action := sp.HandleSettingsKey(msg)
+			if action.Type != plugin.ActionUnhandled {
+				return p.wrapProviderAction(action)
+			}
+		}
+
+		slug := p.activeFormSlug
+
+		// Auto-save editable form values (banner, palette) before dismissing.
+		// Auth and action forms are NOT auto-saved — esc means cancel.
+		if shouldAutoSaveOnExit(slug) {
+			p.handleFormCompletion(slug)
+		}
+
 		p.activeForm = nil
-		p.focusZone = FocusContent
+		p.activeFormSlug = ""
 		p.cancelAuthFlow()
 		p.pendingAuthCreds = nil
 		p.pendingSlackToken = nil
 		p.pendingAuthSlug = ""
+		// Return to nav if the form was the primary content (banner, palette);
+		// otherwise stay in FocusForm so the content pane remains visible.
+		if isFormOnlySlug(slug) {
+			p.focusZone = FocusNav
+		} else {
+			p.focusZone = FocusForm
+		}
 		return plugin.NoopAction()
+	}
+
+	// For datasources with interactive providers (calendar list, GitHub repos),
+	// offer the key to the provider first. If the provider handles it, consume
+	// the key without forwarding to the huh form (BUG-050).
+	if sp, ok := p.providers[p.activeFormSlug]; ok {
+		action := sp.HandleSettingsKey(msg)
+		if action.Type != plugin.ActionUnhandled {
+			return p.wrapProviderAction(action)
+		}
 	}
 
 	// Forward key to the form
@@ -249,28 +284,31 @@ func (p *Plugin) handleFormKey(msg tea.KeyMsg) plugin.Action {
 		p.activeForm = f
 	}
 
+	// Auto-save on field transition keys (tab, enter) for editable forms.
+	// The bound value pointers are updated by huh in real-time, so we can
+	// read them immediately after Update() and persist without rebuilding.
+	if p.activeForm != nil && p.activeForm.State != huh.StateCompleted {
+		key := msg.String()
+		if (key == "tab" || key == "shift+tab" || key == "enter") && shouldAutoSaveOnExit(p.activeFormSlug) {
+			p.saveFormValues(p.activeFormSlug)
+		}
+	}
+
 	// Check if form completed
 	if p.activeForm.State == huh.StateCompleted {
+		slug := p.activeFormSlug
 		p.activeForm = nil
-		p.focusZone = FocusContent
+		p.activeFormSlug = ""
 
-		// If this was a Slack token form, save and recheck.
-		if p.pendingSlackToken != nil && p.pendingAuthSlug == "slack" {
-			recheckCmd := p.saveSlackToken()
-			if recheckCmd != nil {
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: recheckCmd}
-			}
+		// Run the completion handler for this slug.
+		completionCmd := p.handleFormCompletion(slug)
+		if completionCmd != nil {
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmd, completionCmd)}
+		}
+		if cmd != nil {
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
-
-		// If this was a credential form for OAuth, chain to the auth flow.
-		if p.pendingAuthCreds != nil && p.pendingAuthSlug != "" {
-			authCmd := p.startAuthFlowForDatasource()
-			if authCmd != nil {
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: authCmd}
-			}
-		}
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		return plugin.NoopAction()
 	}
 
 	if cmd != nil {
@@ -279,6 +317,23 @@ func (p *Plugin) handleFormKey(msg tea.KeyMsg) plugin.Action {
 	// Form is active but the key produced no cmd (e.g. Tab on a single-field
 	// form). Return a consumed action so the TUI host doesn't switch tabs
 	// while a form is visible (BUG-041).
+	return plugin.ConsumedAction()
+}
+
+// wrapProviderAction converts a provider's Action into a host-compatible Action,
+// translating flash messages and tea.Cmds appropriately.
+func (p *Plugin) wrapProviderAction(action plugin.Action) plugin.Action {
+	if action.Type == plugin.ActionFlash {
+		p.flashMessage = action.Payload
+		p.flashMessageAt = time.Now()
+		if action.TeaCmd != nil {
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: action.TeaCmd}
+		}
+		return plugin.NoopAction()
+	}
+	if action.TeaCmd != nil {
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: action.TeaCmd}
+	}
 	return plugin.ConsumedAction()
 }
 
@@ -292,8 +347,11 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		p.applyRecheckResult(msg)
 		return true, plugin.NoopAction()
 	case systemActionResult:
-		p.handleSystemActionResult(msg)
-		return true, plugin.NoopAction()
+		handled, cmd := p.handleSystemActionResult(msg)
+		if cmd != nil {
+			return handled, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
+		return handled, plugin.NoopAction()
 	case auth.AuthFlowResultMsg:
 		cmd := p.handleAuthFlowResult(msg)
 		if cmd != nil {
@@ -301,56 +359,18 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		}
 		return true, plugin.NoopAction()
 	case plugin.TabLeaveMsg:
-		// Cancel any active banner editing when leaving the tab
-		if p.bannerEditing {
-			p.bannerEditing = false
-			p.bannerNameInput.SetValue(p.cfg.Name)
-			p.bannerNameInput.Blur()
-			p.bannerSubtitleInput.SetValue(p.cfg.Subtitle)
-			p.bannerSubtitleInput.Blur()
-			p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
-			p.bannerPaddingInput.Blur()
-		}
-		// Cancel any active form
+		// Auto-save editable form values before leaving tab
 		if p.activeForm != nil {
+			if shouldAutoSaveOnExit(p.activeFormSlug) {
+				p.handleFormCompletion(p.activeFormSlug)
+			}
 			p.activeForm = nil
-			p.focusZone = FocusContent
+			p.activeFormSlug = ""
+			p.focusZone = FocusForm
 		}
 		// Cancel any in-progress OAuth flow and clear pending token state
 		p.cancelAuthFlow()
 		p.pendingSlackToken = nil
-		return true, plugin.NoopAction()
-	}
-
-	// Route non-key messages to the active form when in FocusForm.
-	if p.focusZone == FocusForm && p.activeForm != nil {
-		form, cmd := p.activeForm.Update(msg)
-		if f, ok := form.(*huh.Form); ok {
-			p.activeForm = f
-		}
-		if p.activeForm.State == huh.StateCompleted {
-			p.activeForm = nil
-			p.focusZone = FocusContent
-
-			// If this was a Slack token form, save and recheck.
-			if p.pendingSlackToken != nil && p.pendingAuthSlug == "slack" {
-				recheckCmd := p.saveSlackToken()
-				if recheckCmd != nil {
-					return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: recheckCmd}
-				}
-			}
-
-			// Chain to OAuth flow if credential form completed.
-			if p.pendingAuthCreds != nil && p.pendingAuthSlug != "" {
-				authCmd := p.startAuthFlowForDatasource()
-				if authCmd != nil {
-					return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: authCmd}
-				}
-			}
-		}
-		if cmd != nil {
-			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-		}
 		return true, plugin.NoopAction()
 	}
 
@@ -369,6 +389,31 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			}
 			return true, action
 		}
+	}
+
+	// Route non-key messages to the active form when a form is displayed.
+	// This runs AFTER provider routing so that async fetch results
+	// (CalendarFetchResultMsg, ghRepoFetchResult) reach the provider even
+	// when a huh form is active (BUG-064, BUG-065).
+	if p.activeForm != nil {
+		form, cmd := p.activeForm.Update(msg)
+		if f, ok := form.(*huh.Form); ok {
+			p.activeForm = f
+		}
+		if p.activeForm.State == huh.StateCompleted {
+			slug := p.activeFormSlug
+			p.activeForm = nil
+			p.activeFormSlug = ""
+
+			completionCmd := p.handleFormCompletion(slug)
+			if completionCmd != nil {
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmd, completionCmd)}
+			}
+		}
+		if cmd != nil {
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
+		return true, plugin.NoopAction()
 	}
 
 	// Clear flash after 10 seconds
@@ -447,23 +492,14 @@ func (p *Plugin) View(width, height, frame int) string {
 	switch p.focusZone {
 	case FocusNav:
 		help = p.styles.muted.Render("  up/down navigate  space toggle  enter/right open  esc back")
-	case FocusContent:
-		item := p.selectedNavItem()
-		if item != nil && item.Kind == "datasource" {
-			if isGoogleDatasource(item.Slug) {
-				help = p.styles.muted.Render("  esc/left sidebar  r re-check  a authenticate  o cloud console")
-			} else if item.Slug == "slack" {
-				help = p.styles.muted.Render("  esc/left sidebar  r re-check  a enter token")
-			} else {
-				help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle  r re-check")
-			}
-		} else {
-			help = p.styles.muted.Render("  esc/left sidebar  up/down navigate  enter select  space toggle")
-		}
-	case FocusEditing:
-		help = p.styles.muted.Render("  enter save  esc cancel")
 	case FocusForm:
-		help = p.styles.muted.Render("  tab next field  enter submit  esc cancel")
+		if p.activeForm != nil {
+			help = p.styles.muted.Render("  tab next field  enter submit  left/esc save & back")
+		} else {
+			help = p.styles.muted.Render("  esc/left sidebar")
+		}
+	case FocusLogs:
+		help = p.styles.muted.Render("  j/k scroll  f/b page  d/u half-page  / filter  esc back")
 	}
 
 	parts := []string{layout}
@@ -586,6 +622,9 @@ func (p *Plugin) validateDataSourceResult(slug string, live bool) plugin.Validat
 	case "calendar":
 		return calendar.ValidateCalendarResult()
 	case "slack":
+		if live {
+			return liveSlackTokenCheck()
+		}
 		return validateSlackResult()
 	}
 
@@ -621,11 +660,18 @@ func (p *Plugin) applyRecheckResult(msg datasourceRecheckResult) {
 					}
 				}
 
-				// Apply the same sync-aware downgrade as rebuildNav():
+				// Apply sync-aware downgrade for structural (non-live) checks:
 				// credentials may look "ok" structurally but if sync has
 				// never succeeded or last sync failed, downgrade to
 				// "incomplete" with a warning indicator (BUG-030).
-				if msg.Result.Status == "ok" {
+				//
+				// When a LIVE check returns "ok", the API actually responded
+				// successfully — stale DB sync errors are irrelevant (BUG-053).
+				if msg.Result.Status == "ok" && msg.Live {
+					// Live "ok" is authoritative — skip sync-aware downgrade.
+					v := true
+					item.Valid = &v
+				} else if msg.Result.Status == "ok" {
 					ss := item.SyncStatus
 					if ss == nil || ss.LastSuccess == nil {
 						item.ValidationStatus = "unverified"
@@ -659,13 +705,74 @@ func validateSlackResult() plugin.ValidationResult {
 	if config.LoadSlackToken() == "" {
 		return plugin.ValidationResult{
 			Status:  "missing",
-			Message: "Slack bot token not configured",
-			Hint:    "Press 'a' to enter token or export SLACK_BOT_TOKEN",
+			Message: "Slack token not configured",
+			Hint:    "Press 'a' to enter token or export SLACK_TOKEN",
 		}
 	}
 	return plugin.ValidationResult{
 		Status:  "ok",
 		Message: "Slack token configured",
+	}
+}
+
+// liveSlackTokenCheck calls Slack's auth.test API to verify the token is valid.
+func liveSlackTokenCheck() plugin.ValidationResult {
+	token := config.LoadSlackToken()
+	if token == "" {
+		return plugin.ValidationResult{
+			Status:  "missing",
+			Message: "Slack token not configured",
+			Hint:    "Press 'a' to enter token or export SLACK_TOKEN",
+		}
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("POST", "https://slack.com/api/auth.test", nil)
+	if err != nil {
+		return plugin.ValidationResult{
+			Status:  "incomplete",
+			Message: "Failed to create request",
+			Hint:    err.Error(),
+		}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return plugin.ValidationResult{
+			Status:  "incomplete",
+			Message: "Cannot reach Slack API",
+			Hint:    err.Error(),
+		}
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+		User  string `json:"user"`
+		Team  string `json:"team"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return plugin.ValidationResult{
+			Status:  "incomplete",
+			Message: "Invalid response from Slack API",
+			Hint:    err.Error(),
+		}
+	}
+
+	if !result.OK {
+		return plugin.ValidationResult{
+			Status:  "incomplete",
+			Message: "Slack token invalid: " + result.Error,
+			Hint:    "Enter a new token or check permissions",
+		}
+	}
+
+	return plugin.ValidationResult{
+		Status:  "ok",
+		Message: fmt.Sprintf("Slack token valid (%s @ %s)", result.User, result.Team),
 	}
 }
 
@@ -720,14 +827,30 @@ func (p *Plugin) handleAuthFlowResult(msg auth.AuthFlowResultMsg) tea.Cmd {
 	// Rebuild nav first (structural), then fire an async live recheck so
 	// the nav indicator updates to reflect the freshly-saved token.
 	p.rebuildNav()
-	recheckSlug := slug
-	return func() tea.Msg {
-		result := p.validateDataSourceResult(recheckSlug, true)
-		return datasourceRecheckResult{Slug: recheckSlug, Result: result}
+
+	// Rebuild the datasource form so the pane stays populated after
+	// OAuth completes, instead of falling to title-only preview (BUG-066).
+	var initCmd tea.Cmd
+	if item := p.findNavItem(slug); item != nil {
+		form := p.buildDatasourceForm(item)
+		p.activeForm = form
+		p.activeFormSlug = slug
+		initCmd = form.Init()
 	}
+
+	recheckSlug := slug
+	recheckCmd := func() tea.Msg {
+		result := p.validateDataSourceResult(recheckSlug, true)
+		return datasourceRecheckResult{Slug: recheckSlug, Result: result, Live: true}
+	}
+
+	if initCmd != nil {
+		return tea.Batch(initCmd, recheckCmd)
+	}
+	return recheckCmd
 }
 
-// saveSlackToken saves the pending Slack bot token to config, triggers a
+// saveSlackToken saves the pending Slack token to config, triggers a
 // nav rebuild, and returns a tea.Cmd that rechecks credential status.
 func (p *Plugin) saveSlackToken() tea.Cmd {
 	tok := p.pendingSlackToken
@@ -735,13 +858,13 @@ func (p *Plugin) saveSlackToken() tea.Cmd {
 	p.pendingSlackToken = nil
 	p.pendingAuthSlug = ""
 
-	if tok == nil || tok.BotToken == "" {
+	if tok == nil || tok.Token == "" {
 		p.flashMessage = "No token provided"
 		p.flashMessageAt = time.Now()
 		return nil
 	}
 
-	p.cfg.Slack.BotToken = strings.TrimSpace(tok.BotToken)
+	p.cfg.Slack.Token = strings.TrimSpace(tok.Token)
 	p.cfg.Slack.Enabled = true
 	if err := config.Save(p.cfg); err != nil {
 		p.flashMessage = "Failed to save token: " + err.Error()
@@ -749,14 +872,14 @@ func (p *Plugin) saveSlackToken() tea.Cmd {
 		return nil
 	}
 
-	p.flashMessage = "Slack bot token saved"
+	p.flashMessage = "Slack token saved"
 	p.flashMessageAt = time.Now()
 	p.publishConfigSaved("slack")
 	p.rebuildNav()
 
 	return func() tea.Msg {
-		result := p.validateDataSourceResult(slug, false)
-		return datasourceRecheckResult{Slug: slug, Result: result}
+		result := p.validateDataSourceResult(slug, true)
+		return datasourceRecheckResult{Slug: slug, Result: result, Live: true}
 	}
 }
 
@@ -770,143 +893,165 @@ func (p *Plugin) cancelAuthFlow() {
 	p.pendingAuthSlug = ""
 }
 
-func renderSwatches(pal config.Palette) string {
-	colors := []string{pal.Cyan, pal.Yellow, pal.Purple, pal.Green, pal.White}
-	var parts []string
-	for _, c := range colors {
-		parts = append(parts, lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render("██"))
+// findNavItem returns the NavItem with the given slug, or nil if not found.
+func (p *Plugin) findNavItem(slug string) *NavItem {
+	for i := range p.navCategories {
+		for j := range p.navCategories[i].Items {
+			if p.navCategories[i].Items[j].Slug == slug {
+				return &p.navCategories[i].Items[j]
+			}
+		}
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	return nil
 }
 
-// handleBannerKey processes key events for the banner editing content pane.
-func (p *Plugin) handleBannerKey(msg tea.KeyMsg) plugin.Action {
-	// When editing a text field, route to the textinput.
-	if p.bannerEditing {
-		switch msg.Type {
-		case tea.KeyEnter:
-			// Save the value and exit editing.
-			p.bannerEditing = false
-			p.focusZone = FocusContent
-			switch p.bannerField {
-			case 0:
-				p.bannerNameInput.Blur()
-				p.cfg.Name = p.bannerNameInput.Value()
-			case 1:
-				p.bannerSubtitleInput.Blur()
-				p.cfg.Subtitle = p.bannerSubtitleInput.Value()
-			case 3:
-				p.bannerPaddingInput.Blur()
-				if v, err := strconv.Atoi(p.bannerPaddingInput.Value()); err == nil {
-					p.cfg.SetBannerTopPadding(v)
-				}
-				// Sync the input back to the clamped value
-				p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
-			}
-			if err := config.Save(p.cfg); err == nil {
-				p.flashMessage = "Banner saved"
-				p.publishConfigSaved("banner")
-			} else {
-				p.flashMessage = "Failed to save: " + err.Error()
-			}
-			p.flashMessageAt = time.Now()
-			return plugin.NoopAction()
-		case tea.KeyEsc:
-			// Cancel editing, restore original value.
-			p.bannerEditing = false
-			p.focusZone = FocusContent
-			switch p.bannerField {
-			case 0:
-				p.bannerNameInput.SetValue(p.cfg.Name)
-				p.bannerNameInput.Blur()
-			case 1:
-				p.bannerSubtitleInput.SetValue(p.cfg.Subtitle)
-				p.bannerSubtitleInput.Blur()
-			case 3:
-				p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
-				p.bannerPaddingInput.Blur()
-			}
-			return plugin.NoopAction()
-		default:
-			switch p.bannerField {
-			case 0:
-				p.bannerNameInput, _ = p.bannerNameInput.Update(msg)
-			case 1:
-				p.bannerSubtitleInput, _ = p.bannerSubtitleInput.Update(msg)
-			case 3:
-				p.bannerPaddingInput, _ = p.bannerPaddingInput.Update(msg)
-			}
-			return plugin.NoopAction()
-		}
+// isFormOnlySlug returns true for slugs where the huh form is the entire
+// content pane (no underlying custom view). Pressing Esc on these forms
+// should return to nav rather than staying in FocusForm.
+func isFormOnlySlug(slug string) bool {
+	switch slug {
+	case "banner", "palette",
+		"system-schedule", "system-mcp", "system-skills", "system-shell":
+		return true
 	}
-
-	// Not editing — navigation mode within the banner content pane.
-	switch msg.String() {
-	case "up", "k":
-		if p.bannerField > 0 {
-			p.bannerField--
-		}
-	case "down", "j":
-		if p.bannerField < 3 {
-			p.bannerField++
-		}
-	case "enter":
-		switch {
-		case p.bannerField <= 1:
-			// Start editing text field.
-			p.bannerEditing = true
-			p.focusZone = FocusEditing
-			if p.bannerField == 0 {
-				p.bannerNameInput.Focus()
-			} else {
-				p.bannerSubtitleInput.Focus()
-			}
-		case p.bannerField == 3:
-			// Start editing top padding.
-			p.bannerEditing = true
-			p.focusZone = FocusEditing
-			p.bannerPaddingInput.Focus()
-		}
-	case " ":
-		if p.bannerField == 2 {
-			// Toggle show/hide.
-			p.cfg.SetShowBanner(!p.cfg.BannerVisible())
-			if err := config.Save(p.cfg); err == nil {
-				if p.cfg.BannerVisible() {
-					p.flashMessage = "Banner shown"
-				} else {
-					p.flashMessage = "Banner hidden"
-				}
-				p.publishConfigSaved("banner")
-			} else {
-				p.flashMessage = "Failed to save: " + err.Error()
-			}
-			p.flashMessageAt = time.Now()
-		}
-	case "+", "=":
-		if p.bannerField == 3 {
-			p.cfg.SetBannerTopPadding(p.cfg.GetBannerTopPadding() + 1)
-			p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
-			if err := config.Save(p.cfg); err == nil {
-				p.flashMessage = fmt.Sprintf("Top padding: %d", p.cfg.GetBannerTopPadding())
-				p.publishConfigSaved("banner")
-			} else {
-				p.flashMessage = "Failed to save: " + err.Error()
-			}
-			p.flashMessageAt = time.Now()
-		}
-	case "-":
-		if p.bannerField == 3 {
-			p.cfg.SetBannerTopPadding(p.cfg.GetBannerTopPadding() - 1)
-			p.bannerPaddingInput.SetValue(fmt.Sprintf("%d", p.cfg.GetBannerTopPadding()))
-			if err := config.Save(p.cfg); err == nil {
-				p.flashMessage = fmt.Sprintf("Top padding: %d", p.cfg.GetBannerTopPadding())
-				p.publishConfigSaved("banner")
-			} else {
-				p.flashMessage = "Failed to save: " + err.Error()
-			}
-			p.flashMessageAt = time.Now()
-		}
-	}
-	return plugin.NoopAction()
+	return false
 }
+
+// shouldAutoSaveOnExit returns true for slugs whose form values should be
+// persisted when the user exits the form (esc, left/h, tab-leave) without
+// completing it. This applies to forms with editable settings (banner,
+// palette) but NOT to action-based forms (system, datasource, plugin) or
+// auth credential forms.
+func shouldAutoSaveOnExit(slug string) bool {
+	switch slug {
+	case "banner", "palette":
+		return true
+	}
+	return false
+}
+
+// buildFormForSlug creates a huh.Form for the given nav item and returns it
+// along with an init command. Returns (nil, nil) if the slug does not have a
+// form-based UI yet — the content pane will use its existing view/key handlers.
+func (p *Plugin) buildFormForSlug(item *NavItem) (*huh.Form, tea.Cmd) {
+	switch item.Slug {
+	case "banner":
+		form := p.buildBannerForm()
+		return form, form.Init()
+	case "palette":
+		form := p.buildPaletteForm()
+		return form, form.Init()
+	case "system-schedule":
+		form := p.buildScheduleForm()
+		return form, form.Init()
+	case "system-mcp":
+		form := p.buildMCPForm()
+		return form, form.Init()
+	case "system-skills":
+		form := p.buildSkillsForm()
+		return form, form.Init()
+	case "system-shell":
+		form := p.buildShellForm()
+		return form, form.Init()
+	case "system-logs":
+		return nil, nil
+	default:
+		// Plugins and data sources
+		switch item.Kind {
+		case "datasource":
+			form := p.buildDatasourceForm(item)
+			return form, form.Init()
+		case "plugin":
+			form := p.buildPluginForm(item)
+			if form != nil {
+				return form, form.Init()
+			}
+		}
+		return nil, nil
+	}
+}
+
+// saveFormValues persists the current bound form values for auto-saveable
+// slugs WITHOUT rebuilding the form or clearing the value pointers. This is
+// used when the user tabs between fields so changes are saved incrementally
+// while keeping the form intact and focus undisturbed.
+func (p *Plugin) saveFormValues(slug string) {
+	switch slug {
+	case "banner":
+		p.saveBannerValues()
+	case "palette":
+		p.savePaletteValues()
+	}
+}
+
+// handleFormCompletion is called when a huh.Form reaches StateCompleted.
+// It reads form values, saves config, publishes events, and optionally
+// returns a tea.Cmd for async follow-up work.
+func (p *Plugin) handleFormCompletion(slug string) tea.Cmd {
+	switch slug {
+	case "banner":
+		return p.handleBannerFormCompletion()
+	case "palette":
+		return p.handlePaletteFormCompletion()
+	case "system-schedule":
+		return p.handleScheduleFormCompletion()
+	case "system-mcp":
+		return p.handleMCPFormCompletion()
+	case "system-skills":
+		return p.handleSkillsFormCompletion()
+	case "system-shell":
+		return p.handleShellFormCompletion()
+	// Auth-related form completions (pre-existing)
+	case "calendar", "gmail":
+		// If this was a credential form for OAuth, chain to the auth flow.
+		if p.pendingAuthCreds != nil && p.pendingAuthSlug != "" {
+			authCmd := p.startAuthFlowForDatasource()
+			// Rebuild the datasource form so the pane stays populated
+			// while the OAuth flow runs in the background (BUG-066).
+			if item := p.findNavItem(slug); item != nil {
+				form := p.buildDatasourceForm(item)
+				p.activeForm = form
+				p.activeFormSlug = slug
+				initCmd := form.Init()
+				if authCmd != nil {
+					return tea.Batch(initCmd, authCmd)
+				}
+				return initCmd
+			}
+			return authCmd
+		}
+		return p.handleDatasourceFormCompletion(slug)
+	case "slack":
+		// If this was a Slack token form, save and recheck.
+		if p.pendingSlackToken != nil && p.pendingAuthSlug == "slack" {
+			recheckCmd := p.saveSlackToken()
+			// Rebuild the datasource form so the pane stays populated
+			// instead of falling back to a title-only preview (BUG-066).
+			if item := p.findNavItem(slug); item != nil {
+				form := p.buildDatasourceForm(item)
+				p.activeForm = form
+				p.activeFormSlug = slug
+				initCmd := form.Init()
+				if recheckCmd != nil {
+					return tea.Batch(initCmd, recheckCmd)
+				}
+				return initCmd
+			}
+			return recheckCmd
+		}
+		return p.handleDatasourceFormCompletion(slug)
+	default:
+		// Check if this is a datasource or plugin slug
+		if item := p.findNavItem(slug); item != nil {
+			switch item.Kind {
+			case "datasource":
+				return p.handleDatasourceFormCompletion(slug)
+			case "plugin":
+				return p.handlePluginFormCompletion(slug)
+			}
+		}
+		return nil
+	}
+}
+
+

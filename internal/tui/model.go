@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql"
 	"strings"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/builtin/commandcenter"
 	"github.com/anutron/claude-command-center/internal/builtin/sessions"
@@ -14,6 +15,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// quitTimeoutMsg is sent after the double-escape timeout expires.
+type quitTimeoutMsg struct{}
+
+const quitTimeout = 2 * time.Second
 
 // Verify built-in plugins implement Starter at compile time.
 var _ plugin.Starter = (*sessions.Plugin)(nil)
@@ -54,8 +60,9 @@ type Model struct {
 	// allPlugins holds every unique plugin for lifecycle management.
 	allPlugins []plugin.Plugin
 
-	// confirmQuit is set when the user presses Escape on a non-first tab.
-	confirmQuit bool
+	// pendingQuit tracks double-escape-to-quit state.
+	pendingQuit   bool
+	pendingQuitAt time.Time
 
 	// returnedFromLaunch is set when the TUI restarts after a Claude session.
 	returnedFromLaunch bool
@@ -282,16 +289,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.broadcastMessage(msg, &cmds)
 		return m, tea.Batch(cmds...)
 
+	case quitTimeoutMsg:
+		// Timer expired — cancel pending quit.
+		m.pendingQuit = false
+		return m, nil
+
 	case tea.KeyMsg:
-		// Handle quit confirmation mode first.
-		if m.confirmQuit {
-			switch msg.String() {
-			case "y", "Y":
-				return m, tea.Quit
-			default:
-				m.confirmQuit = false
-				return m, nil
-			}
+		// Any non-esc key cancels pending quit.
+		if m.pendingQuit && msg.Type != tea.KeyEsc {
+			m.pendingQuit = false
 		}
 
 		switch msg.Type {
@@ -324,12 +330,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if action.Type != "unhandled" && action.Type != "quit" {
 				return m.processAction(action)
 			}
-			// On first tab, quit immediately; on other tabs, confirm first.
-			if m.activeTab == 0 {
+			// Double-escape to quit: second esc within timeout quits immediately.
+			if m.pendingQuit && time.Since(m.pendingQuitAt) < quitTimeout {
 				return m, tea.Quit
 			}
-			m.confirmQuit = true
-			return m, nil
+			// First esc at top level: start pending quit with timeout.
+			m.pendingQuit = true
+			m.pendingQuitAt = time.Now()
+			return m, tea.Tick(quitTimeout, func(time.Time) tea.Msg {
+				return quitTimeoutMsg{}
+			})
 		}
 		action := m.activePlugin().HandleKey(msg)
 		return m.processAction(action)
@@ -484,15 +494,16 @@ func (m Model) View() string {
 		contentHeight = 10
 	}
 
-	var content string
-	if m.confirmQuit {
-		prompt := m.styles.TitleBoldC.Render("Quit CCC? (y/n)")
-		content = lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, prompt)
-	} else {
-		content = m.activePlugin().View(m.width, contentHeight, m.frame)
-	}
+	content := m.activePlugin().View(m.width, contentHeight, m.frame)
 
-	sections = append(sections, "", tabBar, "", content)
+	sections = append(sections, "", tabBar)
+	if m.pendingQuit {
+		hint := m.styles.TitleBoldC.Render("Press esc again to quit")
+		sections = append(sections, lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hint))
+	} else {
+		sections = append(sections, "")
+	}
+	sections = append(sections, content)
 	page := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	if m.width > 0 && m.height > 0 {

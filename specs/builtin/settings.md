@@ -6,11 +6,18 @@
 
 ## Purpose
 
-Provides a UI for managing plugins, data sources, logs, and color palettes. Uses a sidebar + content pane layout.
+Provides a UI for managing appearance, plugins, data sources, system actions, and logs. Uses a sidebar + content pane layout with huh forms for all interactive content.
 
 ## Layout
 
-Sidebar + content pane layout. The sidebar lists all items grouped by category (Appearance, Plugins, Data Sources, System). The content pane shows details for the selected item.
+Sidebar (left) + content pane (right). The sidebar lists items grouped by category. The content pane shows a huh form (or logs viewer) for the selected item.
+
+### Sidebar Categories
+
+1. **APPEARANCE** — Banner, Palette
+2. **PLUGINS** — Sessions, Command Center, Threads, Pomodoro, external plugins
+3. **DATA SOURCES** — Calendar, GitHub, Granola, Slack, Gmail
+4. **SYSTEM** — Schedule, MCP Servers, Skills, Shell Integration, Logs
 
 ### NavItem
 
@@ -18,99 +25,173 @@ Each sidebar entry is a `NavItem` with:
 - `Label` — display name
 - `Slug` — unique identifier
 - `Kind` — "appearance", "plugin", "datasource", "system"
-- `Description` — short description shown below the title in the content pane
+- `Description` — one-liner shown below the title in the content pane header
 - `Enabled` — toggle state (nil = no toggle)
-- `Valid` / `ValidHint` — credential validation status (data sources only)
+- `ValidationStatus` / `ValidationMsg` / `ValidHint` — tiered credential validation (data sources)
+- `SyncStatus` — last sync time/error from database
 
-Descriptions are hardcoded for built-in plugins and data sources. External plugins get descriptions from `config.ExternalPluginConfig.Description`.
+### Sidebar Scrolling
 
-### Content pane header
+When the terminal is short and sidebar items exceed the panel height, the sidebar scrolls to follow the cursor. A `navScrollOffset` tracks the scroll position. Moving the cursor past the visible area adjusts the offset to keep it in view.
 
-The content pane title (e.g., "POMODORO", "CALENDAR") has left padding to avoid touching the panel border. A description line in muted text appears below the title when available.
+### Content Pane Header
 
-## Sub-Views
+Every content pane renders a header: the item label in uppercase (e.g., "BANNER", "CALENDAR") with a description line in muted text below it. This header is rendered centrally in `viewContent`, not inside individual forms.
 
-### Plugins (`settings`)
+### Content Pane Preview
 
-Lists all registered plugins and data sources with enable/disable status.
+When the sidebar is focused (FocusNav), the content pane shows a read-only preview of the highlighted item's form. The preview builds a transient form via `buildFormForSlug`, calls `Init()` on it for proper field rendering, but does not store it as the active form. Moving the sidebar cursor updates the preview immediately.
 
-**Two sections:**
+## Focus Zones
 
-1. **Plugins** — Things with tabs/UI:
-   - Built-in: Sessions and Command Center are toggleable; Settings is always on (not toggleable)
-   - Disabling a built-in plugin hides its tabs from the tab bar (requires restart)
-   - Disabled plugins stored in `config.DisabledPlugins` slug list
-   - External — from `external_plugins` config, toggleable
+Three focus zones control key routing:
 
-2. **Data Sources** — Things that feed data during `ccc-refresh`:
-   - Todos — always on, not toggleable
-   - Calendar, GitHub, Granola, Slack — each toggleable
+| Zone | Purpose | Enter | Exit |
+|------|---------|-------|------|
+| FocusNav | Sidebar navigation | esc/left from form or logs | enter/right opens form |
+| FocusForm | Active huh form in content pane | enter/right from nav | esc/left returns to nav |
+| FocusLogs | Custom scrollable log viewer | enter/right on Logs item | esc/left returns to nav |
 
-**Toggle behavior:**
-- `space` toggles enable/disable on the selected item
-- `enter` opens the detail view for the selected item
+### Navigation Between Zones
+
+- **Right arrow / enter / l** from FocusNav: builds a huh form for the selected item, sets FocusForm (or FocusLogs for logs)
+- **Left arrow** from FocusForm: returns to FocusNav (auto-saves banner/palette). Does NOT intercept left arrow in text input fields (cursor movement).
+- **Esc** from FocusForm: returns to FocusNav (auto-saves banner/palette). Auth forms cancel on esc.
+- **Esc** from FocusLogs: returns to FocusNav
+
+## Form-Based Content Panes
+
+All content panes (except logs) use `charmbracelet/huh` forms. Each pane has:
+- A `build*Form()` function that creates a huh.Form from current config values
+- A `handle*FormCompletion()` function that reads bound values, saves config, and rebuilds the form
+- Bound value structs (e.g., `bannerFormValues`, `paletteFormValues`) that huh updates in real-time
+
+### Form Lifecycle
+
+1. User presses enter/right on a nav item
+2. `buildFormForSlug(item)` creates a form and calls `Init()`
+3. Form stored as `p.activeForm` with `p.activeFormSlug`
+4. User interacts (tab between fields, enter to submit, type in inputs)
+5. On form completion (StateCompleted): `handleFormCompletion(slug)` saves values, rebuilds form
+6. On exit (esc/left): auto-save for editable forms (banner, palette), then clear form
+
+### Auto-Save Behavior
+
+Forms with editable settings (banner, palette) auto-save on:
+- **Pane exit** (esc, left arrow, tab leave)
+- **Field transition** (tab, shift+tab, enter moving between fields)
+
+Action-based forms (system, datasource) do NOT auto-save — esc dismisses without executing.
+
+### Huh Theme
+
+A custom huh theme (`huhThemeFromPalette`) maps the CCC palette colors to huh's theme system:
+- Titles/cursor: palette cyan
+- Selected options: palette green
+- Errors: red
+- Select selector: `> ` prefix
+- Selected/unselected prefixes: `[*] ` / `[ ] `
+
+The theme rebuilds when the palette changes.
+
+## Pane Details
+
+### Banner (appearance)
+
+Form fields:
+- **Name** — text input, 20 char limit
+- **Subtitle** — text input, 30 char limit
+- **Show Banner** — confirm (yes/no)
+- **Top Padding** — text input, validated 0-10
+
+Saves to config on field transition and pane exit. Publishes `config.saved` event.
+
+### Palette (appearance)
+
+Form fields:
+- **Color Palette** — select with palette names, "(active)" suffix on current
+- **Preview** — note with live color swatches via `DescriptionFunc`
+
+On completion: applies palette, rebuilds all styles (settings, shared, gradient), publishes `palette.changed` event.
+
+### Data Sources (calendar, github, granola, slack, gmail)
+
+Content layout (top to bottom):
+1. Header (title + description)
+2. Provider view (if provider exists — rendered outside the form for interactivity)
+3. Validation status note (inside form)
+4. Action select (inside form)
+
+**Action options** (contextual):
+- All sources: "Verify credentials" (live API check)
+- Google sources: "Authenticate (enter client credentials + OAuth)", "Open Google Cloud Console"
+- Slack: "Enter Slack token"
+
+**Provider interactivity**: Data source providers (Calendar, GitHub, Granola) implement `SettingsProvider`. Their views are rendered above the form, and their `HandleSettingsKey` receives keys before the form. This preserves interactive features like calendar list toggles, GitHub repo selection, and color pickers.
+
+**Async message routing**: Provider async results (CalendarFetchResultMsg, ghRepoFetchResult) are routed to providers BEFORE the form's Update, so fetch results arrive even when a form is active.
+
+**Credential verification**: "Verify credentials" always does a live API check. For Slack, calls `auth.test`. Results respect the `Live` flag — a live "ok" skips the sync-aware downgrade that would otherwise show stale DB errors.
+
+**After credential save**: The datasource form is rebuilt so the pane stays fully populated (not just title/subtitle).
+
+### Slack Token
+
+The Slack integration uses a **user token** (`xoxp-`), not a bot token. The token form says "Slack User Token" with "Starts with xoxp-". Config supports both `token` (preferred) and `bot_token` (backwards compat) fields. Env vars: `SLACK_TOKEN` and `SLACK_BOT_TOKEN`.
+
+The Slack refresh source gracefully degrades: if `conversations.list` fails with `missing_scope`, it falls back to `search.messages` (which only requires `search:read`).
+
+### System Panes (schedule, mcp, skills, shell)
+
+Each system pane has:
+- **Status note** — current install/build status
+- **ACTIONS select** — Install/Uninstall (or Build & Configure for MCP)
+
+Actions execute immediately on form completion (no confirmation). The form rebuilds after the async action completes to show updated status.
+
+### Plugins
+
+Plugin panes show info via a huh Note. Plugins implementing `SettingsProvider` get their provider view rendered above the form.
+
+### Logs
+
+The **only** non-form pane. Uses FocusLogs zone with custom scrollable view:
+- `j/k` — scroll line by line
+- `f/b` — page forward/back
+- `d/u` — half-page down/up
+- `/` — enter filter mode
+- `esc` — clear filter or return to nav
+
+## Sidebar Toggle Behavior
+
+- `space` toggles enable/disable on the selected item in FocusNav
 - Built-in plugins: saves to `config.DisabledPlugins`, flashes "Restart CCC to apply"
 - External plugins: saves config, flashes "Restart CCC to apply"
-- Data sources: when enabling, validates credentials first; reverts toggle on failure with error message; on success saves config, flashes "Changes apply on next refresh"
+- Data sources: validates credentials first; reverts on failure
 
-**Enabled-state sync:**
-- The settings plugin syncs its displayed enabled states from the live `config.Config` at the start of each `View()` call
-- This ensures that if another flow (e.g., onboarding) modifies config, settings reflects the current truth
-- Without this, the settings items snapshot enabled state at Init() time and can show stale values
+Enabled states sync from live config at the start of each `View()` call.
 
-### Detail Views
+## Quit Behavior
 
-Opened by pressing `enter` on any item in the plugins list.
-
-**Settings plugin** (always-on core plugin):
-- Read-only status display (always enabled, no configuration)
-
-**External plugins:**
-- Name, description (from config), command, and enable/disable status
-- Space toggles enable/disable
-
-**Calendar:**
-- Credentials status (valid/missing/expired)
-- Calendar list (configured calendar IDs)
-
-**GitHub:**
-- Credentials status (valid/missing)
-- Username (editable with `u`)
-- Repo list with add (`a`) and remove (`x`)
-
-**Granola:**
-- Credentials status (valid/missing/expired)
-
-**Key bindings in detail view:**
-
-| Key | Description |
-|-----|-------------|
-| esc | Back to plugin list |
-| space | Toggle enable/disable |
-| a | Add repo (GitHub detail only) |
-| x | Remove selected repo (GitHub detail only) |
-| u | Edit username (GitHub detail only) |
-
-### Logs (`settings/logs`)
-
-Shows recent log entries from `logger.Recent(100)` in reverse chronological order. Color-coded by level (error=red, warn=yellow, info=muted). Scrollable with up/down.
-
-### Palette (`settings/palette`)
-
-Shows all 5 built-in palettes with color swatches. Left/right to cycle, enter to apply and save. Publishes `settings.palette_changed` event.
+Double-escape to quit (applies to all tabs, not just settings):
+1. First esc at top level: shows "Press esc again to quit" flash, starts 2-second timer
+2. Second esc within 2 seconds: quits CCC
+3. Any other key or timer expiry: cancels pending quit
 
 ## Key Bindings
 
 | Key | Context | Description |
 |-----|---------|-------------|
-| up/down | all | Navigate |
-| enter | plugins | Open detail view |
-| space | plugins | Toggle enable/disable |
-| l | any | Switch to logs |
-| p | any | Switch to palette |
-| s | any | Switch to plugins |
-| left/right | palette | Cycle palettes |
-| enter | palette | Apply + save |
+| up/down | FocusNav | Navigate sidebar |
+| space | FocusNav | Toggle enable/disable |
+| enter/right/l | FocusNav | Open content pane (FocusForm or FocusLogs) |
+| left/esc | FocusForm | Return to sidebar (auto-saves banner/palette) |
+| tab | FocusForm | Next field (auto-saves banner/palette) |
+| enter | FocusForm | Submit/advance field |
+| left/esc | FocusLogs | Return to sidebar |
+| j/k/f/b/d/u | FocusLogs | Scroll logs |
+| / | FocusLogs | Enter filter mode |
+| esc ×2 | Top level | Quit CCC |
 
 ## Constructor
 
@@ -118,11 +199,12 @@ Shows all 5 built-in palettes with color swatches. Left/right to cycle, enter to
 settings.New(registry *plugin.Registry) *Plugin
 ```
 
-The registry is used to enumerate all plugins. Passed directly rather than via `plugin.Context`.
-
 ## Dependencies
 
 - `plugin.Registry` — for listing all plugins
 - `plugin.Logger` — for log viewer
-- `plugin.EventBus` — for palette change events
-- `config.Config` — for reading/writing toggle states and palette
+- `plugin.EventBus` — for palette change and config saved events
+- `config.Config` — for reading/writing all settings
+- `charmbracelet/huh` — form framework for all content panes
+- `charmbracelet/lipgloss` — styling
+- `plugin.SettingsProvider` — delegated views for data sources and plugins

@@ -39,24 +39,33 @@ func ValidateGitHub() error {
 	return nil
 }
 
-// ValidateSlack checks that a Slack bot token is available.
-// It checks the config file first, then falls back to the SLACK_BOT_TOKEN env var.
+// ValidateSlack checks that a Slack token is available.
+// It checks the config file first, then falls back to env vars.
 func ValidateSlack() error {
 	if LoadSlackToken() == "" {
-		return fmt.Errorf("Slack bot token not configured — press 'a' to enter token or export SLACK_BOT_TOKEN")
+		return fmt.Errorf("Slack token not configured — press 'a' to enter token or export SLACK_TOKEN")
 	}
 	return nil
 }
 
-// LoadSlackToken returns the Slack bot token from config or environment.
-// Config file token takes precedence over the environment variable.
+// LoadSlackToken returns the Slack user token from config or environment.
+// Config Token field takes precedence over the deprecated BotToken field,
+// which takes precedence over environment variables.
 func LoadSlackToken() string {
-	// Check config file first
+	// Check config file first — prefer Token over deprecated BotToken
 	cfg, err := Load()
-	if err == nil && cfg.Slack.BotToken != "" {
-		return strings.TrimSpace(cfg.Slack.BotToken)
+	if err == nil {
+		if cfg.Slack.Token != "" {
+			return strings.TrimSpace(cfg.Slack.Token)
+		}
+		if cfg.Slack.BotToken != "" {
+			return strings.TrimSpace(cfg.Slack.BotToken)
+		}
 	}
-	// Fall back to environment variable
+	// Fall back to environment variables — prefer SLACK_TOKEN over deprecated SLACK_BOT_TOKEN
+	if tok := strings.TrimSpace(os.Getenv("SLACK_TOKEN")); tok != "" {
+		return tok
+	}
 	return strings.TrimSpace(os.Getenv("SLACK_BOT_TOKEN"))
 }
 

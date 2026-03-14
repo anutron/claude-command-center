@@ -391,8 +391,8 @@ func TestFocusSwitching(t *testing.T) {
 
 	// Enter should switch to content
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if p.focusZone != FocusContent {
-		t.Errorf("expected FocusContent, got %d", p.focusZone)
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm, got %d", p.focusZone)
 	}
 
 	// Esc should go back to nav
@@ -408,14 +408,14 @@ func TestFocusRightToContent(t *testing.T) {
 
 	// Right arrow should switch to content
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
-	if p.focusZone != FocusContent {
-		t.Errorf("expected FocusContent after right, got %d", p.focusZone)
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm after right, got %d", p.focusZone)
 	}
 }
 
 func TestFocusLeftToNav(t *testing.T) {
 	p, _ := testSetup(t)
-	p.focusZone = FocusContent
+	p.focusZone = FocusForm
 
 	// Left arrow should switch back to nav
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyLeft})
@@ -430,14 +430,14 @@ func TestFocusLToContent(t *testing.T) {
 
 	// 'l' should switch to content (vim-style)
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	if p.focusZone != FocusContent {
-		t.Errorf("expected FocusContent after 'l', got %d", p.focusZone)
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm after 'l', got %d", p.focusZone)
 	}
 }
 
 func TestFocusHToNav(t *testing.T) {
 	p, _ := testSetup(t)
-	p.focusZone = FocusContent
+	p.focusZone = FocusForm
 
 	// 'h' should switch back to nav (vim-style)
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
@@ -565,7 +565,7 @@ func TestViewContentPaneRendersForEachNavItem(t *testing.T) {
 	total := p.navItemCount()
 	for i := 0; i < total; i++ {
 		p.navCursor = i
-		p.focusZone = FocusContent
+		p.focusZone = FocusForm
 		v := p.View(120, 40, 0)
 		if v == "" {
 			item := p.selectedNavItem()
@@ -578,7 +578,7 @@ func TestViewContentPaneRendersForEachNavItem(t *testing.T) {
 	}
 }
 
-func TestPaletteCursorNavigation(t *testing.T) {
+func TestPaletteFormCreated(t *testing.T) {
 	p, _ := testSetup(t)
 
 	palIdx := findNavIndex(p, "palette")
@@ -587,12 +587,17 @@ func TestPaletteCursorNavigation(t *testing.T) {
 	}
 
 	p.navCursor = palIdx
-	p.focusZone = FocusContent
 
-	// Navigate down in palette content
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyDown})
-	if p.paletteCursor != 1 {
-		t.Errorf("expected palette cursor 1, got %d", p.paletteCursor)
+	// Opening the palette pane should create a huh form
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be set for palette")
+	}
+	if p.activeFormSlug != "palette" {
+		t.Errorf("expected activeFormSlug 'palette', got %q", p.activeFormSlug)
+	}
+	if p.paletteValues == nil {
+		t.Error("expected paletteValues to be set")
 	}
 }
 
@@ -837,62 +842,65 @@ func TestRecheckOKWithSyncError(t *testing.T) {
 
 // --- Content key handler tests ---
 
-func TestRKeyFiresRecheck(t *testing.T) {
+func TestRecheckActionFiresRecheck(t *testing.T) {
 	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
+	p.focusZone = FocusForm
 
-	action := p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	if action.TeaCmd == nil {
-		t.Error("expected 'r' key to return a tea.Cmd for recheck")
+	// Simulate selecting "recheck" from the datasource form
+	p.datasourceValues = &datasourceFormValues{Action: "recheck"}
+	cmd := p.handleDatasourceFormCompletion("calendar")
+	if cmd == nil {
+		t.Error("expected recheck action to return a tea.Cmd")
 	}
 	if p.flashMessage == "" {
 		t.Error("expected flash message for recheck")
 	}
 }
 
-func TestRKeyLiveCheckForGoogle(t *testing.T) {
+func TestRecheckActionLiveCheckForGoogle(t *testing.T) {
 	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
+	p.focusZone = FocusForm
 
-	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	if p.flashMessage != "Live-checking Calendar credentials..." {
-		t.Errorf("expected live-check flash for Google datasource, got %q", p.flashMessage)
+	p.datasourceValues = &datasourceFormValues{Action: "recheck"}
+	p.handleDatasourceFormCompletion("calendar")
+	if p.flashMessage != "Verifying Calendar credentials..." {
+		t.Errorf("expected verify flash for Google datasource, got %q", p.flashMessage)
 	}
 }
 
-func TestRKeyStructuralCheckForNonGoogle(t *testing.T) {
+func TestRecheckActionLiveCheckForNonGoogle(t *testing.T) {
 	p, _ := testSetup(t)
 
 	ghIdx := findNavIndex(p, "github")
 	p.navCursor = ghIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
+	p.focusZone = FocusForm
 
-	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	if p.flashMessage != "Re-checking GitHub credentials..." {
-		t.Errorf("expected structural recheck flash for non-Google, got %q", p.flashMessage)
+	p.datasourceValues = &datasourceFormValues{Action: "recheck"}
+	p.handleDatasourceFormCompletion("github")
+	// All sources now do live verification (BUG-053)
+	if p.flashMessage != "Verifying GitHub credentials..." {
+		t.Errorf("expected verify flash for datasource, got %q", p.flashMessage)
 	}
 }
 
-func TestAKeyTriggersFormForGoogle(t *testing.T) {
+func TestAuthActionTriggersFormForGoogle(t *testing.T) {
 	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
+	p.focusZone = FocusForm
 
-	action := p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	// Simulate selecting "auth" from the datasource form
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	cmd := p.handleDatasourceFormCompletion("calendar")
 	if p.focusZone != FocusForm {
-		t.Errorf("expected FocusForm after 'a', got %d", p.focusZone)
+		t.Errorf("expected FocusForm after auth action, got %d", p.focusZone)
 	}
 	if p.activeForm == nil {
 		t.Error("expected activeForm to be set")
@@ -903,40 +911,40 @@ func TestAKeyTriggersFormForGoogle(t *testing.T) {
 	if p.pendingAuthCreds == nil {
 		t.Error("expected pendingAuthCreds to be set")
 	}
-	if action.TeaCmd == nil {
+	if cmd == nil {
 		t.Error("expected tea.Cmd from form init")
 	}
 }
 
-func TestAKeyNoopForNonGoogle(t *testing.T) {
+func TestAuthActionNoopForNonGoogle(t *testing.T) {
 	p, _ := testSetup(t)
 
 	ghIdx := findNavIndex(p, "github")
 	p.navCursor = ghIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
+	p.focusZone = FocusForm
 
-	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
-	if p.focusZone != FocusContent {
-		t.Errorf("expected focus to stay on Content for non-Google 'a', got %d", p.focusZone)
-	}
-	if p.activeForm != nil {
-		t.Error("expected no form for non-Google datasource")
+	// GitHub datasource form doesn't offer "auth" action, but even if
+	// triggered directly, it should be a no-op (no form change).
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	p.handleDatasourceFormCompletion("github")
+	// Auth action for non-Google should not set up auth state
+	if p.pendingAuthCreds != nil {
+		t.Error("expected no pendingAuthCreds for non-Google datasource")
 	}
 }
 
-func TestOKeyNoopForNonGoogle(t *testing.T) {
+func TestConsoleActionNoopForNonGoogle(t *testing.T) {
 	p, _ := testSetup(t)
 
 	slackIdx := findNavIndex(p, "slack")
 	p.navCursor = slackIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
+	p.focusZone = FocusForm
 
-	action := p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
-	// Should be noop for non-Google
-	if action.Type != plugin.ActionNoop {
-		t.Errorf("expected noop action for 'o' on non-Google datasource, got %v", action.Type)
+	// Console action for non-Google datasource should be a no-op
+	p.datasourceValues = &datasourceFormValues{Action: "console"}
+	cmd := p.handleDatasourceFormCompletion("slack")
+	if cmd != nil {
+		t.Error("expected nil cmd for console action on non-Google datasource")
 	}
 }
 
@@ -945,12 +953,13 @@ func TestOKeyNoopForNonGoogle(t *testing.T) {
 func TestEscCancelsFormAndReturnsToContent(t *testing.T) {
 	p, _ := testSetup(t)
 
-	// Trigger form
+	// Trigger auth form via the form completion handler
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
-	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	p.focusZone = FocusForm
+
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	p.handleDatasourceFormCompletion("calendar")
 
 	if p.focusZone != FocusForm {
 		t.Fatal("expected FocusForm")
@@ -958,8 +967,8 @@ func TestEscCancelsFormAndReturnsToContent(t *testing.T) {
 
 	// Esc cancels
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if p.focusZone != FocusContent {
-		t.Errorf("expected FocusContent after esc, got %d", p.focusZone)
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm after esc, got %d", p.focusZone)
 	}
 	if p.activeForm != nil {
 		t.Error("expected activeForm to be nil after esc")
@@ -980,8 +989,8 @@ func TestFormFocusWithNilFormFallsBackToContent(t *testing.T) {
 
 	// Should gracefully fall back to content
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	if p.focusZone != FocusContent {
-		t.Errorf("expected FocusContent when form is nil, got %d", p.focusZone)
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm when form is nil, got %d", p.focusZone)
 	}
 }
 
@@ -990,12 +999,13 @@ func TestFormFocusWithNilFormFallsBackToContent(t *testing.T) {
 func TestTabLeaveCancelsForm(t *testing.T) {
 	p, _ := testSetup(t)
 
-	// Set up form state
+	// Set up auth form state via form completion handler
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
-	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	p.focusZone = FocusForm
+
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	p.handleDatasourceFormCompletion("calendar")
 
 	if p.activeForm == nil {
 		t.Fatal("expected form to be active")
@@ -1006,8 +1016,8 @@ func TestTabLeaveCancelsForm(t *testing.T) {
 	if p.activeForm != nil {
 		t.Error("expected form to be cleared on tab leave")
 	}
-	if p.focusZone != FocusContent {
-		t.Errorf("expected FocusContent on tab leave, got %d", p.focusZone)
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm on tab leave, got %d", p.focusZone)
 	}
 }
 
@@ -1045,56 +1055,57 @@ func TestViewValidationStatusRendersAllStatuses(t *testing.T) {
 	}
 }
 
-func TestViewValidationStatusShowsGoogleActions(t *testing.T) {
+func TestGoogleDatasourceAuthActionWorks(t *testing.T) {
 	p, _ := testSetup(t)
 
-	item := &NavItem{
-		Slug:             "calendar",
-		ValidationStatus: "ok",
-	}
-	output := p.viewValidationStatus(item)
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
 
-	// Should show Google-specific actions
-	if !containsStr(output, "authenticate") {
-		t.Error("expected 'authenticate' action for Google datasource")
+	// Verify auth action triggers credential form for Google
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	cmd := p.handleDatasourceFormCompletion("calendar")
+	if p.pendingAuthCreds == nil {
+		t.Error("expected auth action on Google datasource to set pendingAuthCreds")
 	}
-	if !containsStr(output, "Google Cloud Console") {
-		t.Error("expected 'Google Cloud Console' action for Google datasource")
+	if p.pendingAuthSlug != "calendar" {
+		t.Errorf("expected pendingAuthSlug 'calendar', got %q", p.pendingAuthSlug)
+	}
+	if cmd == nil {
+		t.Error("expected tea.Cmd from auth form init")
 	}
 }
 
-func TestViewValidationStatusHidesGoogleActionsForNonGoogle(t *testing.T) {
+func TestNonGoogleDatasourceAuthActionNoOp(t *testing.T) {
 	p, _ := testSetup(t)
 
-	item := &NavItem{
-		Slug:             "github",
-		ValidationStatus: "ok",
-	}
-	output := p.viewValidationStatus(item)
+	ghIdx := findNavIndex(p, "github")
+	p.navCursor = ghIdx
 
-	if containsStr(output, "authenticate") {
-		t.Error("should not show 'authenticate' for non-Google datasource")
+	// Auth action on non-Google should not set up auth state
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	p.handleDatasourceFormCompletion("github")
+	if p.pendingAuthCreds != nil {
+		t.Error("should not set pendingAuthCreds for non-Google datasource")
 	}
 }
 
 // --- Help line tests ---
 
-func TestHelpLineShowsGoogleActionsInContent(t *testing.T) {
+func TestHelpLineShowsFormHintsInContentWithForm(t *testing.T) {
 	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
-	p.focusZone = FocusContent
+	// Navigate into the content pane (which now shows a form)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
 
 	v := p.View(120, 40, 0)
-	if !containsStr(v, "re-check") {
-		t.Error("expected 're-check' in help line for Google datasource")
+	// With a form active, help should show form navigation hints
+	if !containsStr(v, "tab") {
+		t.Error("expected 'tab' in help line when form is active")
 	}
-	if !containsStr(v, "authenticate") {
-		t.Error("expected 'authenticate' in help line for Google datasource")
-	}
-	if !containsStr(v, "cloud console") {
-		t.Error("expected 'cloud console' in help line for Google datasource")
+	if !containsStr(v, "esc") {
+		t.Error("expected 'esc' in help line when form is active")
 	}
 }
 
@@ -1103,9 +1114,11 @@ func TestHelpLineShowsFormHintsInFormMode(t *testing.T) {
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
-	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	p.focusZone = FocusForm
+
+	// Trigger auth form via form completion handler
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	p.handleDatasourceFormCompletion("calendar")
 
 	if p.focusZone != FocusForm {
 		t.Fatal("expected FocusForm")
@@ -1115,8 +1128,8 @@ func TestHelpLineShowsFormHintsInFormMode(t *testing.T) {
 	if !containsStr(v, "tab") {
 		t.Error("expected 'tab' in help line during form mode")
 	}
-	if !containsStr(v, "esc cancel") {
-		t.Error("expected 'esc cancel' in help line during form mode")
+	if !containsStr(v, "esc save & back") {
+		t.Error("expected 'esc save & back' in help line during form mode")
 	}
 }
 
@@ -1246,7 +1259,7 @@ func TestOAuthConfigForUnknown(t *testing.T) {
 
 // --- Calendar f key fetch tests ---
 
-func TestFKeyFromNavForwardsToContentHandler(t *testing.T) {
+func TestCalendarNavDoesNotForwardFKey(t *testing.T) {
 	p, _ := testSetup(t)
 
 	calIdx := findNavIndex(p, "calendar")
@@ -1259,34 +1272,12 @@ func TestFKeyFromNavForwardsToContentHandler(t *testing.T) {
 		t.Fatal("expected fetchLoading to be false initially")
 	}
 
-	// Press f from nav — should forward to content handler and trigger fetch
-	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	// Press f from nav — all datasource actions are now form-based,
+	// so 'f' should NOT forward to the provider.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 
-	// The action should carry a TeaCmd (the fetch command)
-	// OR fetchLoading should be true (flash was set for credential error)
-	if action.TeaCmd == nil && !sp.FetchLoading() {
-		t.Error("expected 'f' from nav to trigger fetch (TeaCmd) or show credential error")
-	}
-}
-
-func TestFKeyFromContentTriggersCalendarFetch(t *testing.T) {
-	p, _ := testSetup(t)
-
-	calIdx := findNavIndex(p, "calendar")
-	p.navCursor = calIdx
-	p.focusZone = FocusContent
-
-	sp := p.providers["calendar"].(*calendar.Settings)
 	if sp.FetchLoading() {
-		t.Fatal("expected fetchLoading to be false initially")
-	}
-
-	// Press f from content pane
-	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
-
-	// Should trigger fetch or show credential error
-	if action.TeaCmd == nil && !sp.FetchLoading() {
-		t.Error("expected 'f' from content to trigger fetch (TeaCmd) or show credential error")
+		t.Error("expected 'f' from nav not to trigger fetch (actions are form-based)")
 	}
 }
 
@@ -1295,7 +1286,7 @@ func TestCalendarFetchResultUpdatesState(t *testing.T) {
 
 	calIdx := findNavIndex(p, "calendar")
 	p.navCursor = calIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusForm
 
 	sp := p.providers["calendar"].(*calendar.Settings)
 
@@ -1385,7 +1376,7 @@ func TestLogsScrollJK(t *testing.T) {
 		t.Fatal("system-logs not found")
 	}
 	p.navCursor = logsIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusLogs
 	p.height = 40
 	p.width = 120
 
@@ -1422,7 +1413,7 @@ func TestLogsScrollFB(t *testing.T) {
 
 	logsIdx := findNavIndex(p, "system-logs")
 	p.navCursor = logsIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusLogs
 	p.height = 40
 
 	maxVis := p.logsMaxVisible()
@@ -1452,7 +1443,7 @@ func TestLogsScrollDU(t *testing.T) {
 
 	logsIdx := findNavIndex(p, "system-logs")
 	p.navCursor = logsIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusLogs
 	p.height = 40
 
 	half := p.logsMaxVisible() / 2
@@ -1479,7 +1470,7 @@ func TestLogsViewChangesWithScroll(t *testing.T) {
 
 	logsIdx := findNavIndex(p, "system-logs")
 	p.navCursor = logsIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusLogs
 	p.height = 40
 	p.width = 120
 
@@ -1505,34 +1496,44 @@ func TestLogsScrollFromNavMode(t *testing.T) {
 	p.height = 40
 	p.width = 120
 
-	// Pressing j while in FocusNav on the logs pane should scroll logs, not move nav cursor
-	v1 := p.View(120, 40, 0)
+	// BUG-056: Pressing j while in FocusNav should move the nav cursor,
+	// NOT scroll logs. Logs scrolling only happens in FocusLogs.
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
-	v2 := p.View(120, 40, 0)
 
-	if v1 == v2 {
-		t.Error("expected view to change after pressing j in FocusNav on logs pane")
-	}
-
-	if p.logOffset != 1 {
-		t.Errorf("expected logOffset 1 after j from nav mode, got %d", p.logOffset)
-	}
-
-	// Nav cursor should NOT have moved
-	if p.navCursor != logsIdx {
-		t.Errorf("expected navCursor to stay at %d, got %d", logsIdx, p.navCursor)
-	}
-
-	// k should scroll back
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
 	if p.logOffset != 0 {
-		t.Errorf("expected logOffset 0 after k, got %d", p.logOffset)
+		t.Errorf("expected logOffset to remain 0 in FocusNav, got %d", p.logOffset)
 	}
 
-	// f should page forward from nav mode
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
-	if p.logOffset == 0 {
-		t.Error("expected logOffset > 0 after f from nav mode")
+	// Nav cursor should have moved down (logs is last item, so it may clamp)
+	if p.navCursor == logsIdx && logsIdx < p.navItemCount()-1 {
+		t.Errorf("expected navCursor to move from %d, but it stayed", logsIdx)
+	}
+
+	// Reset cursor back to logs
+	p.navCursor = logsIdx
+
+	// Enter FocusLogs via enter, then j/k should scroll
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if p.focusZone != FocusLogs {
+		t.Fatalf("expected FocusLogs after enter on logs item, got %d", p.focusZone)
+	}
+
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if p.logOffset != 1 {
+		t.Errorf("expected logOffset 1 after j in FocusLogs, got %d", p.logOffset)
+	}
+
+	// Esc should return to FocusNav
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if p.focusZone != FocusNav {
+		t.Errorf("expected FocusNav after esc from FocusLogs, got %d", p.focusZone)
+	}
+
+	// After returning to FocusNav, j should move nav cursor again, not scroll
+	prevOffset := p.logOffset
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if p.logOffset != prevOffset {
+		t.Errorf("expected logOffset unchanged in FocusNav, got %d (was %d)", p.logOffset, prevOffset)
 	}
 }
 
@@ -1545,7 +1546,7 @@ func TestLogsFilterSlashActivates(t *testing.T) {
 
 	logsIdx := findNavIndex(p, "system-logs")
 	p.navCursor = logsIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusLogs
 	p.height = 40
 
 	// Press / to activate filter
@@ -1563,7 +1564,7 @@ func TestLogsFilterEnterApplies(t *testing.T) {
 
 	logsIdx := findNavIndex(p, "system-logs")
 	p.navCursor = logsIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusLogs
 	p.height = 40
 
 	// Activate filter and type "ERROR"
@@ -1594,7 +1595,7 @@ func TestLogsFilterEscClears(t *testing.T) {
 
 	logsIdx := findNavIndex(p, "system-logs")
 	p.navCursor = logsIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusForm
 	p.height = 40
 
 	// Activate filter and type something
@@ -1621,7 +1622,7 @@ func TestLogsFilterResetsScroll(t *testing.T) {
 
 	logsIdx := findNavIndex(p, "system-logs")
 	p.navCursor = logsIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusLogs
 	p.height = 40
 
 	// Scroll down first
@@ -1643,7 +1644,7 @@ func TestLogsEscClearsFilterBeforeNav(t *testing.T) {
 
 	logsIdx := findNavIndex(p, "system-logs")
 	p.navCursor = logsIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusLogs
 	p.height = 40
 
 	// Set a filter (apply it, not in filter mode)
@@ -1651,8 +1652,8 @@ func TestLogsEscClearsFilterBeforeNav(t *testing.T) {
 
 	// First esc should clear filter, not go back to nav
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if p.focusZone != FocusContent {
-		t.Error("expected to stay in FocusContent after clearing filter")
+	if p.focusZone != FocusLogs {
+		t.Error("expected to stay in FocusLogs after clearing filter")
 	}
 	if p.logFilterInput.Value() != "" {
 		t.Errorf("expected filter cleared, got %q", p.logFilterInput.Value())
@@ -1673,17 +1674,18 @@ func TestSlackTokenFormCompletionCallsSave(t *testing.T) {
 		t.Fatal("slack nav item not found")
 	}
 	p.navCursor = slackIdx
-	p.focusZone = FocusContent
+	p.focusZone = FocusForm
 
 	item := p.selectedNavItem()
 	if item == nil || item.Slug != "slack" {
 		t.Fatalf("expected slack nav item, got %v", item)
 	}
 
-	// Press 'a' to open the Slack token form
-	action := p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	// Trigger Slack token form via form completion handler
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	initCmd := p.handleDatasourceFormCompletion("slack")
 	if p.focusZone != FocusForm {
-		t.Fatalf("expected FocusForm after 'a', got %d", p.focusZone)
+		t.Fatalf("expected FocusForm after auth action, got %d", p.focusZone)
 	}
 	if p.activeForm == nil {
 		t.Fatal("expected activeForm to be set")
@@ -1696,21 +1698,21 @@ func TestSlackTokenFormCompletionCallsSave(t *testing.T) {
 	}
 
 	// Process init cmd
-	if action.TeaCmd != nil {
-		msg := action.TeaCmd()
+	if initCmd != nil {
+		msg := initCmd()
 		if msg != nil {
 			p.HandleMessage(msg)
 		}
 	}
 
 	// Type a token into the form
-	for _, r := range "xoxb-test-token" {
+	for _, r := range "xoxp-test-token" {
 		p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 
 	// Verify the token value is bound
-	if p.pendingSlackToken.BotToken != "xoxb-test-token" {
-		t.Fatalf("expected token 'xoxb-test-token', got %q", p.pendingSlackToken.BotToken)
+	if p.pendingSlackToken.Token != "xoxp-test-token" {
+		t.Fatalf("expected token 'xoxp-test-token', got %q", p.pendingSlackToken.Token)
 	}
 
 	// Press Enter to submit the form
@@ -1743,17 +1745,19 @@ func TestSlackTokenFormCompletionCallsSave(t *testing.T) {
 		if nextAction.TeaCmd != nil {
 			pendingCmds = append(pendingCmds, nextAction.TeaCmd)
 		}
-		if p.activeForm == nil {
-			break // Form completed
+		if p.pendingSlackToken == nil {
+			break // Token form completed and saved; datasource form rebuilt (BUG-066)
 		}
 	}
 
-	// After form completion, saveSlackToken should have been called
-	if p.activeForm != nil {
-		t.Fatal("expected form to complete after processing message chain")
+	// After form completion, saveSlackToken should have been called.
+	// The datasource form is rebuilt so the pane stays populated (BUG-066),
+	// so activeForm should NOT be nil — it's the rebuilt datasource form.
+	if p.activeForm == nil {
+		t.Fatal("expected activeForm to be rebuilt after token save (BUG-066)")
 	}
-	if p.focusZone != FocusContent {
-		t.Errorf("expected FocusContent after form completion, got %d", p.focusZone)
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm after form completion, got %d", p.focusZone)
 	}
 	if p.pendingSlackToken != nil {
 		t.Error("expected pendingSlackToken to be cleared after save")
@@ -1761,8 +1765,8 @@ func TestSlackTokenFormCompletionCallsSave(t *testing.T) {
 	if p.pendingAuthSlug != "" {
 		t.Errorf("expected pendingAuthSlug to be empty, got %q", p.pendingAuthSlug)
 	}
-	if !containsStr(p.flashMessage, "Slack bot token saved") {
-		t.Errorf("expected flash 'Slack bot token saved', got %q", p.flashMessage)
+	if !containsStr(p.flashMessage, "Slack token saved") {
+		t.Errorf("expected flash 'Slack token saved', got %q", p.flashMessage)
 	}
 	// Nav should have been rebuilt with updated validation
 	slackItem := p.selectedNavItem()
@@ -1776,11 +1780,11 @@ func TestTabKeyReturnedConsumedWhenFormActive(t *testing.T) {
 
 	slackIdx := findNavIndex(p, "slack")
 	p.navCursor = slackIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
+	p.focusZone = FocusForm
 
-	// Open the Slack token form
-	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	// Open the Slack token form via form completion handler
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	p.handleDatasourceFormCompletion("slack")
 	if p.focusZone != FocusForm {
 		t.Fatal("expected FocusForm")
 	}
@@ -1797,11 +1801,11 @@ func TestTabLeaveCleansPendingSlackToken(t *testing.T) {
 
 	slackIdx := findNavIndex(p, "slack")
 	p.navCursor = slackIdx
-	p.focusZone = FocusContent
-	item := p.selectedNavItem()
+	p.focusZone = FocusForm
 
-	// Open the Slack token form
-	p.handleDatasourceContentKey(item, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	// Open the Slack token form via form completion handler
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	p.handleDatasourceFormCompletion("slack")
 	if p.pendingSlackToken == nil {
 		t.Fatal("expected pendingSlackToken to be set")
 	}
@@ -1813,6 +1817,625 @@ func TestTabLeaveCleansPendingSlackToken(t *testing.T) {
 	}
 	if p.activeForm != nil {
 		t.Error("expected activeForm to be nil after tab leave")
+	}
+}
+
+// --- Banner form tests ---
+
+func TestBuildBannerFormReturnsCorrectInitialValues(t *testing.T) {
+	p, _ := testSetup(t)
+
+	form := p.buildBannerForm()
+	if form == nil {
+		t.Fatal("expected non-nil form from buildBannerForm")
+	}
+	if p.bannerValues == nil {
+		t.Fatal("expected bannerValues to be set")
+	}
+	if p.bannerValues.Name != "Test Center" {
+		t.Errorf("expected Name 'Test Center', got %q", p.bannerValues.Name)
+	}
+	if p.bannerValues.Subtitle != "" {
+		t.Errorf("expected empty Subtitle, got %q", p.bannerValues.Subtitle)
+	}
+	if !p.bannerValues.Show {
+		t.Error("expected Show to be true (default)")
+	}
+	// Verify padding is populated from config (default is 2)
+	expectedPadding := fmt.Sprintf("%d", p.cfg.GetBannerTopPadding())
+	if p.bannerValues.Padding != expectedPadding {
+		t.Errorf("expected Padding %q, got %q", expectedPadding, p.bannerValues.Padding)
+	}
+}
+
+func TestBannerFormCompletionSavesConfig(t *testing.T) {
+	p, _ := testSetup(t)
+
+	// Build form, then set values as if user filled them in
+	p.buildBannerForm()
+	p.bannerValues.Name = "New Name"
+	p.bannerValues.Subtitle = "My Subtitle"
+	p.bannerValues.Show = false
+	p.bannerValues.Padding = "3"
+
+	p.handleBannerFormCompletion()
+
+	if p.cfg.Name != "New Name" {
+		t.Errorf("expected cfg.Name 'New Name', got %q", p.cfg.Name)
+	}
+	if p.cfg.Subtitle != "My Subtitle" {
+		t.Errorf("expected cfg.Subtitle 'My Subtitle', got %q", p.cfg.Subtitle)
+	}
+	if p.cfg.BannerVisible() {
+		t.Error("expected banner to be hidden after saving Show=false")
+	}
+	if p.cfg.GetBannerTopPadding() != 3 {
+		t.Errorf("expected banner top padding 3, got %d", p.cfg.GetBannerTopPadding())
+	}
+	if !containsStr(p.flashMessage, "Banner saved") {
+		t.Errorf("expected 'Banner saved' flash, got %q", p.flashMessage)
+	}
+	// Form should be rebuilt (stays on screen)
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be rebuilt after banner completion")
+	}
+	if p.activeFormSlug != "banner" {
+		t.Errorf("expected activeFormSlug 'banner', got %q", p.activeFormSlug)
+	}
+}
+
+func TestBannerFormCompletionWithNilValues(t *testing.T) {
+	p, _ := testSetup(t)
+
+	// Completion with nil bannerValues should be no-op
+	p.bannerValues = nil
+	cmd := p.handleBannerFormCompletion()
+	if cmd != nil {
+		t.Error("expected nil cmd when bannerValues is nil")
+	}
+}
+
+func TestBannerFormOpenedFromNav(t *testing.T) {
+	p, _ := testSetup(t)
+
+	bannerIdx := findNavIndex(p, "banner")
+	if bannerIdx < 0 {
+		t.Fatal("banner not found in nav")
+	}
+	p.navCursor = bannerIdx
+	p.focusZone = FocusNav
+
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be set for banner")
+	}
+	if p.activeFormSlug != "banner" {
+		t.Errorf("expected activeFormSlug 'banner', got %q", p.activeFormSlug)
+	}
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm, got %d", p.focusZone)
+	}
+}
+
+// --- Palette form tests ---
+
+func TestBuildPaletteFormReturnsCorrectInitialValues(t *testing.T) {
+	p, _ := testSetup(t)
+
+	form := p.buildPaletteForm()
+	if form == nil {
+		t.Fatal("expected non-nil form from buildPaletteForm")
+	}
+	if p.paletteValues == nil {
+		t.Fatal("expected paletteValues to be set")
+	}
+	if p.paletteValues.Selected != "aurora" {
+		t.Errorf("expected Selected 'aurora', got %q", p.paletteValues.Selected)
+	}
+}
+
+func TestPaletteFormCompletionAppliesPalette(t *testing.T) {
+	p, _ := testSetup(t)
+
+	// Build form, change selection
+	p.buildPaletteForm()
+	names := config.PaletteNames()
+	newPalette := "aurora"
+	for _, name := range names {
+		if name != p.cfg.Palette {
+			newPalette = name
+			break
+		}
+	}
+	p.paletteValues.Selected = newPalette
+
+	p.handlePaletteFormCompletion()
+
+	if p.cfg.Palette != newPalette {
+		t.Errorf("expected cfg.Palette %q, got %q", newPalette, p.cfg.Palette)
+	}
+	if !containsStr(p.flashMessage, "Palette saved") {
+		t.Errorf("expected 'Palette saved' flash, got %q", p.flashMessage)
+	}
+	// Form should be rebuilt
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be rebuilt after palette completion")
+	}
+	if p.activeFormSlug != "palette" {
+		t.Errorf("expected activeFormSlug 'palette', got %q", p.activeFormSlug)
+	}
+}
+
+func TestPaletteFormCompletionWithNilValues(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.paletteValues = nil
+	cmd := p.handlePaletteFormCompletion()
+	if cmd != nil {
+		t.Error("expected nil cmd when paletteValues is nil")
+	}
+}
+
+// --- System form tests ---
+
+func TestBuildScheduleFormSetsSystemValues(t *testing.T) {
+	p, _ := testSetup(t)
+
+	form := p.buildScheduleForm()
+	if form == nil {
+		t.Fatal("expected non-nil form")
+	}
+	if p.systemValues == nil {
+		t.Fatal("expected systemValues to be set")
+	}
+	// Select fields default to the first option's value
+	if p.systemValues.Action != "install" {
+		t.Errorf("expected initial Action 'install' (first option), got %q", p.systemValues.Action)
+	}
+}
+
+func TestScheduleFormCompletionInstall(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.buildScheduleForm()
+	p.systemValues.Action = "install"
+
+	cmd := p.handleScheduleFormCompletion()
+	if cmd == nil {
+		t.Error("expected non-nil cmd for install action")
+	}
+	// Form should be rebuilt
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be rebuilt after schedule completion")
+	}
+	if p.activeFormSlug != "system-schedule" {
+		t.Errorf("expected activeFormSlug 'system-schedule', got %q", p.activeFormSlug)
+	}
+}
+
+func TestScheduleFormCompletionUninstall(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.buildScheduleForm()
+	p.systemValues.Action = "uninstall"
+
+	cmd := p.handleScheduleFormCompletion()
+	if cmd == nil {
+		t.Error("expected non-nil cmd for uninstall action")
+	}
+}
+
+func TestScheduleFormCompletionNilValues(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.systemValues = nil
+	cmd := p.handleScheduleFormCompletion()
+	if cmd != nil {
+		t.Error("expected nil cmd when systemValues is nil")
+	}
+}
+
+func TestMCPFormCompletionBuild(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.buildMCPForm()
+	p.systemValues.Action = "build"
+
+	cmd := p.handleMCPFormCompletion()
+	if cmd == nil {
+		t.Error("expected non-nil cmd for build action")
+	}
+	if p.activeFormSlug != "system-mcp" {
+		t.Errorf("expected activeFormSlug 'system-mcp', got %q", p.activeFormSlug)
+	}
+}
+
+func TestSkillsFormCompletionInstall(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.buildSkillsForm()
+	p.systemValues.Action = "install"
+
+	cmd := p.handleSkillsFormCompletion()
+	if cmd == nil {
+		t.Error("expected non-nil cmd for install action")
+	}
+	if p.activeFormSlug != "system-skills" {
+		t.Errorf("expected activeFormSlug 'system-skills', got %q", p.activeFormSlug)
+	}
+}
+
+func TestShellFormCompletionInstall(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.buildShellForm()
+	p.systemValues.Action = "install"
+
+	cmd := p.handleShellFormCompletion()
+	if cmd == nil {
+		t.Error("expected non-nil cmd for install action")
+	}
+	if p.activeFormSlug != "system-shell" {
+		t.Errorf("expected activeFormSlug 'system-shell', got %q", p.activeFormSlug)
+	}
+}
+
+func TestSystemActionResultSetsFlash(t *testing.T) {
+	p, _ := testSetup(t)
+
+	msg := systemActionResult{slug: "system-schedule", message: "Schedule installed", err: nil}
+	handled, _ := p.handleSystemActionResult(msg)
+	if !handled {
+		t.Error("expected handleSystemActionResult to return true")
+	}
+	if p.flashMessage != "Schedule installed" {
+		t.Errorf("expected flash 'Schedule installed', got %q", p.flashMessage)
+	}
+}
+
+func TestSystemActionResultErrorSetsFlash(t *testing.T) {
+	p, _ := testSetup(t)
+
+	msg := systemActionResult{slug: "system-mcp", message: "MCP built", err: fmt.Errorf("build failed")}
+	_, _ = p.handleSystemActionResult(msg)
+	if !containsStr(p.flashMessage, "Error:") {
+		t.Errorf("expected error flash, got %q", p.flashMessage)
+	}
+}
+
+func TestSystemActionResultRebuildActiveForm(t *testing.T) {
+	p, _ := testSetup(t)
+
+	// Set up an active schedule form
+	p.activeForm = p.buildScheduleForm()
+	p.activeFormSlug = "system-schedule"
+
+	msg := systemActionResult{slug: "system-schedule", message: "Schedule installed", err: nil}
+	_, initCmd := p.handleSystemActionResult(msg)
+
+	// Form should be rebuilt
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be rebuilt after system action result")
+	}
+	// Init cmd should be returned so cursor is visible
+	if initCmd == nil {
+		t.Error("expected Init cmd to be returned after system action rebuilds form")
+	}
+}
+
+// --- Datasource form tests ---
+
+func TestBuildDatasourceFormSetsValues(t *testing.T) {
+	p, _ := testSetup(t)
+
+	calItem := p.findNavItem("calendar")
+	if calItem == nil {
+		t.Fatal("calendar nav item not found")
+	}
+
+	form := p.buildDatasourceForm(calItem)
+	if form == nil {
+		t.Fatal("expected non-nil form")
+	}
+	if p.datasourceValues == nil {
+		t.Fatal("expected datasourceValues to be set")
+	}
+	// Select fields default to the first option's value
+	if p.datasourceValues.Action != "recheck" {
+		t.Errorf("expected initial Action 'recheck' (first option), got %q", p.datasourceValues.Action)
+	}
+}
+
+func TestDatasourceFormCompletionRecheckRebuildsForm(t *testing.T) {
+	p, _ := testSetup(t)
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+
+	p.datasourceValues = &datasourceFormValues{Action: "recheck"}
+	p.handleDatasourceFormCompletion("calendar")
+
+	// Form should be rebuilt after recheck
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be rebuilt after recheck")
+	}
+	if p.activeFormSlug != "calendar" {
+		t.Errorf("expected activeFormSlug 'calendar', got %q", p.activeFormSlug)
+	}
+}
+
+func TestDatasourceFormCompletionAuthChainsToGoogleCredForm(t *testing.T) {
+	p, _ := testSetup(t)
+
+	gmailIdx := findNavIndex(p, "gmail")
+	p.navCursor = gmailIdx
+
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	cmd := p.handleDatasourceFormCompletion("gmail")
+
+	// Should chain to a credential form
+	if p.pendingAuthCreds == nil {
+		t.Error("expected pendingAuthCreds to be set for Gmail auth")
+	}
+	if p.pendingAuthSlug != "gmail" {
+		t.Errorf("expected pendingAuthSlug 'gmail', got %q", p.pendingAuthSlug)
+	}
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be set (credential form)")
+	}
+	if cmd == nil {
+		t.Error("expected init cmd from credential form")
+	}
+}
+
+func TestDatasourceFormCompletionAuthChainsToSlackTokenForm(t *testing.T) {
+	p, _ := testSetup(t)
+
+	slackIdx := findNavIndex(p, "slack")
+	p.navCursor = slackIdx
+
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	cmd := p.handleDatasourceFormCompletion("slack")
+
+	if p.pendingSlackToken == nil {
+		t.Error("expected pendingSlackToken to be set for Slack auth")
+	}
+	if p.pendingAuthSlug != "slack" {
+		t.Errorf("expected pendingAuthSlug 'slack', got %q", p.pendingAuthSlug)
+	}
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be set (Slack token form)")
+	}
+	if cmd == nil {
+		t.Error("expected init cmd from Slack token form")
+	}
+}
+
+// --- Plugin form tests ---
+
+func TestBuildPluginFormSetsValues(t *testing.T) {
+	p, _ := testSetup(t)
+
+	threadsItem := p.findNavItem("threads")
+	if threadsItem == nil {
+		t.Fatal("threads nav item not found")
+	}
+
+	form := p.buildPluginForm(threadsItem)
+	if form == nil {
+		t.Fatal("expected non-nil form")
+	}
+	if p.pluginValues == nil {
+		t.Fatal("expected pluginValues to be set")
+	}
+}
+
+func TestPluginFormCompletionRebuildsForm(t *testing.T) {
+	p, _ := testSetup(t)
+
+	threadsItem := p.findNavItem("threads")
+	if threadsItem == nil {
+		t.Fatal("threads nav item not found")
+	}
+
+	p.pluginValues = &pluginFormValues{}
+	p.handlePluginFormCompletion("threads")
+
+	if p.activeForm == nil {
+		t.Error("expected activeForm to be rebuilt after plugin form completion")
+	}
+	if p.activeFormSlug != "threads" {
+		t.Errorf("expected activeFormSlug 'threads', got %q", p.activeFormSlug)
+	}
+}
+
+func TestExternalPluginFormShowsInfo(t *testing.T) {
+	p, _ := testSetup(t)
+
+	extItem := p.findNavItem("external-0")
+	if extItem == nil {
+		t.Fatal("external-0 nav item not found")
+	}
+
+	form := p.buildPluginForm(extItem)
+	if form == nil {
+		t.Fatal("expected non-nil form for external plugin")
+	}
+}
+
+// --- isFormOnlySlug tests ---
+
+func TestIsFormOnlySlugReturnsTrueForBannerAndPalette(t *testing.T) {
+	if !isFormOnlySlug("banner") {
+		t.Error("expected banner to be a form-only slug")
+	}
+	if !isFormOnlySlug("palette") {
+		t.Error("expected palette to be a form-only slug")
+	}
+}
+
+func TestIsFormOnlySlugReturnsTrueForSystemSlugs(t *testing.T) {
+	for _, slug := range []string{"system-schedule", "system-mcp", "system-skills", "system-shell"} {
+		if !isFormOnlySlug(slug) {
+			t.Errorf("expected %s to be a form-only slug", slug)
+		}
+	}
+}
+
+func TestIsFormOnlySlugReturnsFalseForDatasourcesAndPlugins(t *testing.T) {
+	for _, slug := range []string{"calendar", "gmail", "slack", "github", "threads", "system-logs"} {
+		if isFormOnlySlug(slug) {
+			t.Errorf("expected %s to NOT be a form-only slug", slug)
+		}
+	}
+}
+
+// --- Esc from form-only vs datasource panes ---
+
+func TestEscFromBannerFormReturnsToNav(t *testing.T) {
+	p, _ := testSetup(t)
+
+	bannerIdx := findNavIndex(p, "banner")
+	p.navCursor = bannerIdx
+	p.focusZone = FocusNav
+
+	// Open banner form
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if p.focusZone != FocusForm {
+		t.Fatal("expected FocusForm after opening banner")
+	}
+
+	// Esc should return to nav (banner is form-only)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if p.focusZone != FocusNav {
+		t.Errorf("expected FocusNav after esc from banner form, got %d", p.focusZone)
+	}
+	if p.activeForm != nil {
+		t.Error("expected activeForm to be nil after esc")
+	}
+}
+
+func TestEscFromDatasourceFormStaysInFocusForm(t *testing.T) {
+	p, _ := testSetup(t)
+
+	calIdx := findNavIndex(p, "calendar")
+	p.navCursor = calIdx
+	p.focusZone = FocusForm
+
+	// Set up an auth form for calendar (datasource, not form-only)
+	p.datasourceValues = &datasourceFormValues{Action: "auth"}
+	p.handleDatasourceFormCompletion("calendar")
+
+	if p.activeForm == nil {
+		t.Fatal("expected form to be active")
+	}
+
+	// Esc should stay in FocusForm (datasource slug is not form-only)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if p.focusZone != FocusForm {
+		t.Errorf("expected FocusForm after esc from datasource auth form, got %d", p.focusZone)
+	}
+}
+
+// --- buildFormForSlug dispatch tests ---
+
+func TestBuildFormForSlugDispatchesCorrectly(t *testing.T) {
+	p, _ := testSetup(t)
+
+	tests := []struct {
+		slug     string
+		kind     string
+		wantForm bool
+	}{
+		{"banner", "appearance", true},
+		{"palette", "appearance", true},
+		{"system-schedule", "system", true},
+		{"system-mcp", "system", true},
+		{"system-skills", "system", true},
+		{"system-shell", "system", true},
+		{"system-logs", "system", false}, // logs has no form
+	}
+
+	for _, tc := range tests {
+		item := &NavItem{Slug: tc.slug, Kind: tc.kind}
+		form, _ := p.buildFormForSlug(item)
+		if tc.wantForm && form == nil {
+			t.Errorf("expected form for slug %q", tc.slug)
+		}
+		if !tc.wantForm && form != nil {
+			t.Errorf("expected no form for slug %q", tc.slug)
+		}
+	}
+}
+
+func TestBuildFormForSlugDatasource(t *testing.T) {
+	p, _ := testSetup(t)
+
+	calItem := p.findNavItem("calendar")
+	if calItem == nil {
+		t.Fatal("calendar not found")
+	}
+
+	form, _ := p.buildFormForSlug(calItem)
+	if form == nil {
+		t.Error("expected form for datasource calendar")
+	}
+}
+
+func TestBuildFormForSlugPlugin(t *testing.T) {
+	p, _ := testSetup(t)
+
+	threadsItem := p.findNavItem("threads")
+	if threadsItem == nil {
+		t.Fatal("threads not found")
+	}
+
+	form, _ := p.buildFormForSlug(threadsItem)
+	if form == nil {
+		t.Error("expected form for plugin threads")
+	}
+}
+
+// --- handleFormCompletion dispatch tests ---
+
+func TestHandleFormCompletionDispatchesBanner(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.buildBannerForm()
+	p.bannerValues.Name = "Dispatch Test"
+
+	p.handleFormCompletion("banner")
+	if p.cfg.Name != "Dispatch Test" {
+		t.Errorf("expected cfg.Name 'Dispatch Test', got %q", p.cfg.Name)
+	}
+}
+
+func TestHandleFormCompletionDispatchesPalette(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.buildPaletteForm()
+	names := config.PaletteNames()
+	newPalette := names[0]
+	if newPalette == p.cfg.Palette && len(names) > 1 {
+		newPalette = names[1]
+	}
+	p.paletteValues.Selected = newPalette
+
+	p.handleFormCompletion("palette")
+	if p.cfg.Palette != newPalette {
+		t.Errorf("expected palette %q, got %q", newPalette, p.cfg.Palette)
+	}
+}
+
+func TestHandleFormCompletionDispatchesSchedule(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.buildScheduleForm()
+	p.systemValues.Action = "install"
+
+	cmd := p.handleFormCompletion("system-schedule")
+	if cmd == nil {
+		t.Error("expected non-nil cmd for schedule install")
 	}
 }
 

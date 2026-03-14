@@ -283,6 +283,15 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		return s.handleFetchKey(msg)
 	}
 
+	// If there are no calendars configured, don't consume navigation keys —
+	// let the parent form handle up/down for its own Select fields (BUG-061).
+	if len(s.cfg.Calendar.Calendars) == 0 {
+		switch msg.String() {
+		case "up", "k", "down", "j":
+			return plugin.Action{Type: plugin.ActionUnhandled}
+		}
+	}
+
 	switch msg.String() {
 	case "up", "k":
 		if s.cursor > 0 {

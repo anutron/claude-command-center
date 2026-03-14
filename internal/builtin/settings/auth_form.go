@@ -14,12 +14,12 @@ type clientCredentials struct {
 
 // slackTokenValue holds the value collected from the Slack token form.
 type slackTokenValue struct {
-	BotToken string
+	Token string
 }
 
 // newClientCredForm creates a huh form for entering Google OAuth client credentials.
 // The form collects a Client ID and Client Secret, both required non-empty.
-func newClientCredForm() (*huh.Form, *clientCredentials) {
+func newClientCredForm(theme *huh.Theme) (*huh.Form, *clientCredentials) {
 	creds := &clientCredentials{}
 
 	form := huh.NewForm(
@@ -46,21 +46,21 @@ func newClientCredForm() (*huh.Form, *clientCredentials) {
 					return nil
 				}),
 		),
-	).WithShowHelp(false).WithShowErrors(true)
+	).WithShowHelp(false).WithShowErrors(true).WithTheme(theme)
 
 	return form, creds
 }
 
-// newSlackTokenForm creates a huh form for entering a Slack bot token.
-func newSlackTokenForm() (*huh.Form, *slackTokenValue) {
+// newSlackTokenForm creates a huh form for entering a Slack user token.
+func newSlackTokenForm(theme *huh.Theme) (*huh.Form, *slackTokenValue) {
 	tok := &slackTokenValue{}
 
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Slack Bot Token").
-				Description("Starts with xoxb- — from api.slack.com/apps > OAuth & Permissions").
-				Value(&tok.BotToken).
+				Title("Slack User Token").
+				Description("Starts with xoxp- — from api.slack.com/apps > OAuth & Permissions > User OAuth Token").
+				Value(&tok.Token).
 				EchoMode(huh.EchoModePassword).
 				Validate(func(s string) error {
 					if s == "" {
@@ -69,7 +69,7 @@ func newSlackTokenForm() (*huh.Form, *slackTokenValue) {
 					return nil
 				}),
 		),
-	).WithShowHelp(false).WithShowErrors(true)
+	).WithShowHelp(false).WithShowErrors(true).WithTheme(theme)
 
 	return form, tok
 }

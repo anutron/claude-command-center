@@ -2,6 +2,7 @@ package settings
 
 import (
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -30,6 +31,55 @@ type settingsStyles struct {
 	navUnselected    lipgloss.Style
 	navEnabled       lipgloss.Style
 	navDisabled      lipgloss.Style
+
+	// huh form theme
+	huhTheme *huh.Theme
+}
+
+// huhThemeFromPalette creates a huh Theme that maps palette colors to form styles.
+// The theme removes the default left-border on focused fields since the settings
+// panel already provides its own border chrome.
+func huhThemeFromPalette(pal config.Palette) *huh.Theme {
+	t := huh.ThemeBase()
+
+	cyan := lipgloss.Color(pal.Cyan)
+	green := lipgloss.Color(pal.Green)
+	white := lipgloss.Color(pal.White)
+	fg := lipgloss.Color(pal.Fg)
+	muted := lipgloss.Color(pal.Muted)
+	red := lipgloss.Color("#f7768e")
+
+	// Focused field styles
+	t.Focused.Base = lipgloss.NewStyle().PaddingLeft(1)
+	t.Focused.Title = lipgloss.NewStyle().Foreground(cyan).Bold(true)
+	t.Focused.Description = lipgloss.NewStyle().Foreground(muted)
+	t.Focused.ErrorIndicator = lipgloss.NewStyle().Foreground(red)
+	t.Focused.ErrorMessage = lipgloss.NewStyle().Foreground(red)
+	t.Focused.SelectSelector = lipgloss.NewStyle().SetString("> ").Foreground(green)
+	t.Focused.Option = lipgloss.NewStyle().Foreground(fg)
+	t.Focused.SelectedOption = lipgloss.NewStyle().Foreground(green)
+	t.Focused.SelectedPrefix = lipgloss.NewStyle().SetString("[•] ").Foreground(green)
+	t.Focused.UnselectedPrefix = lipgloss.NewStyle().SetString("[ ] ").Foreground(muted)
+	t.Focused.FocusedButton = lipgloss.NewStyle().Foreground(white).Background(cyan).Padding(0, 1)
+	t.Focused.BlurredButton = lipgloss.NewStyle().Foreground(fg).Padding(0, 1)
+	t.Focused.TextInput.Cursor = lipgloss.NewStyle().Foreground(cyan)
+	t.Focused.TextInput.CursorText = lipgloss.NewStyle().Foreground(white)
+	t.Focused.TextInput.Placeholder = lipgloss.NewStyle().Foreground(muted)
+	t.Focused.TextInput.Prompt = lipgloss.NewStyle().Foreground(cyan)
+	t.Focused.TextInput.Text = lipgloss.NewStyle().Foreground(white)
+
+	// Blurred field styles — dimmed versions
+	t.Blurred.Base = lipgloss.NewStyle().PaddingLeft(1)
+	t.Blurred.SelectSelector = lipgloss.NewStyle().SetString("  ")
+	t.Blurred.Title = lipgloss.NewStyle().Foreground(muted)
+	t.Blurred.Description = lipgloss.NewStyle().Foreground(muted)
+	t.Blurred.TextInput.Cursor = lipgloss.NewStyle().Foreground(muted)
+	t.Blurred.TextInput.CursorText = lipgloss.NewStyle().Foreground(fg)
+	t.Blurred.TextInput.Placeholder = lipgloss.NewStyle().Foreground(muted)
+	t.Blurred.TextInput.Prompt = lipgloss.NewStyle().Foreground(muted)
+	t.Blurred.TextInput.Text = lipgloss.NewStyle().Foreground(fg)
+
+	return t
 }
 
 func newSettingsStyles(p config.Palette) settingsStyles {
@@ -77,5 +127,7 @@ func newSettingsStyles(p config.Palette) settingsStyles {
 			Foreground(lipgloss.Color(p.Green)),
 		navDisabled: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(p.Muted)),
+
+		huhTheme: huhThemeFromPalette(p),
 	}
 }
