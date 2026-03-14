@@ -496,8 +496,8 @@ func TestToggleExternalPluginViaSidebar(t *testing.T) {
 	if item == nil || item.Enabled == nil || *item.Enabled {
 		t.Error("expected external plugin to be disabled after toggle")
 	}
-	if p.flashMessage != "Restart CCC to apply" {
-		t.Errorf("expected restart flash message, got %q", p.flashMessage)
+	if p.flashMessage != "Pomodoro disabled" {
+		t.Errorf("expected disabled flash message, got %q", p.flashMessage)
 	}
 }
 

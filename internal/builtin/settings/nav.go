@@ -518,7 +518,11 @@ func (p *Plugin) applyNavToggle(item *NavItem) {
 			}
 			p.cfg.ExternalPlugins[epIdx].Enabled = enabled
 			if err := config.Save(p.cfg); err == nil {
-				p.flashMessage = "Restart CCC to apply"
+				if enabled {
+					p.flashMessage = item.Label + " enabled"
+				} else {
+					p.flashMessage = item.Label + " disabled"
+				}
 				p.publishConfigSaved("external_plugins")
 			} else {
 				p.flashMessage = "Failed to save: " + err.Error()

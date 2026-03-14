@@ -121,7 +121,10 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		tabEntry{label: "Command Center", plugin: ccPlug, route: "commandcenter", ownerSlug: "commandcenter"},
 		tabEntry{label: "Threads", plugin: ccPlug, route: "commandcenter/threads", ownerSlug: "commandcenter"},
 	)
+	// Track which external plugins were loaded (started at boot).
+	loadedExtSlugs := map[string]bool{}
 	for _, ep := range extPlugins {
+		loadedExtSlugs[ep.Slug()] = true
 		routes := ep.Routes()
 		if len(routes) > 0 {
 			for _, r := range routes {
@@ -130,6 +133,16 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		} else {
 			allTabs = append(allTabs, tabEntry{label: ep.TabName(), plugin: ep, route: ep.Slug(), ownerSlug: ep.Slug()})
 		}
+	}
+	// Add stub tab entries for external plugins that are in config but were
+	// not loaded at startup (disabled). This allows rebuildTabs to show a
+	// placeholder tab if the user enables them at runtime without restarting.
+	for _, entry := range cfg.ExternalPlugins {
+		if loadedExtSlugs[entry.Name] {
+			continue
+		}
+		stub := newStubPlugin(entry.Name, entry.Name)
+		allTabs = append(allTabs, tabEntry{label: entry.Name, plugin: stub, route: entry.Name, ownerSlug: entry.Name})
 	}
 	allTabs = append(allTabs, tabEntry{label: "Settings", plugin: settingsPlug, route: "settings", ownerSlug: "settings"})
 
