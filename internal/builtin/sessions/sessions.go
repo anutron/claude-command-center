@@ -572,6 +572,24 @@ func (p *Plugin) View(width, height, frame int) string {
 
 func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
+	case "up", "k":
+		total := len(p.newList.Items())
+		if total > 0 && p.newList.Index() == 0 {
+			p.newList.Select(total - 1)
+			return plugin.NoopAction()
+		}
+		var cmd tea.Cmd
+		p.newList, cmd = p.newList.Update(msg)
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	case "down", "j":
+		total := len(p.newList.Items())
+		if total > 0 && p.newList.Index() == total-1 {
+			p.newList.Select(0)
+			return plugin.NoopAction()
+		}
+		var cmd tea.Cmd
+		p.newList, cmd = p.newList.Update(msg)
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	case "enter":
 		item, ok := p.newList.SelectedItem().(newItem)
 		if !ok {
@@ -630,6 +648,24 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 
 func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
+	case "up", "k":
+		total := len(p.resumeList.Items())
+		if total > 0 && p.resumeList.Index() == 0 {
+			p.resumeList.Select(total - 1)
+			return plugin.NoopAction()
+		}
+		var cmd tea.Cmd
+		p.resumeList, cmd = p.resumeList.Update(msg)
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	case "down", "j":
+		total := len(p.resumeList.Items())
+		if total > 0 && p.resumeList.Index() == total-1 {
+			p.resumeList.Select(0)
+			return plugin.NoopAction()
+		}
+		var cmd tea.Cmd
+		p.resumeList, cmd = p.resumeList.Update(msg)
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	case "enter":
 		item, ok := p.resumeList.SelectedItem().(sessionItem)
 		if !ok {
@@ -743,14 +779,22 @@ func (p *Plugin) handleWorktreesTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "up", "k":
-		if p.worktreeCursor > 0 {
-			p.worktreeCursor--
+		if len(p.worktreeItems) > 0 {
+			if p.worktreeCursor > 0 {
+				p.worktreeCursor--
+			} else {
+				p.worktreeCursor = len(p.worktreeItems) - 1
+			}
 		}
 		return plugin.NoopAction()
 
 	case "down", "j":
-		if p.worktreeCursor < len(p.worktreeItems)-1 {
-			p.worktreeCursor++
+		if len(p.worktreeItems) > 0 {
+			if p.worktreeCursor < len(p.worktreeItems)-1 {
+				p.worktreeCursor++
+			} else {
+				p.worktreeCursor = 0
+			}
 		}
 		return plugin.NoopAction()
 	}
