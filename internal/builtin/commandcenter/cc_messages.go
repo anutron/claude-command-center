@@ -40,6 +40,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case claudeFocusFinishedMsg:
 		return p.handleClaudeFocusFinished(msg)
 
+	case plannotatorFinishedMsg:
+		return p.handlePlannotatorFinished(msg)
+
 	case agentStartedInternalMsg:
 		return p.handleAgentStartedInternal(msg)
 
@@ -299,6 +302,53 @@ func (p *Plugin) handleClaudeFocusFinished(msg claudeFocusFinishedMsg) (bool, pl
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error { return db.DBSaveFocus(database, focus) })}
 		}
 	}
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handlePlannotatorFinished(msg plannotatorFinishedMsg) (bool, plugin.Action) {
+	if msg.err != nil {
+		p.flashMessage = "Editor exited with error: " + msg.err.Error()
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+
+	// Read the prompt back from the temp file.
+	newPrompt := readTempPrompt(msg.tempFile)
+
+	// Clean up the temp file.
+	if msg.tempFile != "" {
+		os.Remove(msg.tempFile)
+	}
+
+	// If the user left the file empty, don't overwrite.
+	if newPrompt == "" {
+		p.flashMessage = "Prompt unchanged (empty file)"
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+
+	// Update the todo's ProposedPrompt in-memory and persist.
+	if p.cc != nil {
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == msg.todoID {
+				p.cc.Todos[i].ProposedPrompt = newPrompt
+				updated := p.cc.Todos[i]
+
+				// Refresh the task runner prompt viewport.
+				p.taskRunnerPrompt.SetContent(newPrompt)
+				p.taskRunnerPrompt.GotoTop()
+
+				p.flashMessage = "Prompt updated"
+				p.flashMessageAt = time.Now()
+
+				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBUpdateTodo(database, updated.ID, updated)
+				})
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			}
+		}
+	}
+
 	return true, plugin.NoopAction()
 }
 

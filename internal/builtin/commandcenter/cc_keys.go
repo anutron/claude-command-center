@@ -1005,9 +1005,17 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "p":
-		// Placeholder for Plannotator loop
-		p.flashMessage = "Plannotator not yet implemented (Phase 7)"
-		p.flashMessageAt = time.Now()
+		// Launch external editor to refine the prompt (Plannotator).
+		activeTodos := p.cc.ActiveTodos()
+		if p.detailTodoIdx < len(activeTodos) {
+			todo := activeTodos[p.detailTodoIdx]
+			prompt := todo.ProposedPrompt
+			if prompt == "" {
+				prompt = formatTodoContext(todo)
+			}
+			cmd := launchPlannotator(todo.ID, prompt)
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
 		return plugin.NoopAction()
 
 	case "j":
