@@ -406,10 +406,12 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
 			p.detailView = true
 			p.detailTodoIdx = p.ccCursor
+			p.detailMode = "viewing"
+			p.detailSelectedField = 0
 			p.textInput.Reset()
 			p.textInput.Placeholder = "Tell me what changed..."
-			p.textInput.Focus()
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
+			p.detailFieldInput.Reset()
+			return plugin.NoopAction()
 		}
 		return plugin.NoopAction()
 
@@ -461,6 +463,206 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 }
 
 func (p *Plugin) handleDetailView(msg tea.KeyMsg) plugin.Action {
+	switch p.detailMode {
+	case "editingField":
+		return p.handleDetailEditingField(msg)
+	case "commandInput":
+		return p.handleDetailCommandInput(msg)
+	default:
+		return p.handleDetailViewing(msg)
+	}
+}
+
+// detailFieldCount is the number of cyclable fields in the detail view.
+const detailFieldCount = 4 // 0=Status, 1=Due, 2=ProjectDir, 3=Prompt
+
+func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "tab":
+		p.detailSelectedField = (p.detailSelectedField + 1) % detailFieldCount
+		return plugin.ConsumedAction()
+	case "shift+tab":
+		p.detailSelectedField = (p.detailSelectedField - 1 + detailFieldCount) % detailFieldCount
+		return plugin.ConsumedAction()
+	case "enter":
+		return p.enterDetailFieldEdit()
+	case "o":
+		// Launch — delegate to the same logic as the command tab's 'o' key
+		activeTodos := p.cc.ActiveTodos()
+		if p.detailTodoIdx < len(activeTodos) {
+			todo := activeTodos[p.detailTodoIdx]
+			p.detailView = false
+			p.detailMode = "viewing"
+			if todo.SessionID != "" {
+				dir := todo.ProjectDir
+				if dir == "" {
+					home, _ := os.UserHomeDir()
+					dir = home
+				}
+				return plugin.Action{
+					Type: "launch",
+					Args: map[string]string{
+						"dir":       dir,
+						"resume_id": todo.SessionID,
+					},
+				}
+			}
+			if todo.ProjectDir != "" {
+				return plugin.Action{
+					Type: "launch",
+					Args: map[string]string{
+						"dir":            todo.ProjectDir,
+						"initial_prompt": formatTodoContext(todo),
+					},
+				}
+			}
+			p.pendingLaunchTodo = &todo
+			p.publishEvent("pending.todo", map[string]interface{}{
+				"todo_id":     todo.ID,
+				"title":       todo.Title,
+				"context":     todo.Context,
+				"detail":      todo.Detail,
+				"who_waiting": todo.WhoWaiting,
+				"due":         todo.Due,
+				"effort":      todo.Effort,
+			})
+			return plugin.Action{
+				Type:    "navigate",
+				Payload: "sessions",
+			}
+		}
+		return plugin.NoopAction()
+	case "c":
+		p.detailMode = "commandInput"
+		p.textInput.Reset()
+		p.textInput.Placeholder = "Tell me what changed..."
+		p.textInput.Focus()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
+	case "esc":
+		p.detailView = false
+		p.detailMode = "viewing"
+		return plugin.NoopAction()
+	}
+	return plugin.NoopAction()
+}
+
+func (p *Plugin) enterDetailFieldEdit() plugin.Action {
+	activeTodos := p.cc.ActiveTodos()
+	if p.detailTodoIdx >= len(activeTodos) {
+		return plugin.NoopAction()
+	}
+	todo := activeTodos[p.detailTodoIdx]
+
+	switch p.detailSelectedField {
+	case 0: // Status — cycle through options
+		newStatus := "active"
+		switch todo.Status {
+		case "active":
+			newStatus = "waiting"
+		case "waiting":
+			newStatus = "completed"
+		case "completed":
+			newStatus = "active"
+		}
+		return p.commitDetailFieldEdit(todo, "status", newStatus)
+	case 1: // Due — open text input
+		p.detailMode = "editingField"
+		p.detailFieldInput.Reset()
+		p.detailFieldInput.Placeholder = "YYYY-MM-DD"
+		p.detailFieldInput.SetValue(todo.Due)
+		p.detailFieldInput.Focus()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
+	case 2: // ProjectDir — cycle through paths
+		if len(p.detailPaths) == 0 {
+			// No paths available; open text input instead
+			p.detailMode = "editingField"
+			p.detailFieldInput.Reset()
+			p.detailFieldInput.Placeholder = "/path/to/project"
+			p.detailFieldInput.SetValue(todo.ProjectDir)
+			p.detailFieldInput.Focus()
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
+		}
+		// Find current path in the list and pick the next one
+		p.detailPathCursor = 0
+		for i, path := range p.detailPaths {
+			if path == todo.ProjectDir {
+				p.detailPathCursor = (i + 1) % len(p.detailPaths)
+				break
+			}
+		}
+		newPath := p.detailPaths[p.detailPathCursor]
+		return p.commitDetailFieldEdit(todo, "project_dir", newPath)
+	case 3: // Prompt — open text input
+		p.detailMode = "editingField"
+		p.detailFieldInput.Reset()
+		p.detailFieldInput.Placeholder = "Enter prompt for Claude session..."
+		p.detailFieldInput.SetValue(todo.ProposedPrompt)
+		p.detailFieldInput.Focus()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
+	}
+	return plugin.NoopAction()
+}
+
+func (p *Plugin) commitDetailFieldEdit(todo db.Todo, field, value string) plugin.Action {
+	// Apply the change in-memory
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == todo.ID {
+			switch field {
+			case "status":
+				p.cc.Todos[i].Status = value
+			case "due":
+				p.cc.Todos[i].Due = value
+			case "project_dir":
+				p.cc.Todos[i].ProjectDir = value
+			case "proposed_prompt":
+				p.cc.Todos[i].ProposedPrompt = value
+			}
+			// Persist full todo update
+			updated := p.cc.Todos[i]
+			dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+				return db.DBUpdateTodo(database, updated.ID, updated)
+			})
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+		}
+	}
+	return plugin.NoopAction()
+}
+
+func (p *Plugin) handleDetailEditingField(msg tea.KeyMsg) plugin.Action {
+	activeTodos := p.cc.ActiveTodos()
+	if p.detailTodoIdx >= len(activeTodos) {
+		p.detailMode = "viewing"
+		p.detailFieldInput.Blur()
+		return plugin.NoopAction()
+	}
+	todo := activeTodos[p.detailTodoIdx]
+
+	switch msg.String() {
+	case "enter":
+		value := strings.TrimSpace(p.detailFieldInput.Value())
+		p.detailMode = "viewing"
+		p.detailFieldInput.Blur()
+		switch p.detailSelectedField {
+		case 1: // Due
+			return p.commitDetailFieldEdit(todo, "due", value)
+		case 2: // ProjectDir
+			return p.commitDetailFieldEdit(todo, "project_dir", value)
+		case 3: // Prompt
+			return p.commitDetailFieldEdit(todo, "proposed_prompt", value)
+		}
+		return plugin.NoopAction()
+	case "esc":
+		p.detailMode = "viewing"
+		p.detailFieldInput.Blur()
+		return plugin.NoopAction()
+	}
+
+	var cmd tea.Cmd
+	p.detailFieldInput, cmd = p.detailFieldInput.Update(msg)
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+func (p *Plugin) handleDetailCommandInput(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
 	case "enter":
 		instruction := strings.TrimSpace(p.textInput.Value())
@@ -469,22 +671,22 @@ func (p *Plugin) handleDetailView(msg tea.KeyMsg) plugin.Action {
 		}
 		activeTodos := p.cc.ActiveTodos()
 		if p.detailTodoIdx >= len(activeTodos) {
-			p.detailView = false
+			p.detailMode = "viewing"
 			p.textInput.Blur()
 			return plugin.NoopAction()
 		}
 		todo := activeTodos[p.detailTodoIdx]
 		prompt := buildEditPrompt(todo, instruction)
 		p.detailView = false
+		p.detailMode = "viewing"
 		p.textInput.Blur()
 		p.textInput.Reset()
 		p.claudeLoading = true
 		p.claudeLoadingMsg = "Updating todo..."
 		p.claudeLoadingTodo = todo.ID
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeEditCmd(p.llm, prompt, todo.ID)}
-
 	case "esc":
-		p.detailView = false
+		p.detailMode = "viewing"
 		p.textInput.Blur()
 		p.textInput.Reset()
 		return plugin.NoopAction()

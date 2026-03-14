@@ -76,8 +76,13 @@ type Plugin struct {
 	textInput     textinput.Model
 
 	// Detail view
-	detailView    bool
-	detailTodoIdx int
+	detailView          bool
+	detailTodoIdx       int
+	detailMode          string // "viewing", "editingField", "commandInput"
+	detailSelectedField int    // 0=Status, 1=Due, 2=ProjectDir, 3=Prompt
+	detailFieldInput    textinput.Model
+	detailPaths         []string
+	detailPathCursor    int
 
 	// Help overlay
 	showHelp bool
@@ -260,6 +265,21 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	ti.Placeholder = "Enter title..."
 	ti.CharLimit = 120
 	p.textInput = ti
+
+	// Set up detail field input
+	dfi := textinput.New()
+	dfi.Placeholder = ""
+	dfi.CharLimit = 120
+	p.detailFieldInput = dfi
+	p.detailMode = "viewing"
+
+	// Load paths for project dir picker
+	if ctx.DB != nil {
+		paths, err := db.DBLoadPaths(ctx.DB)
+		if err == nil {
+			p.detailPaths = paths
+		}
+	}
 
 	// Set up textarea
 	ta := textarea.New()
@@ -457,7 +477,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	if p.detailView && p.cc != nil {
 		activeTodos := p.cc.ActiveTodos()
 		if p.detailTodoIdx < len(activeTodos) {
-			return renderDetailView(&p.styles, activeTodos[p.detailTodoIdx], p.textInput.View(), viewWidth)
+			return renderDetailView(&p.styles, activeTodos[p.detailTodoIdx], p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth)
 		}
 	}
 

@@ -566,7 +566,7 @@ func wrapText(text string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderDetailView(s *ccStyles, todo db.Todo, inputView string, width int) string {
+func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -575,37 +575,105 @@ func renderDetailView(s *ccStyles, todo db.Todo, inputView string, width int) st
 	title := s.SectionHeader.Render("TODO DETAIL")
 	todoTitle := lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(todo.Title)
 
-	var fields []string
-	addField := func(label, value string) {
-		if value != "" {
-			styled := fmt.Sprintf("  %-14s %s", s.SectionHeader.Render(label+":"), value)
-			fields = append(fields, styled)
-		}
+	// Two-column layout for fields
+	colWidth := (innerWidth - 6) / 2
+	if colWidth < 20 {
+		colWidth = 20
 	}
 
-	addField("Status", todo.Status)
-	addField("Source", todo.Source)
-	addField("Context", todo.Context)
-	addField("Who waiting", todo.WhoWaiting)
+	// Editable fields (left column): Status, Due, Project
+	type fieldEntry struct {
+		label string
+		value string
+		idx   int // field index for selection
+	}
+	editableFields := []fieldEntry{
+		{"Status", todo.Status, 0},
+		{"Due", "", 1},
+		{"Project", todo.ProjectDir, 2},
+	}
+	// Format due with urgency
 	if todo.Due != "" {
 		urgency := db.DueUrgency(todo.Due)
 		label := db.FormatDueLabel(todo.Due)
-		addField("Due", s.DueStyle(urgency).Render(todo.Due+" ("+label+")"))
-	}
-	addField("Effort", todo.Effort)
-	addField("Project", todo.ProjectDir)
-	if todo.SessionID != "" {
-		addField("Session", todo.SessionID[:8]+"... (enter to resume)")
-	}
-	addField("Source ref", todo.SourceRef)
-	addField("Created", todo.CreatedAt.Format("Jan 2, 2006 15:04"))
-	if todo.CompletedAt != nil {
-		addField("Completed", todo.CompletedAt.Format("Jan 2, 2006 15:04"))
+		editableFields[1].value = s.DueStyle(urgency).Render(todo.Due + " (" + label + ")")
 	}
 
-	fieldStr := strings.Join(fields, "\n")
-	divider := s.DescMuted.Render(strings.Repeat("\u2500", innerWidth-2))
+	// Read-only fields (right column)
+	type roField struct {
+		label string
+		value string
+	}
+	var rightFields []roField
+	if todo.Source != "" {
+		rightFields = append(rightFields, roField{"Source", todo.Source})
+	}
+	if todo.Context != "" {
+		rightFields = append(rightFields, roField{"Context", todo.Context})
+	}
+	if todo.WhoWaiting != "" {
+		rightFields = append(rightFields, roField{"Who waiting", todo.WhoWaiting})
+	}
+	rightFields = append(rightFields, roField{"Created", todo.CreatedAt.Format("Jan 2, 2006")})
 
+	// Build left column lines
+	var leftLines []string
+	for _, f := range editableFields {
+		label := s.SectionHeader.Render(f.label + ":")
+		val := f.value
+		if val == "" {
+			val = s.DescMuted.Render("—")
+		}
+
+		if detailMode == "editingField" && selectedField == f.idx {
+			// Show input for the field being edited
+			leftLines = append(leftLines, fmt.Sprintf("  %-14s %s", label, fieldInputView))
+		} else if (detailMode == "viewing" || detailMode == "commandInput") && selectedField == f.idx {
+			// Highlight selected field with brackets
+			leftLines = append(leftLines, fmt.Sprintf("  %-14s [%s]", label, val))
+		} else {
+			leftLines = append(leftLines, fmt.Sprintf("  %-14s %s", label, val))
+		}
+	}
+
+	// Build right column lines
+	var rightLines []string
+	for _, f := range rightFields {
+		label := s.SectionHeader.Render(f.label + ":")
+		val := f.value
+		if val == "" {
+			val = s.DescMuted.Render("—")
+		}
+		rightLines = append(rightLines, fmt.Sprintf("%-14s %s", label, val))
+	}
+
+	// Pad columns to same length
+	for len(leftLines) < len(rightLines) {
+		leftLines = append(leftLines, "")
+	}
+	for len(rightLines) < len(leftLines) {
+		rightLines = append(rightLines, "")
+	}
+
+	// Join columns side by side
+	var fieldRows []string
+	for i := range leftLines {
+		left := leftLines[i]
+		right := ""
+		if i < len(rightLines) {
+			right = rightLines[i]
+		}
+		// Pad left column to fixed width
+		leftRendered := left
+		leftWidth := lipgloss.Width(leftRendered)
+		if leftWidth < colWidth {
+			leftRendered += strings.Repeat(" ", colWidth-leftWidth)
+		}
+		fieldRows = append(fieldRows, leftRendered+"  "+right)
+	}
+	fieldStr := strings.Join(fieldRows, "\n")
+
+	// Detail section
 	var detailSection string
 	if todo.Detail != "" {
 		detailHeader := s.SectionHeader.Render("  DETAIL")
@@ -618,8 +686,61 @@ func renderDetailView(s *ccStyles, todo db.Todo, inputView string, width int) st
 		detailSection = lipgloss.JoinVertical(lipgloss.Left, "", detailHeader, "", detailBody)
 	}
 
-	inputLabel := s.DescMuted.Render("Tell me what changed:")
-	hints := s.Hint.Render("enter submit to AI -- esc back")
+	// Prompt section
+	var promptSection string
+	promptText := todo.ProposedPrompt
+	if promptText != "" {
+		promptHeader := s.SectionHeader.Render("  PROMPT")
+		// Truncate to ~3 lines
+		promptLines := strings.Split(promptText, "\n")
+		if len(promptLines) > 3 {
+			promptLines = promptLines[:3]
+			promptLines = append(promptLines, "...")
+		}
+		var styledLines []string
+		for _, line := range promptLines {
+			truncated := truncateToWidth(line, innerWidth-6)
+			styledLines = append(styledLines, "   "+truncated)
+		}
+		promptBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(styledLines, "\n"))
+
+		isPromptSelected := (detailMode == "viewing" || detailMode == "commandInput") && selectedField == 3
+		if isPromptSelected {
+			promptHeader = s.SectionHeader.Render("  [PROMPT]")
+		}
+		promptSection = lipgloss.JoinVertical(lipgloss.Left, "", promptHeader, "", promptBody)
+	} else {
+		isPromptSelected := (detailMode == "viewing" || detailMode == "commandInput") && selectedField == 3
+		if isPromptSelected {
+			promptSection = "\n  " + s.SectionHeader.Render("[PROMPT]") + "  " + s.DescMuted.Render("(no prompt set)")
+		} else {
+			promptSection = "\n  " + s.SectionHeader.Render("PROMPT") + "  " + s.DescMuted.Render("(no prompt set)")
+		}
+	}
+
+	// Command input section (when in commandInput mode)
+	var commandSection string
+	if detailMode == "commandInput" {
+		divider := s.DescMuted.Render(strings.Repeat("\u2500", innerWidth-2))
+		inputLabel := s.DescMuted.Render("Tell me what changed:")
+		commandSection = lipgloss.JoinVertical(lipgloss.Left,
+			"",
+			"  "+divider,
+			"  "+inputLabel,
+			"  "+commandInputView,
+		)
+	}
+
+	// Footer hints based on mode
+	var hints string
+	switch detailMode {
+	case "viewing":
+		hints = s.Hint.Render("tab/shift-tab cycle \u00b7 enter edit \u00b7 o launch \u00b7 c command \u00b7 esc back")
+	case "editingField":
+		hints = s.Hint.Render("enter confirm \u00b7 esc cancel")
+	case "commandInput":
+		hints = s.Hint.Render("enter submit to AI \u00b7 esc cancel")
+	}
 
 	parts := []string{
 		title,
@@ -631,14 +752,11 @@ func renderDetailView(s *ccStyles, todo db.Todo, inputView string, width int) st
 	if detailSection != "" {
 		parts = append(parts, detailSection)
 	}
-	parts = append(parts,
-		"",
-		"  "+divider,
-		"  "+inputLabel,
-		"  "+inputView,
-		"",
-		"  "+hints,
-	)
+	parts = append(parts, promptSection)
+	if commandSection != "" {
+		parts = append(parts, commandSection)
+	}
+	parts = append(parts, "", "  "+hints)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return s.PanelBorder.Width(innerWidth).Render(content)

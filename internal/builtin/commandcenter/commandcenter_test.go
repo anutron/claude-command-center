@@ -214,15 +214,18 @@ func TestCreateTodoEntersRichMode(t *testing.T) {
 func TestEnterOpensDetailView(t *testing.T) {
 	p := testPluginWithCC(t)
 
-	action := p.HandleKey(keyMsg("enter"))
+	_ = p.HandleKey(keyMsg("enter"))
 	if !p.detailView {
 		t.Error("enter should open detail view")
 	}
 	if p.detailTodoIdx != 0 {
 		t.Errorf("detailTodoIdx = %d, want 0", p.detailTodoIdx)
 	}
-	if action.TeaCmd == nil {
-		t.Error("enter should return a TeaCmd (textinput blink)")
+	if p.detailMode != "viewing" {
+		t.Errorf("detailMode = %q, want %q", p.detailMode, "viewing")
+	}
+	if p.detailSelectedField != 0 {
+		t.Errorf("detailSelectedField = %d, want 0", p.detailSelectedField)
 	}
 }
 
