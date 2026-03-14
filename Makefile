@@ -2,6 +2,8 @@ BINARY = ccc
 REFRESH_BINARY = ccc-refresh
 INSTALL_PATH = /usr/local/bin/$(BINARY)
 REFRESH_INSTALL_PATH = /usr/local/bin/$(REFRESH_BINARY)
+MAIN_WORKTREE := $(shell git worktree list --porcelain 2>/dev/null | head -2 | grep '^worktree ' | sed 's/^worktree //')
+IS_WORKTREE := $(shell [ "$$(pwd)" != "$(MAIN_WORKTREE)" ] && echo 1 || echo 0)
 
 .PHONY: build test install clean servers servers-gmail
 
@@ -14,7 +16,11 @@ build:
 test:
 	go test -v ./...
 
-install: build servers
+install: build
+ifeq ($(IS_WORKTREE),1)
+	@echo "Worktree detected — built locally, skipping /usr/local/bin install"
+else
+	$(MAKE) servers
 	ln -sf $$(pwd)/$(BINARY) $(INSTALL_PATH)
 	ln -sf $$(pwd)/$(REFRESH_BINARY) $(REFRESH_INSTALL_PATH)
 	ln -sf $$(pwd)/scripts/paused-sessions /usr/local/bin/paused-sessions
@@ -24,6 +30,7 @@ install: build servers
 		rm -f $(HOME)/.claude/skills/$$skill; \
 		ln -sf $$(pwd)/.claude/skills/$$skill $(HOME)/.claude/skills/$$skill; \
 	done
+endif
 
 servers-gmail:
 	cd servers/gmail && npm install && npm run build
