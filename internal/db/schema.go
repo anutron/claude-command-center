@@ -146,6 +146,10 @@ func migrateSchema(db *sql.DB) error {
 	_, _ = db.Exec(`ALTER TABLE cc_bookmarks ADD COLUMN worktree_path TEXT`)
 	_, _ = db.Exec(`ALTER TABLE cc_bookmarks ADD COLUMN source_repo TEXT`)
 
+	// Add proposed_prompt and session_status columns to todos if missing (added for todo agent launcher)
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN proposed_prompt TEXT`)
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN session_status TEXT`)
+
 	// Source sync tracking table (added for BUG-015: data source connectivity validation)
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_source_sync (
 		source TEXT PRIMARY KEY,

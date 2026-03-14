@@ -103,11 +103,13 @@ type Todo struct {
 	Detail      string     `json:"detail"`
 	WhoWaiting  string     `json:"who_waiting"`
 	ProjectDir  string     `json:"project_dir"`
-	SessionID   string     `json:"session_id,omitempty"`
-	Due         string     `json:"due"`
-	Effort      string     `json:"effort"`
-	CreatedAt   time.Time  `json:"created_at"`
-	CompletedAt *time.Time `json:"completed_at"`
+	SessionID      string     `json:"session_id,omitempty"`
+	Due            string     `json:"due"`
+	Effort         string     `json:"effort"`
+	ProposedPrompt string     `json:"proposed_prompt,omitempty"`
+	SessionStatus  string     `json:"session_status,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	CompletedAt    *time.Time `json:"completed_at"`
 }
 
 type Thread struct {

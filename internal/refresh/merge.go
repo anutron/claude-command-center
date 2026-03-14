@@ -71,6 +71,11 @@ func mergeTodos(existing, fresh []db.Todo) []db.Todo {
 			if ft.Effort != "" {
 				et.Effort = ft.Effort
 			}
+			// Preserve proposed_prompt if already set; only write if currently empty
+			if et.ProposedPrompt == "" && ft.ProposedPrompt != "" {
+				et.ProposedPrompt = ft.ProposedPrompt
+			}
+			// Always preserve session_status (refresh never overwrites it)
 			merged = append(merged, et)
 		} else {
 			if ft.ID == "" {

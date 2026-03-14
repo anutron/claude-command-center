@@ -77,13 +77,14 @@ func DBInsertTodo(db *sql.DB, t Todo) error {
 		completedAt = &s
 	}
 	_, err := db.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
-		who_waiting, project_dir, due, effort, session_id, sort_order, created_at, completed_at, updated_at)
+		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status,
+		sort_order, created_at, completed_at, updated_at)
 		VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status = 'active'),
 		?, ?, ?)`,
 		t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
-		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID,
+		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionStatus,
 		createdAt, completedAt, now)
 	if err != nil {
 		return fmt.Errorf("insert todo %s: %w", t.ID, err)
@@ -101,10 +102,13 @@ func DBUpdateTodo(db *sql.DB, id string, t Todo) error {
 	_, err := db.Exec(`UPDATE cc_todos SET title = ?, status = ?, source = ?,
 		source_ref = NULLIF(?, ''), context = NULLIF(?, ''), detail = NULLIF(?, ''),
 		who_waiting = NULLIF(?, ''), project_dir = NULLIF(?, ''), due = NULLIF(?, ''),
-		effort = NULLIF(?, ''), session_id = NULLIF(?, ''), completed_at = ?, updated_at = ?
+		effort = NULLIF(?, ''), session_id = NULLIF(?, ''),
+		proposed_prompt = NULLIF(?, ''), session_status = NULLIF(?, ''),
+		completed_at = ?, updated_at = ?
 		WHERE id = ?`,
 		t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
-		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, completedAt, now, id)
+		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID,
+		t.ProposedPrompt, t.SessionStatus, completedAt, now, id)
 	if err != nil {
 		return fmt.Errorf("update todo %s: %w", id, err)
 	}
@@ -333,11 +337,12 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			completedAt = &s
 		}
 		_, err := tx.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
-			who_waiting, project_dir, due, effort, session_id, sort_order, created_at, completed_at, updated_at)
+			who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status,
+			sort_order, created_at, completed_at, updated_at)
 			VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?)`,
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?)`,
 			t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
-			t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, i,
+			t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionStatus, i,
 			createdAt, completedAt, now)
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)
