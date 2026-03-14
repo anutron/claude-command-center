@@ -168,3 +168,16 @@ For tasks where the agent should be able to ask clarifying questions during exec
 ## Smart Launch Mode Suggestion
 
 The prompt-generation skill (`/todo-agent`) suggests Worktree mode when it detects the task involves code modifications to the target repo. Normal mode for everything else (research, docs, external API calls). User always overrides in the task runner.
+
+---
+
+## Status Line Updates for Spawned Claude Instances
+
+When a Claude instance is spawned from a todo (headless or interactive), update the user's Claude Code status line to reflect it. This gives visibility into agent activity without switching tabs or checking the todo list.
+
+**Possible display:**
+- `🤖 Running: "Fix auth bug" (2m)` — active agent with task name and elapsed time
+- `🤖 2 agents running` — summary when multiple are active
+- Show in CCC's own status bar and/or pipe to Claude Code's status line config
+
+**Prerequisite**: Todo Agent Launcher's session tracking. Needs a way to detect agent start/completion events — could use the EventBus or poll session status.
