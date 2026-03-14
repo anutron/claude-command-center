@@ -40,6 +40,18 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case claudeFocusFinishedMsg:
 		return p.handleClaudeFocusFinished(msg)
 
+	case agentStartedInternalMsg:
+		return p.handleAgentStartedInternal(msg)
+
+	case agentStartedMsg:
+		return p.handleAgentStarted(msg)
+
+	case agentStatusMsg:
+		return p.handleAgentStatus(msg)
+
+	case agentFinishedMsg:
+		return p.handleAgentFinished(msg)
+
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height
@@ -290,12 +302,52 @@ func (p *Plugin) handleClaudeFocusFinished(msg claudeFocusFinishedMsg) (bool, pl
 	return true, plugin.NoopAction()
 }
 
+func (p *Plugin) handleAgentStartedInternal(msg agentStartedInternalMsg) (bool, plugin.Action) {
+	// Store the session (already initialized with process handles and done channel).
+	p.activeSessions[msg.todoID] = msg.session
+
+	// Update the todo session status in-memory and persist.
+	p.setTodoSessionStatus(msg.todoID, "active")
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionStatus(msg.todoID, "active")}
+}
+
+func (p *Plugin) handleAgentStarted(msg agentStartedMsg) (bool, plugin.Action) {
+	p.setTodoSessionStatus(msg.todoID, "active")
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionStatus(msg.todoID, "active")}
+}
+
+func (p *Plugin) handleAgentStatus(msg agentStatusMsg) (bool, plugin.Action) {
+	if sess, ok := p.activeSessions[msg.todoID]; ok {
+		sess.Status = msg.status
+		sess.Question = msg.question
+	}
+	p.setTodoSessionStatus(msg.todoID, msg.status)
+	if msg.status == "blocked" {
+		p.publishEvent("agent.blocked", map[string]interface{}{
+			"todo_id":  msg.todoID,
+			"question": msg.question,
+		})
+	}
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionStatus(msg.todoID, msg.status)}
+}
+
+func (p *Plugin) handleAgentFinished(msg agentFinishedMsg) (bool, plugin.Action) {
+	cmd := p.onAgentFinished(msg.todoID, msg.exitCode)
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
 func (p *Plugin) handleTickMsg() (bool, plugin.Action) {
 	p.frame++
 	if p.flashMessage != "" && time.Since(p.flashMessageAt) > 15*time.Second {
 		p.flashMessage = ""
 	}
 	var cmds []tea.Cmd
+
+	// Check for finished agent processes.
+	if agentCmd := p.checkAgentProcesses(); agentCmd != nil {
+		cmds = append(cmds, agentCmd)
+	}
+
 	// Trigger ccc-refresh when data is older than the refresh interval (default 5m).
 	if p.cc != nil && !p.ccRefreshing && time.Since(p.cc.GeneratedAt) > ccRefreshInterval {
 		if time.Since(p.ccLastRefreshTriggered) > ccRefreshInterval {

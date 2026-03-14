@@ -127,6 +127,10 @@ type Plugin struct {
 	flashMessage   string
 	flashMessageAt time.Time
 
+	// Agent sessions
+	activeSessions map[string]*agentSession
+	sessionQueue   []queuedSession
+
 	// Agent filter
 	agentFilterActive bool
 
@@ -258,6 +262,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.llm = llm.NoopLLM{}
 	}
 
+	// Initialize agent session tracking
+	p.activeSessions = make(map[string]*agentSession)
+
 	// Set refresh interval from config
 	ccRefreshInterval = ctx.Config.ParseRefreshInterval()
 
@@ -361,7 +368,14 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 }
 
 // Shutdown is called when the plugin is being shut down.
-func (p *Plugin) Shutdown() {}
+// It cancels all active agent sessions to prevent zombie processes.
+func (p *Plugin) Shutdown() {
+	for _, sess := range p.activeSessions {
+		if sess.Cancel != nil {
+			sess.Cancel()
+		}
+	}
+}
 
 // dbWriteCmd creates a tea.Cmd that performs a DB write.
 func (p *Plugin) dbWriteCmd(fn func(*sql.DB) error) tea.Cmd {

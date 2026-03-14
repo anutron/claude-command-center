@@ -945,11 +945,41 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "enter":
-		// Placeholder for launch — return to detail view with a flash message
+		// Launch or queue a headless agent session.
+		activeTodos := p.cc.ActiveTodos()
+		if p.detailTodoIdx < len(activeTodos) {
+			todo := activeTodos[p.detailTodoIdx]
+			prompt := todo.ProposedPrompt
+			if prompt == "" {
+				prompt = formatTodoContext(todo)
+			}
+			projectDir := todo.ProjectDir
+			if projectDir == "" {
+				home, _ := os.UserHomeDir()
+				projectDir = home
+			}
+			qs := queuedSession{
+				TodoID:     todo.ID,
+				Prompt:     prompt,
+				ProjectDir: projectDir,
+				Mode:       p.taskRunnerMode,
+				Perm:       p.taskRunnerPerm,
+				Budget:     p.taskRunnerBudget,
+				AutoStart:  p.taskRunnerAutoStart,
+			}
+			cmd := p.launchOrQueueAgent(qs)
+			p.taskRunnerView = false
+			p.detailView = false
+			if p.canLaunchAgent() || len(p.sessionQueue) == 0 {
+				p.flashMessage = fmt.Sprintf("Agent launched for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
+			} else {
+				p.flashMessage = fmt.Sprintf("Agent queued for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
+			}
+			p.flashMessageAt = time.Now()
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
 		p.taskRunnerView = false
 		p.detailView = false
-		p.flashMessage = "Launch not yet implemented (Phase 4)"
-		p.flashMessageAt = time.Now()
 		return plugin.NoopAction()
 
 	case "tab", "down":

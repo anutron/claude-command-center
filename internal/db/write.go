@@ -115,6 +115,17 @@ func DBUpdateTodo(db *sql.DB, id string, t Todo) error {
 	return nil
 }
 
+// DBUpdateTodoSessionStatus updates only the session_status column for a todo.
+func DBUpdateTodoSessionStatus(db *sql.DB, id string, status string) error {
+	now := FormatTime(time.Now())
+	_, err := db.Exec(`UPDATE cc_todos SET session_status = NULLIF(?, ''), updated_at = ? WHERE id = ?`,
+		status, now, id)
+	if err != nil {
+		return fmt.Errorf("update todo session status %s: %w", id, err)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Write methods -- Calendar & Suggestions
 // ---------------------------------------------------------------------------
