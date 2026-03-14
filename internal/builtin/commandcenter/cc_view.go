@@ -8,6 +8,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/ui"
+	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -1086,4 +1087,115 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
 	box := s.PanelBorder.Width(50).Padding(1, 2).Render(content)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
+}
+
+// renderTaskRunner renders the task runner launch configuration screen.
+func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float64, autoStart bool, selectedRow int, promptVP viewport.Model, width, height int) string {
+	innerWidth := width - 4
+	if innerWidth < 40 {
+		innerWidth = 40
+	}
+
+	// Header with truncated title
+	titleMax := innerWidth - len("TASK RUNNER — ") - 2
+	if titleMax < 10 {
+		titleMax = 10
+	}
+	title := truncateToWidth(flattenTitle(todo.Title), titleMax)
+	header := s.SectionHeader.Render("TASK RUNNER — " + title)
+
+	// Project dir
+	projectLine := "  " + s.SectionHeader.Render("Project:") + " "
+	if todo.ProjectDir != "" {
+		projectLine += lipgloss.NewStyle().Foreground(s.ColorWhite).Render(todo.ProjectDir)
+	} else {
+		projectLine += s.DescMuted.Render("(not set)")
+	}
+
+	// Config rows
+	modeOptions := []string{"Normal", "Worktree", "Sandbox"}
+	modeLine := renderTaskRunnerOptionRow(s, "Mode", modeOptions, mode, selectedRow == 0, innerWidth)
+
+	permOptions := []string{"default", "plan", "auto"}
+	permLine := renderTaskRunnerOptionRow(s, "Permission", permOptions, perm, selectedRow == 1, innerWidth)
+
+	budgetStr := fmt.Sprintf("$%.2f", budget)
+	budgetLabel := s.SectionHeader.Render("Budget:")
+	budgetValue := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(budgetStr)
+	if selectedRow == 2 {
+		budgetLabel = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Budget:")
+		budgetValue = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(budgetStr)
+	}
+	budgetLine := fmt.Sprintf("  %-14s %s", budgetLabel, budgetValue+" "+s.DescMuted.Render("(<-> adjust)"))
+
+	queueOptions := []string{"Launch Now", "Queue & Auto-start"}
+	queueVal := "Launch Now"
+	if autoStart {
+		queueVal = "Queue & Auto-start"
+	}
+	queueLine := renderTaskRunnerOptionRow(s, "Queue", queueOptions, queueVal, selectedRow == 3, innerWidth)
+
+	// Prompt section
+	divider := s.DescMuted.Render("  " + strings.Repeat("\u2500", innerWidth-4))
+	promptHeader := s.SectionHeader.Render("  PROMPT")
+
+	// Footer hints
+	hints := s.Hint.Render("  enter launch \u00b7 p plannotator \u00b7 c refine \u00b7 esc back")
+
+	parts := []string{
+		header,
+		"",
+		projectLine,
+		modeLine,
+		permLine,
+		budgetLine,
+		queueLine,
+		"",
+		divider,
+		promptHeader,
+		"",
+		promptVP.View(),
+		"",
+		hints,
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return s.PanelBorder.Width(innerWidth).Render(content)
+}
+
+// renderTaskRunnerOptionRow renders a single config row with selectable options.
+func renderTaskRunnerOptionRow(s *ccStyles, label string, options []string, current string, isRowSelected bool, width int) string {
+	labelStyle := s.SectionHeader
+	if isRowSelected {
+		labelStyle = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true)
+	}
+	renderedLabel := labelStyle.Render(label + ":")
+
+	var optParts []string
+	for _, opt := range options {
+		isActive := strings.EqualFold(opt, current)
+		if isActive && isRowSelected {
+			// Selected row + active option: cyan inverse
+			optParts = append(optParts, lipgloss.NewStyle().
+				Background(s.ColorCyan).
+				Foreground(lipgloss.Color("#000000")).
+				Bold(true).
+				Padding(0, 1).
+				Render(opt))
+		} else if isActive {
+			// Active option on non-selected row: bold white with brackets
+			optParts = append(optParts, lipgloss.NewStyle().
+				Foreground(s.ColorWhite).
+				Bold(true).
+				Render("["+opt+"]"))
+		} else if isRowSelected {
+			// Non-active option on selected row: muted with brackets
+			optParts = append(optParts, s.DescMuted.Render("["+opt+"]"))
+		} else {
+			// Non-active option on non-selected row: muted
+			optParts = append(optParts, s.DescMuted.Render(opt))
+		}
+	}
+
+	return fmt.Sprintf("  %-14s %s", renderedLabel, strings.Join(optParts, " "))
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -83,6 +84,15 @@ type Plugin struct {
 	detailFieldInput    textinput.Model
 	detailPaths         []string
 	detailPathCursor    int
+
+	// Task runner view
+	taskRunnerView        bool
+	taskRunnerMode        string // "normal", "worktree", "sandbox"
+	taskRunnerPerm        string // "default", "plan", "auto"
+	taskRunnerBudget      float64
+	taskRunnerPrompt      viewport.Model
+	taskRunnerAutoStart   bool
+	taskRunnerSelectedRow int // 0=Mode, 1=Permission, 2=Budget, 3=Queue
 
 	// Help overlay
 	showHelp bool
@@ -476,6 +486,13 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	viewHeight := height - 14
 	if viewHeight < 10 {
 		viewHeight = 10
+	}
+
+	if p.taskRunnerView && p.detailView && p.cc != nil {
+		activeTodos := p.cc.ActiveTodos()
+		if p.detailTodoIdx < len(activeTodos) {
+			return renderTaskRunner(&p.styles, activeTodos[p.detailTodoIdx], p.taskRunnerMode, p.taskRunnerPerm, p.taskRunnerBudget, p.taskRunnerAutoStart, p.taskRunnerSelectedRow, p.taskRunnerPrompt, viewWidth, viewHeight)
+		}
 	}
 
 	if p.detailView && p.cc != nil {

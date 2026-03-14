@@ -10,6 +10,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -19,6 +20,11 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	if p.showHelp {
 		p.showHelp = false
 		return plugin.NoopAction()
+	}
+
+	// Task runner view (sub-view of detail)
+	if p.taskRunnerView && p.detailView {
+		return p.handleTaskRunnerView(msg)
 	}
 
 	// Detail view
@@ -491,49 +497,10 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 	case "enter":
 		return p.enterDetailFieldEdit()
 	case "o":
-		// Launch — delegate to the same logic as the command tab's 'o' key
+		// Open task runner view
 		activeTodos := p.cc.ActiveTodos()
 		if p.detailTodoIdx < len(activeTodos) {
-			todo := activeTodos[p.detailTodoIdx]
-			p.detailView = false
-			p.detailMode = "viewing"
-			if todo.SessionID != "" {
-				dir := todo.ProjectDir
-				if dir == "" {
-					home, _ := os.UserHomeDir()
-					dir = home
-				}
-				return plugin.Action{
-					Type: "launch",
-					Args: map[string]string{
-						"dir":       dir,
-						"resume_id": todo.SessionID,
-					},
-				}
-			}
-			if todo.ProjectDir != "" {
-				return plugin.Action{
-					Type: "launch",
-					Args: map[string]string{
-						"dir":            todo.ProjectDir,
-						"initial_prompt": formatTodoContext(todo),
-					},
-				}
-			}
-			p.pendingLaunchTodo = &todo
-			p.publishEvent("pending.todo", map[string]interface{}{
-				"todo_id":     todo.ID,
-				"title":       todo.Title,
-				"context":     todo.Context,
-				"detail":      todo.Detail,
-				"who_waiting": todo.WhoWaiting,
-				"due":         todo.Due,
-				"effort":      todo.Effort,
-			})
-			return plugin.Action{
-				Type:    "navigate",
-				Payload: "sessions",
-			}
+			p.enterTaskRunner(activeTodos[p.detailTodoIdx])
 		}
 		return plugin.NoopAction()
 	case "c":
@@ -927,4 +894,132 @@ func (p *Plugin) handleThreadsTab(msg tea.KeyMsg) plugin.Action {
 	}
 
 	return plugin.NoopAction()
+}
+
+// enterTaskRunner initializes the task runner view for a given todo.
+func (p *Plugin) enterTaskRunner(todo db.Todo) {
+	p.taskRunnerView = true
+
+	// Initialize defaults from config
+	agentCfg := p.cfg.Agent
+	p.taskRunnerMode = agentCfg.DefaultMode
+	if p.taskRunnerMode == "" {
+		p.taskRunnerMode = "normal"
+	}
+	p.taskRunnerPerm = agentCfg.DefaultPermission
+	if p.taskRunnerPerm == "" {
+		p.taskRunnerPerm = "default"
+	}
+	p.taskRunnerBudget = agentCfg.DefaultBudget
+	if p.taskRunnerBudget <= 0 {
+		p.taskRunnerBudget = 5.00
+	}
+	p.taskRunnerAutoStart = false
+	p.taskRunnerSelectedRow = 0
+
+	// Build prompt text from todo context
+	promptText := formatTodoContext(todo)
+
+	// Set up viewport for prompt
+	vpWidth := p.width - 10
+	if vpWidth < 40 {
+		vpWidth = 40
+	}
+	vpHeight := p.height - 30
+	if vpHeight < 5 {
+		vpHeight = 5
+	}
+	vp := viewport.New(vpWidth, vpHeight)
+	vp.SetContent(promptText)
+	p.taskRunnerPrompt = vp
+}
+
+// taskRunnerModes and taskRunnerPerms are the available options for cycling.
+var taskRunnerModes = []string{"normal", "worktree", "sandbox"}
+var taskRunnerPerms = []string{"default", "plan", "auto"}
+
+func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "esc":
+		p.taskRunnerView = false
+		return plugin.NoopAction()
+
+	case "enter":
+		// Placeholder for launch — return to detail view with a flash message
+		p.taskRunnerView = false
+		p.detailView = false
+		p.flashMessage = "Launch not yet implemented (Phase 4)"
+		p.flashMessageAt = time.Now()
+		return plugin.NoopAction()
+
+	case "tab", "down":
+		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 1) % 4
+		return plugin.NoopAction()
+
+	case "shift+tab", "up":
+		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 3) % 4
+		return plugin.NoopAction()
+
+	case "left", "h":
+		p.taskRunnerCycleOption(-1)
+		return plugin.NoopAction()
+
+	case "right", "l":
+		p.taskRunnerCycleOption(1)
+		return plugin.NoopAction()
+
+	case "c":
+		// Placeholder for inline LLM prompt refinement
+		p.flashMessage = "Prompt refinement not yet implemented"
+		p.flashMessageAt = time.Now()
+		return plugin.NoopAction()
+
+	case "p":
+		// Placeholder for Plannotator loop
+		p.flashMessage = "Plannotator not yet implemented (Phase 7)"
+		p.flashMessageAt = time.Now()
+		return plugin.NoopAction()
+
+	case "j":
+		// Scroll prompt viewport down
+		p.taskRunnerPrompt.LineDown(1)
+		return plugin.NoopAction()
+	case "k":
+		// Scroll prompt viewport up
+		p.taskRunnerPrompt.LineUp(1)
+		return plugin.NoopAction()
+	}
+
+	return plugin.NoopAction()
+}
+
+// taskRunnerCycleOption cycles the option on the currently selected row.
+func (p *Plugin) taskRunnerCycleOption(dir int) {
+	switch p.taskRunnerSelectedRow {
+	case 0: // Mode
+		idx := indexOf(taskRunnerModes, p.taskRunnerMode)
+		idx = (idx + dir + len(taskRunnerModes)) % len(taskRunnerModes)
+		p.taskRunnerMode = taskRunnerModes[idx]
+	case 1: // Permission
+		idx := indexOf(taskRunnerPerms, p.taskRunnerPerm)
+		idx = (idx + dir + len(taskRunnerPerms)) % len(taskRunnerPerms)
+		p.taskRunnerPerm = taskRunnerPerms[idx]
+	case 2: // Budget
+		p.taskRunnerBudget += float64(dir) * 1.0
+		if p.taskRunnerBudget < 0.50 {
+			p.taskRunnerBudget = 0.50
+		}
+	case 3: // Queue
+		p.taskRunnerAutoStart = !p.taskRunnerAutoStart
+	}
+}
+
+// indexOf returns the index of s in the slice, or 0 if not found.
+func indexOf(slice []string, s string) int {
+	for i, v := range slice {
+		if strings.EqualFold(v, s) {
+			return i
+		}
+	}
+	return 0
 }

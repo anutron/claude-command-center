@@ -28,6 +28,7 @@ type Config struct {
 	Slack           SlackConfig            `yaml:"slack"`
 	Gmail           GmailConfig            `yaml:"gmail"`
 	ExternalPlugins []ExternalPluginConfig `yaml:"external_plugins"`
+	Agent           AgentConfig            `yaml:"agent"`
 
 	// DisabledPlugins lists slugs of built-in plugins the user has turned off.
 	// e.g. ["sessions", "commandcenter"]
@@ -186,6 +187,13 @@ type ExternalPluginConfig struct {
 	Enabled     bool   `yaml:"enabled"`
 }
 
+type AgentConfig struct {
+	DefaultBudget     float64 `yaml:"default_budget"`
+	DefaultPermission string  `yaml:"default_permission"`
+	DefaultMode       string  `yaml:"default_mode"`
+	MaxConcurrent     int     `yaml:"max_concurrent"`
+}
+
 // BannerVisible returns whether the banner should be shown.
 // Defaults to true if ShowBanner is nil (backwards compat).
 func (c *Config) BannerVisible() bool {
@@ -224,6 +232,12 @@ func DefaultConfig() *Config {
 		Palette: "aurora",
 		Todos:   TodosConfig{Enabled: true},
 		Threads: ThreadsConfig{Enabled: true},
+		Agent: AgentConfig{
+			DefaultBudget:     5.00,
+			DefaultPermission: "default",
+			DefaultMode:       "normal",
+			MaxConcurrent:     3,
+		},
 	}
 }
 
