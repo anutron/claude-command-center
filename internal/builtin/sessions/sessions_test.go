@@ -334,3 +334,77 @@ func searchString(s, substr string) bool {
 	}
 	return false
 }
+
+func TestFilterFromFirstCharacter(t *testing.T) {
+	p := setupPlugin(t)
+
+	// Switch to resume tab with 3 sessions whose summaries contain
+	// scattered c/l/a characters (which would fuzzy-match "cla" but
+	// should NOT substring-match it).
+	p.subTab = "resume"
+	sessions := []db.Session{
+		{SessionID: "s1", Project: "/home/user/claude-command-center", Repo: "claude-command-center", Branch: "main", Summary: "Working on the command center dashboard", Created: time.Now(), Type: db.SessionBookmark},
+		{SessionID: "s2", Project: "/home/user/sherlock", Repo: "sherlock", Branch: "main", Summary: "Building the investigation dashboard with complex queries", Created: time.Now(), Type: db.SessionBookmark},
+		{SessionID: "s3", Project: "/home/user/merchant-ui", Repo: "merchant-ui", Branch: "main", Summary: "Merchant portal UI with Tailwind CSS layout improvements", Created: time.Now(), Type: db.SessionBookmark},
+	}
+	p.loading = false
+	p.resumeList.SetItems(buildSessionItems(sessions))
+
+	// Verify 3 items visible before filtering
+	if len(p.resumeList.VisibleItems()) != 3 {
+		t.Fatalf("expected 3 visible items before filtering, got %d", len(p.resumeList.VisibleItems()))
+	}
+
+	// Test progressive filtering: each additional character should narrow results
+	tests := []struct {
+		term     string
+		expected int
+	}{
+		{"c", 3}, // all three contain "c" somewhere in their FilterValue
+		{"cl", 1}, // only "claude-command-center" contains "cl" as substring
+		{"cla", 1},
+		{"clau", 1},
+	}
+
+	for _, tc := range tests {
+		p.resumeList.SetFilterText(tc.term)
+		visible := p.resumeList.VisibleItems()
+		if len(visible) != tc.expected {
+			var names []string
+			for _, item := range visible {
+				if si, ok := item.(sessionItem); ok {
+					names = append(names, si.session.Repo)
+				}
+			}
+			t.Errorf("filter %q: expected %d visible items, got %d %v",
+				tc.term, tc.expected, len(visible), names)
+		}
+	}
+}
+
+func TestSubstringFilter(t *testing.T) {
+	targets := []string{
+		"claude-command-center main Working on CCC",
+		"sherlock main Investigation dashboard",
+		"merchant-ui main Merchant portal",
+	}
+
+	tests := []struct {
+		term     string
+		expected int
+	}{
+		{"c", 3},  // all three contain "c" somewhere
+		{"cl", 1}, // only claude-command-center
+		{"sh", 1}, // only sherlock
+		{"main", 3}, // all contain "main"
+		{"xyz", 0},  // nothing matches
+		{"CLAUDE", 1}, // case-insensitive
+	}
+
+	for _, tc := range tests {
+		ranks := substringFilter(tc.term, targets)
+		if len(ranks) != tc.expected {
+			t.Errorf("substringFilter(%q): expected %d matches, got %d", tc.term, tc.expected, len(ranks))
+		}
+	}
+}

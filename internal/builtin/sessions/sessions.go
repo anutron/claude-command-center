@@ -42,6 +42,29 @@ func (i newItem) Title() string       { return i.label }
 func (i newItem) Description() string { return i.path }
 func (i newItem) FilterValue() string { return i.label + " " + i.path }
 
+// substringFilter is a case-insensitive substring filter for the list.
+// Unlike the default fuzzy filter, this requires the search term to appear
+// as a contiguous substring, which matches user expectations for short inputs.
+func substringFilter(term string, targets []string) []list.Rank {
+	term = strings.ToLower(term)
+	var ranks []list.Rank
+	for i, t := range targets {
+		lower := strings.ToLower(t)
+		idx := strings.Index(lower, term)
+		if idx >= 0 {
+			matchedIndexes := make([]int, len(term))
+			for j := range term {
+				matchedIndexes[j] = idx + j
+			}
+			ranks = append(ranks, list.Rank{
+				Index:          i,
+				MatchedIndexes: matchedIndexes,
+			})
+		}
+	}
+	return ranks
+}
+
 // sessionItem represents a paused/resumable session.
 type sessionItem struct {
 	session db.Session
@@ -309,6 +332,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	nl.SetShowStatusBar(false)
 	nl.SetFilteringEnabled(true)
 	nl.SetShowHelp(false)
+	nl.Filter = substringFilter
 	p.newList = nl
 
 	rl := list.New([]list.Item{}, delegate, 0, 10)
@@ -316,6 +340,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	rl.SetShowStatusBar(false)
 	rl.SetFilteringEnabled(true)
 	rl.SetShowHelp(false)
+	rl.Filter = substringFilter
 	p.resumeList = rl
 
 	s := spinner.New()
