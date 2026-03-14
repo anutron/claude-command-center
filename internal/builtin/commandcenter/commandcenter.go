@@ -117,6 +117,9 @@ type Plugin struct {
 	flashMessage   string
 	flashMessageAt time.Time
 
+	// Agent filter
+	agentFilterActive bool
+
 	// Sub-view: "command" or "threads"
 	subView string
 
@@ -227,6 +230,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "d", Description: "Defer todo"},
 		{Key: "p", Description: "Promote todo to top"},
 		{Key: "s", Description: "Schedule time block"},
+		{Key: "a", Description: "Toggle agent filter"},
 		{Key: "b", Description: "Toggle completed backlog"},
 		{Key: "r", Description: "Refresh from all sources"},
 	}
@@ -490,7 +494,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		return view
 	}
 
-	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError)
+	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.agentFilterActive)
 
 	if p.claudeLoading {
 		loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg

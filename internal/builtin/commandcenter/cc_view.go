@@ -29,7 +29,7 @@ func formatDuration(d time.Duration) string {
 }
 
 // renderCommandCenterView is the main entry point for the command center tab.
-func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool, lastRefreshError string) string {
+func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool, lastRefreshError string, agentFilterActive bool) string {
 	if cc == nil {
 		empty := lipgloss.NewStyle().
 			Foreground(s.ColorMuted).
@@ -69,7 +69,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 			maxVisibleTodos = 5
 		}
 		calCol := renderCalendarColumn(s, calendars, &cc.Calendar, colWidth, panelHeight)
-		todoCol := renderTodoPanel(s, g, cc.ActiveTodos(), completed, todoCursor, scrollOffset, maxVisibleTodos, colWidth, frame, loadingTodoID)
+		todoCol := renderTodoPanel(s, g, cc.ActiveTodos(), completed, todoCursor, scrollOffset, maxVisibleTodos, colWidth, frame, loadingTodoID, agentFilterActive)
 		calPanel := s.PanelBorder.Width(colWidth).Render(calCol)
 		todoPanel := s.PanelBorder.Width(colWidth).Render(todoCol)
 		columns = lipgloss.JoinHorizontal(lipgloss.Top, calPanel, " ", todoPanel)
@@ -80,7 +80,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 		if maxVisibleTodos < 5 {
 			maxVisibleTodos = 5
 		}
-		todoCol := renderTodoPanel(s, g, cc.ActiveTodos(), completed, todoCursor, scrollOffset, maxVisibleTodos, todoWidth, frame, loadingTodoID)
+		todoCol := renderTodoPanel(s, g, cc.ActiveTodos(), completed, todoCursor, scrollOffset, maxVisibleTodos, todoWidth, frame, loadingTodoID, agentFilterActive)
 		hint := s.CalendarFree.Render("  Configure calendar in Settings to see your schedule here")
 		todoContent := lipgloss.JoinVertical(lipgloss.Left, todoCol, "", hint)
 		columns = s.PanelBorder.Width(todoWidth).Render(todoContent)
@@ -406,11 +406,29 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 	return strings.Join(lines, "\n")
 }
 
-func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string) string {
+func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string, agentFilterActive bool) string {
+	// Apply agent filter if active
+	if agentFilterActive {
+		var filtered []db.Todo
+		for _, t := range todos {
+			if t.SessionStatus != "" {
+				filtered = append(filtered, t)
+			}
+		}
+		todos = filtered
+	}
+
 	var lines []string
 
 	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active)", len(todos)))
 	lines = append(lines, header)
+
+	// Agent status header line
+	agentHeader := renderAgentStatusHeader(s, todos)
+	if agentHeader != "" {
+		lines = append(lines, agentHeader)
+	}
+
 	lines = append(lines, "")
 
 	if len(todos) == 0 {
@@ -465,6 +483,9 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 		lines = append(lines, line1)
 
 		var details []string
+		if indicator := agentStatusIndicator(s, todo.SessionStatus); indicator != "" {
+			details = append(details, indicator)
+		}
 		if todo.Due != "" {
 			urgency := db.DueUrgency(todo.Due)
 			label := db.FormatDueLabel(todo.Due)
@@ -498,6 +519,44 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// agentStatusIndicator returns a styled indicator string for a given session status.
+func agentStatusIndicator(s *ccStyles, status string) string {
+	switch status {
+	case "active":
+		return lipgloss.NewStyle().Foreground(s.ColorCyan).Render("● agent working")
+	case "blocked":
+		return lipgloss.NewStyle().Foreground(s.ColorYellow).Render("● needs input")
+	case "review":
+		return lipgloss.NewStyle().Foreground(s.ColorGreen).Render("● ready for review")
+	case "queued":
+		return lipgloss.NewStyle().Foreground(s.ColorMuted).Render("⏳ queued")
+	default:
+		return ""
+	}
+}
+
+// renderAgentStatusHeader returns a summary line like "2/3 agents running, 1 queued".
+func renderAgentStatusHeader(s *ccStyles, todos []db.Todo) string {
+	var active, queued int
+	for _, t := range todos {
+		switch t.SessionStatus {
+		case "active":
+			active++
+		case "queued":
+			queued++
+		}
+	}
+	if active == 0 && queued == 0 {
+		return ""
+	}
+	parts := []string{}
+	parts = append(parts, fmt.Sprintf("%d/3 agents running", active))
+	if queued > 0 {
+		parts = append(parts, fmt.Sprintf("%d queued", queued))
+	}
+	return "  " + lipgloss.NewStyle().Foreground(s.ColorCyan).Render(strings.Join(parts, ", "))
 }
 
 func renderWarningBanner(s *ccStyles, warnings []db.Warning, width int) string {
@@ -789,7 +848,7 @@ func renderCCFooter(s *ccStyles, generatedAt time.Time, width int, refreshing bo
 	} else {
 		left = s.RefreshInfo.Render("refreshed " + db.RelativeTime(generatedAt))
 	}
-	right := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 enter detail \u00b7 space expand \u00b7 x done \u00b7 u undo \u00b7 t add \u00b7 c command \u00b7 ? help")
+	right := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 enter detail \u00b7 space expand \u00b7 x done \u00b7 u undo \u00b7 t add \u00b7 a agents \u00b7 c command \u00b7 ? help")
 
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 2 {
@@ -996,7 +1055,8 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 			{"c", "Command — tell Claude what to do"},
 			{"t", "Quick add todos (one per line)"},
 			{"s", "Schedule time block for todo"},
-			{"b", "Toggle completed backlog"},
+			{"a", "Toggle agent filter (show only agent todos)"},
+		{"b", "Toggle completed backlog"},
 			{"r", "Refresh from all sources"},
 		}
 		sections = append(sections, "", s.SectionHeader.Render("  Command Center"), "")

@@ -383,6 +383,10 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		cmd := p.quickTodoTextArea.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 
+	case "a":
+		p.agentFilterActive = !p.agentFilterActive
+		return plugin.NoopAction()
+
 	case "b":
 		p.showBacklog = !p.showBacklog
 		return plugin.NoopAction()
