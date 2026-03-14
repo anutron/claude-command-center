@@ -33,7 +33,7 @@ func Run(opts Options) error {
 
 	auth.LoadEnvFile()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	existing, err := db.LoadCommandCenterFromDB(opts.DB)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -41,6 +42,8 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 	if err != nil {
 		return nil, fmt.Errorf("fetch failed: %w", err)
 	}
+
+	log.Printf("slack: %d candidates found", len(candidates))
 
 	// Extract commitments via LLM if we have candidates and a real LLM
 	var todos []db.Todo
@@ -214,7 +217,11 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 	for _, ch := range channels {
 		messages, err := fetchChannelHistory(ctx, token, ch.ID, oldest)
 		if err != nil {
-			// Skip channels we can't read (permissions, etc.) — non-fatal
+			if isMissingScopeError(err) {
+				// Token lacks channels:history — fall back to search API
+				return fetchSlackCandidatesViaSearch(ctx, token)
+			}
+			// Skip individual channel errors (permissions, etc.) — non-fatal
 			continue
 		}
 

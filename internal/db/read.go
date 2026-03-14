@@ -179,8 +179,8 @@ func dbLoadCalendar(db *sql.DB) (CalendarData, error) {
 	cal.Today = clampEventsToDayBounds(cal.Today, todayStart, todayEnd)
 	cal.Tomorrow = clampEventsToDayBounds(cal.Tomorrow, todayEnd, tomorrowEnd)
 
-	sort.Slice(cal.Today, func(i, j int) bool { return cal.Today[i].Start.Before(cal.Today[j].Start) })
-	sort.Slice(cal.Tomorrow, func(i, j int) bool { return cal.Tomorrow[i].Start.Before(cal.Tomorrow[j].Start) })
+	sortCalendarEvents(cal.Today)
+	sortCalendarEvents(cal.Tomorrow)
 
 	return cal, nil
 }
@@ -193,14 +193,32 @@ func clampEventsToDayBounds(events []CalendarEvent, dayStart, dayEnd time.Time) 
 		if events[i].AllDay {
 			continue
 		}
-		if events[i].Start.Before(dayStart) {
+		wasClamped := events[i].Start.Before(dayStart)
+		if wasClamped {
 			events[i].Start = dayStart
 		}
 		if events[i].End.After(dayEnd) {
 			events[i].End = dayEnd
 		}
+		// Events that span the entire day after clamping are effectively all-day.
+		// This catches Exchange/Outlook-style "all-day" events that use DateTime
+		// instead of Date, and multi-day events clamped to day boundaries.
+		if wasClamped && events[i].End.Sub(events[i].Start) >= 12*time.Hour {
+			events[i].AllDay = true
+		}
 	}
 	return events
+}
+
+// sortCalendarEvents sorts events with all-day events first, then timed
+// events by start time.
+func sortCalendarEvents(events []CalendarEvent) {
+	sort.Slice(events, func(i, j int) bool {
+		if events[i].AllDay != events[j].AllDay {
+			return events[i].AllDay // all-day events first
+		}
+		return events[i].Start.Before(events[j].Start)
+	})
 }
 
 func dbLoadSuggestions(db *sql.DB) (Suggestions, error) {

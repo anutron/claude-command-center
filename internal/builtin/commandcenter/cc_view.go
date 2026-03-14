@@ -301,6 +301,35 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 			connector = " "
 		}
 
+		// All-day events: show "all day" instead of time/duration
+		if ev.AllDay {
+			titleMaxWidth := width - 2 - timeColWidth - 2
+			if titleMaxWidth < 10 {
+				titleMaxWidth = 10
+			}
+			title := ev.Title
+			if len(title) > titleMaxWidth && titleMaxWidth > 0 {
+				title = title[:titleMaxWidth-1] + "~"
+			}
+			titlePadded := title
+			if len(title) < titleMaxWidth {
+				titlePadded = title + strings.Repeat(" ", titleMaxWidth-len(title))
+			}
+
+			timeStr := s.CalendarFree.Render(fmt.Sprintf("%-*s", timeColWidth, "all day"))
+			calIdx := calendarIDIndex(calendars, ev.CalendarID)
+			color := calendarColor(calendars, ev.CalendarID, calIdx)
+			if color != "" {
+				titleStyled := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(titlePadded)
+				line := fmt.Sprintf("%s %s%s", connector, timeStr, titleStyled)
+				lines = append(lines, line)
+			} else {
+				line := fmt.Sprintf("%s %s%s", connector, timeStr, titlePadded)
+				lines = append(lines, line)
+			}
+			continue
+		}
+
 		timeFmt := ev.Start.Format("3:04pm")
 		dur := ev.End.Sub(ev.Start)
 		durFmt := formatDuration(dur)
@@ -615,11 +644,24 @@ func renderDetailView(s *ccStyles, todo db.Todo, inputView string, width int) st
 	return s.PanelBorder.Width(innerWidth).Render(content)
 }
 
+// refreshSpinner renders a small fixed-width (1 char) braille dot spinner with
+// shifting colors. The dots cycle through braille patterns while the color
+// smoothly rotates through a palette.
+func refreshSpinner(frame int) string {
+	// Braille dot patterns that create a rotating appearance
+	patterns := []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
+	// Muted color palette that shifts smoothly
+	colors := []string{"#5f87af", "#5f87d7", "#5f5fd7", "#875fd7", "#875faf", "#5f5faf"}
+
+	p := patterns[(frame/3)%len(patterns)]
+	c := colors[(frame/5)%len(colors)]
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(c)).Render(string(p))
+}
+
 func renderCCFooter(s *ccStyles, generatedAt time.Time, width int, refreshing bool, frame int, lastRefreshError string) string {
 	var left string
 	if refreshing {
-		dots := strings.Repeat(".", (frame/6)%4)
-		left = lipgloss.NewStyle().Foreground(s.ColorCyan).Render("refreshing" + dots)
+		left = refreshSpinner(frame) + " "
 	} else if lastRefreshError != "" {
 		errMsg := lastRefreshError
 		if len(errMsg) > 60 {
@@ -741,8 +783,8 @@ func renderExpandedTodoView(s *ccStyles, g *gradientColors, todos []db.Todo, cur
 	totalPages := (len(todos) + pageSize - 1) / pageSize
 	currentPage := offset/pageSize + 1
 
-	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active) -- page %d/%d", len(todos), currentPage, totalPages))
-	hints := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 \u2190\u2192 columns \u00b7 space cycle/collapse \u00b7 enter detail \u00b7 x done \u00b7 u undo \u00b7 c command \u00b7 ? help")
+	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active)", len(todos)))
+	hints := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 \u2190\u2192 columns \u00b7 space cycle/collapse \u00b7 enter detail \u00b7 x done \u00b7 u undo \u00b7 o command \u00b7 ? help")
 
 	if len(todos) == 0 {
 		return lipgloss.JoinVertical(lipgloss.Left, header, "", s.CalendarFree.Render("  No active todos"), "", hints)
@@ -786,14 +828,19 @@ func renderExpandedTodoView(s *ccStyles, g *gradientColors, todos []db.Todo, cur
 		joined = lipgloss.JoinHorizontal(lipgloss.Top, joined, sep, columns[i])
 	}
 
-	var footerParts []string
+	// Footer: spinner (left) and page info (right-aligned)
+	var footerLeft string
 	if refreshing {
-		dots := strings.Repeat(".", (frame/6)%4)
-		footerParts = append(footerParts, lipgloss.NewStyle().Foreground(s.ColorCyan).Render("refreshing"+dots))
+		footerLeft = refreshSpinner(frame)
 	}
-	footerParts = append(footerParts, s.RefreshInfo.Render(fmt.Sprintf("page %d/%d", currentPage, totalPages)))
+	pageInfo := s.RefreshInfo.Render(fmt.Sprintf("page %d/%d", currentPage, totalPages))
+	footerGap := width - lipgloss.Width(footerLeft) - lipgloss.Width(pageInfo)
+	if footerGap < 1 {
+		footerGap = 1
+	}
+	footer := footerLeft + strings.Repeat(" ", footerGap) + pageInfo
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", joined, "", hints, strings.Join(footerParts, "  "))
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", joined, "", hints, footer)
 }
 
 func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {

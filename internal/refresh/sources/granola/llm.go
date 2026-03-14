@@ -18,7 +18,7 @@ func extractCommitments(ctx context.Context, l llm.LLM, meetings []RawMeeting) (
 
 	var sb strings.Builder
 	for _, m := range meetings {
-		sb.WriteString(fmt.Sprintf("## Meeting: %s\n", m.Title))
+		sb.WriteString(fmt.Sprintf("## Meeting: %s (ID: %s)\n", m.Title, m.ID))
 		sb.WriteString(fmt.Sprintf("Date: %s\n", m.StartTime.Format("2006-01-02 15:04")))
 		if len(m.Attendees) > 0 {
 			sb.WriteString(fmt.Sprintf("Attendees: %s\n", strings.Join(m.Attendees, ", ")))
@@ -40,7 +40,7 @@ func extractCommitments(ctx context.Context, l llm.LLM, meetings []RawMeeting) (
 
 For each commitment, provide:
 - title: Brief actionable title (imperative mood)
-- source_ref: The meeting ID for deduplication
+- source_ref: The meeting ID (from the ID: field) for deduplication. If multiple items come from the same meeting, append a short suffix like "-1", "-2" etc.
 - context: Which project or area this relates to
 - detail: Comprehensive context including who was in the meeting, what was discussed, what's expected, and by when
 - who_waiting: Person(s) waiting on this (if identifiable)
@@ -71,11 +71,18 @@ Meetings:
 	}
 
 	var todos []db.Todo
+	seen := make(map[string]int)
 	for _, item := range items {
+		ref := item.SourceRef
+		// Ensure unique source_ref — append counter if LLM didn't suffix
+		if n, ok := seen[ref]; ok {
+			ref = fmt.Sprintf("%s-%d", ref, n+1)
+		}
+		seen[item.SourceRef]++
 		todos = append(todos, db.Todo{
 			Title:      item.Title,
 			Source:     "granola",
-			SourceRef:  item.SourceRef,
+			SourceRef:  ref,
 			Context:    item.Context,
 			Detail:     item.Detail,
 			WhoWaiting: item.WhoWaiting,

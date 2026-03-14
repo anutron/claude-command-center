@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -55,6 +56,11 @@ func (s *GranolaSource) Fetch(ctx context.Context) (*refresh.SourceResult, error
 	meetings, err := fetchGranolaMeetings(ctx, token)
 	if err != nil {
 		return nil, fmt.Errorf("fetch failed: %w", err)
+	}
+
+	log.Printf("granola: %d meetings found", len(meetings))
+	for i, m := range meetings {
+		log.Printf("granola: [%d] %s (transcript=%d chars, summary=%d chars)", i, m.Title, len(m.Transcript), len(m.Summary))
 	}
 
 	// Extract commitments via LLM if we have meetings and a real LLM
@@ -152,6 +158,7 @@ func fetchGranolaMeetings(ctx context.Context, token string) ([]RawMeeting, erro
 	for i := range meetings {
 		transcript, err := granolaGetTranscript(ctx, token, meetings[i].ID)
 		if err != nil {
+			log.Printf("granola: transcript error for %q: %v", meetings[i].Title, err)
 			continue
 		}
 		meetings[i].Transcript = transcript
@@ -287,8 +294,7 @@ func granolaGetTranscript(ctx context.Context, token, documentID string) (string
 	}
 
 	var chunks []struct {
-		Text           string  `json:"text"`
-		StartTimestamp float64 `json:"start_timestamp"`
+		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(data, &chunks); err != nil {
 		return "", fmt.Errorf("parsing transcript: %w", err)

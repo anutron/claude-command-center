@@ -164,6 +164,15 @@ type SlackConfig struct {
 	BotToken string `yaml:"bot_token,omitempty"` // deprecated: use Token; kept for backwards compat
 }
 
+// EffectiveToken returns the active Slack token, preferring Token over the
+// deprecated BotToken field.
+func (c SlackConfig) EffectiveToken() string {
+	if c.Token != "" {
+		return c.Token
+	}
+	return c.BotToken
+}
+
 type GmailConfig struct {
 	Enabled   bool   `yaml:"enabled"`
 	TodoLabel string `yaml:"todo_label,omitempty"` // Gmail label name to sync as todos (empty = disabled)
