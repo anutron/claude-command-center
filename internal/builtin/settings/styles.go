@@ -87,7 +87,7 @@ func newSettingsStyles(p config.Palette) settingsStyles {
 	borderBright := lipgloss.Color(p.Cyan)
 
 	return settingsStyles{
-		header:    lipgloss.NewStyle().Foreground(lipgloss.Color(p.Cyan)).Bold(true).PaddingLeft(1),
+		header:    lipgloss.NewStyle().Foreground(lipgloss.Color(p.Cyan)).Bold(true).PaddingLeft(2),
 		muted:     lipgloss.NewStyle().Foreground(lipgloss.Color(p.Muted)),
 		pointer:   lipgloss.NewStyle().Foreground(lipgloss.Color(p.Pointer)),
 		enabled:   lipgloss.NewStyle().Foreground(lipgloss.Color(p.Green)),
@@ -105,16 +105,20 @@ func newSettingsStyles(p config.Palette) settingsStyles {
 		// Sidebar layout styles
 		sidebarFocused: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderBright),
+			BorderForeground(borderBright).
+			PaddingLeft(1),
 		sidebarUnfocused: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderDim),
+			BorderForeground(borderDim).
+			PaddingLeft(1),
 		contentFocused: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderBright),
+			BorderForeground(borderBright).
+			PaddingLeft(1),
 		contentUnfocused: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderDim),
+			BorderForeground(borderDim).
+			PaddingLeft(1),
 		categoryHeader: lipgloss.NewStyle().
 			Foreground(lipgloss.Color(p.Cyan)).
 			Bold(true),
