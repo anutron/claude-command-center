@@ -138,8 +138,8 @@ When creating a bookmark from a worktree:
 - `source_repo` = main repo path
 
 When resuming a worktree bookmark:
-- `cd` to `project` (main repo) so `claude --resume <id>` finds the session
-- The resumed conversation already has full worktree context from the previous session
+- If `worktree_path` is set, `cd` to the worktree path so `claude --resume <id>` finds the session (Claude indexes by launch directory)
+- If `worktree_path` is empty, `cd` to `project` (main repo)
 
 ### CLI: `ccc add-bookmark`
 
@@ -172,7 +172,7 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 - Init loads paths and sessions
 - HandleKey "enter" on path sets Launch action
 - HandleKey "enter" on session sets Launch with resume args (dir=project, --resume flag)
-- HandleKey "enter" on worktree bookmark uses main repo as dir (not worktree path)
+- HandleKey "enter" on worktree bookmark uses worktree path as dir (falls back to project if no worktree path)
 - HandleKey "delete" enters confirming mode
 - Confirming "y" removes item
 - Sub-tab switching works (n, r, t)
