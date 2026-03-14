@@ -8,8 +8,12 @@ import (
 
 // repoSkillsDir returns the path to the .claude/skills directory in the repo.
 func repoSkillsDir() string {
-	// Next to the current executable
+	// Next to the current executable (resolve symlinks to find the real location)
 	if exe, err := os.Executable(); err == nil {
+		resolved, err := filepath.EvalSymlinks(exe)
+		if err == nil {
+			exe = resolved
+		}
 		candidate := filepath.Join(filepath.Dir(exe), ".claude", "skills")
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 			return candidate

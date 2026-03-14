@@ -139,8 +139,12 @@ func BuildAndConfigureMCP() ([]string, error) {
 
 // findServersDir looks for the servers/ directory relative to the binary or cwd.
 func findServersDir() string {
-	// Next to the current executable
+	// Next to the current executable (resolve symlinks to find the real location)
 	if exe, err := os.Executable(); err == nil {
+		resolved, err := filepath.EvalSymlinks(exe)
+		if err == nil {
+			exe = resolved
+		}
 		candidate := filepath.Join(filepath.Dir(exe), "servers")
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 			return candidate

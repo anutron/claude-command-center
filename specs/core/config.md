@@ -48,6 +48,17 @@ Provides user-configurable settings for the CCC TUI, including color palettes, d
 - When name is "custom" and `CustomColors` is provided, builds a palette from Primary/Secondary/Accent
 - `PaletteNames()` returns all built-in palette names
 
+### Repo Path Resolution
+
+Several features (MCP servers, project skills) need to locate directories relative to the repo root. The binary may be installed via symlink (e.g. `/usr/local/bin/ccc → /path/to/repo/ccc`).
+
+Resolution order:
+1. Resolve the current executable path, following symlinks with `filepath.EvalSymlinks`
+2. Check for the target directory next to the resolved binary location
+3. Fall back to checking the current working directory
+
+This ensures the repo's `servers/` and `.claude/skills/` directories are found even when the binary is invoked via symlink from outside the repo.
+
 ## Test Cases
 
 - DefaultConfig: correct defaults (name, palette, todos enabled, others disabled)
