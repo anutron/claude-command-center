@@ -211,40 +211,55 @@ func TestCreateTodoEntersRichMode(t *testing.T) {
 	}
 }
 
-func TestEnterOnTodoWithProjectDir(t *testing.T) {
+func TestEnterOpensDetailView(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	action := p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Error("enter should open detail view")
+	}
+	if p.detailTodoIdx != 0 {
+		t.Errorf("detailTodoIdx = %d, want 0", p.detailTodoIdx)
+	}
+	if action.TeaCmd == nil {
+		t.Error("enter should return a TeaCmd (textinput blink)")
+	}
+}
+
+func TestOpenLaunchOnTodoWithProjectDir(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
 
-	action := p.HandleKey(keyMsg("enter"))
+	action := p.HandleKey(keyMsg("o"))
 	if action.Type != "launch" {
-		t.Errorf("enter on todo with project dir: type = %q, want %q", action.Type, "launch")
+		t.Errorf("o on todo with project dir: type = %q, want %q", action.Type, "launch")
 	}
 	if action.Args["dir"] != "/tmp/myproject" {
 		t.Errorf("launch dir = %q, want %q", action.Args["dir"], "/tmp/myproject")
 	}
 }
 
-func TestEnterOnTodoWithSessionID(t *testing.T) {
+func TestOpenLaunchOnTodoWithSessionID(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].SessionID = "abc12345-session-id"
 	p.cc.Todos[0].ProjectDir = "/tmp/proj"
 
-	action := p.HandleKey(keyMsg("enter"))
+	action := p.HandleKey(keyMsg("o"))
 	if action.Type != "launch" {
-		t.Errorf("enter on todo with session: type = %q, want %q", action.Type, "launch")
+		t.Errorf("o on todo with session: type = %q, want %q", action.Type, "launch")
 	}
 	if action.Args["resume_id"] != "abc12345-session-id" {
 		t.Errorf("resume_id = %q, want %q", action.Args["resume_id"], "abc12345-session-id")
 	}
 }
 
-func TestEnterOnTodoWithoutProjectDir(t *testing.T) {
+func TestOpenLaunchOnTodoWithoutProjectDir(t *testing.T) {
 	p := testPluginWithCC(t)
 	// No project dir, no session ID
 
-	action := p.HandleKey(keyMsg("enter"))
+	action := p.HandleKey(keyMsg("o"))
 	if action.Type != "navigate" {
-		t.Errorf("enter on todo without project dir: type = %q, want %q", action.Type, "navigate")
+		t.Errorf("o on todo without project dir: type = %q, want %q", action.Type, "navigate")
 	}
 	if action.Payload != "sessions" {
 		t.Errorf("navigate payload = %q, want %q", action.Payload, "sessions")

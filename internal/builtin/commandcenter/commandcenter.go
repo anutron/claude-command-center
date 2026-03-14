@@ -62,7 +62,8 @@ type Plugin struct {
 	ccCursor       int
 	ccScrollOffset int
 	showBacklog    bool
-	ccExpanded     bool
+	ccExpanded       bool
+	ccExpandedCols   int // 0 = use default (2), 1 = single column, 2 = two columns
 	ccExpandedOffset int
 
 	// Threads state
@@ -210,8 +211,9 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "up/k", Description: "Navigate todos", Promoted: true},
 		{Key: "down/j", Description: "Navigate todos", Promoted: true},
 		{Key: "shift+up/down", Description: "Move todo up/down", Promoted: true},
-		{Key: "space", Description: "View todo detail", Promoted: true},
-		{Key: "enter", Description: "Launch Claude session", Promoted: true},
+		{Key: "enter", Description: "View todo detail", Promoted: true},
+		{Key: "space", Description: "Cycle expanded view", Promoted: true},
+		{Key: "o", Description: "Launch Claude session", Promoted: true},
 		{Key: "x", Description: "Mark todo done", Promoted: true},
 		{Key: "u", Description: "Undo last action", Promoted: true},
 		{Key: "c", Description: "Command — tell Claude what to do", Promoted: true},
@@ -385,7 +387,12 @@ func (p *Plugin) expandedRowsPerCol() int {
 	return rows
 }
 
-func (p *Plugin) expandedNumCols() int { return 2 }
+func (p *Plugin) expandedNumCols() int {
+	if p.ccExpandedCols == 1 {
+		return 1
+	}
+	return 2
+}
 
 func (p *Plugin) triggerFocusRefresh() tea.Cmd {
 	if p.cc == nil || len(p.cc.ActiveTodos()) == 0 {

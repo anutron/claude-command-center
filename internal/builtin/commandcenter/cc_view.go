@@ -629,7 +629,7 @@ func renderCCFooter(s *ccStyles, generatedAt time.Time, width int, refreshing bo
 	} else {
 		left = s.RefreshInfo.Render("refreshed " + db.RelativeTime(generatedAt))
 	}
-	right := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 t add \u00b7 c command \u00b7 ? help")
+	right := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 enter detail \u00b7 space expand \u00b7 x done \u00b7 u undo \u00b7 t add \u00b7 c command \u00b7 ? help")
 
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 2 {
@@ -742,7 +742,7 @@ func renderExpandedTodoView(s *ccStyles, g *gradientColors, todos []db.Todo, cur
 	currentPage := offset/pageSize + 1
 
 	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active) -- page %d/%d", len(todos), currentPage, totalPages))
-	hints := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 \u2190\u2192 columns \u00b7 esc collapse \u00b7 space detail \u00b7 x done \u00b7 u undo \u00b7 c command \u00b7 ? help")
+	hints := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 \u2190\u2192 columns \u00b7 space cycle/collapse \u00b7 enter detail \u00b7 x done \u00b7 u undo \u00b7 c command \u00b7 ? help")
 
 	if len(todos) == 0 {
 		return lipgloss.JoinVertical(lipgloss.Left, header, "", s.CalendarFree.Render("  No active todos"), "", hints)
@@ -820,8 +820,9 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 		cmds := []struct{ key, desc string }{
 			{"\u2191\u2193 / k j", "Navigate todos"},
 			{"shift+\u2191\u2193", "Move todo up/down"},
-			{"space", "View todo detail"},
-			{"enter", "Launch Claude session for todo"},
+			{"enter", "View todo detail"},
+			{"space", "Cycle expanded view (2-col / 1-col / collapse)"},
+			{"o", "Launch Claude session for todo"},
 			{"x", "Mark todo done"},
 			{"X", "Dismiss todo (won't come back)"},
 			{"u", "Undo last done/dismiss"},

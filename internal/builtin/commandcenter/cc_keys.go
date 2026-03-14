@@ -56,6 +56,7 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	if msg.String() == "esc" {
 		if p.ccExpanded {
 			p.ccExpanded = false
+			p.ccExpandedCols = 0
 			p.ccExpandedOffset = 0
 			p.ccScrollOffset = 0
 			p.ccCursor = 0
@@ -141,8 +142,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			if p.ccCursor < maxCursor {
 				p.ccCursor++
 				if p.ccCursor >= p.ccScrollOffset+todoViewHeight {
-					p.ccExpanded = true
-					p.ccExpandedOffset = 0
+					p.ccScrollOffset++
 				}
 			}
 		}
@@ -347,13 +347,22 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case " ":
-		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
-			p.detailView = true
-			p.detailTodoIdx = p.ccCursor
-			p.textInput.Reset()
-			p.textInput.Placeholder = "Tell me what changed..."
-			p.textInput.Focus()
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
+		// Cycle expanded view: collapsed → 2-col → 1-col → collapsed
+		if !p.ccExpanded {
+			p.ccExpanded = true
+			p.ccExpandedCols = 2
+			p.ccExpandedOffset = 0
+		} else if p.ccExpandedCols == 2 {
+			p.ccExpandedCols = 1
+			p.ccExpandedOffset = 0
+		} else {
+			p.ccExpanded = false
+			p.ccExpandedCols = 0
+			p.ccExpandedOffset = 0
+			p.ccScrollOffset = 0
+			if p.ccCursor >= todoViewHeight {
+				p.ccCursor = todoViewHeight - 1
+			}
 		}
 		return plugin.NoopAction()
 
@@ -394,6 +403,17 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "enter":
+		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
+			p.detailView = true
+			p.detailTodoIdx = p.ccCursor
+			p.textInput.Reset()
+			p.textInput.Placeholder = "Tell me what changed..."
+			p.textInput.Focus()
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
+		}
+		return plugin.NoopAction()
+
+	case "o":
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
 			todo := activeTodos[p.ccCursor]
 			if todo.SessionID != "" {
