@@ -126,6 +126,11 @@ func Run(opts Options) error {
 		}
 	}
 
+	// Generate proposed prompts for todos that have a source but no prompt yet
+	if opts.LLM != nil && len(merged.Todos) > 0 {
+		merged.Todos = generateProposedPrompts(ctx, opts.LLM, merged.Todos)
+	}
+
 	merged.Warnings = warnings
 	merged.GeneratedAt = time.Now()
 

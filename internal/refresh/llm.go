@@ -57,6 +57,76 @@ func CleanJSON(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// generateProposedPrompts fills in ProposedPrompt for eligible todos (active,
+// has a source, but no prompt yet). Each prompt is a self-contained Claude Code
+// instruction derived from the todo's title, detail, context, and source.
+func generateProposedPrompts(ctx context.Context, l llm.LLM, todos []db.Todo) []db.Todo {
+	var eligible []int
+	for i, t := range todos {
+		if t.Status == "active" && t.Source != "" && t.Source != "manual" && t.ProposedPrompt == "" {
+			eligible = append(eligible, i)
+		}
+	}
+	if len(eligible) == 0 {
+		return todos
+	}
+
+	// Build a batch prompt for all eligible todos at once to save LLM calls.
+	type todoSummary struct {
+		ID      string `json:"id"`
+		Title   string `json:"title"`
+		Detail  string `json:"detail"`
+		Context string `json:"context"`
+		Source  string `json:"source"`
+	}
+	var summaries []todoSummary
+	for _, i := range eligible {
+		t := todos[i]
+		summaries = append(summaries, todoSummary{
+			ID:      t.ID,
+			Title:   t.Title,
+			Detail:  t.Detail,
+			Context: t.Context,
+			Source:  t.Source,
+		})
+	}
+
+	input, _ := json.Marshal(summaries)
+
+	prompt := fmt.Sprintf(`For each todo below, generate a self-contained Claude Code prompt that an agent could execute in a headless session. The prompt should:
+
+1. State the objective clearly in imperative mood ("Add...", "Fix...", "Update...")
+2. Include relevant context from the todo detail (key decisions, requirements, constraints)
+3. Mention who is waiting or what meeting/thread originated the task (for attribution)
+4. Suggest what "done" looks like (testable outcomes)
+
+Return ONLY a JSON object mapping todo ID to the proposed prompt string. No other text.
+Example: {"id1": "## Objective\nAdd rate limiting to the API...\n\n## Context\n...\n\n## Done Criteria\n- Tests pass\n- Rate limit returns 429 after threshold"}
+
+Todos:
+%s`, string(input))
+
+	text, err := l.Complete(ctx, prompt)
+	if err != nil {
+		return todos
+	}
+
+	text = CleanJSON(text)
+
+	var prompts map[string]string
+	if err := json.Unmarshal([]byte(text), &prompts); err != nil {
+		return todos
+	}
+
+	for _, i := range eligible {
+		if p, ok := prompts[todos[i].ID]; ok && p != "" {
+			todos[i].ProposedPrompt = p
+		}
+	}
+
+	return todos
+}
+
 func activeTodos(todos []db.Todo) []db.Todo {
 	var out []db.Todo
 	for _, t := range todos {
