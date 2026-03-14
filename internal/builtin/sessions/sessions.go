@@ -635,11 +635,14 @@ func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
 		if !ok {
 			return plugin.NoopAction()
 		}
+		// For worktree bookmarks, project is the main repo (where Claude
+		// indexes sessions). The resumed conversation already has full
+		// worktree context from the previous session.
 		return plugin.Action{
-			Type: "launch",
+			Type: plugin.ActionLaunch,
 			Args: map[string]string{
-				"dir":        item.session.Project,
-				"resume_id":  item.session.SessionID,
+				"dir":       item.session.Project,
+				"resume_id": item.session.SessionID,
 			},
 		}
 

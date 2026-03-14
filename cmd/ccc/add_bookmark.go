@@ -18,6 +18,8 @@ func runAddBookmark(args []string) error {
 	branch := fs.String("branch", "", "Branch name (required)")
 	summary := fs.String("summary", "", "Summary (required)")
 	label := fs.String("label", "", "Label (optional)")
+	worktreePath := fs.String("worktree-path", "", "Worktree path if session is in a worktree (optional)")
+	sourceRepo := fs.String("source-repo", "", "Main repo path for worktree sessions (optional)")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -34,12 +36,14 @@ func runAddBookmark(args []string) error {
 	defer database.Close()
 
 	sess := db.Session{
-		SessionID: *sessionID,
-		Project:   *project,
-		Repo:      *repo,
-		Branch:    *branch,
-		Summary:   *summary,
-		Created:   time.Now(),
+		SessionID:    *sessionID,
+		Project:      *project,
+		Repo:         *repo,
+		Branch:       *branch,
+		Summary:      *summary,
+		WorktreePath: *worktreePath,
+		SourceRepo:   *sourceRepo,
+		Created:      time.Now(),
 	}
 
 	if err := db.DBInsertBookmark(database, sess, *label); err != nil {

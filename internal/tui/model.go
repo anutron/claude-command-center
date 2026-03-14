@@ -397,7 +397,7 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 	case plugin.ActionLaunch:
 		la := &LaunchAction{Dir: action.Args["dir"]}
 		if rid := action.Args["resume_id"]; rid != "" {
-			la.Args = []string{"-r", rid}
+			la.Args = []string{"--resume", rid}
 		}
 		if prompt := action.Args["initial_prompt"]; prompt != "" {
 			la.InitialPrompt = prompt

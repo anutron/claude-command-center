@@ -113,6 +113,38 @@ Each sub-tab displays a hint bar at the bottom:
 
 None — uses existing cc_bookmarks and cc_learned_paths tables.
 
+## Bookmark Storage (cc_bookmarks)
+
+Bookmarks store a pointer to a Claude Code session for later resume:
+
+| Column | Description |
+|--------|-------------|
+| session_id | Claude Code session UUID (primary key) |
+| project | Directory where Claude indexes the session (main repo path) |
+| repo | Repository display name |
+| branch | Branch name at bookmark time |
+| label | User-provided label |
+| summary | One-line summary of session work |
+| worktree_path | Worktree directory path (NULL if not a worktree session) |
+| source_repo | Main repo path for worktree sessions (NULL if not a worktree) |
+
+### Worktree-aware bookmarks
+
+Claude Code stores session files under `~/.claude/projects/<project-path-encoded>/`. The project path is derived from `pwd` when Claude starts. For worktree sessions, Claude maps to the **main repo's** project dir (not the worktree's), because worktrees share `.git` with the main repo.
+
+When creating a bookmark from a worktree:
+- `project` = main repo path (where Claude indexes sessions)
+- `worktree_path` = the actual worktree directory
+- `source_repo` = main repo path
+
+When resuming a worktree bookmark:
+- `cd` to `project` (main repo) so `claude --resume <id>` finds the session
+- The resumed conversation already has full worktree context from the previous session
+
+### CLI: `ccc add-bookmark`
+
+Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required), `--label`, `--worktree-path`, `--source-repo` (optional).
+
 ## Behavior
 
 1. On Init, loads paths from DB and sessions from DB
@@ -120,7 +152,7 @@ None — uses existing cc_bookmarks and cc_learned_paths tables.
 3. Resume sub-tab shows bookmarked sessions
 4. Worktrees sub-tab shows all CCC-managed worktrees grouped by project
 5. Enter on a path launches Claude in that directory
-6. Enter on a session resumes that Claude session
+6. Enter on a session resumes that Claude session (uses `project` as the working dir, `--resume <session_id>` flag)
 7. `w` on a path in the new sub-tab launches Claude in a new worktree for that project
    - If the path is not a git repo, shows a warning overlay
    - Warning overlay: enter launches directly (no worktree), esc cancels
@@ -139,7 +171,8 @@ None — uses existing cc_bookmarks and cc_learned_paths tables.
 
 - Init loads paths and sessions
 - HandleKey "enter" on path sets Launch action
-- HandleKey "enter" on session sets Launch with resume args
+- HandleKey "enter" on session sets Launch with resume args (dir=project, --resume flag)
+- HandleKey "enter" on worktree bookmark uses main repo as dir (not worktree path)
 - HandleKey "delete" enters confirming mode
 - Confirming "y" removes item
 - Sub-tab switching works (n, r, t)
