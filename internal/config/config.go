@@ -43,10 +43,17 @@ type Config struct {
 	originalContent []byte `yaml:"-"`
 }
 
-// PluginEnabled returns whether a built-in plugin is enabled (not in DisabledPlugins).
+// PluginEnabled returns whether a plugin is enabled.
+// It checks both the DisabledPlugins list (built-in plugins) and the
+// ExternalPlugins entries (external plugins matched by name).
 func (c *Config) PluginEnabled(slug string) bool {
 	for _, s := range c.DisabledPlugins {
 		if s == slug {
+			return false
+		}
+	}
+	for _, ep := range c.ExternalPlugins {
+		if ep.Name == slug && !ep.Enabled {
 			return false
 		}
 	}
