@@ -259,8 +259,17 @@ func (cc *CommandCenter) AcceptTodo(id string) {
 }
 
 func (cc *CommandCenter) AddTodo(title string) *Todo {
+	// Compute next display_id from in-memory todos so the detail view
+	// shows the correct ID before the next DB reload.
+	maxDisplayID := 0
+	for _, existing := range cc.Todos {
+		if existing.DisplayID > maxDisplayID {
+			maxDisplayID = existing.DisplayID
+		}
+	}
 	t := Todo{
 		ID:           GenID(),
+		DisplayID:    maxDisplayID + 1,
 		Title:        title,
 		Status:       "active",
 		Source:       "manual",
