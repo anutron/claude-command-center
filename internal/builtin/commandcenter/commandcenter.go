@@ -362,6 +362,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	cta := textarea.New()
 	cta.Placeholder = "Tell me what changed..."
 	cta.CharLimit = 0
+	cta.ShowLineNumbers = false
 	cta.SetWidth(80)
 	cta.SetHeight(3)
 	cta.FocusedStyle.Base = cta.FocusedStyle.Base.Foreground(p.styles.ColorWhite)
@@ -478,12 +479,17 @@ func (p *Plugin) normalMaxVisibleTodos() int {
 }
 
 // textareaWidth returns the appropriate width for textareas based on the current terminal width.
+// The detail view renders textareas inside a PanelBorder (2 chars for border) with a 2-char
+// left padding prefix ("  "), so we subtract 8 from viewWidth to avoid overflow.
 func (p *Plugin) textareaWidth() int {
 	viewWidth := ui.ContentMaxWidth
 	if p.width > 0 && p.width < viewWidth {
 		viewWidth = p.width
 	}
-	w := viewWidth - 4
+	// viewWidth - 4 = innerWidth (renderDetailView), minus 2 for "  " prefix = available space
+	// The PanelBorder.Width(innerWidth) sets the content area, but the textarea must
+	// also leave room for the 2-char left padding in the command section.
+	w := viewWidth - 8
 	if w < 40 {
 		w = 40
 	}

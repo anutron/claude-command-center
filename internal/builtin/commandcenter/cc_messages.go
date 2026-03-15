@@ -73,6 +73,10 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height
+		// Update commandTextArea width so text wraps correctly after resize
+		if p.detailMode == "commandInput" {
+			p.commandTextArea.SetWidth(p.textareaWidth())
+		}
 		return false, plugin.NoopAction() // Let host also handle this
 
 	case plugin.TabViewMsg:
