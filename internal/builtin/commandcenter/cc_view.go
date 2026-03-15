@@ -638,7 +638,7 @@ func wrapText(text string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string, noticeType string, statusCursor int, filteredPaths []string, pathCursor int, pathFilter string, frame int) string {
+func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width, height int, notice string, noticeType string, statusCursor int, filteredPaths []string, pathCursor int, pathFilter string, frame int) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -857,43 +857,9 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	}
 
 	// Session summary section (shown when agent has completed work)
+	// Note: summaryBodyLines is calculated below alongside prompt allocation;
+	// we build the section content later after the height budget is computed.
 	var summarySection string
-	if todo.SessionSummary != "" {
-		summaryHeader := s.SectionHeader.Render("  SESSION SUMMARY")
-		wrapped := wrapText(todo.SessionSummary, innerWidth-6)
-		var summaryLines []string
-		for _, line := range strings.Split(wrapped, "\n") {
-			summaryLines = append(summaryLines, "   "+line)
-		}
-		summaryBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(summaryLines, "\n"))
-		summarySection = lipgloss.JoinVertical(lipgloss.Left, "", summaryHeader, "", summaryBody)
-	}
-
-	// Prompt section (read-only, not editable — prompts are managed in the task runner)
-	var promptSection string
-	promptText := todo.ProposedPrompt
-	if promptText != "" {
-		promptHeader := s.SectionHeader.Render("  PROMPT")
-		// Truncate to ~6 lines for preview; full prompt is in the task runner (o key)
-		promptLines := strings.Split(promptText, "\n")
-		truncated := false
-		if len(promptLines) > 6 {
-			promptLines = promptLines[:6]
-			truncated = true
-		}
-		if truncated {
-			promptLines = append(promptLines, s.DescMuted.Render("... (press o to see full prompt)"))
-		}
-		var styledLines []string
-		for _, line := range promptLines {
-			truncated := truncateToWidth(line, innerWidth-6)
-			styledLines = append(styledLines, "   "+truncated)
-		}
-		promptBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(styledLines, "\n"))
-		promptSection = lipgloss.JoinVertical(lipgloss.Left, "", promptHeader, "", promptBody)
-	} else {
-		promptSection = "\n  " + s.SectionHeader.Render("PROMPT") + "  " + s.DescMuted.Render("(no prompt set)")
-	}
 
 	// Command input section (when in commandInput mode)
 	var commandSection string
@@ -923,6 +889,117 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 			Bold(true).
 			Padding(0, 1).
 			Render(icon + " " + notice)
+	}
+
+	// Calculate fixed chrome height to determine how much space prompt/summary get.
+	// Fixed lines: TODO #N (1) + blank (1) + title (1) + blank (1) + field rows (len(leftLines) or len(rightLines))
+	// + blank before hints (1) + hints (1) + panel border (2)
+	fixedLines := 8 + len(leftLines) // header, blanks, title, field rows, footer hint, border
+	if noticeBanner != "" {
+		fixedLines += 2 // notice + blank
+	}
+	if sessionSection != "" {
+		fixedLines += lipgloss.Height(sessionSection)
+	}
+	if pathPickerSection != "" {
+		fixedLines += lipgloss.Height(pathPickerSection)
+	}
+	if detailSection != "" {
+		fixedLines += lipgloss.Height(detailSection)
+	}
+	if commandSection != "" {
+		fixedLines += lipgloss.Height(commandSection)
+	}
+
+	// Count lines used by summary section header/blanks (not body — body is flexible)
+	summaryHeaderLines := 0
+	if todo.SessionSummary != "" {
+		summaryHeaderLines = 3 // blank + header + blank before body
+	}
+
+	// Count lines used by prompt section header/blanks (not body — body is flexible)
+	promptHeaderLines := 0
+	if todo.ProposedPrompt != "" {
+		promptHeaderLines = 3 // blank + header + blank before body
+	} else {
+		fixedLines += 1 // "(no prompt set)" line
+	}
+
+	// Available lines for prompt + summary body content
+	availableForContent := height - fixedLines - summaryHeaderLines - promptHeaderLines
+	if availableForContent < 6 {
+		availableForContent = 6
+	}
+
+	// Split available space between summary and prompt bodies
+	summaryBodyLines := 0
+	promptBodyMax := availableForContent
+	if todo.SessionSummary != "" && todo.ProposedPrompt != "" {
+		// Both present: count actual lines, split proportionally
+		summaryWrapped := wrapText(todo.SessionSummary, innerWidth-6)
+		summaryTotal := len(strings.Split(summaryWrapped, "\n"))
+		promptTotal := len(strings.Split(todo.ProposedPrompt, "\n"))
+		total := summaryTotal + promptTotal
+		if total <= availableForContent {
+			// Both fit — no truncation needed
+			summaryBodyLines = summaryTotal
+			promptBodyMax = promptTotal
+		} else {
+			// Split proportionally, giving each at least 3 lines
+			summaryBodyLines = availableForContent * summaryTotal / total
+			if summaryBodyLines < 3 {
+				summaryBodyLines = 3
+			}
+			promptBodyMax = availableForContent - summaryBodyLines
+			if promptBodyMax < 3 {
+				promptBodyMax = 3
+				summaryBodyLines = availableForContent - promptBodyMax
+			}
+		}
+	} else if todo.SessionSummary != "" {
+		summaryBodyLines = availableForContent
+	}
+
+	// Prompt section (read-only, not editable — prompts are managed in the task runner)
+	var promptSection string
+	promptText := todo.ProposedPrompt
+	if promptText != "" {
+		promptHeader := s.SectionHeader.Render("  PROMPT")
+		promptLines := strings.Split(promptText, "\n")
+		truncated := false
+		if len(promptLines) > promptBodyMax {
+			promptLines = promptLines[:promptBodyMax]
+			truncated = true
+		}
+		if truncated {
+			promptLines = append(promptLines, s.DescMuted.Render("... (press o to see full prompt)"))
+		}
+		var styledLines []string
+		for _, line := range promptLines {
+			truncated := truncateToWidth(line, innerWidth-6)
+			styledLines = append(styledLines, "   "+truncated)
+		}
+		promptBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(styledLines, "\n"))
+		promptSection = lipgloss.JoinVertical(lipgloss.Left, "", promptHeader, "", promptBody)
+	} else {
+		promptSection = "\n  " + s.SectionHeader.Render("PROMPT") + "  " + s.DescMuted.Render("(no prompt set)")
+	}
+
+	// Build session summary with dynamic height
+	if todo.SessionSummary != "" {
+		summaryHeader := s.SectionHeader.Render("  SESSION SUMMARY")
+		wrapped := wrapText(todo.SessionSummary, innerWidth-6)
+		allLines := strings.Split(wrapped, "\n")
+		if summaryBodyLines > 0 && len(allLines) > summaryBodyLines {
+			allLines = allLines[:summaryBodyLines]
+			allLines = append(allLines, s.DescMuted.Render("... (truncated)"))
+		}
+		var summaryLines []string
+		for _, line := range allLines {
+			summaryLines = append(summaryLines, "   "+line)
+		}
+		summaryBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(summaryLines, "\n"))
+		summarySection = lipgloss.JoinVertical(lipgloss.Left, "", summaryHeader, "", summaryBody)
 	}
 
 	// Footer hints based on mode
