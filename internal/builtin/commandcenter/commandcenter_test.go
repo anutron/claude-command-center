@@ -500,6 +500,27 @@ func TestCloseThread(t *testing.T) {
 	}
 }
 
+func TestDisplayContext(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"", ""},
+		{"some plain context", "some plain context"},
+		{"https://thanx.slack.com/archives/G01MA920F9/p1773165648549789?thread_ts=1771862390.043209&cid=G01MA920F9", "Slack"},
+		{"https://mycompany.slack.com/archives/C01ABC/p123456", "Slack"},
+		{"https://workspace.slack.com/messages/general", "Slack"},
+		{"https://github.com/owner/repo/issues/42", "GitHub"},
+	}
+
+	for _, tt := range tests {
+		got := displayContext(tt.input)
+		if got != tt.want {
+			t.Errorf("displayContext(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestExtractJSON(t *testing.T) {
 	tests := []struct {
 		input string

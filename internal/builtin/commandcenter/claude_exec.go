@@ -256,7 +256,7 @@ func formatTodoContext(todo db.Todo) string {
 	var parts []string
 	parts = append(parts, fmt.Sprintf("## Task: %s\n", todo.Title))
 	if todo.Context != "" {
-		parts = append(parts, fmt.Sprintf("**Context:** %s", todo.Context))
+		parts = append(parts, fmt.Sprintf("**Context:** %s", displayContext(todo.Context)))
 	}
 	if todo.WhoWaiting != "" {
 		parts = append(parts, fmt.Sprintf("**Who's waiting:** %s", todo.WhoWaiting))
