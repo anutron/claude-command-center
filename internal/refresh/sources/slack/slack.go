@@ -466,6 +466,30 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 		}
 	}
 
+	// Also run search.messages to pick up DM/group-DM candidates that aren't
+	// covered by the channel-only fetch above.
+	searchCandidates, searchErr := fetchSlackCandidatesViaSearch(ctx, token)
+	if searchErr != nil {
+		log.Printf("slack: search.messages fallback failed (non-fatal): %v", searchErr)
+	} else if len(searchCandidates) > 0 {
+		// Deduplicate by permalink — channel candidates take precedence.
+		seen := make(map[string]bool, len(candidates))
+		for _, c := range candidates {
+			seen[c.Permalink] = true
+		}
+		var added int
+		for _, c := range searchCandidates {
+			if !seen[c.Permalink] {
+				candidates = append(candidates, c)
+				seen[c.Permalink] = true
+				added++
+			}
+		}
+		if added > 0 {
+			log.Printf("slack: search.messages added %d additional candidates (DMs/group DMs)", added)
+		}
+	}
+
 	return candidates, nil
 }
 
