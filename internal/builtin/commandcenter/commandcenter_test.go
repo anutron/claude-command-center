@@ -585,6 +585,159 @@ func TestDetailViewCommandInput(t *testing.T) {
 	}
 }
 
+func TestTaskRunnerStepNavigation(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+
+	// Enter task runner via detail view
+	p.HandleKey(keyMsg("o"))
+	if !p.taskRunnerView {
+		t.Fatal("taskRunnerView should be true after 'o'")
+	}
+	if p.taskRunnerStep != 1 {
+		t.Fatalf("initial step = %d, want 1", p.taskRunnerStep)
+	}
+
+	// Enter advances step 1 -> 2
+	p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerStep != 2 {
+		t.Errorf("after enter at step 1: step = %d, want 2", p.taskRunnerStep)
+	}
+
+	// Enter advances step 2 -> 3
+	p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerStep != 3 {
+		t.Errorf("after enter at step 2: step = %d, want 3", p.taskRunnerStep)
+	}
+
+	// Esc goes back step 3 -> 2
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.taskRunnerStep != 2 {
+		t.Errorf("after esc at step 3: step = %d, want 2", p.taskRunnerStep)
+	}
+
+	// Esc goes back step 2 -> 1
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.taskRunnerStep != 1 {
+		t.Errorf("after esc at step 2: step = %d, want 1", p.taskRunnerStep)
+	}
+
+	// Esc at step 1 exits task runner view
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.taskRunnerView {
+		t.Error("esc at step 1 should exit taskRunnerView")
+	}
+}
+
+func TestTaskRunnerModeCycling(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+
+	// Enter task runner and advance to step 2
+	p.HandleKey(keyMsg("o"))
+	p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerStep != 2 {
+		t.Fatalf("step = %d, want 2", p.taskRunnerStep)
+	}
+
+	// Default mode is "normal"
+	if p.taskRunnerMode != "normal" {
+		t.Fatalf("initial mode = %q, want %q", p.taskRunnerMode, "normal")
+	}
+
+	// Right arrow cycles normal -> worktree
+	p.HandleKey(keyMsg("right"))
+	if p.taskRunnerMode != "worktree" {
+		t.Errorf("after right: mode = %q, want %q", p.taskRunnerMode, "worktree")
+	}
+
+	// Right again: worktree -> sandbox
+	p.HandleKey(keyMsg("right"))
+	if p.taskRunnerMode != "sandbox" {
+		t.Errorf("after right right: mode = %q, want %q", p.taskRunnerMode, "sandbox")
+	}
+
+	// Right wraps: sandbox -> normal
+	p.HandleKey(keyMsg("right"))
+	if p.taskRunnerMode != "normal" {
+		t.Errorf("after right wrap: mode = %q, want %q", p.taskRunnerMode, "normal")
+	}
+
+	// Left wraps: normal -> sandbox
+	p.HandleKey(keyMsg("left"))
+	if p.taskRunnerMode != "sandbox" {
+		t.Errorf("after left wrap: mode = %q, want %q", p.taskRunnerMode, "sandbox")
+	}
+}
+
+func TestTaskRunnerLaunchQueue(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+
+	// Enter task runner, advance to step 3
+	p.HandleKey(keyMsg("o"))
+	p.HandleKey(keyMsg("enter")) // step 1 -> 2
+	p.HandleKey(keyMsg("enter")) // step 2 -> 3
+
+	// Default launch cursor is 0 (Queue)
+	if p.taskRunnerLaunchCursor != 0 {
+		t.Fatalf("initial launch cursor = %d, want 0", p.taskRunnerLaunchCursor)
+	}
+
+	// Enter at cursor 0 should queue (not immediate)
+	action := p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerView {
+		t.Error("task runner should be closed after launch")
+	}
+	if action.TeaCmd == nil {
+		t.Error("launch should return a TeaCmd")
+	}
+	if !strings.Contains(p.flashMessage, "queued") && !strings.Contains(p.flashMessage, "launched") {
+		t.Errorf("flash message = %q, want to contain 'queued' or 'launched'", p.flashMessage)
+	}
+}
+
+func TestTaskRunnerLaunchRunNow(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+
+	// Enter task runner, advance to step 3
+	p.HandleKey(keyMsg("o"))
+	p.HandleKey(keyMsg("enter")) // step 1 -> 2
+	p.HandleKey(keyMsg("enter")) // step 2 -> 3
+
+	// Move launch cursor to 1 (Run Now)
+	p.HandleKey(keyMsg("right"))
+	if p.taskRunnerLaunchCursor != 1 {
+		t.Fatalf("launch cursor = %d, want 1", p.taskRunnerLaunchCursor)
+	}
+
+	// Enter at cursor 1 should launch immediately
+	action := p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerView {
+		t.Error("task runner should be closed after launch")
+	}
+	if action.TeaCmd == nil {
+		t.Error("launch should return a TeaCmd")
+	}
+}
+
+func TestTaskRunnerRefineKey(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+
+	// Enter task runner, advance to step 3
+	p.HandleKey(keyMsg("o"))
+	p.HandleKey(keyMsg("enter")) // step 1 -> 2
+	p.HandleKey(keyMsg("enter")) // step 2 -> 3
+
+	// Press 'c' to refine
+	p.HandleKey(keyMsg("c"))
+	if !p.taskRunnerRefining {
+		t.Error("'c' at step 3 should set taskRunnerRefining to true")
+	}
+}
+
 func TestParseDueDate(t *testing.T) {
 	// Fixed "now" for deterministic tests: 2026-03-14
 	now := time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
