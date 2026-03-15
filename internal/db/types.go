@@ -109,6 +109,7 @@ type Todo struct {
 	Effort         string     `json:"effort"`
 	ProposedPrompt string     `json:"proposed_prompt,omitempty"`
 	SessionStatus  string     `json:"session_status,omitempty"`
+	SessionSummary string     `json:"session_summary,omitempty"`
 	TriageStatus   string     `json:"triage_status,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	CompletedAt    *time.Time `json:"completed_at"`

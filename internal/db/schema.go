@@ -163,6 +163,9 @@ func migrateSchema(db *sql.DB) error {
 	// Add triage_status column to todos if missing (added for todo triage tabs)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN triage_status TEXT NOT NULL DEFAULT 'accepted'`)
 
+	// Add session_summary column to todos if missing (added for agent review summaries)
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN session_summary TEXT`)
+
 	// Source sync tracking table (added for BUG-015: data source connectivity validation)
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_source_sync (
 		source TEXT PRIMARY KEY,
