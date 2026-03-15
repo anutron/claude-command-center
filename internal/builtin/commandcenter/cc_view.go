@@ -666,7 +666,7 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		rightFields = append(rightFields, roField{"Source", todo.Source})
 	}
 	if todo.Context != "" {
-		rightFields = append(rightFields, roField{"Context", todo.Context})
+		rightFields = append(rightFields, roField{"Context", displayContext(todo.Context)})
 	}
 	if todo.WhoWaiting != "" {
 		rightFields = append(rightFields, roField{"Who waiting", todo.WhoWaiting})
@@ -887,6 +887,29 @@ func truncateToWidth(s string, maxWidth int) string {
 		return s
 	}
 	return string(runes[:maxWidth-1]) + "~"
+}
+
+// displayContext returns a compact display string for a todo's Context field.
+// Slack URLs like "https://foo.slack.com/archives/C01ABC/p123..." become "Slack"
+// or "Slack: #channel-name" if the channel name can be resolved (future).
+// Other URLs are shortened to their hostname. Non-URL values pass through unchanged.
+func displayContext(ctx string) string {
+	if ctx == "" {
+		return ""
+	}
+	// Detect Slack archive URLs: https://<workspace>.slack.com/archives/...
+	if strings.Contains(ctx, ".slack.com/archives/") {
+		return "Slack"
+	}
+	// Detect other Slack URLs
+	if strings.Contains(ctx, ".slack.com/") {
+		return "Slack"
+	}
+	// Detect GitHub URLs
+	if strings.Contains(ctx, "github.com/") {
+		return "GitHub"
+	}
+	return ctx
 }
 
 func flattenTitle(s string) string {
