@@ -304,7 +304,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	// Set up text input
 	ti := textinput.New()
 	ti.Placeholder = "Enter title..."
-	ti.CharLimit = 120
+	ti.CharLimit = 0
 	p.textInput = ti
 
 	// Set up detail field input
@@ -325,7 +325,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	// Set up textarea
 	ta := textarea.New()
 	ta.Placeholder = "Tell " + p.cfg.Name + " what to do -- add todos, resolve conflicts, ask questions (ctrl+d submit, esc cancel)"
-	ta.CharLimit = 2000
+	ta.CharLimit = 0
 	ta.SetWidth(80)
 	ta.SetHeight(5)
 	ta.FocusedStyle.Base = ta.FocusedStyle.Base.Foreground(p.styles.ColorWhite)
@@ -337,7 +337,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	// Set up quick todo textarea
 	qta := textarea.New()
 	qta.Placeholder = "One todo per line (ctrl+d submit, esc cancel)"
-	qta.CharLimit = 2000
+	qta.CharLimit = 0
 	qta.SetWidth(80)
 	qta.SetHeight(5)
 	qta.FocusedStyle.Base = qta.FocusedStyle.Base.Foreground(p.styles.ColorWhite)
@@ -451,6 +451,19 @@ func (p *Plugin) normalMaxVisibleTodos() int {
 		max = 5
 	}
 	return max
+}
+
+// textareaWidth returns the appropriate width for textareas based on the current terminal width.
+func (p *Plugin) textareaWidth() int {
+	viewWidth := ui.ContentMaxWidth
+	if p.width > 0 && p.width < viewWidth {
+		viewWidth = p.width
+	}
+	w := viewWidth - 4
+	if w < 40 {
+		w = 40
+	}
+	return w
 }
 
 func (p *Plugin) expandedRowsPerCol() int {

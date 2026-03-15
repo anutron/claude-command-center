@@ -413,6 +413,8 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		p.flashMessage = ""
 		p.commandConversation = nil
 		p.todoTextArea.Reset()
+		taWidth := p.textareaWidth()
+		p.todoTextArea.SetWidth(taWidth)
 		cmd := p.todoTextArea.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 
@@ -421,6 +423,8 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		p.addingTodoQuick = true
 		p.flashMessage = ""
 		p.quickTodoTextArea.Reset()
+		taWidth := p.textareaWidth()
+		p.quickTodoTextArea.SetWidth(taWidth)
 		cmd := p.quickTodoTextArea.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 
