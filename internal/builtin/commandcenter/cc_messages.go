@@ -620,21 +620,21 @@ func (p *Plugin) handleTickMsg() (bool, plugin.Action) {
 	// Auto-advance detail view after notice expires (1 second)
 	if p.detailNotice != "" && time.Since(p.detailNoticeAt) > 1*time.Second {
 		p.detailNotice = ""
-		activeTodos := p.cc.ActiveTodos()
-		if len(activeTodos) == 0 {
+		filtered := p.filteredTodos()
+		if len(filtered) == 0 {
 			// No more todos — exit detail view
 			p.detailView = false
 			p.detailMode = "viewing"
 		} else {
-			// After completing/dismissing, advance to next active todo
+			// After completing/dismissing, advance to next filtered todo
 			idx := p.detailTodoActiveIndex()
 			if idx < 0 {
 				// Current todo no longer active (was completed/dismissed); pick next one
-				// Use ccCursor as fallback position
-				if p.ccCursor >= len(activeTodos) {
-					p.ccCursor = len(activeTodos) - 1
+				// Use ccCursor as fallback position (clamped to filtered list)
+				if p.ccCursor >= len(filtered) {
+					p.ccCursor = len(filtered) - 1
 				}
-				p.detailTodoID = activeTodos[p.ccCursor].ID
+				p.detailTodoID = filtered[p.ccCursor].ID
 			}
 			p.detailSelectedField = 0
 		}

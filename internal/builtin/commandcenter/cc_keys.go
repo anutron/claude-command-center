@@ -294,9 +294,9 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			todoID := todo.ID
 			p.cc.CompleteTodo(todoID)
 			p.publishEvent("todo.completed", map[string]interface{}{"id": todoID, "title": todo.Title})
-			newLen := len(p.cc.ActiveTodos())
-			if p.ccCursor >= newLen && newLen > 0 {
-				p.ccCursor = newLen - 1
+			newFiltered := len(p.filteredTodos())
+			if p.ccCursor >= newFiltered && newFiltered > 0 {
+				p.ccCursor = newFiltered - 1
 			}
 			if p.ccScrollOffset > p.ccCursor {
 				p.ccScrollOffset = p.ccCursor
@@ -321,9 +321,9 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			todoID := todo.ID
 			p.cc.RemoveTodo(todoID)
 			p.publishEvent("todo.dismissed", map[string]interface{}{"id": todoID, "title": todo.Title})
-			newLen := len(p.cc.ActiveTodos())
-			if p.ccCursor >= newLen && newLen > 0 {
-				p.ccCursor = newLen - 1
+			newFiltered := len(p.filteredTodos())
+			if p.ccCursor >= newFiltered && newFiltered > 0 {
+				p.ccCursor = newFiltered - 1
 			}
 			if p.ccScrollOffset > p.ccCursor {
 				p.ccScrollOffset = p.ccCursor
@@ -736,10 +736,10 @@ func (p *Plugin) detailCompleteTodo() plugin.Action {
 	p.cc.CompleteTodo(todoID)
 	p.publishEvent("todo.completed", map[string]interface{}{"id": todoID, "title": todo.Title})
 
-	// Adjust list cursor to stay in bounds
-	newLen := len(p.cc.ActiveTodos())
-	if p.ccCursor >= newLen && newLen > 0 {
-		p.ccCursor = newLen - 1
+	// Adjust list cursor to stay in bounds (use filteredTodos to match the view)
+	newFiltered := len(p.filteredTodos())
+	if p.ccCursor >= newFiltered && newFiltered > 0 {
+		p.ccCursor = newFiltered - 1
 	}
 	if p.ccScrollOffset > p.ccCursor {
 		p.ccScrollOffset = p.ccCursor
@@ -773,10 +773,10 @@ func (p *Plugin) detailDismissTodo() plugin.Action {
 	p.cc.RemoveTodo(todoID)
 	p.publishEvent("todo.dismissed", map[string]interface{}{"id": todoID, "title": todo.Title})
 
-	// Adjust list cursor to stay in bounds
-	newLen := len(p.cc.ActiveTodos())
-	if p.ccCursor >= newLen && newLen > 0 {
-		p.ccCursor = newLen - 1
+	// Adjust list cursor to stay in bounds (use filteredTodos to match the view)
+	newFiltered := len(p.filteredTodos())
+	if p.ccCursor >= newFiltered && newFiltered > 0 {
+		p.ccCursor = newFiltered - 1
 	}
 	if p.ccScrollOffset > p.ccCursor {
 		p.ccScrollOffset = p.ccCursor
