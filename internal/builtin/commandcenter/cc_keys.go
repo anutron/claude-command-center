@@ -1042,6 +1042,17 @@ func (p *Plugin) handleSearchInput(msg tea.KeyMsg) plugin.Action {
 	case "enter":
 		p.searchActive = false
 		p.searchInput.Blur()
+		// Ensure cursor is valid for the (possibly shorter) filtered list
+		filtered := p.filteredTodos()
+		if p.ccCursor >= len(filtered) {
+			if len(filtered) > 0 {
+				p.ccCursor = len(filtered) - 1
+			} else {
+				p.ccCursor = 0
+			}
+		}
+		p.ccScrollOffset = 0
+		p.ccExpandedOffset = 0
 		return plugin.NoopAction()
 	case "esc":
 		p.searchActive = false

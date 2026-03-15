@@ -664,11 +664,12 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", loadingLine)
 		}
 		if p.searchActive {
-			searchLine := p.styles.SectionHeader.Render("/") + " " + p.searchInput.View()
+			searchLine := p.styles.SectionHeader.Render("/") + " " + p.searchInput.View() + "  " + p.styles.Hint.Render("enter keep filter \u00b7 esc clear")
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", searchLine)
 		} else if strings.TrimSpace(p.searchInput.Value()) != "" {
-			filterHint := p.styles.CalendarTime.Render("filter: " + p.searchInput.Value() + "  (/ to edit, esc to clear)")
-			view = lipgloss.JoinVertical(lipgloss.Left, view, "", "  "+filterHint)
+			filterLabel := lipgloss.NewStyle().Foreground(p.styles.ColorCyan).Bold(true).Render("filter: " + p.searchInput.Value())
+			filterHint := p.styles.Hint.Render("  / to edit \u00b7 esc to clear")
+			view = lipgloss.JoinVertical(lipgloss.Left, view, "", "  "+filterLabel+filterHint)
 		}
 		return view
 	}
@@ -695,11 +696,12 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", p.renderBookingPicker())
 	}
 	if p.searchActive {
-		searchLine := p.styles.SectionHeader.Render("/") + " " + p.searchInput.View()
+		searchLine := p.styles.SectionHeader.Render("/") + " " + p.searchInput.View() + "  " + p.styles.Hint.Render("enter keep filter \u00b7 esc clear")
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", searchLine)
 	} else if strings.TrimSpace(p.searchInput.Value()) != "" {
-		filterHint := p.styles.CalendarTime.Render("filter: " + p.searchInput.Value() + "  (/ to edit, esc to clear)")
-		view = lipgloss.JoinVertical(lipgloss.Left, view, "", "  "+filterHint)
+		filterLabel := lipgloss.NewStyle().Foreground(p.styles.ColorCyan).Bold(true).Render("filter: " + p.searchInput.Value())
+		filterHint := p.styles.Hint.Render("  / to edit \u00b7 esc to clear")
+		view = lipgloss.JoinVertical(lipgloss.Left, view, "", "  "+filterLabel+filterHint)
 	}
 
 	return view
