@@ -1315,8 +1315,15 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 		}
 	}
 
-	// Auto-open path picker if todo has no project dir
-	if todo.ProjectDir == "" && len(p.detailPaths) > 0 {
+	// Restore saved wizard selections for this todo (project, mode)
+	if saved, ok := p.wizardSelections[todo.ID]; ok {
+		p.taskRunnerPathCursor = saved.pathCursor
+		p.taskRunnerMode = saved.mode
+	}
+
+	// Auto-open path picker if todo has no project dir and no saved selection
+	_, hasSaved := p.wizardSelections[todo.ID]
+	if todo.ProjectDir == "" && len(p.detailPaths) > 0 && !hasSaved {
 		p.taskRunnerPickingPath = true
 		p.taskRunnerPathFilter = ""
 	}
@@ -1336,6 +1343,16 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 	vp := viewport.New(vpWidth, vpHeight)
 	vp.SetContent(promptText)
 	p.taskRunnerPrompt = vp
+}
+
+// saveWizardSelections persists the current wizard project/mode selections for the active todo.
+func (p *Plugin) saveWizardSelections() {
+	if p.detailTodoID != "" {
+		p.wizardSelections[p.detailTodoID] = wizardSelection{
+			pathCursor: p.taskRunnerPathCursor,
+			mode:       p.taskRunnerMode,
+		}
+	}
 }
 
 // taskRunnerModes and taskRunnerPerms are the available options for cycling.
@@ -1377,6 +1394,7 @@ func (p *Plugin) handleWizardStep1(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.NoopAction()
 	case "esc":
+		p.saveWizardSelections()
 		p.taskRunnerView = false
 		return plugin.NoopAction()
 	}
