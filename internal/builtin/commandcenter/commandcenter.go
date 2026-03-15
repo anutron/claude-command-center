@@ -36,6 +36,12 @@ type undoEntry struct {
 	cursorPos  int
 }
 
+// wizardSelection stores wizard choices for a todo so they persist across open/close cycles.
+type wizardSelection struct {
+	pathCursor int    // selected path index (-1 = use todo's original project dir)
+	mode       string // "normal", "worktree", "sandbox"
+}
+
 // ccLoadedMsg is sent when CC data is loaded from DB.
 type ccLoadedMsg struct {
 	cc  *db.CommandCenter
@@ -144,6 +150,9 @@ type Plugin struct {
 	activeSessions map[string]*agentSession
 	sessionQueue   []queuedSession
 
+	// Wizard selections per-todo (persisted across open/close cycles)
+	wizardSelections map[string]wizardSelection
+
 	// Triage filter for expanded view tabs
 	triageFilter string
 
@@ -165,8 +174,9 @@ type Plugin struct {
 // New creates a new commandcenter Plugin.
 func New() *Plugin {
 	return &Plugin{
-		subView:      "command",
-		triageFilter: "accepted",
+		subView:          "command",
+		triageFilter:     "accepted",
+		wizardSelections: make(map[string]wizardSelection),
 	}
 }
 
