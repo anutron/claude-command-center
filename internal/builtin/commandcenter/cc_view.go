@@ -30,7 +30,7 @@ func formatDuration(d time.Duration) string {
 }
 
 // renderCommandCenterView is the main entry point for the command center tab.
-func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool, lastRefreshError string, agentFilterActive bool) string {
+func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool, lastRefreshError string, agentFilterActive bool, searchQuery string) string {
 	if cc == nil {
 		empty := lipgloss.NewStyle().
 			Foreground(s.ColorMuted).
@@ -57,6 +57,18 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 		panelHeight = 10
 	}
 
+	activeTodos := cc.ActiveTodos()
+	if searchQuery != "" {
+		lower := strings.ToLower(searchQuery)
+		var filtered []db.Todo
+		for _, t := range activeTodos {
+			if strings.Contains(strings.ToLower(flattenTitle(t.Title)), lower) {
+				filtered = append(filtered, t)
+			}
+		}
+		activeTodos = filtered
+	}
+
 	var completed []db.Todo
 	if showBacklog {
 		completed = cc.CompletedTodos()
@@ -70,7 +82,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 			maxVisibleTodos = 5
 		}
 		calCol := renderCalendarColumn(s, calendars, &cc.Calendar, colWidth, panelHeight)
-		todoCol := renderTodoPanel(s, g, cc.ActiveTodos(), completed, todoCursor, scrollOffset, maxVisibleTodos, colWidth, frame, loadingTodoID, agentFilterActive)
+		todoCol := renderTodoPanel(s, g, activeTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, colWidth, frame, loadingTodoID, agentFilterActive)
 		calPanel := s.PanelBorder.Width(colWidth).Render(calCol)
 		todoPanel := s.PanelBorder.Width(colWidth).Render(todoCol)
 		columns = lipgloss.JoinHorizontal(lipgloss.Top, calPanel, " ", todoPanel)
@@ -81,7 +93,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 		if maxVisibleTodos < 5 {
 			maxVisibleTodos = 5
 		}
-		todoCol := renderTodoPanel(s, g, cc.ActiveTodos(), completed, todoCursor, scrollOffset, maxVisibleTodos, todoWidth, frame, loadingTodoID, agentFilterActive)
+		todoCol := renderTodoPanel(s, g, activeTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, todoWidth, frame, loadingTodoID, agentFilterActive)
 		hint := s.CalendarFree.Render("  Configure calendar in Settings to see your schedule here")
 		todoContent := lipgloss.JoinVertical(lipgloss.Left, todoCol, "", hint)
 		columns = s.PanelBorder.Width(todoWidth).Render(todoContent)
@@ -1072,6 +1084,7 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 			{"c", "Command — tell Claude what to do"},
 			{"t", "Quick add todos (one per line)"},
 			{"s", "Schedule time block for todo"},
+			{"/", "Search/filter todos"},
 			{"a", "Toggle agent filter (show only agent todos)"},
 		{"b", "Toggle completed backlog"},
 			{"r", "Refresh from all sources"},

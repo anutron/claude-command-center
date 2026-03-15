@@ -201,6 +201,52 @@ func TestPathRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPathDescription(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	DBAddPath(db, "/home/user/project-a")
+	DBAddPath(db, "/home/user/project-b")
+
+	// Initially no descriptions
+	paths, err := DBLoadPathsWithMeta(db)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("expected 2 paths, got %d", len(paths))
+	}
+	if paths[0].Description != "" {
+		t.Fatalf("expected empty description, got %q", paths[0].Description)
+	}
+
+	// Set description
+	if err := DBUpdatePathDescription(db, "/home/user/project-a", "Go TUI dashboard"); err != nil {
+		t.Fatalf("set description: %v", err)
+	}
+
+	paths, _ = DBLoadPathsWithMeta(db)
+	if paths[0].Path != "/home/user/project-a" {
+		t.Fatalf("expected project-a first, got %s", paths[0].Path)
+	}
+	if paths[0].Description != "Go TUI dashboard" {
+		t.Fatalf("expected 'Go TUI dashboard', got %q", paths[0].Description)
+	}
+	if paths[1].Description != "" {
+		t.Fatalf("expected empty description for project-b, got %q", paths[1].Description)
+	}
+
+	// Update description for nonexistent path
+	err = DBUpdatePathDescription(db, "/nonexistent", "desc")
+	if err == nil {
+		t.Fatal("expected error for nonexistent path")
+	}
+}
+
 func TestBookmarkRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))

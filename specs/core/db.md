@@ -82,7 +82,7 @@ All types are exported for use by other packages:
 
 ### Bookmarks & Paths (DB)
 - `DBLoadBookmarks`, `DBInsertBookmark`, `DBRemoveBookmark`
-- `DBLoadPaths`, `DBAddPath` (INSERT OR IGNORE), `DBRemovePath`
+- `DBLoadPaths` (returns `[]string`), `DBLoadPathsWithMeta` (returns `[]LearnedPath` with descriptions), `DBAddPath` (INSERT OR IGNORE), `DBRemovePath`, `DBUpdatePathDescription`
 
 ### Meta & Pending Actions
 - `DBSetMeta` -- upserts a key-value pair in `cc_meta`
