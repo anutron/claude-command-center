@@ -1491,27 +1491,22 @@ func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptV
 		parts = append(parts, refiningLine)
 	}
 
-	// Launch selector: [ Queue ] Run Now
-	queueLabel := "Queue"
-	runNowLabel := "Run Now"
-	if launchCursor == 0 {
-		queueLabel = lipgloss.NewStyle().
-			Background(s.ColorCyan).
-			Foreground(lipgloss.Color("#000000")).
-			Bold(true).
-			Padding(0, 1).
-			Render(queueLabel)
-		runNowLabel = s.DescMuted.Render(runNowLabel)
-	} else {
-		queueLabel = s.DescMuted.Render(queueLabel)
-		runNowLabel = lipgloss.NewStyle().
-			Background(s.ColorCyan).
-			Foreground(lipgloss.Color("#000000")).
-			Bold(true).
-			Padding(0, 1).
-			Render(runNowLabel)
+	// Launch selector: [ Run Claude ] Queue Agent  Run Agent Now
+	labels := []string{"Run Claude", "Queue Agent", "Run Agent Now"}
+	selectedStyle := lipgloss.NewStyle().
+		Background(s.ColorCyan).
+		Foreground(lipgloss.Color("#000000")).
+		Bold(true).
+		Padding(0, 1)
+	var rendered []string
+	for i, label := range labels {
+		if i == launchCursor {
+			rendered = append(rendered, selectedStyle.Render(label))
+		} else {
+			rendered = append(rendered, s.DescMuted.Render(label))
+		}
 	}
-	selector := "  " + queueLabel + "   " + runNowLabel
+	selector := "  " + strings.Join(rendered, "   ")
 
 	hint := s.Hint.Render("  e edit prompt · r refine with AI · ←/→ launch option · enter launch · esc back")
 

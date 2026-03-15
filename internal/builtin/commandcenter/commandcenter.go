@@ -100,7 +100,7 @@ type Plugin struct {
 	taskRunnerRefining    bool   // true when AI refine is active
 	taskRunnerReviewClean string // clean prompt text before review edits
 	taskRunnerPathCursor   int    // index into detailPaths for task runner project override
-	taskRunnerLaunchCursor int    // 0=Queue, 1=Run Now
+	taskRunnerLaunchCursor int    // 0=Run Claude, 1=Queue Agent, 2=Run Agent Now
 	taskRunnerPickingPath  bool   // true when scrollable path picker is open
 	taskRunnerPathFilter   string // type-to-filter string for path picker
 

@@ -1408,12 +1408,19 @@ func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.NoopAction()
 	case "right", "l":
-		if p.taskRunnerLaunchCursor < 1 {
+		if p.taskRunnerLaunchCursor < 2 {
 			p.taskRunnerLaunchCursor++
 		}
 		return plugin.NoopAction()
 	case "enter":
-		return p.taskRunnerLaunch(p.taskRunnerLaunchCursor == 1)
+		switch p.taskRunnerLaunchCursor {
+		case 0:
+			return p.taskRunnerLaunchInteractive()
+		case 1:
+			return p.taskRunnerLaunch(false) // queue
+		case 2:
+			return p.taskRunnerLaunch(true) // run now
+		}
 	case "e":
 		// Launch external editor to refine the prompt (Plannotator).
 		if todoPtr := p.detailTodo(); todoPtr != nil {
@@ -1545,6 +1552,57 @@ func (p *Plugin) taskRunnerFilteredPaths() []string {
 }
 
 // taskRunnerLaunch launches the agent, optionally forcing immediate start.
+// taskRunnerLaunchInteractive launches an interactive Claude session with the
+// todo's prompt as context. The user works on the todo themselves in Claude.
+// Sets session_status to "active" so the todo shows as in-progress.
+func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
+	if todoPtr := p.detailTodo(); todoPtr != nil {
+		todo := *todoPtr
+		prompt := todo.ProposedPrompt
+		if prompt == "" {
+			prompt = formatTodoContext(todo)
+		}
+		projectDir := todo.ProjectDir
+		if p.taskRunnerPathCursor >= 0 && p.taskRunnerPathCursor < len(p.detailPaths) {
+			projectDir = p.detailPaths[p.taskRunnerPathCursor]
+		}
+		if projectDir == "" {
+			home, _ := os.UserHomeDir()
+			projectDir = home
+		}
+
+		// Mark todo as active
+		p.setTodoSessionStatus(todo.ID, "active")
+		p.cc.AcceptTodo(todo.ID)
+
+		p.taskRunnerView = false
+		p.detailView = false
+
+		args := map[string]string{
+			"dir":            projectDir,
+			"initial_prompt": prompt,
+		}
+		if p.taskRunnerMode == "worktree" {
+			args["worktree"] = "true"
+		}
+
+		var cmds []tea.Cmd
+		cmds = append(cmds, p.persistSessionStatus(todo.ID, "active"))
+		cmds = append(cmds, p.dbWriteCmd(func(database *sql.DB) error {
+			return db.DBAcceptTodo(database, todo.ID)
+		}))
+
+		return plugin.Action{
+			Type:   "launch",
+			Args:   args,
+			TeaCmd: tea.Batch(cmds...),
+		}
+	}
+	p.taskRunnerView = false
+	p.detailView = false
+	return plugin.NoopAction()
+}
+
 func (p *Plugin) taskRunnerLaunch(immediate bool) plugin.Action {
 	if todoPtr := p.detailTodo(); todoPtr != nil {
 		todo := *todoPtr

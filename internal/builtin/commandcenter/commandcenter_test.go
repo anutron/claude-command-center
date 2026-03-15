@@ -670,6 +670,36 @@ func TestTaskRunnerModeCycling(t *testing.T) {
 	}
 }
 
+func TestTaskRunnerLaunchInteractive(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+
+	// Enter task runner, advance to step 3
+	p.HandleKey(keyMsg("o"))
+	p.HandleKey(keyMsg("enter")) // step 1 -> 2
+	p.HandleKey(keyMsg("enter")) // step 2 -> 3
+
+	// Default launch cursor is 0 (Run Claude)
+	if p.taskRunnerLaunchCursor != 0 {
+		t.Fatalf("initial launch cursor = %d, want 0", p.taskRunnerLaunchCursor)
+	}
+
+	// Enter at cursor 0 should launch interactive session
+	action := p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerView {
+		t.Error("task runner should be closed after launch")
+	}
+	if action.Type != "launch" {
+		t.Errorf("action type = %q, want 'launch'", action.Type)
+	}
+	if action.Args["dir"] != "/tmp/myproject" {
+		t.Errorf("launch dir = %q, want '/tmp/myproject'", action.Args["dir"])
+	}
+	if action.Args["initial_prompt"] == "" {
+		t.Error("interactive launch should include initial_prompt")
+	}
+}
+
 func TestTaskRunnerLaunchQueue(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
@@ -679,12 +709,13 @@ func TestTaskRunnerLaunchQueue(t *testing.T) {
 	p.HandleKey(keyMsg("enter")) // step 1 -> 2
 	p.HandleKey(keyMsg("enter")) // step 2 -> 3
 
-	// Default launch cursor is 0 (Queue)
-	if p.taskRunnerLaunchCursor != 0 {
-		t.Fatalf("initial launch cursor = %d, want 0", p.taskRunnerLaunchCursor)
+	// Move launch cursor to 1 (Queue Agent)
+	p.HandleKey(keyMsg("right"))
+	if p.taskRunnerLaunchCursor != 1 {
+		t.Fatalf("launch cursor = %d, want 1", p.taskRunnerLaunchCursor)
 	}
 
-	// Enter at cursor 0 should queue (not immediate)
+	// Enter at cursor 1 should queue agent
 	action := p.HandleKey(keyMsg("enter"))
 	if p.taskRunnerView {
 		t.Error("task runner should be closed after launch")
@@ -706,13 +737,14 @@ func TestTaskRunnerLaunchRunNow(t *testing.T) {
 	p.HandleKey(keyMsg("enter")) // step 1 -> 2
 	p.HandleKey(keyMsg("enter")) // step 2 -> 3
 
-	// Move launch cursor to 1 (Run Now)
+	// Move launch cursor to 2 (Run Agent Now)
 	p.HandleKey(keyMsg("right"))
-	if p.taskRunnerLaunchCursor != 1 {
-		t.Fatalf("launch cursor = %d, want 1", p.taskRunnerLaunchCursor)
+	p.HandleKey(keyMsg("right"))
+	if p.taskRunnerLaunchCursor != 2 {
+		t.Fatalf("launch cursor = %d, want 2", p.taskRunnerLaunchCursor)
 	}
 
-	// Enter at cursor 1 should launch immediately
+	// Enter at cursor 2 should launch immediately
 	action := p.HandleKey(keyMsg("enter"))
 	if p.taskRunnerView {
 		t.Error("task runner should be closed after launch")
