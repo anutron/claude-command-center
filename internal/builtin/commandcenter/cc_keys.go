@@ -1425,6 +1425,13 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 func (p *Plugin) handleTaskRunnerPathSelect(msg tea.KeyMsg) plugin.Action {
 	filtered := p.taskRunnerFilteredPaths()
 
+	// Clamp cursor to valid range
+	if len(filtered) == 0 {
+		p.taskRunnerPathCursor = 0
+	} else if p.taskRunnerPathCursor >= len(filtered) {
+		p.taskRunnerPathCursor = len(filtered) - 1
+	}
+
 	switch msg.String() {
 	case "up", "k":
 		if p.taskRunnerPathCursor > 0 {
