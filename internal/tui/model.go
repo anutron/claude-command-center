@@ -221,6 +221,11 @@ func (m *Model) findTabByRoute(route string) int {
 // Must be called before the program is run.
 func (m *Model) SetReturnedFromLaunch() {
 	m.returnedFromLaunch = true
+
+	// Switch to the Command Center tab so the user returns to where they launched from.
+	if idx := m.findTabByRoute("commandcenter"); idx >= 0 {
+		m.activeTab = tab(idx)
+	}
 }
 
 // SetReturnContext stores the todo context from the previous launch so plugins
