@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { homedir } from "os";
 import { join } from "path";
 import { execFile } from "child_process";
+import { randomBytes, createHash } from "crypto";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
@@ -31,6 +32,16 @@ export function listAccounts(): string[] {
   return readdirSync(TOKEN_DIR)
     .filter((f) => f.endsWith(".json"))
     .map((f) => f.replace(".json", ""));
+}
+
+/** Generate PKCE code_verifier and S256 code_challenge per RFC 7636. */
+function generatePKCE(): { codeVerifier: string; codeChallenge: string } {
+  const codeVerifier = randomBytes(32)
+    .toString("base64url"); // base64url, no padding
+  const codeChallenge = createHash("sha256")
+    .update(codeVerifier)
+    .digest("base64url"); // base64url, no padding
+  return { codeVerifier, codeChallenge };
 }
 
 function createOAuth2ClientWith(clientId: string, clientSecret: string) {
@@ -64,7 +75,7 @@ function saveAccount(account: string, clientId: string, clientSecret: string, to
     mkdirSync(TOKEN_DIR, { recursive: true });
   }
   const data: AccountData = { clientId, clientSecret, tokens: tokens as Record<string, unknown> };
-  writeFileSync(accountPath(account), JSON.stringify(data, null, 2));
+  writeFileSync(accountPath(account), JSON.stringify(data, null, 2), { mode: 0o600 });
 }
 
 async function runAuthFlow(account: string) {
@@ -83,10 +94,15 @@ async function runAuthFlow(account: string) {
 
   const oauth2Client = createOAuth2ClientWith(clientId, clientSecret);
 
+  // Generate PKCE parameters (RFC 7636).
+  const { codeVerifier, codeChallenge } = generatePKCE();
+
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline",
     scope: SCOPES,
     prompt: "consent",
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
   });
 
   console.log(`\nAuthenticating account: "${account}"`);
@@ -119,7 +135,7 @@ async function runAuthFlow(account: string) {
           return;
         }
 
-        const { tokens } = await oauth2Client.getToken(code);
+        const { tokens } = await oauth2Client.getToken({ code, codeVerifier });
         saveAccount(account, clientId, clientSecret, tokens);
 
         res.writeHead(200, { "Content-Type": "text/html" });

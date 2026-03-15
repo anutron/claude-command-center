@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/anutron/claude-command-center/internal/sanitize"
 )
 
 // Process manages the lifecycle of an external plugin subprocess.
@@ -167,7 +168,7 @@ func (p *Process) readStdout(r io.Reader) {
 func (p *Process) readStderr(r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := sanitize.StripANSI(scanner.Text())
 		if p.logger != nil {
 			p.logger.Warn(p.slug, "stderr: "+line)
 		}

@@ -12,7 +12,7 @@ import (
 // OpenDB opens (or creates) the SQLite database at dbPath, enables WAL mode,
 // and runs the idempotent schema migration.
 func OpenDB(dbPath string) (*sql.DB, error) {
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o700); err != nil {
 		return nil, err
 	}
 	db, err := sql.Open("sqlite", dbPath)

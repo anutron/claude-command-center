@@ -340,17 +340,17 @@ func Save(cfg *Config) error {
 			return fmt.Errorf("refusing to save %s: %w", path, err)
 		}
 		// Create a backup of the existing file before writing.
-		_ = os.WriteFile(path+".bak", existing, 0o644)
+		_ = os.WriteFile(path+".bak", existing, 0o600)
 	}
 
 	// Write to a temp file and rename for atomicity.
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		// Rename failed — fall back to direct write.
-		return os.WriteFile(path, data, 0o644)
+		return os.WriteFile(path, data, 0o600)
 	}
 
 	cfg.loadedFromFile = true

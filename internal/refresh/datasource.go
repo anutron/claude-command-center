@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/sanitize"
 )
 
 // DataSource is an extensible interface for the refresh pipeline.
@@ -34,6 +35,8 @@ type SourceResult struct {
 }
 
 // combineResults merges all SourceResults into a single FreshData.
+// It strips ANSI escape sequences from all external string fields to prevent
+// terminal injection attacks (e.g., malicious calendar titles setting terminal title).
 func combineResults(results []*SourceResult) *FreshData {
 	fresh := &FreshData{}
 	for _, r := range results {
@@ -41,10 +44,41 @@ func combineResults(results []*SourceResult) *FreshData {
 			continue
 		}
 		if r.Calendar != nil {
-			fresh.Calendar = *r.Calendar
+			cal := *r.Calendar
+			sanitizeCalendarData(&cal)
+			fresh.Calendar = cal
 		}
 		fresh.Todos = append(fresh.Todos, r.Todos...)
 		fresh.Threads = append(fresh.Threads, r.Threads...)
 	}
+	sanitizeTodos(fresh.Todos)
+	sanitizeThreads(fresh.Threads)
 	return fresh
+}
+
+// sanitizeCalendarData strips ANSI escapes from calendar event titles.
+func sanitizeCalendarData(cal *db.CalendarData) {
+	for i := range cal.Today {
+		cal.Today[i].Title = sanitize.StripANSI(cal.Today[i].Title)
+	}
+	for i := range cal.Tomorrow {
+		cal.Tomorrow[i].Title = sanitize.StripANSI(cal.Tomorrow[i].Title)
+	}
+}
+
+// sanitizeTodos strips ANSI escapes from todo display fields.
+func sanitizeTodos(todos []db.Todo) {
+	for i := range todos {
+		todos[i].Title = sanitize.StripANSI(todos[i].Title)
+		todos[i].Context = sanitize.StripANSI(todos[i].Context)
+		todos[i].Detail = sanitize.StripANSI(todos[i].Detail)
+	}
+}
+
+// sanitizeThreads strips ANSI escapes from thread display fields.
+func sanitizeThreads(threads []db.Thread) {
+	for i := range threads {
+		threads[i].Title = sanitize.StripANSI(threads[i].Title)
+		threads[i].Summary = sanitize.StripANSI(threads[i].Summary)
+	}
 }

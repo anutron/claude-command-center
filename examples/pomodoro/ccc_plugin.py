@@ -12,6 +12,10 @@ import time
 class CCCPlugin:
     """Base class for CCC external plugins."""
 
+    # Declare which top-level config sections this plugin needs.
+    # Override in subclasses, e.g. config_scopes = ["github", "slack"]
+    config_scopes = []
+
     def __init__(self, slug, tab_name, routes=None, key_bindings=None,
                  refresh_interval_ms=0):
         self.slug = slug
@@ -26,8 +30,12 @@ class CCCPlugin:
 
     # --- Override these in subclasses ---
 
-    def on_init(self, config, db_path, width, height):
-        """Called when the host sends init. Config is a dict."""
+    def on_init(self, db_path, width, height):
+        """Called when the host sends init (before config is available)."""
+        pass
+
+    def on_config(self, config):
+        """Called when the host sends scoped config after the ready handshake."""
         pass
 
     def on_render(self, width, height, frame):
@@ -82,18 +90,22 @@ class CCCPlugin:
             "routes": self.routes,
             "key_bindings": self.key_bindings,
             "migrations": [],
+            "config_scopes": self.config_scopes,
         })
 
     def _handle(self, msg):
         msg_type = msg.get("type")
 
         if msg_type == "init":
-            self.config = msg.get("config", {})
             self.db_path = msg.get("db_path", "")
             self.width = msg.get("width", 80)
             self.height = msg.get("height", 24)
-            self.on_init(self.config, self.db_path, self.width, self.height)
+            self.on_init(self.db_path, self.width, self.height)
             self._send_ready()
+
+        elif msg_type == "config":
+            self.config = msg.get("config", {})
+            self.on_config(self.config)
 
         elif msg_type == "render":
             w = msg.get("width", self.width)

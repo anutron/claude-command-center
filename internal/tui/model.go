@@ -2,6 +2,8 @@ package tui
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/builtin/sessions"
 	"github.com/anutron/claude-command-center/internal/builtin/settings"
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/external"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/ui"
@@ -418,6 +421,21 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 
 	switch action.Type {
 	case plugin.ActionLaunch:
+		// Constrain launch dir for external plugins to learned paths only.
+		if dir := action.Args["dir"]; dir != "" {
+			if _, isExt := m.activePlugin().(*external.ExternalPlugin); isExt {
+				if err := validateLaunchDir(m.db, dir); err != nil {
+					// Reject the launch — log a warning and return to the TUI.
+					fmt.Fprintf(
+						os.Stderr,
+						"WARNING: external plugin %q launch rejected: %v\n",
+						m.activePlugin().Slug(), err,
+					)
+					return m, nil
+				}
+			}
+		}
+
 		la := &LaunchAction{Dir: action.Args["dir"]}
 		if rid := action.Args["resume_id"]; rid != "" {
 			la.Args = []string{"--resume", rid}

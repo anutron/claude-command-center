@@ -44,7 +44,7 @@ Extract the Command Center TUI from AI-RON into a standalone, installable projec
 - [x] Refresh configurability: configurable interval, status indicator, error display
 - [x] `ccc doctor` — diagnostic command checking config, credentials, connectivity
 - [x] `ccc install-schedule` / `ccc uninstall-schedule` — launchd plist management
-- [x] Move gmail + things MCP servers into monorepo under `servers/`
+- [x] Move gmail MCP server into monorepo under `servers/`
 - [x] MCP config generation in `ccc setup` (output `.claude/mcp.json` snippets)
 - [x] `make install` builds enabled MCP servers
 - [x] Docs cleanup — remove stale Supabase/memory references, update specs

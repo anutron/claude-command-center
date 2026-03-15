@@ -186,7 +186,7 @@ The onboarding flow is a mode within the main TUI Model:
 
 **Display:**
 - Summary of configured settings (name, palette, enabled sources)
-- Spinner while building MCP servers (gmail, things)
+- Spinner while building MCP servers (gmail)
 - Success/failure status for each MCP build
 - "Press enter to start" prompt after builds complete
 

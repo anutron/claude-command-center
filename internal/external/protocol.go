@@ -4,7 +4,7 @@ import "encoding/json"
 
 // HostMsg is sent from host to plugin on stdin (one JSON line).
 type HostMsg struct {
-	Type string `json:"type"` // init, render, key, navigate, event, refresh, shutdown
+	Type string `json:"type"` // init, config, render, key, navigate, event, refresh, shutdown
 
 	// init fields
 	Config json.RawMessage `json:"config,omitempty"`
@@ -34,12 +34,13 @@ type PluginMsg struct {
 	Type string `json:"type"` // ready, view, action, event, log
 
 	// ready fields
-	Slug        string          `json:"slug,omitempty"`
-	TabName     string          `json:"tab_name,omitempty"`
-	RefreshMS   int             `json:"refresh_interval_ms,omitempty"`
-	Routes      []RouteMsg      `json:"routes,omitempty"`
-	KeyBindings []KeyBindingMsg `json:"key_bindings,omitempty"`
-	Migrations  []MigrationMsg  `json:"migrations,omitempty"`
+	Slug         string          `json:"slug,omitempty"`
+	TabName      string          `json:"tab_name,omitempty"`
+	RefreshMS    int             `json:"refresh_interval_ms,omitempty"`
+	Routes       []RouteMsg      `json:"routes,omitempty"`
+	KeyBindings  []KeyBindingMsg `json:"key_bindings,omitempty"`
+	Migrations   []MigrationMsg  `json:"migrations,omitempty"`
+	ConfigScopes []string        `json:"config_scopes,omitempty"`
 
 	// view fields
 	Content string `json:"content,omitempty"`

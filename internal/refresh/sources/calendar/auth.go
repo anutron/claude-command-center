@@ -2,8 +2,11 @@ package calendar
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -85,16 +88,42 @@ func RunCalendarAuth() error {
 		return fmt.Errorf("calendar auth: %w", err)
 	}
 
+	// Start listener on loopback only, random port.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+
 	conf := &oauth2.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		Endpoint:     google.Endpoint,
 		Scopes:       []string{gcal.CalendarScope, gcal.CalendarEventsScope},
-		RedirectURL:  "http://localhost:3000/oauth2callback",
+		RedirectURL:  fmt.Sprintf("http://localhost:%d/oauth2callback", port),
 	}
 
-	url := conf.AuthCodeURL("state-token", oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent"))
-	fmt.Printf("Open this URL in your browser:\n%s\n\nWaiting for callback on http://localhost:3000...\n", url)
+	// Generate a cryptographically random state parameter.
+	stateBytes := make([]byte, 16)
+	if _, err := rand.Read(stateBytes); err != nil {
+		ln.Close()
+		return fmt.Errorf("generate OAuth state: %w", err)
+	}
+	oauthState := hex.EncodeToString(stateBytes)
+
+	// Generate PKCE parameters (RFC 7636).
+	pkce, err := auth.GeneratePKCE()
+	if err != nil {
+		ln.Close()
+		return fmt.Errorf("generate PKCE: %w", err)
+	}
+
+	authOpts := append([]oauth2.AuthCodeOption{
+		oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("prompt", "consent"),
+	}, pkce.AuthURLParams()...)
+	url := conf.AuthCodeURL(oauthState, authOpts...)
+	fmt.Printf("Open this URL in your browser:\n%s\n\nWaiting for callback on http://localhost:%d...\n", url, port)
 
 	_ = exec.Command("open", url).Run()
 
@@ -103,6 +132,11 @@ func RunCalendarAuth() error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/oauth2callback", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("state") != oauthState {
+			http.Error(w, "invalid state parameter", http.StatusForbidden)
+			errCh <- fmt.Errorf("OAuth state mismatch: possible CSRF attack")
+			return
+		}
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			http.Error(w, "no code", 400)
@@ -114,10 +148,10 @@ func RunCalendarAuth() error {
 		codeCh <- code
 	})
 
-	srv := &http.Server{Addr: ":3000", Handler: mux}
+	srv := &http.Server{Handler: mux}
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- fmt.Errorf("listen on :3000: %w", err)
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("listen on :%d: %w", port, err)
 		}
 	}()
 
@@ -133,7 +167,7 @@ func RunCalendarAuth() error {
 	}
 	srv.Close()
 
-	tok, err := conf.Exchange(context.Background(), code)
+	tok, err := conf.Exchange(context.Background(), code, pkce.ExchangeParams()...)
 	if err != nil {
 		return fmt.Errorf("token exchange failed: %w", err)
 	}

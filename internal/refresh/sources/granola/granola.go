@@ -213,6 +213,8 @@ func granolaPost(ctx context.Context, token, endpoint string, payload interface{
 		return nil, fmt.Errorf("granola %s: HTTP %d", endpoint, resp.StatusCode)
 	}
 
+	const maxResponseSize = 10 * 1024 * 1024 // 10MB
+
 	var reader io.Reader = resp.Body
 	if resp.Header.Get("Content-Encoding") == "gzip" {
 		gz, err := gzip.NewReader(resp.Body)
@@ -223,7 +225,7 @@ func granolaPost(ctx context.Context, token, endpoint string, payload interface{
 		reader = gz
 	}
 
-	return io.ReadAll(reader)
+	return io.ReadAll(io.LimitReader(reader, maxResponseSize))
 }
 
 func granolaListMeetings(ctx context.Context, token string) ([]RawMeeting, error) {

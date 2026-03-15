@@ -83,6 +83,41 @@ func TestCombineResults(t *testing.T) {
 	}
 }
 
+func TestCombineResults_StripsANSI(t *testing.T) {
+	r := &SourceResult{
+		Calendar: &db.CalendarData{
+			Today:    []db.CalendarEvent{{Title: "\x1b[31mRed Meeting\x1b[0m"}},
+			Tomorrow: []db.CalendarEvent{{Title: "\x1b]0;evil\x07Normal"}},
+		},
+		Todos: []db.Todo{{Title: "\x1b[1mBold Todo\x1b[0m", Context: "\x1b[32mgreen\x1b[0m", Detail: "\x1b[4munderline\x1b[0m"}},
+		Threads: []db.Thread{{Title: "\x1b[31m#42 PR\x1b[0m", Summary: "\x1b[1mOpen\x1b[0m"}},
+	}
+
+	result := combineResults([]*SourceResult{r})
+
+	if result.Calendar.Today[0].Title != "Red Meeting" {
+		t.Errorf("calendar today title not stripped: %q", result.Calendar.Today[0].Title)
+	}
+	if result.Calendar.Tomorrow[0].Title != "Normal" {
+		t.Errorf("calendar tomorrow title not stripped: %q", result.Calendar.Tomorrow[0].Title)
+	}
+	if result.Todos[0].Title != "Bold Todo" {
+		t.Errorf("todo title not stripped: %q", result.Todos[0].Title)
+	}
+	if result.Todos[0].Context != "green" {
+		t.Errorf("todo context not stripped: %q", result.Todos[0].Context)
+	}
+	if result.Todos[0].Detail != "underline" {
+		t.Errorf("todo detail not stripped: %q", result.Todos[0].Detail)
+	}
+	if result.Threads[0].Title != "#42 PR" {
+		t.Errorf("thread title not stripped: %q", result.Threads[0].Title)
+	}
+	if result.Threads[0].Summary != "Open" {
+		t.Errorf("thread summary not stripped: %q", result.Threads[0].Summary)
+	}
+}
+
 func TestCombineResults_AllNil(t *testing.T) {
 	result := combineResults([]*SourceResult{nil, nil})
 	if result == nil {

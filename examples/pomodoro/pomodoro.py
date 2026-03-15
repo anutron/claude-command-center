@@ -30,7 +30,7 @@ class PomodoroPlugin(CCCPlugin):
         self.sessions_completed = 0
         self.last_tick = None
 
-    def on_init(self, config, db_path, width, height):
+    def on_init(self, db_path, width, height):
         self.log("info", "Pomodoro plugin initialized")
 
     def on_render(self, width, height, frame):

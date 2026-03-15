@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -15,6 +17,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/oauth2"
 )
+
+// generateOAuthState returns a cryptographically random hex string for use as
+// an OAuth2 state parameter. It generates 16 random bytes (128 bits).
+func generateOAuthState() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate OAuth state: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
 
 // openBrowser is a package-level function for opening a URL in the browser.
 // It can be overridden in tests to prevent actual browser launches.
@@ -97,11 +109,28 @@ func runAuthFlow(ctx context.Context, opts AuthFlowOpts) (*oauth2.Token, error) 
 	conf := *opts.Config
 	conf.RedirectURL = redirectURL
 
+	// Generate a cryptographically random state parameter.
+	oauthState, err := generateOAuthState()
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate PKCE parameters (RFC 7636).
+	pkce, err := GeneratePKCE()
+	if err != nil {
+		return nil, fmt.Errorf("generate PKCE: %w", err)
+	}
+
 	codeCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/oauth2callback", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("state") != oauthState {
+			http.Error(w, "invalid state parameter", http.StatusForbidden)
+			errCh <- fmt.Errorf("OAuth state mismatch: possible CSRF attack")
+			return
+		}
 		code := r.URL.Query().Get("code")
 		if code == "" {
 			http.Error(w, "no authorization code", http.StatusBadRequest)
@@ -121,8 +150,12 @@ func runAuthFlow(ctx context.Context, opts AuthFlowOpts) (*oauth2.Token, error) 
 	}()
 	defer srv.Close()
 
-	// Open browser.
-	url := conf.AuthCodeURL("state-token", oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent"))
+	// Open browser — include PKCE challenge in the authorization URL.
+	authOpts := append([]oauth2.AuthCodeOption{
+		oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("prompt", "consent"),
+	}, pkce.AuthURLParams()...)
+	url := conf.AuthCodeURL(oauthState, authOpts...)
 	_ = openBrowser(url)
 
 	// Wait for callback, context cancellation, or timeout.
@@ -140,8 +173,8 @@ func runAuthFlow(ctx context.Context, opts AuthFlowOpts) (*oauth2.Token, error) 
 		return nil, fmt.Errorf("timeout waiting for authorization")
 	}
 
-	// Exchange code for token.
-	tok, err := conf.Exchange(ctx, code)
+	// Exchange code for token — include PKCE verifier.
+	tok, err := conf.Exchange(ctx, code, pkce.ExchangeParams()...)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
 	}

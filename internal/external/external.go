@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"reflect"
 	"strings"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -69,21 +71,12 @@ func (ep *ExternalPlugin) startProcess() error {
 		return fmt.Errorf("start process: %w", err)
 	}
 
-	cfgJSON, err := json.Marshal(ep.ctx.Config)
-	if err != nil {
-		proc.Kill()
-		ep.errState = fmt.Sprintf("failed to marshal config: %v", err)
-		return fmt.Errorf("marshal config: %w", err)
-	}
-
-	err = proc.Send(HostMsg{
+	if err := proc.Send(HostMsg{
 		Type:   "init",
-		Config: cfgJSON,
 		DBPath: ep.ctx.DBPath,
 		Width:  ep.width,
 		Height: ep.height,
-	})
-	if err != nil {
+	}); err != nil {
 		proc.Kill()
 		ep.errState = fmt.Sprintf("failed to send init: %v", err)
 		return fmt.Errorf("send init: %w", err)
@@ -100,6 +93,21 @@ func (ep *ExternalPlugin) startProcess() error {
 		proc.Kill()
 		ep.errState = fmt.Sprintf("expected ready, got %s", resp.Type)
 		return fmt.Errorf("expected ready message, got %q", resp.Type)
+	}
+
+	// Send scoped config: only the top-level config sections the plugin declared.
+	// If no config_scopes declared, send no config (secure by default).
+	scopedCfg := scopeConfig(ep.ctx.Config, resp.ConfigScopes)
+	cfgJSON, err := json.Marshal(scopedCfg)
+	if err != nil {
+		proc.Kill()
+		ep.errState = fmt.Sprintf("failed to marshal config: %v", err)
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := proc.Send(HostMsg{Type: "config", Config: cfgJSON}); err != nil {
+		proc.Kill()
+		ep.errState = fmt.Sprintf("failed to send config: %v", err)
+		return fmt.Errorf("send config: %w", err)
 	}
 
 	ep.proc = proc
@@ -135,6 +143,16 @@ func (ep *ExternalPlugin) startProcess() error {
 		ep.migrations[i] = plugin.Migration{
 			Version: m.Version,
 			SQL:     m.SQL,
+		}
+	}
+
+	// Validate external plugin migrations (only DDL namespaced to slug allowed)
+	for _, m := range ep.migrations {
+		if err := plugin.ValidateExternalMigrationSQL(ep.slug, m.SQL); err != nil {
+			if ep.ctx.Logger != nil {
+				ep.ctx.Logger.Warn(ep.slug, fmt.Sprintf("migration v%d rejected: %s", m.Version, err.Error()))
+			}
+			return fmt.Errorf("migration v%d for %s: %w", m.Version, ep.slug, err)
 		}
 	}
 
@@ -257,9 +275,12 @@ func (ep *ExternalPlugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			switch pm.Type {
 			case "event":
 				if ep.ctx.Bus != nil {
+					// Auto-prefix event topics with the plugin's slug to prevent
+					// external plugins from impersonating built-in event topics.
+					topic := ep.slug + ":" + pm.Topic2
 					ep.ctx.Bus.Publish(plugin.Event{
 						Source:  ep.slug,
-						Topic:   pm.Topic2,
+						Topic:   topic,
 						Payload: pm.EPayload,
 					})
 				}
@@ -299,6 +320,38 @@ func (ep *ExternalPlugin) NavigateTo(route string, args map[string]string) {
 			Args:  args,
 		})
 	}
+}
+
+// scopeConfig returns a map containing only the top-level config fields
+// matching the requested scopes. Uses reflection to extract fields from the
+// Config struct by matching yaml tags to scope names. If scopes is empty,
+// returns an empty map (secure by default).
+func scopeConfig(cfg *config.Config, scopes []string) map[string]interface{} {
+	if len(scopes) == 0 || cfg == nil {
+		return map[string]interface{}{}
+	}
+
+	allowed := make(map[string]bool, len(scopes))
+	for _, s := range scopes {
+		allowed[strings.ToLower(s)] = true
+	}
+
+	result := make(map[string]interface{})
+	v := reflect.ValueOf(cfg).Elem()
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		tag := field.Tag.Get("yaml")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		// Parse yaml tag to get the field name (before any comma options).
+		name := strings.Split(tag, ",")[0]
+		if allowed[name] {
+			result[name] = v.Field(i).Interface()
+		}
+	}
+	return result
 }
 
 func (ep *ExternalPlugin) errorView() string {

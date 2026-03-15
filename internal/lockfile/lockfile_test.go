@@ -1,6 +1,7 @@
 package lockfile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -49,30 +50,29 @@ func TestAcquireWhileLocked(t *testing.T) {
 	}
 	defer release()
 
-	// Second acquire should fail
+	// Second acquire should fail with ErrAlreadyLocked
 	_, err = AcquireLock(dir)
 	if err == nil {
-		t.Error("expected second AcquireLock to fail")
+		t.Fatal("expected second AcquireLock to fail")
+	}
+	if !errors.Is(err, ErrAlreadyLocked) {
+		t.Errorf("expected ErrAlreadyLocked, got: %v", err)
 	}
 }
 
-func TestAcquireStaleLock(t *testing.T) {
+func TestAcquireStaleLockFile(t *testing.T) {
 	dir := t.TempDir()
 
-	// Write a lock file with a non-existent PID
+	// Write a lock file with a non-existent PID (simulating a crashed process).
+	// With flock, the OS releases the lock when the process dies, so the file
+	// content is stale but the flock is not held — acquisition should succeed.
 	lockPath := filepath.Join(dir, lockFileName)
-	// PID 99999999 is almost certainly not running
 	os.WriteFile(lockPath, []byte("99999999"), 0o644)
 
-	// IsLocked should return false for stale lock
-	if IsLocked(dir) {
-		t.Skip("PID 99999999 is somehow alive on this system")
-	}
-
-	// Should be able to acquire over stale lock
+	// Should be able to acquire — no flock is held
 	release, err := AcquireLock(dir)
 	if err != nil {
-		t.Fatalf("AcquireLock over stale lock failed: %v", err)
+		t.Fatalf("AcquireLock over stale lock file failed: %v", err)
 	}
 	release()
 }

@@ -1,6 +1,7 @@
 package external
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,8 @@ func TestInitHandshake(t *testing.T) {
 	script := `#!/bin/bash
 read line
 echo '{"type":"ready","slug":"test-plug","tab_name":"Test Plugin","routes":[{"slug":"detail","description":"Show detail","arg_keys":["id"]}],"key_bindings":[{"key":"d","description":"Delete","promoted":true}],"migrations":[],"refresh_interval_ms":5000}'
+# Read the config message
+read line
 # Keep running so process stays alive
 while read line; do
   if echo "$line" | grep -q '"type":"shutdown"'; then
@@ -138,9 +141,11 @@ done
 }
 
 func TestCrashDetection(t *testing.T) {
+	// Plugin reads init, sends ready, reads config, then crashes.
 	script := `#!/bin/bash
 read line
 echo '{"type":"ready","slug":"crash-test","tab_name":"Crash","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+read line
 exit 1
 `
 	path := writeTestPlugin(t, script)
@@ -249,7 +254,7 @@ func TestMissingBinaryGraceful(t *testing.T) {
 	}
 }
 
-func TestResolveCommandPrefixFallback(t *testing.T) {
+func TestResolveCommandNoPrefixFallback(t *testing.T) {
 	// Create a temp dir with a "ccc-fakeplug" binary
 	dir := t.TempDir()
 	binPath := filepath.Join(dir, "ccc-fakeplug")
@@ -260,10 +265,10 @@ func TestResolveCommandPrefixFallback(t *testing.T) {
 	origPath := os.Getenv("PATH")
 	t.Setenv("PATH", dir+":"+origPath)
 
-	// "fakeplug" should resolve to "ccc-fakeplug"
+	// "fakeplug" must NOT resolve to "ccc-fakeplug" — no prefix fallback
 	resolved := resolveCommand("fakeplug")
-	if resolved != "ccc-fakeplug" {
-		t.Errorf("resolveCommand(%q) = %q, want %q", "fakeplug", resolved, "ccc-fakeplug")
+	if resolved != "fakeplug" {
+		t.Errorf("resolveCommand(%q) = %q, want %q (no prefix fallback)", "fakeplug", resolved, "fakeplug")
 	}
 
 	// "ccc-fakeplug" should stay as-is
@@ -272,23 +277,26 @@ func TestResolveCommandPrefixFallback(t *testing.T) {
 		t.Errorf("resolveCommand(%q) = %q, want %q", "ccc-fakeplug", resolved, "ccc-fakeplug")
 	}
 
-	// "nonexistent" should stay as-is (no fallback found)
+	// "nonexistent" should stay as-is
 	resolved = resolveCommand("nonexistent")
 	if resolved != "nonexistent" {
 		t.Errorf("resolveCommand(%q) = %q, want %q", "nonexistent", resolved, "nonexistent")
 	}
 
-	// "fakeplug --some-arg" should resolve to "ccc-fakeplug --some-arg"
+	// "fakeplug --some-arg" must NOT get prefix — returned as-is
 	resolved = resolveCommand("fakeplug --some-arg")
-	if resolved != "ccc-fakeplug --some-arg" {
-		t.Errorf("resolveCommand(%q) = %q, want %q", "fakeplug --some-arg", resolved, "ccc-fakeplug --some-arg")
+	if resolved != "fakeplug --some-arg" {
+		t.Errorf("resolveCommand(%q) = %q, want %q (no prefix fallback)", "fakeplug --some-arg", resolved, "fakeplug --some-arg")
 	}
 }
 
-func TestAsyncEvents(t *testing.T) {
+func TestAsyncEventTopicPrefixed(t *testing.T) {
+	// Plugin emits events after ready; host should auto-prefix topics with slug.
 	script := `#!/bin/bash
 read line
 echo '{"type":"ready","slug":"event-test","tab_name":"Events","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+# Read config, then emit async events
+read line
 echo '{"type":"event","event_topic":"data_updated","event_payload":{"count":42}}'
 echo '{"type":"log","level":"info","message":"plugin started"}'
 while read line; do
@@ -303,7 +311,8 @@ done
 	var received []plugin.Event
 
 	bus := plugin.NewBus()
-	bus.Subscribe("data_updated", func(e plugin.Event) {
+	// Subscribe to the prefixed topic (slug:topic)
+	bus.Subscribe("event-test:data_updated", func(e plugin.Event) {
 		mu.Lock()
 		received = append(received, e)
 		mu.Unlock()
@@ -332,10 +341,182 @@ done
 	if len(received) != 1 {
 		t.Fatalf("received %d events, want 1", len(received))
 	}
-	if received[0].Topic != "data_updated" {
-		t.Errorf("event topic = %q, want %q", received[0].Topic, "data_updated")
+	if received[0].Topic != "event-test:data_updated" {
+		t.Errorf("event topic = %q, want %q", received[0].Topic, "event-test:data_updated")
 	}
 	if received[0].Source != "event-test" {
 		t.Errorf("event source = %q, want %q", received[0].Source, "event-test")
+	}
+}
+
+func TestConfigScopeEmpty(t *testing.T) {
+	// No config_scopes or empty scopes should return empty config.
+	cfg := config.DefaultConfig()
+	cfg.Slack = config.SlackConfig{Enabled: true, Token: "xoxb-secret"}
+
+	result := scopeConfig(cfg, nil)
+	if len(result) != 0 {
+		t.Errorf("scopeConfig with nil scopes should return empty map, got %v", result)
+	}
+
+	result = scopeConfig(cfg, []string{})
+	if len(result) != 0 {
+		t.Errorf("scopeConfig with empty scopes should return empty map, got %v", result)
+	}
+}
+
+func TestConfigScopeFiltering(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Slack = config.SlackConfig{Enabled: true, Token: "xoxb-secret"}
+	cfg.GitHub = config.GitHubConfig{Enabled: true, Username: "testuser"}
+	cfg.Calendar = config.CalendarConfig{Enabled: true}
+
+	// Request only slack and github
+	result := scopeConfig(cfg, []string{"slack", "github"})
+	if _, ok := result["slack"]; !ok {
+		t.Error("should include slack")
+	}
+	if _, ok := result["github"]; !ok {
+		t.Error("should include github")
+	}
+	if _, ok := result["calendar"]; ok {
+		t.Error("should NOT include calendar")
+	}
+	if _, ok := result["name"]; ok {
+		t.Error("should NOT include name (not requested)")
+	}
+
+	// Verify the slack config has the token
+	slackJSON, _ := json.Marshal(result["slack"])
+	if !strings.Contains(string(slackJSON), "xoxb-secret") {
+		t.Errorf("scoped slack config should contain token, got %s", slackJSON)
+	}
+}
+
+func TestConfigScopeInitProtocol(t *testing.T) {
+	// Plugin declares config_scopes: ["github"] — verify it does NOT receive slack config.
+	script := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"scope-proto-test","tab_name":"Scoped","config_scopes":["github"],"routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+while read line; do
+  if echo "$line" | grep -q '"type":"config"'; then
+    # Echo the received config as a log so we can inspect it
+    echo "{\"type\":\"log\",\"level\":\"info\",\"message\":$(echo "$line" | sed 's/"/\\"/g')}"
+  elif echo "$line" | grep -q '"type":"shutdown"'; then
+    exit 0
+  fi
+done
+`
+	path := writeTestPlugin(t, script)
+
+	cfg := config.DefaultConfig()
+	cfg.Slack = config.SlackConfig{Enabled: true, Token: "xoxb-secret-should-not-leak"}
+	cfg.GitHub = config.GitHubConfig{Enabled: true, Username: "testuser"}
+
+	ctx := plugin.Context{
+		Config: cfg,
+		Bus:    plugin.NewBus(),
+		Logger: plugin.NewMemoryLogger(),
+		DBPath: "",
+	}
+
+	ep := &ExternalPlugin{command: path}
+	if err := ep.Init(ctx); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	defer ep.Shutdown()
+
+	if ep.Slug() != "scope-proto-test" {
+		t.Errorf("Slug = %q, want %q", ep.Slug(), "scope-proto-test")
+	}
+}
+
+func TestReservedSlugRejection(t *testing.T) {
+	for _, slug := range []string{"sessions", "commandcenter", "settings"} {
+		if !reservedSlugs[slug] {
+			t.Errorf("slug %q should be in reservedSlugs", slug)
+		}
+	}
+}
+
+func TestReservedSlugRejectionInLoader(t *testing.T) {
+	// Plugin that declares a reserved slug should be rejected by the loader.
+	script := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"sessions","tab_name":"Fake Sessions","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+while read line; do
+  if echo "$line" | grep -q '"type":"shutdown"'; then
+    exit 0
+  fi
+done
+`
+	path := writeTestPlugin(t, script)
+
+	logger := plugin.NewMemoryLogger()
+	ctx := plugin.Context{
+		Config: config.DefaultConfig(),
+		Bus:    plugin.NewBus(),
+		Logger: logger,
+		DBPath: "",
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.ExternalPlugins = []config.ExternalPluginConfig{
+		{Name: "FakeSessions", Command: path, Enabled: true},
+	}
+
+	plugins, err := LoadExternalPlugins(cfg, ctx)
+	if err != nil {
+		t.Fatalf("LoadExternalPlugins failed: %v", err)
+	}
+
+	if len(plugins) != 0 {
+		t.Errorf("expected 0 plugins (reserved slug rejected), got %d", len(plugins))
+		for _, p := range plugins {
+			p.Shutdown()
+		}
+	}
+}
+
+func TestSlugUniqueness(t *testing.T) {
+	// Two plugins with the same slug — second should be rejected.
+	script := `#!/bin/bash
+read line
+echo '{"type":"ready","slug":"dupe-test","tab_name":"Dupe","routes":[],"key_bindings":[],"migrations":[],"refresh_interval_ms":0}'
+while read line; do
+  if echo "$line" | grep -q '"type":"shutdown"'; then
+    exit 0
+  fi
+done
+`
+	path := writeTestPlugin(t, script)
+
+	logger := plugin.NewMemoryLogger()
+	ctx := plugin.Context{
+		Config: config.DefaultConfig(),
+		Bus:    plugin.NewBus(),
+		Logger: logger,
+		DBPath: "",
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.ExternalPlugins = []config.ExternalPluginConfig{
+		{Name: "Dupe1", Command: path, Enabled: true},
+		{Name: "Dupe2", Command: path, Enabled: true},
+	}
+
+	plugins, err := LoadExternalPlugins(cfg, ctx)
+	if err != nil {
+		t.Fatalf("LoadExternalPlugins failed: %v", err)
+	}
+	defer func() {
+		for _, p := range plugins {
+			p.Shutdown()
+		}
+	}()
+
+	// Only the first plugin should be loaded
+	if len(plugins) != 1 {
+		t.Errorf("expected 1 plugin (duplicate rejected), got %d", len(plugins))
 	}
 }

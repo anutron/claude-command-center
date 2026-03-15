@@ -47,7 +47,7 @@ func sockDir() string {
 // Returns a cleanup function that removes the socket file.
 func StartNotifyListener(p *tea.Program) func() {
 	sockPath := SocketPath()
-	_ = os.MkdirAll(filepath.Dir(sockPath), 0o755)
+	_ = os.MkdirAll(filepath.Dir(sockPath), 0o700)
 
 	// Clean up stale socket if it exists
 	_ = os.Remove(sockPath)

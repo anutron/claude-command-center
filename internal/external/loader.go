@@ -1,39 +1,33 @@
 package external
 
 import (
-	"os/exec"
-	"strings"
+	"fmt"
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
 )
 
-// resolveCommand tries the given command as-is, then with a "ccc-" prefix
-// on the first word (binary name). This lets config entries use short names
-// like "pomodoro" while the installed binary is "ccc-pomodoro".
+// reservedSlugs are built-in plugin slugs that external plugins must not use.
+var reservedSlugs = map[string]bool{
+	"sessions":      true,
+	"commandcenter": true,
+	"settings":      true,
+}
+
+// resolveCommand returns the command as-is. Plugin configs must specify
+// the full binary name (e.g. "ccc-pomodoro", not "pomodoro").
+// Previously this function tried a "ccc-" prefix fallback, which was
+// removed because PATH manipulation could shadow arbitrary binaries.
 func resolveCommand(command string) string {
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		return command
-	}
-	// If the command is found on PATH as-is, use it.
-	if _, err := exec.LookPath(parts[0]); err == nil {
-		return command
-	}
-	// Try with "ccc-" prefix.
-	prefixed := "ccc-" + parts[0]
-	if _, err := exec.LookPath(prefixed); err == nil {
-		parts[0] = prefixed
-		return strings.Join(parts, " ")
-	}
-	// Return original; startProcess will report the not-found error.
 	return command
 }
 
 // LoadExternalPlugins creates and initializes ExternalPlugin instances
-// from the config's ExternalPlugins entries.
+// from the config's ExternalPlugins entries. Rejects plugins whose slugs
+// collide with reserved built-in slugs or with already-loaded plugins.
 func LoadExternalPlugins(cfg *config.Config, ctx plugin.Context) ([]*ExternalPlugin, error) {
 	var plugins []*ExternalPlugin
+	loadedSlugs := make(map[string]bool)
 
 	for _, entry := range cfg.ExternalPlugins {
 		if !entry.Enabled || entry.Command == "" {
@@ -56,6 +50,29 @@ func LoadExternalPlugins(cfg *config.Config, ctx plugin.Context) ([]*ExternalPlu
 			}
 		}
 
+		// Validate slug against reserved built-in slugs.
+		if reservedSlugs[ep.slug] {
+			if ctx.Logger != nil {
+				ctx.Logger.Error("external", fmt.Sprintf(
+					"plugin %q rejected: slug %q is reserved for a built-in plugin",
+					entry.Command, ep.slug))
+			}
+			ep.Shutdown()
+			continue
+		}
+
+		// Validate slug uniqueness among already-loaded external plugins.
+		if loadedSlugs[ep.slug] {
+			if ctx.Logger != nil {
+				ctx.Logger.Error("external", fmt.Sprintf(
+					"plugin %q rejected: slug %q is already in use by another plugin",
+					entry.Command, ep.slug))
+			}
+			ep.Shutdown()
+			continue
+		}
+
+		loadedSlugs[ep.slug] = true
 		plugins = append(plugins, ep)
 	}
 

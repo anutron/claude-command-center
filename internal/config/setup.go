@@ -80,7 +80,7 @@ func GenerateMCPConfig() error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(mcpPath, data, 0o644); err != nil {
+	if err := os.WriteFile(mcpPath, data, 0o600); err != nil {
 		return err
 	}
 

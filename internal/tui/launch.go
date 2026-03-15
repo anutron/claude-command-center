@@ -1,11 +1,14 @@
 package tui
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
+	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/worktree"
 )
 
@@ -56,4 +59,57 @@ func RunClaude(action LaunchAction) (resolvedDir string, err error) {
 		return dir, fmt.Errorf("claude exited with error: %w", err)
 	}
 	return dir, nil
+}
+
+// validateLaunchDir checks that dir is one of the Sessions learned paths or a
+// subdirectory of one. Returns nil if allowed, an error otherwise. An empty
+// dir (meaning "use cwd") is always allowed.
+func validateLaunchDir(database *sql.DB, dir string) error {
+	if dir == "" {
+		return nil
+	}
+
+	// Normalize the requested dir.
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return fmt.Errorf("invalid launch dir: %w", err)
+	}
+	absDir = filepath.Clean(absDir)
+
+	// Resolve symlinks so traversal tricks can't bypass the check.
+	resolved, err := filepath.EvalSymlinks(absDir)
+	if err != nil {
+		// If the path doesn't exist yet, fall back to the cleaned abs path.
+		resolved = absDir
+	}
+
+	paths, err := db.DBLoadPaths(database)
+	if err != nil || len(paths) == 0 {
+		return fmt.Errorf("launch dir %q rejected: no learned paths available", dir)
+	}
+
+	for _, allowed := range paths {
+		allowedAbs, err := filepath.Abs(allowed)
+		if err != nil {
+			continue
+		}
+		allowedAbs = filepath.Clean(allowedAbs)
+		allowedResolved, err := filepath.EvalSymlinks(allowedAbs)
+		if err != nil {
+			allowedResolved = allowedAbs
+		}
+
+		// Exact match or subdirectory check.
+		if resolved == allowedResolved {
+			return nil
+		}
+		// Ensure trailing separator for prefix check to avoid
+		// "/home/user/project2" matching "/home/user/project".
+		prefix := allowedResolved + string(filepath.Separator)
+		if strings.HasPrefix(resolved, prefix) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("launch dir %q is not within any learned path", dir)
 }

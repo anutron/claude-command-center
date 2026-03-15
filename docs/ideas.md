@@ -103,7 +103,6 @@ Auto-run `ccc-refresh` on a schedule so data is fresh when the TUI opens. Option
 
 Fold MCP servers into the monorepo under `servers/`:
 - `servers/gmail/` — Gmail MCP (already generic)
-- `servers/things/` — Things MCP (macOS-only, optional)
 
 `ccc setup` generates `.claude/mcp.json` snippets. `make install` builds enabled servers.
 
