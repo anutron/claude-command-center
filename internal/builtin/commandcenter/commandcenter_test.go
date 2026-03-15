@@ -793,6 +793,264 @@ func TestTaskRunnerRefineKey(t *testing.T) {
 	}
 }
 
+func TestWizardSelectionsPersistedOnBackout(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+	p.detailPaths = []string{"/tmp/a", "/tmp/b", "/tmp/myproject"}
+
+	// Press 'o' to enter wizard
+	p.HandleKey(keyMsg("o"))
+	if !p.taskRunnerView || p.taskRunnerStep != 1 {
+		t.Fatalf("expected taskRunnerView=true step=1, got view=%v step=%d", p.taskRunnerView, p.taskRunnerStep)
+	}
+
+	// Step 1 -> Step 2
+	p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerStep != 2 {
+		t.Fatalf("step = %d, want 2", p.taskRunnerStep)
+	}
+
+	// Change mode to worktree
+	p.HandleKey(keyMsg("right")) // normal -> worktree
+	if p.taskRunnerMode != "worktree" {
+		t.Fatalf("mode = %q, want worktree", p.taskRunnerMode)
+	}
+
+	// Step 2 -> Step 3
+	p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerStep != 3 {
+		t.Fatalf("step = %d, want 3", p.taskRunnerStep)
+	}
+
+	// Now back out: Step 3 -> Step 2
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.taskRunnerStep != 2 {
+		t.Fatalf("step = %d, want 2", p.taskRunnerStep)
+	}
+
+	// Step 2 -> Step 1
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.taskRunnerStep != 1 {
+		t.Fatalf("step = %d, want 1", p.taskRunnerStep)
+	}
+
+	// Step 1 -> exit task runner (should save selections)
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.taskRunnerView {
+		t.Fatal("taskRunnerView should be false after esc at step 1")
+	}
+
+	// Exit detail view
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.detailView {
+		t.Fatal("detailView should be false after esc")
+	}
+
+	// Re-open wizard on the same todo
+	p.HandleKey(keyMsg("o"))
+	if !p.taskRunnerView {
+		t.Fatal("taskRunnerView should be true after re-opening")
+	}
+
+	// The mode should be restored to worktree
+	if p.taskRunnerMode != "worktree" {
+		t.Errorf("after re-open: mode = %q, want worktree", p.taskRunnerMode)
+	}
+
+	// The path cursor should be restored
+	expectedPathCursor := 2 // /tmp/myproject is at index 2
+	if p.taskRunnerPathCursor != expectedPathCursor {
+		t.Errorf("after re-open: pathCursor = %d, want %d", p.taskRunnerPathCursor, expectedPathCursor)
+	}
+}
+
+func TestWizardSelectionsPersistedWithPathChange(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "" // no project dir
+	p.detailPaths = []string{"/tmp/a", "/tmp/b", "/tmp/c"}
+
+	// Press 'o' to enter wizard — path picker should auto-open
+	p.HandleKey(keyMsg("o"))
+	if !p.taskRunnerView {
+		t.Fatal("taskRunnerView should be true")
+	}
+	if !p.taskRunnerPickingPath {
+		t.Fatal("path picker should auto-open for todo with no project dir")
+	}
+
+	// Navigate to /tmp/b (index 1) and select it
+	// Cursor starts at -1 due to no project dir, j increments to 0, then to 1
+	p.HandleKey(keyMsg("j")) // cursor -1 -> 0
+	p.HandleKey(keyMsg("j")) // cursor 0 -> 1
+	p.HandleKey(keyMsg("enter")) // select /tmp/b
+	if p.taskRunnerPickingPath {
+		t.Fatal("path picker should close after enter")
+	}
+	if p.taskRunnerPathCursor != 1 {
+		t.Fatalf("pathCursor = %d, want 1", p.taskRunnerPathCursor)
+	}
+
+	// Step 1 -> Step 2
+	p.HandleKey(keyMsg("enter"))
+	// Change mode to sandbox
+	p.HandleKey(keyMsg("right")) // normal -> worktree
+	p.HandleKey(keyMsg("right")) // worktree -> sandbox
+
+	// Back out: Step 2 -> Step 1 -> exit
+	p.HandleKey(specialKeyMsg(tea.KeyEsc)) // step 2 -> 1
+	p.HandleKey(specialKeyMsg(tea.KeyEsc)) // step 1 -> exit (saves)
+	p.HandleKey(specialKeyMsg(tea.KeyEsc)) // exit detail view
+
+	// Re-open wizard
+	p.HandleKey(keyMsg("o"))
+	if !p.taskRunnerView {
+		t.Fatal("taskRunnerView should be true")
+	}
+
+	// Path cursor should be restored to 1 (/tmp/b)
+	if p.taskRunnerPathCursor != 1 {
+		t.Errorf("after re-open: pathCursor = %d, want 1", p.taskRunnerPathCursor)
+	}
+
+	// Mode should be restored to sandbox
+	if p.taskRunnerMode != "sandbox" {
+		t.Errorf("after re-open: mode = %q, want sandbox", p.taskRunnerMode)
+	}
+
+	// Path picker should NOT auto-open since we have saved selections
+	if p.taskRunnerPickingPath {
+		t.Error("path picker should NOT auto-open when saved selections exist")
+	}
+}
+
+func TestWizardSelectionsPersistedEscFromStep2(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+	p.detailPaths = []string{"/tmp/a", "/tmp/b", "/tmp/myproject"}
+
+	// Press 'o' to enter wizard
+	p.HandleKey(keyMsg("o"))
+
+	// Step 1 -> Step 2
+	p.HandleKey(keyMsg("enter"))
+
+	// Change mode to worktree on step 2
+	p.HandleKey(keyMsg("right")) // normal -> worktree
+
+	// Now escape from step 2 (goes to step 1, does NOT save yet)
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.taskRunnerStep != 1 {
+		t.Fatalf("step = %d, want 1", p.taskRunnerStep)
+	}
+
+	// Escape from step 1 (saves and exits wizard)
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.taskRunnerView {
+		t.Fatal("should have exited task runner")
+	}
+
+	// Verify the mode was saved
+	saved, ok := p.wizardSelections[p.cc.Todos[0].ID]
+	if !ok {
+		t.Fatal("wizard selections should be saved")
+	}
+	if saved.mode != "worktree" {
+		t.Errorf("saved mode = %q, want worktree", saved.mode)
+	}
+
+	// Exit detail view and re-open
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	p.HandleKey(keyMsg("o"))
+
+	if p.taskRunnerMode != "worktree" {
+		t.Errorf("after re-open: mode = %q, want worktree", p.taskRunnerMode)
+	}
+}
+
+func TestWizardSelectionsPersistedFromDetailView(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+	p.detailPaths = []string{"/tmp/a", "/tmp/b", "/tmp/myproject"}
+
+	// Enter detail view first (not task runner)
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("should be in detail view")
+	}
+	if p.taskRunnerView {
+		t.Fatal("should NOT be in task runner yet")
+	}
+
+	// Press 'o' from detail view to enter task runner
+	p.HandleKey(keyMsg("o"))
+	if !p.taskRunnerView {
+		t.Fatal("should be in task runner")
+	}
+
+	// Advance to step 2 and change mode
+	p.HandleKey(keyMsg("enter"))
+	p.HandleKey(keyMsg("right")) // normal -> worktree
+
+	// Back out to list
+	p.HandleKey(specialKeyMsg(tea.KeyEsc)) // step 2 -> 1
+	p.HandleKey(specialKeyMsg(tea.KeyEsc)) // step 1 -> exit task runner (saves)
+	if p.taskRunnerView {
+		t.Fatal("should have exited task runner")
+	}
+
+	// Exit detail view
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.detailView {
+		t.Fatal("should have exited detail view")
+	}
+
+	// Re-open via 'o' from list
+	p.HandleKey(keyMsg("o"))
+	if !p.taskRunnerView {
+		t.Fatal("should be in task runner again")
+	}
+
+	if p.taskRunnerMode != "worktree" {
+		t.Errorf("mode = %q, want worktree", p.taskRunnerMode)
+	}
+}
+
+func TestWizardPickingPathNotStaleOnReopen(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "" // no project dir triggers auto-open
+	p.detailPaths = []string{"/tmp/a", "/tmp/b"}
+
+	// Enter wizard — auto-opens path picker
+	p.HandleKey(keyMsg("o"))
+	if !p.taskRunnerPickingPath {
+		t.Fatal("path picker should auto-open")
+	}
+
+	// Select a path
+	p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerPickingPath {
+		t.Fatal("path picker should close after enter")
+	}
+
+	// Go to step 2 and change mode
+	p.HandleKey(keyMsg("enter"))
+	p.HandleKey(keyMsg("right")) // worktree
+
+	// Back out all the way
+	p.HandleKey(specialKeyMsg(tea.KeyEsc)) // step 2 -> 1
+	p.HandleKey(specialKeyMsg(tea.KeyEsc)) // step 1 -> exit (saves)
+	p.HandleKey(specialKeyMsg(tea.KeyEsc)) // exit detail
+
+	// Re-enter — path picker should NOT auto-open
+	p.HandleKey(keyMsg("o"))
+	if p.taskRunnerPickingPath {
+		t.Error("path picker should NOT auto-open when saved selections exist")
+	}
+	if p.taskRunnerMode != "worktree" {
+		t.Errorf("mode = %q, want worktree", p.taskRunnerMode)
+	}
+}
+
 func TestParseDueDate(t *testing.T) {
 	// Fixed "now" for deterministic tests: 2026-03-14
 	now := time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
