@@ -1426,7 +1426,7 @@ func renderTaskRunnerStep1(s *ccStyles, header, projectDir string, pickingPath b
 	if pickingPath {
 		hint = s.Hint.Render("  j/k navigate \u00b7 type to filter \u00b7 enter select \u00b7 esc cancel")
 	} else {
-		hint = s.Hint.Render("  enter pick project \u00b7 tab next step \u00b7 esc back")
+		hint = s.Hint.Render("  / pick project \u00b7 enter accept \u00b7 esc exit")
 	}
 	parts = append(parts, "", hint)
 
