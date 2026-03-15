@@ -1458,7 +1458,7 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode string, budget float64,
 		titleMax = 10
 	}
 	title := truncateToWidth(flattenTitle(todo.Title), titleMax)
-	header := s.SectionHeader.Render("TASK RUNNER — " + title)
+	header := "  " + s.SectionHeader.Render("TASK RUNNER — "+title)
 
 	switch step {
 	case 1:
@@ -1468,7 +1468,7 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode string, budget float64,
 	case 3:
 		return renderTaskRunnerStep3(s, header, projectDir, mode, promptVP, launchCursor, refining, reviewing, inputting, instructInput, innerWidth)
 	default:
-		return s.PanelBorder.Width(innerWidth).Render(header + "\n\n" + s.DescMuted.Render("  Unknown step"))
+		return s.PanelBorder.Width(innerWidth).Render("\n" + header + "\n\n" + s.DescMuted.Render("  Unknown step"))
 	}
 }
 
@@ -1486,6 +1486,7 @@ func renderTaskRunnerStep1(s *ccStyles, header, projectDir string, pickingPath b
 	fullPath := s.DescMuted.Render(projectDir)
 
 	parts := []string{
+		"",
 		header,
 		"",
 		"  " + stepLabel,
@@ -1537,6 +1538,7 @@ func renderTaskRunnerStep2(s *ccStyles, header, projectDir, mode string, innerWi
 	hint := s.Hint.Render("  ←/→ select mode · enter next step · esc back")
 
 	parts := []string{
+		"",
 		header,
 		"",
 		"  " + stepLabel,
@@ -1563,6 +1565,7 @@ func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptV
 	promptHeader := s.SectionHeader.Render("  PROMPT")
 
 	parts := []string{
+		"",
 		header,
 		"",
 		"  " + stepLabel,
