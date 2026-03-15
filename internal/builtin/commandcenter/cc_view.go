@@ -1019,6 +1019,23 @@ func displayContext(ctx string) string {
 	if strings.Contains(ctx, "github.com/") {
 		return "GitHub"
 	}
+	// Detect Slack channel names: #channel-name – description text
+	if strings.HasPrefix(ctx, "#") {
+		channel := ctx
+		for _, sep := range []string{" – ", " - ", " — "} {
+			if idx := strings.Index(channel, sep); idx != -1 {
+				channel = channel[:idx]
+			}
+		}
+		if idx := strings.Index(channel, " "); idx != -1 {
+			channel = channel[:idx]
+		}
+		ctx = "Slack: " + channel
+	}
+	// Truncate long strings to ~40 chars
+	if len(ctx) > 40 {
+		return ctx[:37] + "..."
+	}
 	return ctx
 }
 
