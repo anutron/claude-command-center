@@ -152,6 +152,30 @@ Output ONLY the refined prompt text. No explanation, no quotes, no markdown fenc
 	}
 }
 
+func claudeRefinePromptWithInstructionCmd(l llm.LLM, todoID string, currentPrompt string, instruction string) tea.Cmd {
+	prompt := fmt.Sprintf(`You are rewriting a task prompt based on the user's instructions. The prompt will be sent to Claude Code (an AI coding agent) as its instruction.
+
+User's instructions for rewriting:
+"""
+%s
+"""
+
+Current prompt:
+"""
+%s
+"""
+
+Rewrite the prompt according to the user's instructions. Output ONLY the rewritten prompt text. No explanation, no quotes, no markdown fences wrapping the whole thing.`, instruction, currentPrompt)
+	return func() tea.Msg {
+		out, err := l.Complete(context.Background(), prompt)
+		return claudeRefinePromptMsg{
+			todoID: todoID,
+			output: out,
+			err:    err,
+		}
+	}
+}
+
 func claudeFocusCmd(l llm.LLM, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)

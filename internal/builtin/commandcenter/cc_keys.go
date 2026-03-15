@@ -1297,6 +1297,7 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 		p.taskRunnerBudget = 5.00
 	}
 	p.taskRunnerRefining = false
+	p.taskRunnerInputting = false
 	p.taskRunnerReviewClean = ""
 	// Initialize path cursor to match the todo's project dir
 	p.taskRunnerPathCursor = -1 // -1 means "use todo's original project dir"
@@ -1395,6 +1396,25 @@ func (p *Plugin) handleWizardStep2(msg tea.KeyMsg) plugin.Action {
 
 // handleWizardStep3 handles Step 3: Prompt review & launch.
 func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
+	// If user is typing instructions for AI refine (c key)
+	if p.taskRunnerInputting {
+		switch msg.Type {
+		case tea.KeyEnter:
+			instruction := p.taskRunnerInstructInput.Value()
+			p.taskRunnerInputting = false
+			if instruction != "" {
+				return p.taskRunnerRefineWithInstruction(instruction)
+			}
+			return plugin.NoopAction()
+		case tea.KeyEscape:
+			p.taskRunnerInputting = false
+			return plugin.NoopAction()
+		default:
+			p.taskRunnerInstructInput, _ = p.taskRunnerInstructInput.Update(msg)
+			return plugin.NoopAction()
+		}
+	}
+
 	switch msg.String() {
 	case "j":
 		p.taskRunnerPrompt.LineDown(1)
@@ -1422,7 +1442,7 @@ func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
 			return p.taskRunnerLaunch(true) // run now
 		}
 	case "e":
-		// Launch external editor to refine the prompt (Plannotator).
+		// Launch external editor to refine the prompt.
 		if todoPtr := p.detailTodo(); todoPtr != nil {
 			todo := *todoPtr
 			prompt := todo.ProposedPrompt
@@ -1434,7 +1454,13 @@ func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.NoopAction()
 	case "c":
-		return p.taskRunnerRefinePrompt()
+		// Open instruction input for AI-guided prompt refinement.
+		p.taskRunnerInputting = true
+		p.taskRunnerInstructInput = textinput.New()
+		p.taskRunnerInstructInput.Placeholder = "Instructions for AI to rewrite prompt..."
+		p.taskRunnerInstructInput.Focus()
+		p.taskRunnerInstructInput.Width = p.width - 12
+		return plugin.NoopAction()
 	case "r", "p":
 		return p.taskRunnerReviewLoop()
 	case "esc":
@@ -1501,8 +1527,8 @@ func (p *Plugin) handleTaskRunnerPathSelect(msg tea.KeyMsg) plugin.Action {
 	}
 }
 
-// taskRunnerRefinePrompt triggers AI refinement of the current prompt.
-func (p *Plugin) taskRunnerRefinePrompt() plugin.Action {
+// taskRunnerRefineWithInstruction sends user instructions + prompt to LLM for rewriting.
+func (p *Plugin) taskRunnerRefineWithInstruction(instruction string) plugin.Action {
 	if p.taskRunnerRefining {
 		return plugin.NoopAction()
 	}
@@ -1515,7 +1541,7 @@ func (p *Plugin) taskRunnerRefinePrompt() plugin.Action {
 		prompt = formatTodoContext(*todoPtr)
 	}
 	p.taskRunnerRefining = true
-	cmd := claudeRefinePromptCmd(p.llm, todoPtr.ID, prompt)
+	cmd := claudeRefinePromptWithInstructionCmd(p.llm, todoPtr.ID, prompt, instruction)
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 

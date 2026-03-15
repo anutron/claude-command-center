@@ -437,36 +437,29 @@ func (p *Plugin) handlePlannotatorFinished(msg plannotatorFinishedMsg) (bool, pl
 
 func (p *Plugin) handlePlannotatorReviewFinished(msg plannotatorReviewMsg) (bool, plugin.Action) {
 	if msg.err != nil {
-		p.flashMessage = "Editor exited with error: " + msg.err.Error()
+		p.flashMessage = "Plannotator exited with error: " + msg.err.Error()
 		p.flashMessageAt = time.Now()
 		return true, plugin.NoopAction()
 	}
-
-	// Read the annotated prompt from the temp file.
-	annotated := readTempPrompt(msg.tempFile)
 
 	// Clean up the temp file.
 	if msg.tempFile != "" {
 		os.Remove(msg.tempFile)
 	}
 
-	if annotated == "" {
-		p.flashMessage = "Review cancelled (empty file)"
-		p.flashMessageAt = time.Now()
-		return true, plugin.NoopAction()
-	}
+	feedback := strings.TrimSpace(msg.feedback)
 
-	// If unchanged from the clean version, the user approves.
-	if annotated == p.taskRunnerReviewClean {
+	// No feedback or generic "no feedback" = user approves the prompt.
+	if feedback == "" || feedback == "No feedback provided." {
 		p.flashMessage = "Prompt approved"
 		p.flashMessageAt = time.Now()
 		p.taskRunnerReviewClean = ""
 		return true, plugin.NoopAction()
 	}
 
-	// Changed — send to LLM to address annotations.
+	// User provided annotations — send to LLM to address them.
 	p.taskRunnerRefining = true
-	cmd := claudeReviewAddressCmd(p.llm, msg.todoID, p.taskRunnerReviewClean, annotated, msg.round)
+	cmd := claudeReviewAddressCmd(p.llm, msg.todoID, p.taskRunnerReviewClean, feedback, msg.round)
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 

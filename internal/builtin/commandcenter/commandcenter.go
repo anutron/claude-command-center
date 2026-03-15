@@ -97,8 +97,10 @@ type Plugin struct {
 	taskRunnerPerm        string  // "default", "plan", "auto"
 	taskRunnerBudget      float64
 	taskRunnerPrompt      viewport.Model
-	taskRunnerRefining    bool   // true when AI refine is active
-	taskRunnerReviewClean string // clean prompt text before review edits
+	taskRunnerRefining      bool   // true when AI refine is active
+	taskRunnerInputting     bool   // true when user is typing instructions for c key
+	taskRunnerInstructInput textinput.Model
+	taskRunnerReviewClean   string // clean prompt text before review edits
 	taskRunnerPathCursor   int    // index into detailPaths for task runner project override
 	taskRunnerLaunchCursor int    // 0=Run Claude, 1=Queue Agent, 2=Run Agent Now
 	taskRunnerPickingPath  bool   // true when scrollable path picker is open
@@ -639,7 +641,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		if p.taskRunnerPathCursor >= 0 && p.taskRunnerPathCursor < len(p.detailPaths) {
 			taskRunnerProjectDir = p.detailPaths[p.taskRunnerPathCursor]
 		}
-		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerBudget, p.taskRunnerStep, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter, p.taskRunnerRefining)
+		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerBudget, p.taskRunnerStep, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter, p.taskRunnerRefining, p.taskRunnerInputting, p.taskRunnerInstructInput)
 		}
 	}
 

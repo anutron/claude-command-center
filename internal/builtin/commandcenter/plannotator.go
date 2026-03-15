@@ -59,16 +59,43 @@ func readTempPrompt(path string) string {
 	return strings.TrimSpace(string(data))
 }
 
-// plannotatorReviewMsg is sent when the review-loop editor process exits.
+// plannotatorReviewMsg is sent when the Plannotator annotation process exits.
 type plannotatorReviewMsg struct {
 	todoID   string
 	tempFile string
 	err      error
 	round    int
+	feedback string // user's annotations from Plannotator
+}
+
+// plannotatorAnnotateProcess implements tea.ExecCommand to run `plannotator annotate`
+// on a temp file. Opens the browser-based annotation UI and blocks until the user
+// submits feedback. Captures stdout (the feedback text).
+type plannotatorAnnotateProcess struct {
+	tempFile string
+	stdin    io.Reader
+	stderr   io.Writer
+	feedback string
+}
+
+func (p *plannotatorAnnotateProcess) SetStdin(r io.Reader)  { p.stdin = r }
+func (p *plannotatorAnnotateProcess) SetStdout(_ io.Writer) {}
+func (p *plannotatorAnnotateProcess) SetStderr(w io.Writer) { p.stderr = w }
+
+func (p *plannotatorAnnotateProcess) Run() error {
+	cmd := exec.Command("plannotator", "annotate", p.tempFile)
+	cmd.Stdin = p.stdin
+	cmd.Stderr = p.stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return err
+	}
+	p.feedback = strings.TrimSpace(string(out))
+	return nil
 }
 
 // launchPlannotatorReview writes the prompt to a temp file and opens
-// Plannotator for annotation. Returns plannotatorReviewMsg on completion.
+// Plannotator in the browser for annotation. Returns plannotatorReviewMsg on completion.
 func launchPlannotatorReview(todoID string, prompt string, round int) tea.Cmd {
 	path := fmt.Sprintf("/tmp/ccc-review-%s-r%d.md", todoID, round)
 	if err := os.WriteFile(path, []byte(prompt), 0644); err != nil {
@@ -77,9 +104,15 @@ func launchPlannotatorReview(todoID string, prompt string, round int) tea.Cmd {
 		}
 	}
 
-	proc := &editorProcess{tempFile: path}
+	proc := &plannotatorAnnotateProcess{tempFile: path}
 	return tea.Exec(proc, func(err error) tea.Msg {
-		return plannotatorReviewMsg{todoID: todoID, tempFile: path, err: err, round: round}
+		return plannotatorReviewMsg{
+			todoID:   todoID,
+			tempFile: path,
+			err:      err,
+			round:    round,
+			feedback: proc.feedback,
+		}
 	})
 }
 

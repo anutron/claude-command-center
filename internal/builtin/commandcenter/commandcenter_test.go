@@ -763,10 +763,16 @@ func TestTaskRunnerRefineKey(t *testing.T) {
 	p.HandleKey(keyMsg("enter")) // step 1 -> 2
 	p.HandleKey(keyMsg("enter")) // step 2 -> 3
 
-	// Press 'c' to refine
+	// Press 'c' to enter instruction input mode
 	p.HandleKey(keyMsg("c"))
-	if !p.taskRunnerRefining {
-		t.Error("'c' at step 3 should set taskRunnerRefining to true")
+	if !p.taskRunnerInputting {
+		t.Error("'c' at step 3 should set taskRunnerInputting to true")
+	}
+
+	// Esc should cancel input mode
+	p.HandleKey(specialKeyMsg(tea.KeyEscape))
+	if p.taskRunnerInputting {
+		t.Error("esc should cancel instruction input")
 	}
 }
 
