@@ -2,6 +2,7 @@ package commandcenter
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -27,6 +28,19 @@ func formatDuration(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%dm", m)
 	}
+}
+
+// shortDirName returns just the final directory name from an absolute path.
+// If the path is empty or filepath.Base returns ".", it returns the original path.
+func shortDirName(path string) string {
+	if path == "" {
+		return path
+	}
+	base := filepath.Base(path)
+	if base == "." {
+		return path
+	}
+	return base
 }
 
 // renderCommandCenterView is the main entry point for the command center tab.
@@ -647,7 +661,7 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	editableFields := []fieldEntry{
 		{"Status", todo.Status, 0},
 		{"Due", "", 1},
-		{"Project", todo.ProjectDir, 2},
+		{"Project", shortDirName(todo.ProjectDir), 2},
 	}
 	// Format due with urgency
 	if todo.Due != "" {
@@ -1350,7 +1364,7 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 
 	// Project row
 	projectLabel := s.SectionHeader.Render("Project:")
-	projectValue := projectDir
+	projectValue := shortDirName(projectDir)
 	if projectValue == "" {
 		projectValue = s.DescMuted.Render("(not set)")
 	} else {
