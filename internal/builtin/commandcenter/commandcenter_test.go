@@ -62,6 +62,19 @@ func testPluginWithCC(t *testing.T) *Plugin {
 	return p
 }
 
+// insertTestPaths inserts paths into the cc_learned_paths table so that
+// DBLoadPaths will return them. This is needed because enterTaskRunner reloads
+// paths from the DB dynamically.
+func insertTestPaths(t *testing.T, database *sql.DB, paths []string) {
+	t.Helper()
+	for i, p := range paths {
+		_, err := database.Exec(`INSERT INTO cc_learned_paths (path, description, sort_order, added_at) VALUES (?, '', ?, datetime('now'))`, p, i)
+		if err != nil {
+			t.Fatalf("failed to insert test path %q: %v", p, err)
+		}
+	}
+}
+
 func keyMsg(key string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
 }
@@ -892,6 +905,7 @@ func TestTaskRunnerRefineKey(t *testing.T) {
 func TestWizardSelectionsPersistedOnBackout(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+	insertTestPaths(t, p.database, []string{"/tmp/a", "/tmp/b", "/tmp/myproject"})
 	p.detailPaths = []string{"/tmp/a", "/tmp/b", "/tmp/myproject"}
 
 	// Press 'o' to enter wizard
@@ -963,6 +977,7 @@ func TestWizardSelectionsPersistedOnBackout(t *testing.T) {
 func TestWizardSelectionsPersistedWithPathChange(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].ProjectDir = "" // no project dir
+	insertTestPaths(t, p.database, []string{"/tmp/a", "/tmp/b", "/tmp/c"})
 	p.detailPaths = []string{"/tmp/a", "/tmp/b", "/tmp/c"}
 
 	// Press 'o' to enter wizard — path picker should auto-open
@@ -1022,6 +1037,7 @@ func TestWizardSelectionsPersistedWithPathChange(t *testing.T) {
 func TestWizardSelectionsPersistedEscFromStep2(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+	insertTestPaths(t, p.database, []string{"/tmp/a", "/tmp/b", "/tmp/myproject"})
 	p.detailPaths = []string{"/tmp/a", "/tmp/b", "/tmp/myproject"}
 
 	// Press 'o' to enter wizard
@@ -1066,6 +1082,7 @@ func TestWizardSelectionsPersistedEscFromStep2(t *testing.T) {
 func TestWizardSelectionsPersistedFromDetailView(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+	insertTestPaths(t, p.database, []string{"/tmp/a", "/tmp/b", "/tmp/myproject"})
 	p.detailPaths = []string{"/tmp/a", "/tmp/b", "/tmp/myproject"}
 
 	// Enter detail view first (not task runner)
@@ -1114,6 +1131,7 @@ func TestWizardSelectionsPersistedFromDetailView(t *testing.T) {
 func TestWizardPickingPathNotStaleOnReopen(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].ProjectDir = "" // no project dir triggers auto-open
+	insertTestPaths(t, p.database, []string{"/tmp/a", "/tmp/b"})
 	p.detailPaths = []string{"/tmp/a", "/tmp/b"}
 
 	// Enter wizard — auto-opens path picker

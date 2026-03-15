@@ -840,6 +840,12 @@ func (p *Plugin) enterDetailFieldEdit() plugin.Action {
 		p.detailFieldInput.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
 	case 2: // ProjectDir — open scrollable path picker
+		// Reload paths from DB so newly added sessions are available.
+		if p.database != nil {
+			if paths, err := db.DBLoadPaths(p.database); err == nil {
+				p.detailPaths = paths
+			}
+		}
 		if len(p.detailPaths) == 0 {
 			// No paths available; open text input instead
 			p.detailMode = "editingField"
@@ -1335,6 +1341,13 @@ func (p *Plugin) handleThreadsTab(msg tea.KeyMsg) plugin.Action {
 func (p *Plugin) enterTaskRunner(todo db.Todo) {
 	p.taskRunnerView = true
 	p.taskRunnerStep = 1
+
+	// Reload paths from DB so newly added sessions are available.
+	if p.database != nil {
+		if paths, err := db.DBLoadPaths(p.database); err == nil {
+			p.detailPaths = paths
+		}
+	}
 
 	// Initialize defaults from config
 	agentCfg := p.cfg.Agent
