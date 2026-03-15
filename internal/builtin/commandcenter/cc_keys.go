@@ -157,11 +157,24 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 	case "left", "h":
 		if p.ccExpanded {
 			rowsPerCol := p.expandedRowsPerCol()
+			numCols := p.expandedNumCols()
+			pageSize := rowsPerCol * numCols
 			relIdx := p.ccCursor - p.ccExpandedOffset
 			col := relIdx / rowsPerCol
 			row := relIdx % rowsPerCol
 			if col > 0 {
+				// Move to previous column on same page
 				p.ccCursor = p.ccExpandedOffset + (col-1)*rowsPerCol + row
+				if p.ccCursor > maxCursor {
+					p.ccCursor = maxCursor
+				}
+			} else if p.ccExpandedOffset > 0 {
+				// Paginate left: go to previous page, land in last column same row
+				p.ccExpandedOffset -= pageSize
+				if p.ccExpandedOffset < 0 {
+					p.ccExpandedOffset = 0
+				}
+				p.ccCursor = p.ccExpandedOffset + (numCols-1)*rowsPerCol + row
 				if p.ccCursor > maxCursor {
 					p.ccCursor = maxCursor
 				}
@@ -173,15 +186,24 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		if p.ccExpanded {
 			rowsPerCol := p.expandedRowsPerCol()
 			numCols := p.expandedNumCols()
+			pageSize := rowsPerCol * numCols
 			relIdx := p.ccCursor - p.ccExpandedOffset
 			col := relIdx / rowsPerCol
 			row := relIdx % rowsPerCol
 			if col < numCols-1 {
+				// Move to next column on same page
 				target := p.ccExpandedOffset + (col+1)*rowsPerCol + row
 				if target > maxCursor {
 					target = maxCursor
 				}
 				p.ccCursor = target
+			} else if p.ccExpandedOffset+pageSize <= maxCursor {
+				// Paginate right: go to next page, land in first column same row
+				p.ccExpandedOffset += pageSize
+				p.ccCursor = p.ccExpandedOffset + row
+				if p.ccCursor > maxCursor {
+					p.ccCursor = maxCursor
+				}
 			}
 		}
 		return plugin.NoopAction()
@@ -487,6 +509,17 @@ func (p *Plugin) handleDetailView(msg tea.KeyMsg) plugin.Action {
 const detailFieldCount = 4 // 0=Status, 1=Due, 2=ProjectDir, 3=Prompt
 
 func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
+	// While showing a notice, ignore all keys except esc
+	if p.detailNotice != "" {
+		if msg.String() == "esc" {
+			p.detailNotice = ""
+			p.detailView = false
+			p.detailMode = "viewing"
+			return plugin.NoopAction()
+		}
+		return plugin.NoopAction()
+	}
+
 	switch msg.String() {
 	case "tab":
 		p.detailSelectedField = (p.detailSelectedField + 1) % detailFieldCount
@@ -496,6 +529,25 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		return plugin.ConsumedAction()
 	case "enter":
 		return p.enterDetailFieldEdit()
+	case "x":
+		return p.detailCompleteTodo()
+	case "X":
+		return p.detailDismissTodo()
+	case "j":
+		// Next todo
+		activeTodos := p.cc.ActiveTodos()
+		if p.detailTodoIdx < len(activeTodos)-1 {
+			p.detailTodoIdx++
+			p.detailSelectedField = 0
+		}
+		return plugin.NoopAction()
+	case "k":
+		// Previous todo
+		if p.detailTodoIdx > 0 {
+			p.detailTodoIdx--
+			p.detailSelectedField = 0
+		}
+		return plugin.NoopAction()
 	case "o":
 		// Open task runner view
 		activeTodos := p.cc.ActiveTodos()
@@ -515,6 +567,78 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 	return plugin.NoopAction()
+}
+
+// detailCompleteTodo marks the current detail todo as done and shows a notice.
+func (p *Plugin) detailCompleteTodo() plugin.Action {
+	activeTodos := p.cc.ActiveTodos()
+	if p.detailTodoIdx >= len(activeTodos) {
+		return plugin.NoopAction()
+	}
+	todo := activeTodos[p.detailTodoIdx]
+	p.undoStack = append(p.undoStack, undoEntry{
+		todoID:     todo.ID,
+		prevStatus: todo.Status,
+		prevDoneAt: todo.CompletedAt,
+		cursorPos:  p.ccCursor,
+	})
+	todoID := todo.ID
+	p.cc.CompleteTodo(todoID)
+	p.publishEvent("todo.completed", map[string]interface{}{"id": todoID, "title": todo.Title})
+
+	// Adjust list cursor to stay in bounds
+	newLen := len(p.cc.ActiveTodos())
+	if p.ccCursor >= newLen && newLen > 0 {
+		p.ccCursor = newLen - 1
+	}
+	if p.ccScrollOffset > p.ccCursor {
+		p.ccScrollOffset = p.ccCursor
+	}
+
+	p.detailNotice = fmt.Sprintf("Done: %s", flattenTitle(todo.Title))
+	p.detailNoticeAt = time.Now()
+
+	dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBCompleteTodo(database, todoID) })
+	if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, focusCmd)}
+	}
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+}
+
+// detailDismissTodo removes the current detail todo and shows a notice.
+func (p *Plugin) detailDismissTodo() plugin.Action {
+	activeTodos := p.cc.ActiveTodos()
+	if p.detailTodoIdx >= len(activeTodos) {
+		return plugin.NoopAction()
+	}
+	todo := activeTodos[p.detailTodoIdx]
+	p.undoStack = append(p.undoStack, undoEntry{
+		todoID:     todo.ID,
+		prevStatus: todo.Status,
+		prevDoneAt: todo.CompletedAt,
+		cursorPos:  p.ccCursor,
+	})
+	todoID := todo.ID
+	p.cc.RemoveTodo(todoID)
+	p.publishEvent("todo.dismissed", map[string]interface{}{"id": todoID, "title": todo.Title})
+
+	// Adjust list cursor to stay in bounds
+	newLen := len(p.cc.ActiveTodos())
+	if p.ccCursor >= newLen && newLen > 0 {
+		p.ccCursor = newLen - 1
+	}
+	if p.ccScrollOffset > p.ccCursor {
+		p.ccScrollOffset = p.ccCursor
+	}
+
+	p.detailNotice = fmt.Sprintf("Removed: %s", flattenTitle(todo.Title))
+	p.detailNoticeAt = time.Now()
+
+	dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBDismissTodo(database, todoID) })
+	if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, focusCmd)}
+	}
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
 }
 
 func (p *Plugin) enterDetailFieldEdit() plugin.Action {

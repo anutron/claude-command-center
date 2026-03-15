@@ -626,13 +626,13 @@ func wrapText(text string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int) string {
+func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
 	}
 
-	title := s.SectionHeader.Render("TODO DETAIL")
+	title := s.SectionHeader.Render(fmt.Sprintf("TODO #%d", todo.DisplayID))
 	todoTitle := lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(todo.Title)
 
 	// Two-column layout for fields
@@ -791,11 +791,22 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		)
 	}
 
+	// Notice banner (shown after done/remove)
+	var noticeBanner string
+	if notice != "" {
+		noticeBanner = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#000000")).
+			Background(s.ColorGreen).
+			Bold(true).
+			Padding(0, 1).
+			Render("\u2713 " + notice)
+	}
+
 	// Footer hints based on mode
 	var hints string
 	switch detailMode {
 	case "viewing":
-		hints = s.Hint.Render("tab/shift-tab cycle \u00b7 enter edit \u00b7 o launch \u00b7 c command \u00b7 esc back")
+		hints = s.Hint.Render("j/k prev/next \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch \u00b7 c command \u00b7 esc back")
 	case "editingField":
 		hints = s.Hint.Render("enter confirm \u00b7 esc cancel")
 	case "commandInput":
@@ -803,12 +814,17 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	}
 
 	parts := []string{
-		title,
+		"  " + title,
 		"",
-		"  " + todoTitle,
+	}
+	if noticeBanner != "" {
+		parts = append(parts, "  "+noticeBanner, "")
+	}
+	parts = append(parts,
+		"  "+todoTitle,
 		"",
 		fieldStr,
-	}
+	)
 	if detailSection != "" {
 		parts = append(parts, detailSection)
 	}
@@ -962,7 +978,7 @@ func renderExpandedTodoView(s *ccStyles, g *gradientColors, todos []db.Todo, cur
 	currentPage := offset/pageSize + 1
 
 	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active)", len(todos)))
-	hints := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 \u2190\u2192 columns \u00b7 space cycle/collapse \u00b7 enter detail \u00b7 x done \u00b7 u undo \u00b7 o command \u00b7 ? help")
+	hints := s.RefreshInfo.Render("\u2191\u2193 navigate \u00b7 \u2190\u2192 columns/page \u00b7 space cycle/collapse \u00b7 enter detail \u00b7 x done \u00b7 u undo \u00b7 o command \u00b7 ? help")
 
 	if len(todos) == 0 {
 		return lipgloss.JoinVertical(lipgloss.Left, header, "", s.CalendarFree.Render("  No active todos"), "", hints)

@@ -84,6 +84,8 @@ type Plugin struct {
 	detailFieldInput    textinput.Model
 	detailPaths         []string
 	detailPathCursor    int
+	detailNotice        string    // flash notice shown after done/remove
+	detailNoticeAt      time.Time // when the notice was set
 
 	// Task runner view
 	taskRunnerView        bool
@@ -428,7 +430,12 @@ func (p *Plugin) normalMaxVisibleTodos() int {
 }
 
 func (p *Plugin) expandedRowsPerCol() int {
-	rows := (p.height - 14 - 5) / 2
+	// p.height is the content area (terminal height minus TUI header).
+	// The expanded view needs space for its own chrome:
+	// header(1) + blank(1) + columns + blank(1) + hints(1) + footer(1) = 5 lines,
+	// plus 2 lines buffer for optional loading/flash messages.
+	// Each todo item takes 2 lines (title + details).
+	rows := (p.height - 7) / 2
 	if rows < 5 {
 		rows = 5
 	}
@@ -512,7 +519,19 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	if p.detailView && p.cc != nil {
 		activeTodos := p.cc.ActiveTodos()
 		if p.detailTodoIdx < len(activeTodos) {
-			return renderDetailView(&p.styles, activeTodos[p.detailTodoIdx], p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth)
+			return renderDetailView(&p.styles, activeTodos[p.detailTodoIdx], p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice)
+		}
+		// Notice showing but no more active todos — render just the notice
+		if p.detailNotice != "" {
+			notice := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#000000")).
+				Background(p.styles.ColorGreen).
+				Bold(true).
+				Padding(0, 1).
+				Render("\u2713 " + p.detailNotice)
+			empty := p.styles.DescMuted.Render("No more active todos")
+			content := lipgloss.JoinVertical(lipgloss.Left, "", "  "+notice, "", "  "+empty)
+			return p.styles.PanelBorder.Width(viewWidth - 4).Render(content)
 		}
 	}
 

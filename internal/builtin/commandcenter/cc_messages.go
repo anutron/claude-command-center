@@ -391,6 +391,24 @@ func (p *Plugin) handleTickMsg() (bool, plugin.Action) {
 	if p.flashMessage != "" && time.Since(p.flashMessageAt) > 15*time.Second {
 		p.flashMessage = ""
 	}
+
+	// Auto-advance detail view after notice expires (1 second)
+	if p.detailNotice != "" && time.Since(p.detailNoticeAt) > 1*time.Second {
+		p.detailNotice = ""
+		activeTodos := p.cc.ActiveTodos()
+		if len(activeTodos) == 0 {
+			// No more todos — exit detail view
+			p.detailView = false
+			p.detailMode = "viewing"
+		} else {
+			// Clamp index to valid range (same index = next todo since current was removed)
+			if p.detailTodoIdx >= len(activeTodos) {
+				p.detailTodoIdx = len(activeTodos) - 1
+			}
+			p.detailSelectedField = 0
+		}
+	}
+
 	var cmds []tea.Cmd
 
 	// Check for finished agent processes.
