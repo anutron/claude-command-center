@@ -1426,7 +1426,7 @@ func renderTaskRunnerStep1(s *ccStyles, header, projectDir string, pickingPath b
 	if pickingPath {
 		hint = s.Hint.Render("  j/k navigate \u00b7 type to filter \u00b7 enter select \u00b7 esc cancel")
 	} else {
-		hint = s.Hint.Render("  enter pick project \u00b7 tab next step \u00b7 esc back")
+		hint = s.Hint.Render("  enter pick project · enter next step · esc back")
 	}
 	parts = append(parts, "", hint)
 
@@ -1445,7 +1445,7 @@ func renderTaskRunnerStep2(s *ccStyles, header, projectDir, mode string, innerWi
 	modeOptions := []string{"Normal", "Worktree", "Sandbox"}
 	modeLine := renderTaskRunnerOptionRow(s, "Mode", modeOptions, mode, true, innerWidth)
 
-	hint := s.Hint.Render("  \u2190/\u2192 select mode \u00b7 tab next step \u00b7 shift+tab back \u00b7 esc cancel")
+	hint := s.Hint.Render("  ←/→ select mode · enter next step · esc back")
 
 	parts := []string{
 		header,
@@ -1513,7 +1513,7 @@ func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptV
 	}
 	selector := "  " + queueLabel + "   " + runNowLabel
 
-	hint := s.Hint.Render("  e edit prompt \u00b7 r refine with AI \u00b7 \u2190/\u2192 launch option \u00b7 enter launch \u00b7 shift+tab back \u00b7 esc cancel")
+	hint := s.Hint.Render("  e edit prompt · r refine with AI · ←/→ launch option · enter launch · esc back")
 
 	parts = append(parts, "", selector, hint)
 
