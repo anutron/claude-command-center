@@ -665,8 +665,13 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		p.detailMode = "commandInput"
 		p.textInput.Reset()
 		p.textInput.Placeholder = "Tell me what changed..."
-		p.textInput.Focus()
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
+		inputWidth := p.width - 10
+		if inputWidth < 40 {
+			inputWidth = 40
+		}
+		p.textInput.Width = inputWidth
+		cmd := p.textInput.Focus()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	case "esc":
 		p.detailView = false
 		p.detailMode = "viewing"
