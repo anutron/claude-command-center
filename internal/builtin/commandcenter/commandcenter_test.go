@@ -571,3 +571,55 @@ func TestDetailViewCommandInput(t *testing.T) {
 	}
 }
 
+func TestParseDueDate(t *testing.T) {
+	// Fixed "now" for deterministic tests: 2026-03-14
+	now := time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		input   string
+		want    string
+		wantOK  bool
+	}{
+		// Already YYYY-MM-DD
+		{"2026-04-01", "2026-04-01", true},
+		{"2025-12-25", "2025-12-25", true},
+
+		// mm dd format — future date in current year
+		{"03 20", "2026-03-20", true},
+		{"3 20", "2026-03-20", true},
+		{"04 01", "2026-04-01", true},
+		{"12 25", "2026-12-25", true},
+
+		// mm dd format — date already passed → next year
+		{"01 05", "2027-01-05", true},
+		{"03 13", "2027-03-13", true},
+
+		// mm dd format — today is still valid (not past)
+		{"03 14", "2026-03-14", true},
+
+		// Invalid month/day
+		{"13 01", "", false},
+		{"00 15", "", false},
+		{"03 32", "", false},
+
+		// Natural language — should return false for LLM fallback
+		{"wednesday", "", false},
+		{"next friday", "", false},
+		{"end of month", "", false},
+		{"tomorrow", "", false},
+
+		// Empty string
+		{"", "", false},
+	}
+
+	for _, tt := range tests {
+		got, ok := parseDueDate(tt.input, now)
+		if ok != tt.wantOK {
+			t.Errorf("parseDueDate(%q): ok = %v, want %v", tt.input, ok, tt.wantOK)
+		}
+		if ok && got != tt.want {
+			t.Errorf("parseDueDate(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+

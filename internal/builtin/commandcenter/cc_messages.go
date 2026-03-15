@@ -40,6 +40,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case claudeFocusFinishedMsg:
 		return p.handleClaudeFocusFinished(msg)
 
+	case claudeDateParseFinishedMsg:
+		return p.handleClaudeDateParseFinished(msg)
+
 	case plannotatorFinishedMsg:
 		return p.handlePlannotatorFinished(msg)
 
@@ -300,6 +303,38 @@ func (p *Plugin) handleClaudeFocusFinished(msg claudeFocusFinishedMsg) (bool, pl
 		if focus != "" && p.cc != nil {
 			p.cc.Suggestions.Focus = focus
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error { return db.DBSaveFocus(database, focus) })}
+		}
+	}
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleClaudeDateParseFinished(msg claudeDateParseFinishedMsg) (bool, plugin.Action) {
+	p.claudeLoading = false
+	if msg.err != nil {
+		p.flashMessage = "Date parse failed: " + msg.err.Error()
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+	parsed := strings.TrimSpace(msg.output)
+	// Validate the LLM returned a proper YYYY-MM-DD date
+	if _, err := time.Parse("2006-01-02", parsed); err != nil {
+		p.flashMessage = fmt.Sprintf("Could not parse date: %q", parsed)
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+	// Find the todo and update its due date
+	if p.cc != nil {
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == msg.todoID {
+				p.cc.Todos[i].Due = parsed
+				updated := p.cc.Todos[i]
+				p.flashMessage = fmt.Sprintf("Due date set to %s", parsed)
+				p.flashMessageAt = time.Now()
+				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBUpdateTodo(database, updated.ID, updated)
+				})
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			}
 		}
 	}
 	return true, plugin.NoopAction()

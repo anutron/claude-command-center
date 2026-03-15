@@ -35,6 +35,12 @@ type claudeFocusFinishedMsg struct {
 	err    error
 }
 
+type claudeDateParseFinishedMsg struct {
+	todoID string
+	output string
+	err    error
+}
+
 func claudeEditCmd(l llm.LLM, prompt, todoID string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
@@ -60,6 +66,19 @@ func claudeCommandCmd(l llm.LLM, prompt, projectDir string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
 		return claudeCommandFinishedMsg{
+			output: out,
+			err:    err,
+		}
+	}
+}
+
+func claudeDateParseCmd(l llm.LLM, input string, todoID string) tea.Cmd {
+	prompt := fmt.Sprintf("Parse this into YYYY-MM-DD format. Today is %s. Input: %s. Reply with only the date in YYYY-MM-DD format, nothing else.",
+		time.Now().Format("2006-01-02"), input)
+	return func() tea.Msg {
+		out, err := l.Complete(context.Background(), prompt)
+		return claudeDateParseFinishedMsg{
+			todoID: todoID,
 			output: out,
 			err:    err,
 		}
