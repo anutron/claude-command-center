@@ -642,6 +642,18 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		if p.taskRunnerPathCursor >= 0 && p.taskRunnerPathCursor < len(p.detailPaths) {
 			taskRunnerProjectDir = p.detailPaths[p.taskRunnerPathCursor]
 		}
+		// Resize viewport to match current available space on every render.
+		// Step 3 has ~13 lines of chrome (header, labels, divider, selector, etc.).
+		vpWidth := viewWidth - 10
+		if vpWidth < 40 {
+			vpWidth = 40
+		}
+		vpHeight := viewHeight - 13
+		if vpHeight < 5 {
+			vpHeight = 5
+		}
+		p.taskRunnerPrompt.Width = vpWidth
+		p.taskRunnerPrompt.Height = vpHeight
 		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerBudget, p.taskRunnerStep, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter, p.taskRunnerRefining, p.taskRunnerReviewing, p.taskRunnerInputting, p.taskRunnerInstructInput)
 		}
 	}
