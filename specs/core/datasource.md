@@ -158,3 +158,13 @@ Calendar, GitHub, and Granola source packages also export `Settings` types imple
 - `cmd/ccc-refresh/main.go` constructs sources from source packages, passes them to `refresh.Run()`
 - Calendar credential migration happens in `CalendarSource.Fetch()`, making it self-contained
 - PostMerger pattern keeps the orchestrator source-agnostic while allowing calendar-specific post-merge actions
+
+## Data Safety
+
+### ANSI Sanitization
+
+All string data from external APIs (event titles, PR titles, Slack messages, etc.) is stripped of ANSI escape sequences at the refresh boundary via `internal/sanitize.StripANSI()`. This prevents terminal injection where a malicious string could manipulate terminal state via OSC or CSI sequences. Lipgloss/bubbletea do not strip raw ANSI from input strings.
+
+### Response Size Limits
+
+HTTP responses from Slack and Granola are read with `io.LimitReader(resp.Body, 10*1024*1024)` (10MB) to prevent memory exhaustion. This is especially important for Granola, which decompresses gzip before reading.

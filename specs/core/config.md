@@ -59,6 +59,19 @@ Resolution order:
 
 This ensures the repo's `servers/` and `.claude/skills/` directories are found even when the binary is invoked via symlink from outside the repo.
 
+## File Permissions
+
+Sensitive files are written with restricted permissions to prevent local information disclosure:
+
+- **`config.yaml`** and **`config.yaml.bak`**: `0o600` — contains Slack token in plaintext
+- **`mcp.json`** (`~/.claude/mcp.json`): `0o600` — contains MCP server configuration
+- **Database directory** (`~/.config/ccc/data/`): `0o700` — DB contains calendar events, email subjects, meeting transcripts
+- **Socket directory**: `0o700` — unix socket allows sending notify events to the TUI
+- **Lock file** (`refresh.lock`): `0o600`
+- **Credentials directory** (`~/.config/ccc/credentials/`): follows parent directory permissions
+
+Note: Go OAuth token files (`token.json`) already use `0o600`. The Gmail MCP TypeScript server writes tokens with `{ mode: 0o600 }`.
+
 ## Test Cases
 
 - DefaultConfig: correct defaults (name, palette, todos enabled, others disabled)

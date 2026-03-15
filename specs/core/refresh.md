@@ -21,7 +21,7 @@ See `specs/core/datasource.md` for full details. Each source implements `Name()`
 
 ## Behavior
 
-1. Load env vars from `~/.config/ccc/.env` (for launchd environments)
+1. Load env vars from `~/.config/ccc/.env` (for cron/non-interactive environments)
 2. Load existing state from SQLite via `db.LoadCommandCenterFromDB(opts.DB)`
 3. Migrate calendar credentials if needed (one-time)
 4. **Parallel data fetch**: Iterate `opts.Sources`; for each enabled source, spawn a goroutine calling `Fetch(ctx)`. Each source loads its own auth; auth failures produce warnings, not fatal errors. LLM extraction for Slack/Granola happens inside `Fetch()`.
@@ -37,12 +37,12 @@ Types are consolidated in `internal/db/` as the single source of truth. The refr
 
 ## Locking
 
-Refresh locking is implemented in `internal/refresh/lock.go`:
+Refresh locking is implemented in `internal/lockfile/lockfile.go`:
 
-- `AcquireLock(stateDir string)` — acquires a PID lockfile to prevent concurrent refresh runs
+- `AcquireLock(stateDir string)` — acquires an advisory file lock via `syscall.Flock()` to prevent concurrent refresh runs. Returns a release function on success, or `ErrAlreadyLocked` if another process holds the lock.
 - `IsLocked(stateDir string) bool` — checks whether a refresh is currently in progress (used by TUI to skip spawning refresh if one is already running)
 
-The lockfile lives at `~/.config/ccc/data/refresh.lock`. Stale locks are detected by checking if the PID is still alive.
+The lockfile lives at `~/.config/ccc/data/refresh.lock` with `0o600` permissions. The flock-based approach is atomic and eliminates the TOCTOU race condition of the previous PID-based implementation.
 
 ## Configurable Refresh Interval
 
@@ -80,7 +80,45 @@ A standalone binary at `cmd/ccc-refresh/main.go` provides the CLI entrypoint for
 - `--dry-run` — print result to stdout instead of writing to DB
 - `--no-llm` — skip LLM calls (data-only refresh)
 
-This binary is what launchd/cron invokes on schedule, and what the TUI spawns when the user presses `r`.
+This binary is what crontab invokes on schedule, and what the TUI spawns when the user presses `r`.
+
+## Background Scheduling (crontab)
+
+Background refresh uses crontab instead of launchd. macOS BTM (Background Task Management) tracks `executableModifiedDate` for launch agent binaries — every `make build` recompiles `ccc-refresh`, changes its mtime, and re-triggers the "Background Items Added" notification. Crontab bypasses BTM entirely.
+
+The schedule is managed via `ccc install-schedule` and `ccc uninstall-schedule` (see `specs/core/cli.md`). Implementation lives in `internal/config/schedule.go`.
+
+**Schedule entry format:**
+
+```
+*/N * * * * [ -f ~/.config/ccc/.env ] && . ~/.config/ccc/.env; /path/to/ccc-refresh >> ~/.config/ccc/data/refresh.log 2>&1 # ccc-refresh schedule
+```
+
+- **Interval**: Derived from `config.refresh_interval`, converted to whole minutes (`*/N`), minimum 1 minute
+- **Env sourcing**: The `.env` file is sourced inline since cron does not inherit shell environment variables (needed for `SLACK_BOT_TOKEN`, etc.)
+- **Marker comment**: `# ccc-refresh schedule` identifies CCC entries for idempotent install/uninstall
+- **Log file**: Output appended to `~/.config/ccc/data/refresh.log`
+- **Legacy cleanup**: Install and uninstall both remove the old launchd plist (`~/Library/LaunchAgents/com.ccc.refresh.plist`) if present
+
+## Security
+
+### Data Sanitization
+
+All external API data is stripped of ANSI escape sequences at the refresh boundary before entering the system. This prevents terminal injection attacks where a malicious calendar event title, PR title, or Slack message could inject OSC sequences or manipulate terminal state. Sanitization uses `internal/sanitize.StripANSI()` (wrapping `ansi.Strip()`).
+
+### API Response Size Limits
+
+HTTP responses from Slack and Granola APIs are read with `io.LimitReader(resp.Body, 10*1024*1024)` (10MB cap) to prevent memory exhaustion from malicious or corrupted responses. Granola additionally decompresses gzip before the limit is applied.
+
+### OAuth Hardening
+
+- **PKCE (S256)**: All OAuth2 flows use Proof Key for Code Exchange (`internal/auth/pkce.go`). The code verifier is generated per flow and included in both the authorization URL and token exchange.
+- **Random state parameter**: OAuth state is a 16-byte crypto/rand hex string, validated on callback. Prevents CSRF attacks that could associate an attacker's Google account with the user's CCC.
+- **Loopback binding**: The OAuth callback server binds to `127.0.0.1` only (not all interfaces), preventing LAN-based callback interception.
+
+### Lock File
+
+Refresh locking uses `syscall.Flock()` for atomic advisory file locking (`internal/lockfile/lockfile.go`), eliminating the TOCTOU race condition in the previous PID-based approach. The lock file is written with `0o600` permissions.
 
 ## Data Sources
 
@@ -101,6 +139,11 @@ This binary is what launchd/cron invokes on schedule, and what the TUI spawns wh
 
 ## Test Cases
 
+- ANSI escape sequences stripped from external API data (sanitize.StripANSI)
+- API responses capped at 10MB via io.LimitReader
+- OAuth state parameter is random and validated on callback
+- PKCE code verifier/challenge generated per flow and round-trips correctly
+- Lock file acquired atomically via flock (concurrent acquisition returns ErrAlreadyLocked)
 - Calendar replaced entirely on merge
 - Dismissed todo never recreated from fresh data
 - Existing todo updated (preserves ID, status, created_at)

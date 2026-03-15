@@ -43,6 +43,26 @@ func RunMigrations(db *sql.DB, slug string, migrations []Migration) error
 - **Forward-only**: No rollback/down migration support. Migrations only move forward.
 - **Called during Init**: Plugins call `RunMigrations` during their `Init(ctx)` method, before any queries.
 
+## External Plugin Migration Security
+
+External plugin migrations are validated before execution via `ValidateExternalMigrationSQL()`. This prevents malicious plugins from reading, modifying, or dropping other plugins' data.
+
+**Allowed SQL patterns** (all must be namespaced to `<slug>_`):
+
+- `CREATE TABLE IF NOT EXISTS <slug>_*`
+- `CREATE [UNIQUE] INDEX IF NOT EXISTS <slug>_*`
+- `ALTER TABLE <slug>_*`
+- `DROP TABLE IF EXISTS <slug>_*`
+- `DROP INDEX IF EXISTS <slug>_*`
+
+**Rejected**:
+
+- Any DML statements (`INSERT`, `UPDATE`, `DELETE`, `SELECT`)
+- DDL targeting tables/indexes not prefixed with the plugin's slug
+- `ATTACH DATABASE` or other administrative SQL
+
+SQL comments are stripped before validation. If any statement fails validation, the entire plugin is rejected and not loaded. See `specs/plugin/external-adapter.md` for the full init handshake.
+
 ## Test Cases
 
 - No-op when db is nil
