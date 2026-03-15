@@ -147,6 +147,17 @@ func DBUpdateTodoSessionStatus(db *sql.DB, id string, status string) error {
 	return nil
 }
 
+// DBUpdateTodoProjectDir updates only the project_dir column for a todo.
+func DBUpdateTodoProjectDir(db *sql.DB, id string, projectDir string) error {
+	now := FormatTime(time.Now())
+	_, err := db.Exec(`UPDATE cc_todos SET project_dir = NULLIF(?, ''), updated_at = ? WHERE id = ?`,
+		projectDir, now, id)
+	if err != nil {
+		return fmt.Errorf("update todo project_dir %s: %w", id, err)
+	}
+	return nil
+}
+
 // DBUpdateTodoSessionID updates only the session_id column for a todo.
 func DBUpdateTodoSessionID(db *sql.DB, id string, sessionID string) error {
 	now := FormatTime(time.Now())

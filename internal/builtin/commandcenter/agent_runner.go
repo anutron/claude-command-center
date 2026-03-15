@@ -357,6 +357,26 @@ func (p *Plugin) persistSessionStatus(todoID, status string) tea.Cmd {
 	})
 }
 
+// setTodoProjectDir updates the project dir of a todo in-memory.
+func (p *Plugin) setTodoProjectDir(todoID, projectDir string) {
+	if p.cc == nil {
+		return
+	}
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == todoID {
+			p.cc.Todos[i].ProjectDir = projectDir
+			return
+		}
+	}
+}
+
+// persistProjectDir returns a tea.Cmd that writes the project dir to the DB.
+func (p *Plugin) persistProjectDir(todoID, projectDir string) tea.Cmd {
+	return p.dbWriteCmd(func(database *sql.DB) error {
+		return db.DBUpdateTodoProjectDir(database, todoID, projectDir)
+	})
+}
+
 // setTodoSessionSummary updates the session summary of a todo in-memory.
 func (p *Plugin) setTodoSessionSummary(todoID, summary string) {
 	if p.cc == nil {

@@ -1622,8 +1622,9 @@ func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 			projectDir = home
 		}
 
-		// Mark todo as active
+		// Mark todo as active and persist project dir so resume uses the right directory
 		p.setTodoSessionStatus(todo.ID, "active")
+		p.setTodoProjectDir(todo.ID, projectDir)
 		p.cc.AcceptTodo(todo.ID)
 
 		p.taskRunnerView = false
@@ -1632,6 +1633,7 @@ func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 		args := map[string]string{
 			"dir":            projectDir,
 			"initial_prompt": prompt,
+			"todo_id":        todo.ID,
 		}
 		if p.taskRunnerMode == "worktree" {
 			args["worktree"] = "true"
@@ -1639,6 +1641,7 @@ func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 
 		var cmds []tea.Cmd
 		cmds = append(cmds, p.persistSessionStatus(todo.ID, "active"))
+		cmds = append(cmds, p.persistProjectDir(todo.ID, projectDir))
 		cmds = append(cmds, p.dbWriteCmd(func(database *sql.DB) error {
 			return db.DBAcceptTodo(database, todo.ID)
 		}))
@@ -1670,6 +1673,8 @@ func (p *Plugin) taskRunnerLaunch(immediate bool) plugin.Action {
 			home, _ := os.UserHomeDir()
 			projectDir = home
 		}
+		// Persist project dir so resume uses the right directory
+		p.setTodoProjectDir(todo.ID, projectDir)
 		qs := queuedSession{
 			TodoID:     todo.ID,
 			Prompt:     prompt,
@@ -1679,7 +1684,7 @@ func (p *Plugin) taskRunnerLaunch(immediate bool) plugin.Action {
 			Budget:     p.taskRunnerBudget,
 			AutoStart:  immediate,
 		}
-		cmd := p.launchOrQueueAgent(qs)
+		cmd := tea.Batch(p.persistProjectDir(todo.ID, projectDir), p.launchOrQueueAgent(qs))
 		p.taskRunnerView = false
 		p.detailView = false
 		if p.canLaunchAgent() || len(p.sessionQueue) == 0 {
