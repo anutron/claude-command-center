@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -21,7 +22,7 @@ func (m *mockLLM) Complete(_ context.Context, _ string) (string, error) {
 func TestNew(t *testing.T) {
 	t.Run("enabled with LLM", func(t *testing.T) {
 		l := &mockLLM{}
-		s := New(true, l)
+		s := New(true, l, nil)
 		if s == nil {
 			t.Fatal("New returned nil")
 		}
@@ -34,14 +35,14 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("disabled", func(t *testing.T) {
-		s := New(false, nil)
+		s := New(false, nil, nil)
 		if s.Enabled() {
 			t.Error("expected Enabled() = false")
 		}
 	})
 
 	t.Run("nil LLM", func(t *testing.T) {
-		s := New(true, nil)
+		s := New(true, nil, nil)
 		if s.LLM != nil {
 			t.Error("expected nil LLM")
 		}
@@ -52,7 +53,7 @@ func TestNew(t *testing.T) {
 }
 
 func TestName(t *testing.T) {
-	s := New(true, nil)
+	s := New(true, nil, nil)
 	if got := s.Name(); got != "granola" {
 		t.Errorf("Name() = %q, want %q", got, "granola")
 	}
@@ -67,9 +68,9 @@ func TestEnabled(t *testing.T) {
 		{false, false},
 	}
 	for _, tt := range tests {
-		s := New(tt.enabled, nil)
+		s := New(tt.enabled, nil, nil)
 		if got := s.Enabled(); got != tt.want {
-			t.Errorf("New(%v, nil).Enabled() = %v, want %v", tt.enabled, got, tt.want)
+			t.Errorf("New(%v, nil, nil).Enabled() = %v, want %v", tt.enabled, got, tt.want)
 		}
 	}
 }
@@ -125,7 +126,7 @@ func TestExtractCommitments(t *testing.T) {
 	})
 
 	t.Run("valid LLM response", func(t *testing.T) {
-		llmResp := `[{"title":"Send report","source_ref":"m1","context":"project-x","detail":"Aaron committed to sending the Q1 report","who_waiting":"Bob","due":"2026-03-15"}]`
+		llmResp := `[{"title":"Send report","meeting_id":"m1","context":"project-x","detail":"Aaron committed to sending the Q1 report","who_waiting":"Bob","due":"2026-03-15"}]`
 		l := &mockLLM{response: llmResp}
 		meetings := []RawMeeting{
 			{ID: "m1", Title: "Standup", StartTime: time.Now(), Attendees: []string{"Bob"}},
@@ -146,8 +147,8 @@ func TestExtractCommitments(t *testing.T) {
 		if todo.Source != "granola" {
 			t.Errorf("Source = %q, want %q", todo.Source, "granola")
 		}
-		if todo.SourceRef != "m1" {
-			t.Errorf("SourceRef = %q, want %q", todo.SourceRef, "m1")
+		if !strings.HasPrefix(todo.SourceRef, "m1-") {
+			t.Errorf("SourceRef = %q, want prefix %q", todo.SourceRef, "m1-")
 		}
 		if todo.Context != "project-x" {
 			t.Errorf("Context = %q, want %q", todo.Context, "project-x")
@@ -177,7 +178,7 @@ func TestExtractCommitments(t *testing.T) {
 	})
 
 	t.Run("LLM returns wrapped JSON", func(t *testing.T) {
-		llmResp := "```json\n[{\"title\":\"Follow up\",\"source_ref\":\"m2\",\"context\":\"\",\"detail\":\"check in\",\"who_waiting\":\"\",\"due\":\"\"}]\n```"
+		llmResp := "```json\n[{\"title\":\"Follow up\",\"meeting_id\":\"m2\",\"context\":\"\",\"detail\":\"check in\",\"who_waiting\":\"\",\"due\":\"\"}]\n```"
 		l := &mockLLM{response: llmResp}
 		meetings := []RawMeeting{{ID: "m2", Title: "Sync"}}
 
@@ -212,8 +213,8 @@ func TestExtractCommitments(t *testing.T) {
 
 	t.Run("multiple commitments from multiple meetings", func(t *testing.T) {
 		llmResp := `[
-			{"title":"Write docs","source_ref":"m1","context":"docs","detail":"for API","who_waiting":"Alice","due":"2026-03-12"},
-			{"title":"Fix bug","source_ref":"m2","context":"backend","detail":"null pointer in handler","who_waiting":"","due":""}
+			{"title":"Write docs","meeting_id":"m1","context":"docs","detail":"for API","who_waiting":"Alice","due":"2026-03-12"},
+			{"title":"Fix bug","meeting_id":"m2","context":"backend","detail":"null pointer in handler","who_waiting":"","due":""}
 		]`
 		l := &mockLLM{response: llmResp}
 		meetings := []RawMeeting{
@@ -335,7 +336,7 @@ func searchString(s, substr string) bool {
 func TestDataSourceInterface(t *testing.T) {
 	// Verify GranolaSource satisfies the DataSource interface at compile time.
 	// This is a compile-time check; if it compiles, the test passes.
-	s := New(true, nil)
+	s := New(true, nil, nil)
 	if s.Name() != "granola" {
 		t.Errorf("Name() = %q, want %q", s.Name(), "granola")
 	}

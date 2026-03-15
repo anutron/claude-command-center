@@ -2,6 +2,8 @@ package granola
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -40,7 +42,7 @@ func extractCommitments(ctx context.Context, l llm.LLM, meetings []RawMeeting) (
 
 For each commitment, provide:
 - title: Brief actionable title (imperative mood)
-- source_ref: The meeting ID (from the ID: field) for deduplication. If multiple items come from the same meeting, append a short suffix like "-1", "-2" etc.
+- meeting_id: The meeting ID (from the ID: field) this commitment came from
 - context: Which project or area this relates to
 - detail: Comprehensive context including who was in the meeting, what was discussed, what's expected, and by when
 - who_waiting: Person(s) waiting on this (if identifiable)
@@ -60,7 +62,7 @@ Meetings:
 
 	var items []struct {
 		Title      string `json:"title"`
-		SourceRef  string `json:"source_ref"`
+		MeetingID  string `json:"meeting_id"`
 		Context    string `json:"context"`
 		Detail     string `json:"detail"`
 		WhoWaiting string `json:"who_waiting"`
@@ -71,14 +73,12 @@ Meetings:
 	}
 
 	var todos []db.Todo
-	seen := make(map[string]int)
 	for _, item := range items {
-		ref := item.SourceRef
-		// Ensure unique source_ref — append counter if LLM didn't suffix
-		if n, ok := seen[ref]; ok {
-			ref = fmt.Sprintf("%s-%d", ref, n+1)
-		}
-		seen[item.SourceRef]++
+		// Build a deterministic source_ref from meeting ID + title hash.
+		// This survives LLM non-determinism in ordering/count as long as
+		// the title is semantically stable (which it is for the same commitment).
+		h := sha256.Sum256([]byte(strings.ToLower(item.Title)))
+		ref := fmt.Sprintf("%s-%s", item.MeetingID, hex.EncodeToString(h[:4]))
 		todos = append(todos, db.Todo{
 			Title:      item.Title,
 			Source:     "granola",

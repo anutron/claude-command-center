@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,13 +34,15 @@ type RawMeeting struct {
 // GranolaSource fetches meeting transcripts from Granola and uses LLM to extract commitments.
 type GranolaSource struct {
 	LLM     llm.LLM
+	DB      *sql.DB
 	enabled bool
 }
 
 // New creates a GranolaSource with the given config.
-func New(enabled bool, l llm.LLM) *GranolaSource {
+func New(enabled bool, l llm.LLM, database *sql.DB) *GranolaSource {
 	return &GranolaSource{
 		LLM:     l,
+		DB:      database,
 		enabled: enabled,
 	}
 }
@@ -59,16 +62,35 @@ func (s *GranolaSource) Fetch(ctx context.Context) (*refresh.SourceResult, error
 	}
 
 	log.Printf("granola: %d meetings found", len(meetings))
-	for i, m := range meetings {
+
+	// Only send meetings newer than our last successful sync to the LLM.
+	var lastSuccess time.Time
+	if s.DB != nil {
+		if ss, err := db.DBLoadSourceSync(s.DB, "granola"); err == nil && ss.LastSuccess != nil {
+			lastSuccess = *ss.LastSuccess
+		}
+	}
+
+	var newMeetings []RawMeeting
+	for _, m := range meetings {
+		if !lastSuccess.IsZero() && !m.StartTime.After(lastSuccess) {
+			log.Printf("granola: skipping already-processed meeting %q (%s, started %s)",
+				m.Title, m.ID, m.StartTime.Format(time.RFC3339))
+			continue
+		}
+		newMeetings = append(newMeetings, m)
+	}
+
+	log.Printf("granola: %d new meetings to process (skipped %d)", len(newMeetings), len(meetings)-len(newMeetings))
+	for i, m := range newMeetings {
 		log.Printf("granola: [%d] %s (transcript=%d chars, summary=%d chars)", i, m.Title, len(m.Transcript), len(m.Summary))
 	}
 
-	// Extract commitments via LLM if we have meetings and a real LLM
+	// Extract commitments via LLM only for new meetings
 	var todos []db.Todo
-	if len(meetings) > 0 && s.LLM != nil {
-		todos, err = extractCommitments(ctx, s.LLM, meetings)
+	if len(newMeetings) > 0 && s.LLM != nil {
+		todos, err = extractCommitments(ctx, s.LLM, newMeetings)
 		if err != nil {
-			// LLM extraction failure is non-fatal; return without todos
 			return &refresh.SourceResult{
 				Warnings: []db.Warning{{Source: "granola", Message: fmt.Sprintf("LLM extraction failed: %v", err)}},
 			}, nil

@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,11 +23,12 @@ type SlackSource struct {
 	enabled  bool
 	botToken string
 	LLM      llm.LLM
+	DB       *sql.DB
 }
 
 // New creates a SlackSource with the given token and LLM.
-func New(enabled bool, botToken string, l llm.LLM) *SlackSource {
-	return &SlackSource{enabled: enabled, botToken: botToken, LLM: l}
+func New(enabled bool, botToken string, l llm.LLM, database *sql.DB) *SlackSource {
+	return &SlackSource{enabled: enabled, botToken: botToken, LLM: l, DB: database}
 }
 
 func (s *SlackSource) Name() string  { return "slack" }
@@ -45,12 +47,35 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 
 	log.Printf("slack: %d candidates found", len(candidates))
 
-	// Extract commitments via LLM if we have candidates and a real LLM
+	// Only send messages newer than our last successful sync to the LLM.
+	var lastSuccess time.Time
+	if s.DB != nil {
+		if ss, err := db.DBLoadSourceSync(s.DB, "slack"); err == nil && ss.LastSuccess != nil {
+			lastSuccess = *ss.LastSuccess
+		}
+	}
+
+	var newCandidates []slackCandidate
+	for _, c := range candidates {
+		if !lastSuccess.IsZero() && c.Timestamp != "" {
+			// Slack timestamps are Unix epoch with decimal (e.g. "1710000000.000100")
+			if ts, err := strconv.ParseFloat(c.Timestamp, 64); err == nil {
+				msgTime := time.Unix(int64(ts), 0)
+				if !msgTime.After(lastSuccess) {
+					continue
+				}
+			}
+		}
+		newCandidates = append(newCandidates, c)
+	}
+
+	log.Printf("slack: %d new candidates to process (skipped %d)", len(newCandidates), len(candidates)-len(newCandidates))
+
+	// Extract commitments via LLM only for new candidates
 	var todos []db.Todo
-	if len(candidates) > 0 && s.LLM != nil {
-		todos, err = extractSlackCommitments(ctx, s.LLM, candidates)
+	if len(newCandidates) > 0 && s.LLM != nil {
+		todos, err = extractSlackCommitments(ctx, s.LLM, newCandidates)
 		if err != nil {
-			// LLM extraction failure is non-fatal; return raw data without todos
 			return &refresh.SourceResult{
 				Warnings: []db.Warning{{Source: "slack", Message: fmt.Sprintf("LLM extraction failed: %v", err)}},
 			}, nil
