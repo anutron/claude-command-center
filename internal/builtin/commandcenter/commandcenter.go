@@ -108,7 +108,7 @@ type Plugin struct {
 	taskRunnerRefining      bool   // true when AI refine is active
 	taskRunnerReviewing     bool   // true when Plannotator is open in browser
 	taskRunnerInputting     bool   // true when user is typing instructions for c key
-	taskRunnerInstructInput textinput.Model
+	taskRunnerInstructInput textarea.Model
 	taskRunnerReviewClean   string // clean prompt text before review edits
 	taskRunnerPathCursor   int    // index into detailPaths for task runner project override
 	taskRunnerLaunchCursor int    // 0=Run Claude, 1=Queue Agent, 2=Run Agent Now

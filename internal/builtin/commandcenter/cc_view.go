@@ -9,7 +9,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/ui"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -1445,7 +1445,7 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode string, budget float64,
 	step int, promptVP viewport.Model, width, height int,
 	projectDir string, launchCursor int,
 	pickingPath bool, filteredPaths []string, pathCursor int, pathFilter string,
-	refining bool, reviewing bool, inputting bool, instructInput textinput.Model) string {
+	refining bool, reviewing bool, inputting bool, instructInput textarea.Model) string {
 
 	innerWidth := width - 4
 	if innerWidth < 40 {
@@ -1552,7 +1552,7 @@ func renderTaskRunnerStep2(s *ccStyles, header, projectDir, mode string, innerWi
 }
 
 // renderTaskRunnerStep3 renders Step 3/3: Prompt review and launch.
-func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptVP viewport.Model, launchCursor int, refining bool, reviewing bool, inputting bool, instructInput textinput.Model, innerWidth int) string {
+func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptVP viewport.Model, launchCursor int, refining bool, reviewing bool, inputting bool, instructInput textarea.Model, innerWidth int) string {
 	stepLabel := lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Step 3/3: Prompt")
 
 	// Project + mode reminder
