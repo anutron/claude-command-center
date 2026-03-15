@@ -1423,10 +1423,7 @@ func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
 	case "c":
 		return p.taskRunnerRefinePrompt()
 	case "r":
-		// Placeholder for review loop
-		p.flashMessage = "Review loop not yet implemented"
-		p.flashMessageAt = time.Now()
-		return plugin.NoopAction()
+		return p.taskRunnerReviewLoop()
 	case "esc":
 		p.taskRunnerStep = 2
 		return plugin.NoopAction()
@@ -1506,6 +1503,23 @@ func (p *Plugin) taskRunnerRefinePrompt() plugin.Action {
 	}
 	p.taskRunnerRefining = true
 	cmd := claudeRefinePromptCmd(p.llm, todoPtr.ID, prompt)
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+func (p *Plugin) taskRunnerReviewLoop() plugin.Action {
+	if p.taskRunnerRefining {
+		return plugin.NoopAction()
+	}
+	todoPtr := p.detailTodo()
+	if todoPtr == nil {
+		return plugin.NoopAction()
+	}
+	prompt := todoPtr.ProposedPrompt
+	if prompt == "" {
+		prompt = formatTodoContext(*todoPtr)
+	}
+	p.taskRunnerReviewClean = prompt
+	cmd := launchPlannotatorReview(todoPtr.ID, prompt, 1)
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 

@@ -49,6 +49,12 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case plannotatorFinishedMsg:
 		return p.handlePlannotatorFinished(msg)
 
+	case plannotatorReviewMsg:
+		return p.handlePlannotatorReviewFinished(msg)
+
+	case claudeReviewAddressedMsg:
+		return p.handleClaudeReviewAddressed(msg)
+
 	case agentStartedInternalMsg:
 		return p.handleAgentStartedInternal(msg)
 
@@ -424,6 +430,83 @@ func (p *Plugin) handlePlannotatorFinished(msg plannotatorFinishedMsg) (bool, pl
 	}
 
 	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handlePlannotatorReviewFinished(msg plannotatorReviewMsg) (bool, plugin.Action) {
+	if msg.err != nil {
+		p.flashMessage = "Editor exited with error: " + msg.err.Error()
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+
+	// Read the annotated prompt from the temp file.
+	annotated := readTempPrompt(msg.tempFile)
+
+	// Clean up the temp file.
+	if msg.tempFile != "" {
+		os.Remove(msg.tempFile)
+	}
+
+	if annotated == "" {
+		p.flashMessage = "Review cancelled (empty file)"
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+
+	// If unchanged from the clean version, the user approves.
+	if annotated == p.taskRunnerReviewClean {
+		p.flashMessage = "Prompt approved"
+		p.flashMessageAt = time.Now()
+		p.taskRunnerReviewClean = ""
+		return true, plugin.NoopAction()
+	}
+
+	// Changed — send to LLM to address annotations.
+	p.taskRunnerRefining = true
+	cmd := claudeReviewAddressCmd(p.llm, msg.todoID, p.taskRunnerReviewClean, annotated, msg.round)
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+func (p *Plugin) handleClaudeReviewAddressed(msg claudeReviewAddressedMsg) (bool, plugin.Action) {
+	p.taskRunnerRefining = false
+	if msg.err != nil {
+		p.flashMessage = "Review refine failed: " + msg.err.Error()
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+	refined := strings.TrimSpace(msg.output)
+	if refined == "" {
+		p.flashMessage = "Review refine returned empty result"
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+
+	// Update viewport and in-memory ProposedPrompt, persist to DB.
+	p.taskRunnerPrompt.SetContent(refined)
+	p.taskRunnerPrompt.GotoTop()
+
+	var dbCmd tea.Cmd
+	if p.cc != nil {
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == msg.todoID {
+				p.cc.Todos[i].ProposedPrompt = refined
+				updated := p.cc.Todos[i]
+				dbCmd = p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBUpdateTodo(database, updated.ID, updated)
+				})
+				break
+			}
+		}
+	}
+
+	// Store as new clean baseline and reopen Plannotator for next round.
+	p.taskRunnerReviewClean = refined
+	reviewCmd := launchPlannotatorReview(msg.todoID, refined, msg.round+1)
+
+	if dbCmd != nil {
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, reviewCmd)}
+	}
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: reviewCmd}
 }
 
 func (p *Plugin) handleAgentStartedInternal(msg agentStartedInternalMsg) (bool, plugin.Action) {

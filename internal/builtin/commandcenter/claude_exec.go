@@ -91,6 +91,40 @@ func claudeDateParseCmd(l llm.LLM, input string, todoID string) tea.Cmd {
 	}
 }
 
+type claudeReviewAddressedMsg struct {
+	todoID string
+	output string
+	err    error
+	round  int
+}
+
+func claudeReviewAddressCmd(l llm.LLM, todoID string, original string, annotated string, round int) tea.Cmd {
+	prompt := fmt.Sprintf(`You are refining a task prompt based on the user's inline annotations. The user opened the prompt in an editor and added comments, questions, or changes directly in the text.
+
+Your job: address every annotation the user made. Incorporate their feedback, answer their questions by updating the text, and produce a clean final prompt with no leftover annotations or TODO markers.
+
+Original prompt:
+"""
+%s
+"""
+
+Annotated prompt (with the user's changes/comments):
+"""
+%s
+"""
+
+Output ONLY the updated prompt text. No explanation, no quotes, no markdown fences wrapping the whole thing.`, original, annotated)
+	return func() tea.Msg {
+		out, err := l.Complete(context.Background(), prompt)
+		return claudeReviewAddressedMsg{
+			todoID: todoID,
+			output: out,
+			err:    err,
+			round:  round,
+		}
+	}
+}
+
 func claudeRefinePromptCmd(l llm.LLM, todoID string, currentPrompt string) tea.Cmd {
 	prompt := fmt.Sprintf(`You are refining a task prompt that will be sent to Claude Code (an AI coding agent) as its instruction. Improve the prompt to be clearer, more specific, and more actionable.
 

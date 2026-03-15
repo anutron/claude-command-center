@@ -59,6 +59,30 @@ func readTempPrompt(path string) string {
 	return strings.TrimSpace(string(data))
 }
 
+// plannotatorReviewMsg is sent when the review-loop editor process exits.
+type plannotatorReviewMsg struct {
+	todoID   string
+	tempFile string
+	err      error
+	round    int
+}
+
+// launchPlannotatorReview writes the prompt to a temp file and opens
+// Plannotator for annotation. Returns plannotatorReviewMsg on completion.
+func launchPlannotatorReview(todoID string, prompt string, round int) tea.Cmd {
+	path := fmt.Sprintf("/tmp/ccc-review-%s-r%d.md", todoID, round)
+	if err := os.WriteFile(path, []byte(prompt), 0644); err != nil {
+		return func() tea.Msg {
+			return plannotatorReviewMsg{todoID: todoID, err: err, round: round}
+		}
+	}
+
+	proc := &editorProcess{tempFile: path}
+	return tea.Exec(proc, func(err error) tea.Msg {
+		return plannotatorReviewMsg{todoID: todoID, tempFile: path, err: err, round: round}
+	})
+}
+
 // launchPlannotator writes the prompt to a temp file and returns a tea.Cmd
 // that suspends the TUI to launch an editor on the file.
 func launchPlannotator(todoID, prompt string) tea.Cmd {
