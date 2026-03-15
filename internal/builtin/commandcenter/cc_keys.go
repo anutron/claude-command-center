@@ -780,7 +780,7 @@ func (p *Plugin) enterDetailFieldEdit() plugin.Action {
 	case 1: // Due — open text input
 		p.detailMode = "editingField"
 		p.detailFieldInput.Reset()
-		p.detailFieldInput.Placeholder = "YYYY-MM-DD"
+		p.detailFieldInput.Placeholder = "mm dd, or natural language"
 		p.detailFieldInput.SetValue(todo.Due)
 		p.detailFieldInput.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
@@ -879,7 +879,17 @@ func (p *Plugin) handleDetailEditingField(msg tea.KeyMsg) plugin.Action {
 		p.detailFieldInput.Blur()
 		switch p.detailSelectedField {
 		case 1: // Due
-			return p.commitDetailFieldEdit(todo, "due", value)
+			if value == "" {
+				return p.commitDetailFieldEdit(todo, "due", "")
+			}
+			parsed, ok := parseDueDate(value, time.Now())
+			if ok {
+				return p.commitDetailFieldEdit(todo, "due", parsed)
+			}
+			// Not a recognized format — use LLM to parse natural language
+			p.claudeLoading = true
+			p.claudeLoadingMsg = "Parsing date..."
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeDateParseCmd(p.llm, value, todo.ID)}
 		case 2: // ProjectDir
 			return p.commitDetailFieldEdit(todo, "project_dir", value)
 		}
@@ -1360,4 +1370,36 @@ func indexOf(slice []string, s string) int {
 		}
 	}
 	return 0
+}
+
+// parseDueDate attempts to parse common date input formats.
+// Returns (YYYY-MM-DD, true) if recognized, or ("", false) if LLM fallback is needed.
+func parseDueDate(input string, now time.Time) (string, bool) {
+	input = strings.TrimSpace(input)
+
+	// Already YYYY-MM-DD
+	if _, err := time.Parse("2006-01-02", input); err == nil {
+		return input, true
+	}
+
+	// Try "mm dd" or "m dd" or "mm d" or "m d" (space-separated)
+	parts := strings.Fields(input)
+	if len(parts) == 2 {
+		var month, day int
+		if _, err := fmt.Sscanf(parts[0], "%d", &month); err == nil {
+			if _, err := fmt.Sscanf(parts[1], "%d", &day); err == nil {
+				if month >= 1 && month <= 12 && day >= 1 && day <= 31 {
+					year := now.Year()
+					candidate := time.Date(year, time.Month(month), day, 0, 0, 0, 0, now.Location())
+					// Use next year if the date has already passed
+					if candidate.Before(now.Truncate(24 * time.Hour)) {
+						year++
+					}
+					return fmt.Sprintf("%04d-%02d-%02d", year, month, day), true
+				}
+			}
+		}
+	}
+
+	return "", false
 }
