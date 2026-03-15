@@ -623,7 +623,7 @@ func wrapText(text string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string, noticeType string) string {
+func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string, noticeType string, statusCursor int) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -682,7 +682,23 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 			val = s.DescMuted.Render("—")
 		}
 
-		if detailMode == "editingField" && selectedField == f.idx {
+		if detailMode == "selectingStatus" && f.idx == 0 {
+			// Render inline status options with cursor
+			var optParts []string
+			for i, opt := range statusOptions {
+				if i == statusCursor {
+					optParts = append(optParts, lipgloss.NewStyle().
+						Background(s.ColorCyan).
+						Foreground(lipgloss.Color("#000000")).
+						Bold(true).
+						Padding(0, 1).
+						Render(opt))
+				} else {
+					optParts = append(optParts, s.DescMuted.Render(opt))
+				}
+			}
+			leftLines = append(leftLines, fmt.Sprintf("  %-14s %s", label, strings.Join(optParts, "  ")))
+		} else if detailMode == "editingField" && selectedField == f.idx {
 			// Show input for the field being edited
 			leftLines = append(leftLines, fmt.Sprintf("  %-14s %s", label, fieldInputView))
 		} else if (detailMode == "viewing" || detailMode == "commandInput") && selectedField == f.idx {
@@ -802,6 +818,8 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		hints = s.Hint.Render("j/k prev/next \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch \u00b7 c command \u00b7 esc back")
 	case "editingField":
 		hints = s.Hint.Render("enter confirm \u00b7 esc cancel")
+	case "selectingStatus":
+		hints = s.Hint.Render("\u2190/\u2192 select \u00b7 enter confirm \u00b7 esc cancel")
 	case "commandInput":
 		hints = s.Hint.Render("enter submit to AI \u00b7 esc cancel")
 	}

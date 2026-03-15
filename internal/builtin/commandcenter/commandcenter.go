@@ -84,6 +84,7 @@ type Plugin struct {
 	detailFieldInput    textinput.Model
 	detailPaths         []string
 	detailPathCursor    int
+	detailStatusCursor  int
 	detailNotice        string    // flash notice shown after done/remove
 	detailNoticeType    string    // "done" or "removed" — controls notice color
 	detailNoticeAt      time.Time // when the notice was set
@@ -633,7 +634,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 
 	if p.detailView && p.cc != nil {
 		if todo := p.detailTodo(); todo != nil {
-			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice, p.detailNoticeType)
+			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice, p.detailNoticeType, p.detailStatusCursor)
 		}
 		// Notice showing but no more active todos — render just the notice
 		if p.detailNotice != "" {

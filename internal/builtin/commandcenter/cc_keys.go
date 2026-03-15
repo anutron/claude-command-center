@@ -602,12 +602,17 @@ func (p *Plugin) handleDetailView(msg tea.KeyMsg) plugin.Action {
 	switch p.detailMode {
 	case "editingField":
 		return p.handleDetailEditingField(msg)
+	case "selectingStatus":
+		return p.handleDetailStatusSelect(msg)
 	case "commandInput":
 		return p.handleDetailCommandInput(msg)
 	default:
 		return p.handleDetailViewing(msg)
 	}
 }
+
+// statusOptions are the available status values for inline selection.
+var statusOptions = []string{"active", "waiting", "completed"}
 
 // detailFieldCount is the number of cyclable fields in the detail view.
 const detailFieldCount = 3 // 0=Status, 1=Due, 2=ProjectDir
@@ -762,17 +767,16 @@ func (p *Plugin) enterDetailFieldEdit() plugin.Action {
 	todo := *todoPtr
 
 	switch p.detailSelectedField {
-	case 0: // Status — cycle through options
-		newStatus := "active"
-		switch todo.Status {
-		case "active":
-			newStatus = "waiting"
-		case "waiting":
-			newStatus = "completed"
-		case "completed":
-			newStatus = "active"
+	case 0: // Status — show inline selector
+		p.detailMode = "selectingStatus"
+		p.detailStatusCursor = 0
+		for i, opt := range statusOptions {
+			if opt == todo.Status {
+				p.detailStatusCursor = i
+				break
+			}
 		}
-		return p.commitDetailFieldEdit(todo, "status", newStatus)
+		return plugin.NoopAction()
 	case 1: // Due — open text input
 		p.detailMode = "editingField"
 		p.detailFieldInput.Reset()
@@ -825,6 +829,36 @@ func (p *Plugin) commitDetailFieldEdit(todo db.Todo, field, value string) plugin
 			})
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
 		}
+	}
+	return plugin.NoopAction()
+}
+
+func (p *Plugin) handleDetailStatusSelect(msg tea.KeyMsg) plugin.Action {
+	todoPtr := p.detailTodo()
+	if todoPtr == nil {
+		p.detailMode = "viewing"
+		return plugin.NoopAction()
+	}
+	todo := *todoPtr
+
+	switch msg.String() {
+	case "left", "h":
+		if p.detailStatusCursor > 0 {
+			p.detailStatusCursor--
+		}
+		return plugin.NoopAction()
+	case "right", "l":
+		if p.detailStatusCursor < len(statusOptions)-1 {
+			p.detailStatusCursor++
+		}
+		return plugin.NoopAction()
+	case "enter":
+		newStatus := statusOptions[p.detailStatusCursor]
+		p.detailMode = "viewing"
+		return p.commitDetailFieldEdit(todo, "status", newStatus)
+	case "esc":
+		p.detailMode = "viewing"
+		return plugin.NoopAction()
 	}
 	return plugin.NoopAction()
 }
