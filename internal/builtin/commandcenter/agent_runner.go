@@ -423,26 +423,120 @@ func (p *Plugin) persistSessionStatusAndSummary(todoID, status, summary string) 
 	})
 }
 
-// extractSessionSummary extracts a summary from the agent session output.
-// It takes the last ~500 characters of the captured output as a simple summary.
+// extractSessionSummary extracts a human-readable summary from the agent session's
+// stream-JSON output. It parses the JSON lines to find assistant text content blocks,
+// returning the text from the last assistant message as the summary.
 func extractSessionSummary(sess *agentSession) string {
+	sess.mu.Lock()
 	output := sess.Output.String()
+	exitCode := sess.exitCode
+	sess.mu.Unlock()
+
 	if output == "" {
-		if sess.exitCode == 0 {
+		if exitCode == 0 {
 			return "Session completed successfully."
 		}
-		return fmt.Sprintf("Session exited with code %d.", sess.exitCode)
+		return fmt.Sprintf("Session exited with code %d.", exitCode)
 	}
-	// Extract the last ~500 chars as summary
-	const maxLen = 500
-	if len(output) > maxLen {
-		output = output[len(output)-maxLen:]
-		// Trim to the start of the next complete line
-		if idx := strings.Index(output, "\n"); idx >= 0 {
-			output = output[idx+1:]
+
+	// Parse stream-JSON lines to extract assistant text content.
+	// Claude CLI stream-JSON emits one JSON object per line. We look for:
+	// 1. "result" type events (final output) with a "result" field containing text
+	// 2. "assistant" type events with "content" arrays containing text blocks
+	// 3. "content_block_delta" events with text deltas
+	//
+	// We collect all text from the last assistant turn.
+	var lastAssistantText string
+	var resultText string
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var event map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+
+		eventType, _ := event["type"].(string)
+
+		switch eventType {
+		case "result":
+			// The result event may contain a "result" field with the final text,
+			// or a "subtype" of "success" with text content.
+			if r, ok := event["result"].(string); ok && r != "" {
+				resultText = r
+			}
+			// Also check for nested content in result
+			if msg, ok := event["result"].(map[string]interface{}); ok {
+				if text := extractTextFromContent(msg); text != "" {
+					resultText = text
+				}
+			}
+
+		case "assistant":
+			// Assistant message with content array
+			if text := extractTextFromContent(event); text != "" {
+				lastAssistantText = text
+			}
+
+		case "message":
+			// Some stream-JSON formats wrap in "message" type
+			if role, _ := event["role"].(string); role == "assistant" {
+				if text := extractTextFromContent(event); text != "" {
+					lastAssistantText = text
+				}
+			}
 		}
 	}
-	return strings.TrimSpace(output)
+
+	// Prefer result text over assistant text (result is the final output)
+	summary := resultText
+	if summary == "" {
+		summary = lastAssistantText
+	}
+	if summary == "" {
+		if exitCode == 0 {
+			return "Session completed successfully."
+		}
+		return fmt.Sprintf("Session exited with code %d.", exitCode)
+	}
+
+	// Truncate if needed
+	const maxLen = 1000
+	if len(summary) > maxLen {
+		summary = summary[:maxLen]
+		// Trim to last complete line
+		if idx := strings.LastIndex(summary, "\n"); idx > maxLen/2 {
+			summary = summary[:idx]
+		}
+		summary += "\n..."
+	}
+	return strings.TrimSpace(summary)
+}
+
+// extractTextFromContent extracts text from a stream-JSON event's content array.
+// It handles the common format: {"content": [{"type": "text", "text": "..."}]}
+func extractTextFromContent(event map[string]interface{}) string {
+	content, ok := event["content"].([]interface{})
+	if !ok {
+		return ""
+	}
+	var texts []string
+	for _, block := range content {
+		blockMap, ok := block.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		blockType, _ := blockMap["type"].(string)
+		if blockType == "text" {
+			if text, ok := blockMap["text"].(string); ok && text != "" {
+				texts = append(texts, text)
+			}
+		}
+	}
+	return strings.Join(texts, "\n")
 }
 
 // checkAgentProcesses polls active sessions for completion and status changes.
