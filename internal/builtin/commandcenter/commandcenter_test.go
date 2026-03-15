@@ -218,8 +218,8 @@ func TestEnterOpensDetailView(t *testing.T) {
 	if !p.detailView {
 		t.Error("enter should open detail view")
 	}
-	if p.detailTodoIdx != 0 {
-		t.Errorf("detailTodoIdx = %d, want 0", p.detailTodoIdx)
+	if p.detailTodoID != p.cc.ActiveTodos()[0].ID {
+		t.Errorf("detailTodoID = %q, want first active todo ID", p.detailTodoID)
 	}
 	if p.detailMode != "viewing" {
 		t.Errorf("detailMode = %q, want %q", p.detailMode, "viewing")

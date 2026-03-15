@@ -78,7 +78,7 @@ type Plugin struct {
 
 	// Detail view
 	detailView          bool
-	detailTodoIdx       int
+	detailTodoID        string // ID of the todo being viewed (stable across status changes)
 	detailMode          string // "viewing", "editingField", "commandInput"
 	detailSelectedField int    // 0=Status, 1=Due, 2=ProjectDir, 3=Prompt
 	detailFieldInput    textinput.Model
@@ -135,6 +135,10 @@ type Plugin struct {
 
 	// Agent filter
 	agentFilterActive bool
+
+	// Search filter
+	searchActive bool
+	searchInput  textinput.Model
 
 	// Sub-view: "command" or "threads"
 	subView string
@@ -246,6 +250,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "d", Description: "Defer todo"},
 		{Key: "p", Description: "Promote todo to top"},
 		{Key: "s", Description: "Schedule time block"},
+		{Key: "/", Description: "Search/filter todos"},
 		{Key: "a", Description: "Toggle agent filter"},
 		{Key: "b", Description: "Toggle completed backlog"},
 		{Key: "r", Description: "Refresh from all sources"},
@@ -327,6 +332,12 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	qta.FocusedStyle.CursorLine = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
 	qta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(p.styles.ColorMuted)
 	p.quickTodoTextArea = qta
+
+	// Set up search input
+	si := textinput.New()
+	si.Placeholder = "Search todos..."
+	si.CharLimit = 80
+	p.searchInput = si
 
 	// Set up spinner
 	s := spinner.New()
@@ -510,16 +521,14 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	}
 
 	if p.taskRunnerView && p.detailView && p.cc != nil {
-		activeTodos := p.cc.ActiveTodos()
-		if p.detailTodoIdx < len(activeTodos) {
-			return renderTaskRunner(&p.styles, activeTodos[p.detailTodoIdx], p.taskRunnerMode, p.taskRunnerPerm, p.taskRunnerBudget, p.taskRunnerAutoStart, p.taskRunnerSelectedRow, p.taskRunnerPrompt, viewWidth, viewHeight)
+		if todo := p.detailTodo(); todo != nil {
+			return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerPerm, p.taskRunnerBudget, p.taskRunnerAutoStart, p.taskRunnerSelectedRow, p.taskRunnerPrompt, viewWidth, viewHeight)
 		}
 	}
 
 	if p.detailView && p.cc != nil {
-		activeTodos := p.cc.ActiveTodos()
-		if p.detailTodoIdx < len(activeTodos) {
-			return renderDetailView(&p.styles, activeTodos[p.detailTodoIdx], p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice)
+		if todo := p.detailTodo(); todo != nil {
+			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice)
 		}
 		// Notice showing but no more active todos — render just the notice
 		if p.detailNotice != "" {
@@ -536,15 +545,23 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	}
 
 	if p.ccExpanded && p.cc != nil {
-		view := renderExpandedTodoView(&p.styles, &p.grad, p.cc.ActiveTodos(), p.ccCursor, p.ccExpandedOffset, p.expandedRowsPerCol(), p.expandedNumCols(), viewWidth, viewHeight, p.frame, p.claudeLoadingTodo, p.ccRefreshing)
+		view := renderExpandedTodoView(&p.styles, &p.grad, p.filteredActiveTodos(), p.ccCursor, p.ccExpandedOffset, p.expandedRowsPerCol(), p.expandedNumCols(), viewWidth, viewHeight, p.frame, p.claudeLoadingTodo, p.ccRefreshing)
 		if p.claudeLoading {
 			loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", loadingLine)
 		}
+		if p.searchActive {
+			searchLine := p.styles.SectionHeader.Render("/") + " " + p.searchInput.View()
+			view = lipgloss.JoinVertical(lipgloss.Left, view, "", searchLine)
+		} else if strings.TrimSpace(p.searchInput.Value()) != "" {
+			filterHint := p.styles.CalendarTime.Render("filter: " + p.searchInput.Value() + "  (/ to edit, esc to clear)")
+			view = lipgloss.JoinVertical(lipgloss.Left, view, "", "  "+filterHint)
+		}
 		return view
 	}
 
-	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.agentFilterActive)
+	searchQuery := strings.TrimSpace(p.searchInput.Value())
+	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.agentFilterActive, searchQuery)
 
 	if p.claudeLoading {
 		loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg
@@ -564,6 +581,13 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	}
 	if p.bookingMode {
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", p.renderBookingPicker())
+	}
+	if p.searchActive {
+		searchLine := p.styles.SectionHeader.Render("/") + " " + p.searchInput.View()
+		view = lipgloss.JoinVertical(lipgloss.Left, view, "", searchLine)
+	} else if strings.TrimSpace(p.searchInput.Value()) != "" {
+		filterHint := p.styles.CalendarTime.Render("filter: " + p.searchInput.Value() + "  (/ to edit, esc to clear)")
+		view = lipgloss.JoinVertical(lipgloss.Left, view, "", "  "+filterHint)
 	}
 
 	return view
@@ -612,6 +636,53 @@ func (p *Plugin) publishEvent(topic string, payload map[string]interface{}) {
 			Payload: payload,
 		})
 	}
+}
+
+// detailTodo returns the todo currently shown in the detail view, looked up by ID.
+// Returns nil if the todo is not found (e.g. deleted).
+func (p *Plugin) detailTodo() *db.Todo {
+	if p.cc == nil || p.detailTodoID == "" {
+		return nil
+	}
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == p.detailTodoID {
+			return &p.cc.Todos[i]
+		}
+	}
+	return nil
+}
+
+// detailTodoActiveIndex returns the index of the detail todo within ActiveTodos(), or -1.
+func (p *Plugin) detailTodoActiveIndex() int {
+	if p.detailTodoID == "" {
+		return -1
+	}
+	for i, t := range p.cc.ActiveTodos() {
+		if t.ID == p.detailTodoID {
+			return i
+		}
+	}
+	return -1
+}
+
+// filteredActiveTodos returns active todos filtered by the current search query.
+func (p *Plugin) filteredActiveTodos() []db.Todo {
+	if p.cc == nil {
+		return nil
+	}
+	todos := p.cc.ActiveTodos()
+	query := strings.TrimSpace(p.searchInput.Value())
+	if query == "" {
+		return todos
+	}
+	lower := strings.ToLower(query)
+	var filtered []db.Todo
+	for _, t := range todos {
+		if strings.Contains(strings.ToLower(flattenTitle(t.Title)), lower) {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
 }
 
 // SubView returns the current sub-view name.

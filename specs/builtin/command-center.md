@@ -60,10 +60,12 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 | `p` | normal | Promote selected todo to top of list |
 | `space` | normal | Open detail view with edit text input |
 | `c` | normal | Create todo via rich textarea (AI-powered) |
+| `/` | normal | Search/filter todos (case insensitive) |
 | `b` | normal | Toggle backlog (completed items) |
 | `s` | normal | Enter booking mode for selected todo |
 | `r` | normal | Manual refresh (spawns ccc-refresh) |
-| `enter` | normal | Launch session for todo (by session_id, project_dir, or navigate to sessions) |
+| `enter` | normal | Open detail view for selected todo |
+| `o` | normal | Launch session for todo (by session_id, project_dir, or navigate to sessions) |
 | `?` | any | Toggle help overlay |
 | `esc` | expanded | Collapse expanded view |
 | `esc` | pending launch | Cancel pending launch, return to command view |
@@ -72,16 +74,26 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 
 Title bar shows "TODO #N" using the todo's `display_id`.
 
+The detail view tracks the todo by **ID** (not list index), so status changes (e.g. cycling active → waiting) don't cause the view to jump to a different todo.
+
+Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectDir (2), Prompt (3).
+
 | Key | Context | Description |
 |-----|---------|-------------|
-| `enter` | detail | Submit edit instruction to Claude LLM |
-| `j` | detail | Navigate to next todo |
-| `k` | detail | Navigate to previous todo |
-| `x` | detail | Complete todo (shows notice banner, auto-advances after 1s) |
-| `X` | detail | Dismiss todo (shows notice banner, auto-advances after 1s) |
-| `esc` | detail | Return to list |
+| `tab` | detail:viewing | Cycle to next editable field |
+| `shift+tab` | detail:viewing | Cycle to previous editable field |
+| `enter` | detail:viewing | Edit selected field (Status cycles value; Due/ProjectDir/Prompt open text input) |
+| `enter` | detail:editing | Confirm field edit |
+| `c` | detail:viewing | Open command input to edit todo via Claude LLM |
+| `o` | detail:viewing | Open task runner view |
+| `j` | detail:viewing | Navigate to next active todo |
+| `k` | detail:viewing | Navigate to previous active todo |
+| `x` | detail:viewing | Complete todo (shows notice banner, auto-advances after 1s) |
+| `X` | detail:viewing | Dismiss todo (shows notice banner, auto-advances after 1s) |
+| `esc` | detail:viewing | Return to list |
+| `esc` | detail:editing | Cancel field edit |
 
-While a notice banner is showing (1s after complete/dismiss), all keys except `esc` are blocked. After the notice clears, the view auto-advances to the next todo.
+While a notice banner is showing (1s after complete/dismiss), all keys except `esc` are blocked. After the notice clears, the view auto-advances to the next active todo.
 
 ### Rich Todo Creation
 
@@ -199,7 +211,7 @@ When a todo has a `project_dir`, pressing enter launches a Claude session there.
 - Thread pause/start/close operations
 - Defer (d) moves todo to bottom
 - Promote (p) moves todo to top
-- Shift+up/down swaps todo with neighbor, persists via DB sort_order swap
+- Shift+up/down swaps todo with neighbor, persists via DB sort_order swap (transaction-based)
 - Toggle backlog (b) shows/hides completed items
 - Booking mode enter/exit and duration selection
 - View renders without panic (with and without data)
@@ -208,3 +220,15 @@ When a todo has a `project_dir`, pressing enter launches a Claude session there.
 - Add thread creates new thread
 - Close thread updates status
 - Expanded view navigation (left/right columns)
+- Expanded view left/right paginates at column edges
+- Detail view shows "TODO #N" title with display_id
+- Detail view tracks todo by ID (not index) — status changes don't jump to different todo
+- Detail view `enter` edits selected field (Status cycles, others open text input)
+- Detail view `x` completes todo with notice banner, auto-advances after 1s
+- Detail view `X` dismisses todo with notice banner, auto-advances after 1s
+- Detail view `j`/`k` navigates between active todos
+- Detail view blocks keys (except esc) while notice banner is showing
+- Granola/Slack incremental sync skips already-processed items via `cc_source_sync`
+- Granola source_ref is deterministic (`{meeting_id}-{sha256(title)[:8]}`)
+- Refresh merge preserves completed todos
+- `DBSwapPathOrder` and `DBSwapTodoOrder` use transactions for atomicity

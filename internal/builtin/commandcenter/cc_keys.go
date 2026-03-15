@@ -32,6 +32,11 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleDetailView(msg)
 	}
 
+	// Search input
+	if p.searchActive {
+		return p.handleSearchInput(msg)
+	}
+
 	// Quick todo entry
 	if p.addingTodoQuick {
 		return p.handleAddingTodoQuick(msg)
@@ -60,6 +65,14 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 
 	// Esc handling
 	if msg.String() == "esc" {
+		// Clear search filter if active (before collapsing expanded view)
+		if strings.TrimSpace(p.searchInput.Value()) != "" {
+			p.searchInput.SetValue("")
+			p.ccCursor = 0
+			p.ccScrollOffset = 0
+			p.ccExpandedOffset = 0
+			return plugin.NoopAction()
+		}
 		if p.ccExpanded {
 			p.ccExpanded = false
 			p.ccExpandedCols = 0
@@ -90,10 +103,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 	if p.cc == nil && msg.String() != "a" {
 		return plugin.NoopAction()
 	}
-	var activeTodos []db.Todo
-	if p.cc != nil {
-		activeTodos = p.cc.ActiveTodos()
-	}
+	activeTodos := p.filteredActiveTodos()
 	maxCursor := len(activeTodos) - 1
 	if maxCursor < 0 {
 		maxCursor = 0
@@ -411,6 +421,11 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		cmd := p.quickTodoTextArea.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 
+	case "/":
+		p.searchActive = true
+		p.searchInput.Focus()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
+
 	case "a":
 		p.agentFilterActive = !p.agentFilterActive
 		return plugin.NoopAction()
@@ -437,7 +452,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 	case "enter":
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
 			p.detailView = true
-			p.detailTodoIdx = p.ccCursor
+			p.detailTodoID = activeTodos[p.ccCursor].ID
 			p.detailMode = "viewing"
 			p.detailSelectedField = 0
 			p.textInput.Reset()
@@ -536,23 +551,25 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 	case "j":
 		// Next todo
 		activeTodos := p.cc.ActiveTodos()
-		if p.detailTodoIdx < len(activeTodos)-1 {
-			p.detailTodoIdx++
+		idx := p.detailTodoActiveIndex()
+		if idx >= 0 && idx < len(activeTodos)-1 {
+			p.detailTodoID = activeTodos[idx+1].ID
 			p.detailSelectedField = 0
 		}
 		return plugin.NoopAction()
 	case "k":
 		// Previous todo
-		if p.detailTodoIdx > 0 {
-			p.detailTodoIdx--
+		activeTodos := p.cc.ActiveTodos()
+		idx := p.detailTodoActiveIndex()
+		if idx > 0 {
+			p.detailTodoID = activeTodos[idx-1].ID
 			p.detailSelectedField = 0
 		}
 		return plugin.NoopAction()
 	case "o":
 		// Open task runner view
-		activeTodos := p.cc.ActiveTodos()
-		if p.detailTodoIdx < len(activeTodos) {
-			p.enterTaskRunner(activeTodos[p.detailTodoIdx])
+		if todo := p.detailTodo(); todo != nil {
+			p.enterTaskRunner(*todo)
 		}
 		return plugin.NoopAction()
 	case "c":
@@ -571,11 +588,11 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 
 // detailCompleteTodo marks the current detail todo as done and shows a notice.
 func (p *Plugin) detailCompleteTodo() plugin.Action {
-	activeTodos := p.cc.ActiveTodos()
-	if p.detailTodoIdx >= len(activeTodos) {
+	todoPtr := p.detailTodo()
+	if todoPtr == nil {
 		return plugin.NoopAction()
 	}
-	todo := activeTodos[p.detailTodoIdx]
+	todo := *todoPtr
 	p.undoStack = append(p.undoStack, undoEntry{
 		todoID:     todo.ID,
 		prevStatus: todo.Status,
@@ -607,11 +624,11 @@ func (p *Plugin) detailCompleteTodo() plugin.Action {
 
 // detailDismissTodo removes the current detail todo and shows a notice.
 func (p *Plugin) detailDismissTodo() plugin.Action {
-	activeTodos := p.cc.ActiveTodos()
-	if p.detailTodoIdx >= len(activeTodos) {
+	todoPtr := p.detailTodo()
+	if todoPtr == nil {
 		return plugin.NoopAction()
 	}
-	todo := activeTodos[p.detailTodoIdx]
+	todo := *todoPtr
 	p.undoStack = append(p.undoStack, undoEntry{
 		todoID:     todo.ID,
 		prevStatus: todo.Status,
@@ -642,11 +659,11 @@ func (p *Plugin) detailDismissTodo() plugin.Action {
 }
 
 func (p *Plugin) enterDetailFieldEdit() plugin.Action {
-	activeTodos := p.cc.ActiveTodos()
-	if p.detailTodoIdx >= len(activeTodos) {
+	todoPtr := p.detailTodo()
+	if todoPtr == nil {
 		return plugin.NoopAction()
 	}
-	todo := activeTodos[p.detailTodoIdx]
+	todo := *todoPtr
 
 	switch p.detailSelectedField {
 	case 0: // Status — cycle through options
@@ -724,13 +741,13 @@ func (p *Plugin) commitDetailFieldEdit(todo db.Todo, field, value string) plugin
 }
 
 func (p *Plugin) handleDetailEditingField(msg tea.KeyMsg) plugin.Action {
-	activeTodos := p.cc.ActiveTodos()
-	if p.detailTodoIdx >= len(activeTodos) {
+	todoPtr := p.detailTodo()
+	if todoPtr == nil {
 		p.detailMode = "viewing"
 		p.detailFieldInput.Blur()
 		return plugin.NoopAction()
 	}
-	todo := activeTodos[p.detailTodoIdx]
+	todo := *todoPtr
 
 	switch msg.String() {
 	case "enter":
@@ -764,13 +781,13 @@ func (p *Plugin) handleDetailCommandInput(msg tea.KeyMsg) plugin.Action {
 		if instruction == "" {
 			return plugin.NoopAction()
 		}
-		activeTodos := p.cc.ActiveTodos()
-		if p.detailTodoIdx >= len(activeTodos) {
+		todoPtr := p.detailTodo()
+		if todoPtr == nil {
 			p.detailMode = "viewing"
 			p.textInput.Blur()
 			return plugin.NoopAction()
 		}
-		todo := activeTodos[p.detailTodoIdx]
+		todo := *todoPtr
 		prompt := buildEditPrompt(todo, instruction)
 		p.detailView = false
 		p.detailMode = "viewing"
@@ -938,6 +955,34 @@ func (p *Plugin) handleBooking(msg tea.KeyMsg) plugin.Action {
 	return plugin.NoopAction()
 }
 
+func (p *Plugin) handleSearchInput(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "enter":
+		p.searchActive = false
+		p.searchInput.Blur()
+		return plugin.NoopAction()
+	case "esc":
+		p.searchActive = false
+		p.searchInput.Blur()
+		p.searchInput.SetValue("")
+		p.ccCursor = 0
+		p.ccScrollOffset = 0
+		p.ccExpandedOffset = 0
+		return plugin.NoopAction()
+	}
+
+	prevQuery := p.searchInput.Value()
+	var cmd tea.Cmd
+	p.searchInput, cmd = p.searchInput.Update(msg)
+	// Reset cursor when filter changes
+	if p.searchInput.Value() != prevQuery {
+		p.ccCursor = 0
+		p.ccScrollOffset = 0
+		p.ccExpandedOffset = 0
+	}
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
 func (p *Plugin) handleThreadsTab(msg tea.KeyMsg) plugin.Action {
 	if p.cc == nil {
 		return plugin.NoopAction()
@@ -1070,9 +1115,8 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 
 	case "enter":
 		// Launch or queue a headless agent session.
-		activeTodos := p.cc.ActiveTodos()
-		if p.detailTodoIdx < len(activeTodos) {
-			todo := activeTodos[p.detailTodoIdx]
+		if todoPtr := p.detailTodo(); todoPtr != nil {
+			todo := *todoPtr
 			prompt := todo.ProposedPrompt
 			if prompt == "" {
 				prompt = formatTodoContext(todo)
@@ -1130,9 +1174,8 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 
 	case "p":
 		// Launch external editor to refine the prompt (Plannotator).
-		activeTodos := p.cc.ActiveTodos()
-		if p.detailTodoIdx < len(activeTodos) {
-			todo := activeTodos[p.detailTodoIdx]
+		if todoPtr := p.detailTodo(); todoPtr != nil {
+			todo := *todoPtr
 			prompt := todo.ProposedPrompt
 			if prompt == "" {
 				prompt = formatTodoContext(todo)
