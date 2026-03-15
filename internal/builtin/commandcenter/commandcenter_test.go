@@ -235,11 +235,15 @@ func TestOpenLaunchOnTodoWithProjectDir(t *testing.T) {
 	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
 
 	action := p.HandleKey(keyMsg("o"))
-	if action.Type != "launch" {
-		t.Errorf("o on todo with project dir: type = %q, want %q", action.Type, "launch")
+	// Should enter detail view + task runner, NOT launch directly
+	if action.Type != "noop" {
+		t.Errorf("o on todo with project dir: type = %q, want %q", action.Type, "noop")
 	}
-	if action.Args["dir"] != "/tmp/myproject" {
-		t.Errorf("launch dir = %q, want %q", action.Args["dir"], "/tmp/myproject")
+	if !p.detailView {
+		t.Error("detailView should be true")
+	}
+	if !p.taskRunnerView {
+		t.Error("taskRunnerView should be true")
 	}
 }
 
@@ -262,14 +266,15 @@ func TestOpenLaunchOnTodoWithoutProjectDir(t *testing.T) {
 	// No project dir, no session ID
 
 	action := p.HandleKey(keyMsg("o"))
-	if action.Type != "navigate" {
-		t.Errorf("o on todo without project dir: type = %q, want %q", action.Type, "navigate")
+	// Should enter detail view + task runner, NOT navigate to sessions
+	if action.Type != "noop" {
+		t.Errorf("o on todo without project dir: type = %q, want %q", action.Type, "noop")
 	}
-	if action.Payload != "sessions" {
-		t.Errorf("navigate payload = %q, want %q", action.Payload, "sessions")
+	if !p.detailView {
+		t.Error("detailView should be true")
 	}
-	if p.pendingLaunchTodo == nil {
-		t.Error("pendingLaunchTodo should be set")
+	if !p.taskRunnerView {
+		t.Error("taskRunnerView should be true")
 	}
 }
 

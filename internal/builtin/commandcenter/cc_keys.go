@@ -554,6 +554,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 	case "o":
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
 			todo := activeTodos[p.ccCursor]
+			// If todo has an existing session, resume it directly
 			if todo.SessionID != "" {
 				dir := todo.ProjectDir
 				if dir == "" {
@@ -568,29 +569,15 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 					},
 				}
 			}
-			if todo.ProjectDir != "" {
-				return plugin.Action{
-					Type: "launch",
-					Args: map[string]string{
-						"dir":            todo.ProjectDir,
-						"initial_prompt": formatTodoContext(todo),
-					},
-				}
-			}
-			p.pendingLaunchTodo = &todo
-			p.publishEvent("pending.todo", map[string]interface{}{
-				"todo_id":     todo.ID,
-				"title":       todo.Title,
-				"context":     todo.Context,
-				"detail":      todo.Detail,
-				"who_waiting": todo.WhoWaiting,
-				"due":         todo.Due,
-				"effort":      todo.Effort,
-			})
-			return plugin.Action{
-				Type:    "navigate",
-				Payload: "sessions",
-			}
+			// Otherwise, enter detail view + task runner (don't launch directly)
+			p.detailView = true
+			p.detailTodoID = todo.ID
+			p.detailMode = "viewing"
+			p.detailSelectedField = 0
+			p.textInput.Reset()
+			p.detailFieldInput.Reset()
+			p.enterTaskRunner(todo)
+			return plugin.NoopAction()
 		}
 		return plugin.NoopAction()
 	}
@@ -663,7 +650,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "o":
-		// If todo has a session_id, join/resume that session
+		// If todo has a session_id, join/resume that session directly
 		if todo := p.detailTodo(); todo != nil {
 			if todo.SessionID != "" {
 				dir := todo.ProjectDir
@@ -679,16 +666,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 					},
 				}
 			}
-			if todo.ProjectDir != "" {
-				return plugin.Action{
-					Type: "launch",
-					Args: map[string]string{
-						"dir":            todo.ProjectDir,
-						"initial_prompt": formatTodoContext(*todo),
-					},
-				}
-			}
-			// No session and no project dir: open task runner
+			// Always go through task runner for new launches
 			p.enterTaskRunner(*todo)
 		}
 		return plugin.NoopAction()
