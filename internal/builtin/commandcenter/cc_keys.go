@@ -1306,6 +1306,9 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 	p.taskRunnerReviewing = false
 	p.taskRunnerInputting = false
 	p.taskRunnerReviewClean = ""
+	p.taskRunnerPickingPath = false
+	p.taskRunnerPathFilter = ""
+	p.taskRunnerLaunchCursor = 0
 	// Initialize path cursor to match the todo's project dir
 	p.taskRunnerPathCursor = -1 // -1 means "use todo's original project dir"
 	for i, path := range p.detailPaths {
@@ -1415,6 +1418,7 @@ func (p *Plugin) handleWizardStep2(msg tea.KeyMsg) plugin.Action {
 		p.taskRunnerStep = 3
 		return plugin.NoopAction()
 	case "esc":
+		p.saveWizardSelections()
 		p.taskRunnerStep = 1
 		return plugin.NoopAction()
 	}
@@ -1503,6 +1507,7 @@ func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
 	case "r", "p":
 		return p.taskRunnerReviewLoop()
 	case "esc":
+		p.saveWizardSelections()
 		p.taskRunnerStep = 2
 		return plugin.NoopAction()
 	}
