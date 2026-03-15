@@ -69,6 +69,10 @@ type Model struct {
 
 	// returnedFromLaunch is set when the TUI restarts after a Claude session.
 	returnedFromLaunch bool
+	// returnTodoID is the todo ID to return to after a Claude session.
+	returnTodoID string
+	// returnWasResumeJoin is true if the session was a join/resume.
+	returnWasResumeJoin bool
 
 	// Onboarding flow state.
 	onboarding      bool
@@ -219,6 +223,13 @@ func (m *Model) SetReturnedFromLaunch() {
 	m.returnedFromLaunch = true
 }
 
+// SetReturnContext stores the todo context from the previous launch so plugins
+// can restore state (e.g., return to detail view, update session status).
+func (m *Model) SetReturnContext(todoID string, wasResumeJoin bool) {
+	m.returnTodoID = todoID
+	m.returnWasResumeJoin = wasResumeJoin
+}
+
 // SetOnboarding enables the onboarding flow. Must be called before the program is run.
 func (m *Model) SetOnboarding() {
 	m.onboarding = true
@@ -273,7 +284,14 @@ func (m Model) Init() tea.Cmd {
 	}
 
 	if m.returnedFromLaunch {
-		cmds = append(cmds, func() tea.Msg { return plugin.ReturnMsg{} })
+		todoID := m.returnTodoID
+		wasResume := m.returnWasResumeJoin
+		cmds = append(cmds, func() tea.Msg {
+			return plugin.ReturnMsg{
+				TodoID:        todoID,
+				WasResumeJoin: wasResume,
+			}
+		})
 	}
 	return tea.Batch(cmds...)
 }
@@ -439,12 +457,16 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 		la := &LaunchAction{Dir: action.Args["dir"]}
 		if rid := action.Args["resume_id"]; rid != "" {
 			la.Args = []string{"--resume", rid}
+			la.WasResumeJoin = true
 		}
 		if prompt := action.Args["initial_prompt"]; prompt != "" {
 			la.InitialPrompt = prompt
 		}
 		if action.Args["worktree"] == "true" {
 			la.Worktree = true
+		}
+		if todoID := action.Args["todo_id"]; todoID != "" {
+			la.ReturnToTodoID = todoID
 		}
 		m.Launch = la
 		// Broadcast LaunchMsg to all plugins before quitting.

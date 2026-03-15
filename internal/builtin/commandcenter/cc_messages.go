@@ -84,8 +84,27 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 
 	case plugin.ReturnMsg:
 		// Always reload from DB when returning from a Claude session.
+		var cmds []tea.Cmd
 		if p.database != nil {
-			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
+			cmds = append(cmds, p.loadCCFromDBCmd())
+		}
+
+		// If we were viewing a specific todo (joined session), restore the detail view.
+		if msg.TodoID != "" {
+			p.detailView = true
+			p.detailTodoID = msg.TodoID
+			p.detailMode = "viewing"
+			p.detailSelectedField = 0
+
+			// If this was a resume/join session, update status from "active" to "review".
+			if msg.WasResumeJoin {
+				p.setTodoSessionStatus(msg.TodoID, "review")
+				cmds = append(cmds, p.persistSessionStatus(msg.TodoID, "review"))
+			}
+		}
+
+		if len(cmds) > 0 {
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 		}
 		return true, plugin.NoopAction()
 

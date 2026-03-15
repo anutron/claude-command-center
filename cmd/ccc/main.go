@@ -196,10 +196,14 @@ func main() {
 
 	// TUI loop: launch TUI, optionally exec claude, return to TUI
 	returnedFromLaunch := false
+	var lastLaunch *tui.LaunchAction
 	for {
 		m := tui.NewModel(database, cfg, bus, logger, l, pluginInterfaces...)
 		if returnedFromLaunch {
 			m.SetReturnedFromLaunch()
+			if lastLaunch != nil {
+				m.SetReturnContext(lastLaunch.ReturnToTodoID, lastLaunch.WasResumeJoin)
+			}
 		}
 		if (isFirstRun || forceSetup) && !returnedFromLaunch {
 			m.SetOnboarding()
@@ -222,6 +226,7 @@ func main() {
 			break
 		}
 
+		lastLaunch = fm.Launch
 		resolvedDir, err := tui.RunClaude(*fm.Launch)
 		// Write the resolved launch directory (may be worktree) so the shell hook can cd to it after exit.
 		_ = os.WriteFile(filepath.Join(config.DataDir(), "last-dir"), []byte(resolvedDir), 0o644)

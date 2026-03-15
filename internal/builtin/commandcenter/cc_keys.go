@@ -566,6 +566,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 					Args: map[string]string{
 						"dir":       dir,
 						"resume_id": todo.SessionID,
+						"todo_id":   todo.ID,
 					},
 				}
 			}
@@ -663,6 +664,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 					Args: map[string]string{
 						"dir":       dir,
 						"resume_id": todo.SessionID,
+						"todo_id":   todo.ID,
 					},
 				}
 			}

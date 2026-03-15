@@ -16,4 +16,9 @@ type LaunchMsg struct {
 
 // ReturnMsg is broadcast to all plugins when the TUI starts after returning
 // from a Claude session.
-type ReturnMsg struct{}
+type ReturnMsg struct {
+	// TodoID is the todo that was being worked on, if any.
+	TodoID string
+	// WasResumeJoin is true if the session was a join/resume of an existing session.
+	WasResumeJoin bool
+}

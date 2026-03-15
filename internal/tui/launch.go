@@ -14,10 +14,12 @@ import (
 
 // LaunchAction describes what to execute when the user picks an item.
 type LaunchAction struct {
-	Dir           string   // directory to chdir into
-	Args          []string // args to claude (empty = new session, ["-r", id] = resume)
-	InitialPrompt string  // task context written to file for session reference
-	Worktree      bool     // if true, create a git worktree for isolation
+	Dir             string   // directory to chdir into
+	Args            []string // args to claude (empty = new session, ["-r", id] = resume)
+	InitialPrompt   string   // task context written to file for session reference
+	Worktree        bool     // if true, create a git worktree for isolation
+	ReturnToTodoID  string   // todo ID to return to after session exits
+	WasResumeJoin   bool     // true if this was a join/resume of an existing session
 }
 
 // RunClaude runs claude as a child process and returns when it exits.
