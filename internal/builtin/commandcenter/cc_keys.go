@@ -1337,6 +1337,11 @@ var taskRunnerModes = []string{"normal", "worktree", "sandbox"}
 var taskRunnerPerms = []string{"default", "plan", "auto"}
 
 func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
+	// Consume tab/shift-tab so they don't propagate to the host's tab navigation.
+	if msg.Type == tea.KeyTab || msg.Type == tea.KeyShiftTab {
+		return plugin.ConsumedAction()
+	}
+
 	// Path picker sub-mode (available from step 1)
 	if p.taskRunnerPickingPath {
 		return p.handleTaskRunnerPathSelect(msg)
