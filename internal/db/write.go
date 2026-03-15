@@ -427,6 +427,13 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 	if _, err := tx.Exec(`DELETE FROM cc_todos`); err != nil {
 		return fmt.Errorf("clear todos: %w", err)
 	}
+	// Find the current max display_id so we can assign IDs to new todos.
+	maxDisplayID := 0
+	for _, t := range cc.Todos {
+		if t.DisplayID > maxDisplayID {
+			maxDisplayID = t.DisplayID
+		}
+	}
 	for i, t := range cc.Todos {
 		createdAt := FormatTime(t.CreatedAt)
 		if t.CreatedAt.IsZero() {
@@ -441,14 +448,20 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 		if triageStatus == "" {
 			triageStatus = "accepted"
 		}
+		// Assign a display_id to new todos that don't have one yet.
+		displayID := t.DisplayID
+		if displayID == 0 {
+			maxDisplayID++
+			displayID = maxDisplayID
+		}
 		_, err := tx.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
 			who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status, session_summary,
-			triage_status, sort_order, created_at, completed_at, updated_at)
+			triage_status, display_id, sort_order, created_at, completed_at, updated_at)
 			VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)`,
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?)`,
 			t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
 			t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionStatus, t.SessionSummary,
-			triageStatus, i, createdAt, completedAt, now)
+			triageStatus, displayID, i, createdAt, completedAt, now)
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)
 		}
