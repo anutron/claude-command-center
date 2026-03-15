@@ -442,22 +442,27 @@ func (p *Plugin) handlePlannotatorReviewFinished(msg plannotatorReviewMsg) (bool
 		return true, plugin.NoopAction()
 	}
 
-	// Clean up the temp file.
+	// Clean up temp files.
 	if msg.tempFile != "" {
 		os.Remove(msg.tempFile)
 	}
 
-	feedback := strings.TrimSpace(msg.feedback)
-
-	// No feedback or generic "no feedback" = user approves the prompt.
-	if feedback == "" || feedback == "No feedback provided." {
+	// User approved the prompt.
+	if msg.approved {
 		p.flashMessage = "Prompt approved"
 		p.flashMessageAt = time.Now()
 		p.taskRunnerReviewClean = ""
 		return true, plugin.NoopAction()
 	}
 
-	// User provided annotations — send to LLM to address them.
+	// User denied with feedback — send to LLM to address annotations.
+	feedback := strings.TrimSpace(msg.feedback)
+	if feedback == "" {
+		p.flashMessage = "Review cancelled"
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+
 	p.taskRunnerRefining = true
 	cmd := claudeReviewAddressCmd(p.llm, msg.todoID, p.taskRunnerReviewClean, feedback, msg.round)
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}

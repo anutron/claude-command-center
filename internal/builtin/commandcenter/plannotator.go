@@ -59,59 +59,76 @@ func readTempPrompt(path string) string {
 	return strings.TrimSpace(string(data))
 }
 
-// plannotatorReviewMsg is sent when the Plannotator annotation process exits.
+// plannotatorReviewMsg is sent when the Plannotator review process exits.
 type plannotatorReviewMsg struct {
 	todoID   string
 	tempFile string
 	err      error
 	round    int
-	feedback string // user's annotations from Plannotator
+	feedback string // user's annotations (deny case)
+	approved bool   // true if user clicked approve
 }
 
-// plannotatorAnnotateProcess implements tea.ExecCommand to run `plannotator annotate`
-// on a temp file. Opens the browser-based annotation UI and blocks until the user
-// submits feedback. Captures stdout (the feedback text).
-type plannotatorAnnotateProcess struct {
-	tempFile string
+// plannotatorReviewProcess implements tea.ExecCommand to run plannotator in
+// plan review mode. Pipes the prompt as a hook event on stdin, gets approve/deny
+// with feedback on stdout. Opens the browser with approve/deny buttons.
+type plannotatorReviewProcess struct {
+	prompt   string
 	stdin    io.Reader
 	stderr   io.Writer
+	approved bool
 	feedback string
 }
 
-func (p *plannotatorAnnotateProcess) SetStdin(r io.Reader)  { p.stdin = r }
-func (p *plannotatorAnnotateProcess) SetStdout(_ io.Writer) {}
-func (p *plannotatorAnnotateProcess) SetStderr(w io.Writer) { p.stderr = w }
+func (p *plannotatorReviewProcess) SetStdin(r io.Reader)  { p.stdin = r }
+func (p *plannotatorReviewProcess) SetStdout(_ io.Writer) {}
+func (p *plannotatorReviewProcess) SetStderr(w io.Writer) { p.stderr = w }
 
-func (p *plannotatorAnnotateProcess) Run() error {
-	cmd := exec.Command("plannotator", "annotate", p.tempFile)
-	cmd.Stdin = p.stdin
+func (p *plannotatorReviewProcess) Run() error {
+	// Plannotator plan review mode reads a hook event from stdin.
+	hookEvent := fmt.Sprintf(`{"tool_input":{"plan":%q},"permission_mode":"default"}`, p.prompt)
+
+	cmd := exec.Command("plannotator")
+	cmd.Stdin = strings.NewReader(hookEvent)
 	cmd.Stderr = p.stderr
 	out, err := cmd.Output()
 	if err != nil {
 		return err
 	}
-	p.feedback = strings.TrimSpace(string(out))
+
+	// Parse the JSON response to extract approved/feedback.
+	// Response format: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny","message":"..."}}}
+	outStr := strings.TrimSpace(string(out))
+	p.approved = strings.Contains(outStr, `"behavior":"allow"`)
+	if !p.approved {
+		// Extract the feedback message from the deny decision.
+		// The message field contains the full feedback after the preamble.
+		if idx := strings.Index(outStr, `"message":"`); idx >= 0 {
+			rest := outStr[idx+len(`"message":"`):]
+			if end := strings.Index(rest, `"}`); end >= 0 {
+				p.feedback = rest[:end]
+			} else {
+				p.feedback = rest
+			}
+			// Unescape JSON string
+			p.feedback = strings.ReplaceAll(p.feedback, `\n`, "\n")
+			p.feedback = strings.ReplaceAll(p.feedback, `\"`, `"`)
+		}
+	}
 	return nil
 }
 
-// launchPlannotatorReview writes the prompt to a temp file and opens
-// Plannotator in the browser for annotation. Returns plannotatorReviewMsg on completion.
+// launchPlannotatorReview opens Plannotator in plan review mode with the prompt.
+// The user gets approve/deny buttons in the browser. Returns plannotatorReviewMsg.
 func launchPlannotatorReview(todoID string, prompt string, round int) tea.Cmd {
-	path := fmt.Sprintf("/tmp/ccc-review-%s-r%d.md", todoID, round)
-	if err := os.WriteFile(path, []byte(prompt), 0644); err != nil {
-		return func() tea.Msg {
-			return plannotatorReviewMsg{todoID: todoID, err: err, round: round}
-		}
-	}
-
-	proc := &plannotatorAnnotateProcess{tempFile: path}
+	proc := &plannotatorReviewProcess{prompt: prompt}
 	return tea.Exec(proc, func(err error) tea.Msg {
 		return plannotatorReviewMsg{
 			todoID:   todoID,
-			tempFile: path,
 			err:      err,
 			round:    round,
 			feedback: proc.feedback,
+			approved: proc.approved,
 		}
 	})
 }
