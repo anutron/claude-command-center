@@ -1245,7 +1245,8 @@ func renderTriageStatusBar(s *ccStyles, counts map[string]int, width int) string
 		}
 	}
 
-	return "  " + strings.Join(parts, s.DescMuted.Render(" \u00b7 "))
+	bar := strings.Join(parts, s.DescMuted.Render(" \u00b7 "))
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, bar)
 }
 
 func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
