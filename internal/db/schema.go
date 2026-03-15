@@ -188,6 +188,18 @@ func migrateSchema(db *sql.DB) error {
 	// Add launch_mode column to todos if missing (for persisting wizard mode selection)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN launch_mode TEXT`)
 
+	// BUG-101: Backfill display_id for existing rows that have display_id=0.
+	// The original backfill only handled NULL, but rows may have ended up with 0
+	// (e.g. explicit default or COALESCE in reads masking NULL). This assigns
+	// sequential IDs starting after the current max, ordered by created_at.
+	_, _ = db.Exec(`UPDATE cc_todos SET display_id = (
+		SELECT COALESCE(MAX(display_id), 0) FROM cc_todos WHERE display_id > 0
+	) + (
+		SELECT COUNT(*) FROM cc_todos t2
+		WHERE (t2.display_id IS NULL OR t2.display_id = 0)
+		AND t2.rowid <= cc_todos.rowid
+	) WHERE display_id IS NULL OR display_id = 0`)
+
 	return nil
 }
 
