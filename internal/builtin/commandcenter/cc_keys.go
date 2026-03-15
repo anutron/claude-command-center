@@ -661,8 +661,32 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "o":
-		// Open task runner view
+		// If todo has a session_id, join/resume that session
 		if todo := p.detailTodo(); todo != nil {
+			if todo.SessionID != "" {
+				dir := todo.ProjectDir
+				if dir == "" {
+					home, _ := os.UserHomeDir()
+					dir = home
+				}
+				return plugin.Action{
+					Type: "launch",
+					Args: map[string]string{
+						"dir":       dir,
+						"resume_id": todo.SessionID,
+					},
+				}
+			}
+			if todo.ProjectDir != "" {
+				return plugin.Action{
+					Type: "launch",
+					Args: map[string]string{
+						"dir":            todo.ProjectDir,
+						"initial_prompt": formatTodoContext(*todo),
+					},
+				}
+			}
+			// No session and no project dir: open task runner
 			p.enterTaskRunner(*todo)
 		}
 		return plugin.NoopAction()

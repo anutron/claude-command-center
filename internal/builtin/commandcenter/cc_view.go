@@ -759,6 +759,35 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		detailSection = lipgloss.JoinVertical(lipgloss.Left, "", detailHeader, "", detailBody)
 	}
 
+	// Session status indicator (for active/review sessions)
+	var sessionSection string
+	if todo.SessionStatus == "active" {
+		sessionIndicator := lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("● Session: running")
+		sessionSection = "\n  " + sessionIndicator
+	} else if todo.SessionStatus == "review" || todo.SessionStatus == "failed" {
+		statusLabel := "completed"
+		statusColor := s.ColorGreen
+		if todo.SessionStatus == "failed" {
+			statusLabel = "failed"
+			statusColor = s.ColorYellow
+		}
+		sessionIndicator := lipgloss.NewStyle().Foreground(statusColor).Bold(true).Render("● Session: " + statusLabel)
+		sessionSection = "\n  " + sessionIndicator
+	}
+
+	// Session summary section (shown when agent has completed work)
+	var summarySection string
+	if todo.SessionSummary != "" {
+		summaryHeader := s.SectionHeader.Render("  SESSION SUMMARY")
+		wrapped := wrapText(todo.SessionSummary, innerWidth-6)
+		var summaryLines []string
+		for _, line := range strings.Split(wrapped, "\n") {
+			summaryLines = append(summaryLines, "   "+line)
+		}
+		summaryBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(summaryLines, "\n"))
+		summarySection = lipgloss.JoinVertical(lipgloss.Left, "", summaryHeader, "", summaryBody)
+	}
+
 	// Prompt section (read-only, not editable — prompts are managed in the task runner)
 	var promptSection string
 	promptText := todo.ProposedPrompt
@@ -836,6 +865,12 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		"",
 		fieldStr,
 	)
+	if sessionSection != "" {
+		parts = append(parts, sessionSection)
+	}
+	if summarySection != "" {
+		parts = append(parts, summarySection)
+	}
 	if detailSection != "" {
 		parts = append(parts, detailSection)
 	}

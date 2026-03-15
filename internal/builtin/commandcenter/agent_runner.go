@@ -138,6 +138,12 @@ func launchAgent(qs queuedSession) tea.Cmd {
 
 			for scanner.Scan() {
 				line := scanner.Text()
+				// Capture output for summary extraction.
+				sess.mu.Lock()
+				sess.Output.WriteString(line)
+				sess.Output.WriteString("\n")
+				sess.mu.Unlock()
+
 				// Try to parse as JSON; skip malformed lines.
 				var event map[string]interface{}
 				if err := json.Unmarshal([]byte(line), &event); err != nil {
@@ -271,7 +277,9 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 
 // onAgentFinished cleans up after an agent finishes and launches the next queued item.
 func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
+	var summary string
 	if sess, ok := p.activeSessions[todoID]; ok {
+		summary = extractSessionSummary(sess)
 		if sess.Cancel != nil {
 			sess.Cancel()
 		}
@@ -283,6 +291,7 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 		status = "failed"
 	}
 	p.setTodoSessionStatus(todoID, status)
+	p.setTodoSessionSummary(todoID, summary)
 	p.publishEvent("agent.completed", map[string]interface{}{
 		"todo_id":   todoID,
 		"exit_code": exitCode,
@@ -290,7 +299,7 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 	})
 
 	var cmds []tea.Cmd
-	cmds = append(cmds, p.persistSessionStatus(todoID, status))
+	cmds = append(cmds, p.persistSessionStatusAndSummary(todoID, status, summary))
 
 	// Check queue for next auto-start item.
 	if len(p.sessionQueue) > 0 && p.canLaunchAgent() {
@@ -329,6 +338,54 @@ func (p *Plugin) persistSessionStatus(todoID, status string) tea.Cmd {
 	return p.dbWriteCmd(func(database *sql.DB) error {
 		return db.DBUpdateTodoSessionStatus(database, todoID, status)
 	})
+}
+
+// setTodoSessionSummary updates the session summary of a todo in-memory.
+func (p *Plugin) setTodoSessionSummary(todoID, summary string) {
+	if p.cc == nil {
+		return
+	}
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == todoID {
+			p.cc.Todos[i].SessionSummary = summary
+			return
+		}
+	}
+}
+
+// persistSessionStatusAndSummary returns a tea.Cmd that writes both session status and summary to the DB.
+func (p *Plugin) persistSessionStatusAndSummary(todoID, status, summary string) tea.Cmd {
+	return p.dbWriteCmd(func(database *sql.DB) error {
+		now := db.FormatTime(time.Now())
+		_, err := database.Exec(`UPDATE cc_todos SET session_status = NULLIF(?, ''), session_summary = NULLIF(?, ''), updated_at = ? WHERE id = ?`,
+			status, summary, now, todoID)
+		if err != nil {
+			return fmt.Errorf("update todo session status+summary %s: %w", todoID, err)
+		}
+		return nil
+	})
+}
+
+// extractSessionSummary extracts a summary from the agent session output.
+// It takes the last ~500 characters of the captured output as a simple summary.
+func extractSessionSummary(sess *agentSession) string {
+	output := sess.Output.String()
+	if output == "" {
+		if sess.exitCode == 0 {
+			return "Session completed successfully."
+		}
+		return fmt.Sprintf("Session exited with code %d.", sess.exitCode)
+	}
+	// Extract the last ~500 chars as summary
+	const maxLen = 500
+	if len(output) > maxLen {
+		output = output[len(output)-maxLen:]
+		// Trim to the start of the next complete line
+		if idx := strings.Index(output, "\n"); idx >= 0 {
+			output = output[idx+1:]
+		}
+	}
+	return strings.TrimSpace(output)
 }
 
 // checkAgentProcesses polls active sessions for completion and status changes.
