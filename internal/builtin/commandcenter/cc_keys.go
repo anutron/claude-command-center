@@ -9,9 +9,11 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // triageFilterOrder defines the tab order for triage filters in expanded view.
@@ -1479,7 +1481,11 @@ func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
 			p.taskRunnerInputting = false
 			return plugin.NoopAction()
 		default:
-			p.taskRunnerInstructInput, _ = p.taskRunnerInstructInput.Update(msg)
+			var cmd tea.Cmd
+			p.taskRunnerInstructInput, cmd = p.taskRunnerInstructInput.Update(msg)
+			if cmd != nil {
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+			}
 			return plugin.NoopAction()
 		}
 	}
@@ -1525,10 +1531,18 @@ func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
 	case "c":
 		// Open instruction input for AI-guided prompt refinement.
 		p.taskRunnerInputting = true
-		p.taskRunnerInstructInput = textinput.New()
-		p.taskRunnerInstructInput.Placeholder = "Instructions for AI to rewrite prompt..."
-		p.taskRunnerInstructInput.Focus()
-		p.taskRunnerInstructInput.Width = p.width - 12
+		ta := textarea.New()
+		ta.Placeholder = "Instructions for AI to rewrite prompt..."
+		ta.CharLimit = 0
+		ta.ShowLineNumbers = false
+		ta.SetWidth(p.textareaWidth())
+		ta.SetHeight(3)
+		ta.FocusedStyle.Base = ta.FocusedStyle.Base.Foreground(p.styles.ColorWhite)
+		ta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
+		ta.FocusedStyle.CursorLine = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
+		ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(p.styles.ColorMuted)
+		ta.Focus()
+		p.taskRunnerInstructInput = ta
 		return plugin.NoopAction()
 	case "r", "p":
 		return p.taskRunnerReviewLoop()
