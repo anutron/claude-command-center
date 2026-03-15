@@ -623,7 +623,7 @@ func wrapText(text string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string, noticeType string, statusCursor int) string {
+func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string, noticeType string, statusCursor int, filteredPaths []string, pathCursor int, pathFilter string) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -698,6 +698,15 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 				}
 			}
 			leftLines = append(leftLines, fmt.Sprintf("  %-14s %s", label, strings.Join(optParts, "  ")))
+		} else if detailMode == "selectingPath" && f.idx == 2 {
+			// Show path filter input
+			filterDisplay := pathFilter
+			if filterDisplay == "" {
+				filterDisplay = s.DescMuted.Render("type to filter...")
+			} else {
+				filterDisplay = lipgloss.NewStyle().Foreground(s.ColorCyan).Render(filterDisplay)
+			}
+			leftLines = append(leftLines, fmt.Sprintf("  %-14s %s", label, filterDisplay))
 		} else if detailMode == "editingField" && selectedField == f.idx {
 			// Show input for the field being edited
 			leftLines = append(leftLines, fmt.Sprintf("  %-14s %s", label, fieldInputView))
@@ -745,6 +754,59 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		fieldRows = append(fieldRows, leftRendered+"  "+right)
 	}
 	fieldStr := strings.Join(fieldRows, "\n")
+
+	// Path picker (shown below fields when in selectingPath mode)
+	var pathPickerSection string
+	if detailMode == "selectingPath" && len(filteredPaths) > 0 {
+		maxVisible := 8
+		startIdx := 0
+		if pathCursor >= maxVisible {
+			startIdx = pathCursor - maxVisible + 1
+		}
+		endIdx := startIdx + maxVisible
+		if endIdx > len(filteredPaths) {
+			endIdx = len(filteredPaths)
+		}
+
+		var pathLines []string
+		for i := startIdx; i < endIdx; i++ {
+			path := filteredPaths[i]
+			// Show just the last 2 path components for brevity
+			displayPath := path
+			if len(displayPath) > innerWidth-8 {
+				displayPath = "..." + displayPath[len(displayPath)-(innerWidth-11):]
+			}
+			if i == pathCursor {
+				pathLines = append(pathLines, lipgloss.NewStyle().
+					Background(s.ColorCyan).
+					Foreground(lipgloss.Color("#000000")).
+					Bold(true).
+					Padding(0, 1).
+					Render(displayPath))
+			} else {
+				pathLines = append(pathLines, "  "+s.DescMuted.Render(displayPath))
+			}
+		}
+
+		if startIdx > 0 {
+			pathLines = append([]string{s.CalendarTime.Render(fmt.Sprintf("  ▲ %d more", startIdx))}, pathLines...)
+		}
+		if endIdx < len(filteredPaths) {
+			pathLines = append(pathLines, s.CalendarTime.Render(fmt.Sprintf("  ▼ %d more", len(filteredPaths)-endIdx)))
+		}
+
+		pickerHint := s.Hint.Render("  j/k navigate · type to filter · enter select · esc cancel")
+		pathLines = append(pathLines, pickerHint)
+
+		pathPickerSection = "\n" + lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(s.ColorCyan).
+			Width(innerWidth - 4).
+			Padding(0, 1).
+			Render(strings.Join(pathLines, "\n"))
+	} else if detailMode == "selectingPath" && len(filteredPaths) == 0 {
+		pathPickerSection = "\n  " + s.DescMuted.Render("No paths match filter")
+	}
 
 	// Detail section
 	var detailSection string
@@ -820,6 +882,8 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		hints = s.Hint.Render("enter confirm \u00b7 esc cancel")
 	case "selectingStatus":
 		hints = s.Hint.Render("\u2190/\u2192 select \u00b7 enter confirm \u00b7 esc cancel")
+	case "selectingPath":
+		hints = s.Hint.Render("j/k navigate \u00b7 type to filter \u00b7 enter select \u00b7 esc cancel")
 	case "commandInput":
 		hints = s.Hint.Render("enter submit to AI \u00b7 esc cancel")
 	}
@@ -836,6 +900,9 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		"",
 		fieldStr,
 	)
+	if pathPickerSection != "" {
+		parts = append(parts, pathPickerSection)
+	}
 	if detailSection != "" {
 		parts = append(parts, detailSection)
 	}
@@ -1218,7 +1285,7 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 }
 
 // renderTaskRunner renders the task runner launch configuration screen.
-func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float64, autoStart bool, selectedRow int, promptVP viewport.Model, width, height int) string {
+func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float64, autoStart bool, selectedRow int, promptVP viewport.Model, width, height int, projectDir string) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -1232,15 +1299,7 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 	title := truncateToWidth(flattenTitle(todo.Title), titleMax)
 	header := s.SectionHeader.Render("TASK RUNNER — " + title)
 
-	// Project dir
-	projectLine := "  " + s.SectionHeader.Render("Project:") + " "
-	if todo.ProjectDir != "" {
-		projectLine += lipgloss.NewStyle().Foreground(s.ColorWhite).Render(todo.ProjectDir)
-	} else {
-		projectLine += s.DescMuted.Render("(not set)")
-	}
-
-	// Config rows (2 rows: Mode, Budget)
+	// Config rows (3 rows: Mode, Budget, Project)
 	modeOptions := []string{"Normal", "Worktree", "Sandbox"}
 	modeLine := renderTaskRunnerOptionRow(s, "Mode", modeOptions, mode, selectedRow == 0, innerWidth)
 
@@ -1253,6 +1312,21 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 	}
 	budgetLine := fmt.Sprintf("  %-14s %s", budgetLabel, budgetValue+" "+s.DescMuted.Render("(<-> adjust)"))
 
+	// Project row
+	projectLabel := s.SectionHeader.Render("Project:")
+	projectValue := projectDir
+	if projectValue == "" {
+		projectValue = s.DescMuted.Render("(not set)")
+	} else {
+		if selectedRow == 2 {
+			projectLabel = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Project:")
+			projectValue = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(projectValue)
+		} else {
+			projectValue = lipgloss.NewStyle().Foreground(s.ColorWhite).Render(projectValue)
+		}
+	}
+	projectLine := fmt.Sprintf("  %-14s %s", projectLabel, projectValue+" "+s.DescMuted.Render("(<-> cycle)"))
+
 	// Prompt section
 	divider := s.DescMuted.Render("  " + strings.Repeat("\u2500", innerWidth-4))
 	promptHeader := s.SectionHeader.Render("  PROMPT")
@@ -1263,9 +1337,9 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 	parts := []string{
 		header,
 		"",
-		projectLine,
 		modeLine,
 		budgetLine,
+		projectLine,
 		"",
 		divider,
 		promptHeader,
