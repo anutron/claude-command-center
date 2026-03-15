@@ -97,6 +97,7 @@ type Plugin struct {
 	taskRunnerPerm        string  // "default", "plan", "auto"
 	taskRunnerBudget      float64
 	taskRunnerPrompt      viewport.Model
+	taskRunnerPromptText  string // raw text backing taskRunnerPrompt viewport
 	taskRunnerRefining      bool   // true when AI refine is active
 	taskRunnerReviewing     bool   // true when Plannotator is open in browser
 	taskRunnerInputting     bool   // true when user is typing instructions for c key
@@ -652,8 +653,18 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		if vpHeight < 5 {
 			vpHeight = 5
 		}
-		p.taskRunnerPrompt.Width = vpWidth
-		p.taskRunnerPrompt.Height = vpHeight
+		if p.taskRunnerPrompt.Width != vpWidth || p.taskRunnerPrompt.Height != vpHeight {
+			// When dimensions change, re-set both the size and content.
+			// The charmbracelet viewport needs SetContent re-called
+			// after dimension changes for the visible line window to
+			// update correctly. Without this, only the first line
+			// renders until an editor round-trip triggers SetContent.
+			yOff := p.taskRunnerPrompt.YOffset
+			p.taskRunnerPrompt.Width = vpWidth
+			p.taskRunnerPrompt.Height = vpHeight
+			p.taskRunnerPrompt.SetContent(p.taskRunnerPromptText)
+			p.taskRunnerPrompt.YOffset = yOff
+		}
 		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerBudget, p.taskRunnerStep, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter, p.taskRunnerRefining, p.taskRunnerReviewing, p.taskRunnerInputting, p.taskRunnerInstructInput)
 		}
 	}

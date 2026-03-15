@@ -263,6 +263,7 @@ func (p *Plugin) handleClaudeRefinePromptFinished(msg claudeRefinePromptMsg) (bo
 		return true, plugin.NoopAction()
 	}
 	// Update viewport
+	p.taskRunnerPromptText = refined
 	p.taskRunnerPrompt.SetContent(refined)
 	p.taskRunnerPrompt.GotoTop()
 	// Update in-memory todo
@@ -437,6 +438,7 @@ func (p *Plugin) handlePlannotatorFinished(msg plannotatorFinishedMsg) (bool, pl
 				updated := p.cc.Todos[i]
 
 				// Refresh the task runner prompt viewport.
+				p.taskRunnerPromptText = newPrompt
 				p.taskRunnerPrompt.SetContent(newPrompt)
 				p.taskRunnerPrompt.GotoTop()
 
@@ -503,6 +505,7 @@ func (p *Plugin) handleClaudeReviewAddressed(msg claudeReviewAddressedMsg) (bool
 	}
 
 	// Update viewport and in-memory ProposedPrompt, persist to DB.
+	p.taskRunnerPromptText = refined
 	p.taskRunnerPrompt.SetContent(refined)
 	p.taskRunnerPrompt.GotoTop()
 

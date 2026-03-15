@@ -1318,18 +1318,15 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 	}
 
 	// Build prompt text from todo context
-	promptText := formatTodoContext(todo)
+	promptText := todo.ProposedPrompt
+	if promptText == "" {
+		promptText = formatTodoContext(todo)
+	}
+	p.taskRunnerPromptText = promptText
 
-	// Set up viewport for prompt
-	vpWidth := p.width - 10
-	if vpWidth < 40 {
-		vpWidth = 40
-	}
-	vpHeight := p.height - 30
-	if vpHeight < 5 {
-		vpHeight = 5
-	}
-	vp := viewport.New(vpWidth, vpHeight)
+	// Set up viewport for prompt. Use minimal initial dimensions;
+	// viewCommandTab will resize to the correct size on the first render.
+	vp := viewport.New(40, 5)
 	vp.SetContent(promptText)
 	p.taskRunnerPrompt = vp
 }
