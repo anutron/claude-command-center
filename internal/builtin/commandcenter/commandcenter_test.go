@@ -629,6 +629,23 @@ func TestTaskRunnerStepNavigation(t *testing.T) {
 	}
 }
 
+func TestTaskRunnerPathPickerNoSelection(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+
+	// Enter task runner, then manually open path picker
+	p.HandleKey(keyMsg("o"))
+	p.taskRunnerPickingPath = true
+	p.detailPaths = []string{"/tmp/a", "/tmp/b"}
+
+	// Set cursor to -1 (no selection) and press enter — should NOT panic
+	p.taskRunnerPathCursor = -1
+	p.HandleKey(keyMsg("enter"))
+	if p.taskRunnerPickingPath {
+		t.Error("enter should close the path picker")
+	}
+}
+
 func TestTaskRunnerModeCycling(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
