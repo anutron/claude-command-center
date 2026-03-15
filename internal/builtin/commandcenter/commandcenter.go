@@ -713,7 +713,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 
 	if p.detailView && p.cc != nil {
 		if todo := p.detailTodo(); todo != nil {
-			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.commandTextArea.View(), viewWidth, p.detailNotice, p.detailNoticeType, p.detailStatusCursor, p.filteredPaths(), p.detailPathCursor, p.detailPathFilter, p.frame)
+			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.commandTextArea.View(), viewWidth, viewHeight, p.detailNotice, p.detailNoticeType, p.detailStatusCursor, p.filteredPaths(), p.detailPathCursor, p.detailPathFilter, p.frame)
 		}
 		// Notice showing but no more active todos — render just the notice
 		if p.detailNotice != "" {
