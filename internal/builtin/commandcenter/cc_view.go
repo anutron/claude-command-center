@@ -743,7 +743,7 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		detailSection = lipgloss.JoinVertical(lipgloss.Left, "", detailHeader, "", detailBody)
 	}
 
-	// Prompt section
+	// Prompt section (read-only, not editable — prompts are managed in the task runner)
 	var promptSection string
 	promptText := todo.ProposedPrompt
 	if promptText != "" {
@@ -760,19 +760,9 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 			styledLines = append(styledLines, "   "+truncated)
 		}
 		promptBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(styledLines, "\n"))
-
-		isPromptSelected := (detailMode == "viewing" || detailMode == "commandInput") && selectedField == 3
-		if isPromptSelected {
-			promptHeader = s.SectionHeader.Render("  [PROMPT]")
-		}
 		promptSection = lipgloss.JoinVertical(lipgloss.Left, "", promptHeader, "", promptBody)
 	} else {
-		isPromptSelected := (detailMode == "viewing" || detailMode == "commandInput") && selectedField == 3
-		if isPromptSelected {
-			promptSection = "\n  " + s.SectionHeader.Render("[PROMPT]") + "  " + s.DescMuted.Render("(no prompt set)")
-		} else {
-			promptSection = "\n  " + s.SectionHeader.Render("PROMPT") + "  " + s.DescMuted.Render("(no prompt set)")
-		}
+		promptSection = "\n  " + s.SectionHeader.Render("PROMPT") + "  " + s.DescMuted.Render("(no prompt set)")
 	}
 
 	// Command input section (when in commandInput mode)

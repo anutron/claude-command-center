@@ -610,7 +610,7 @@ func (p *Plugin) handleDetailView(msg tea.KeyMsg) plugin.Action {
 }
 
 // detailFieldCount is the number of cyclable fields in the detail view.
-const detailFieldCount = 4 // 0=Status, 1=Due, 2=ProjectDir, 3=Prompt
+const detailFieldCount = 3 // 0=Status, 1=Due, 2=ProjectDir
 
 func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 	// While showing a notice, ignore all keys except esc
@@ -795,13 +795,6 @@ func (p *Plugin) enterDetailFieldEdit() plugin.Action {
 		}
 		newPath := p.detailPaths[p.detailPathCursor]
 		return p.commitDetailFieldEdit(todo, "project_dir", newPath)
-	case 3: // Prompt — open text input
-		p.detailMode = "editingField"
-		p.detailFieldInput.Reset()
-		p.detailFieldInput.Placeholder = "Enter prompt for Claude session..."
-		p.detailFieldInput.SetValue(todo.ProposedPrompt)
-		p.detailFieldInput.Focus()
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
 	}
 	return plugin.NoopAction()
 }
@@ -850,8 +843,6 @@ func (p *Plugin) handleDetailEditingField(msg tea.KeyMsg) plugin.Action {
 			return p.commitDetailFieldEdit(todo, "due", value)
 		case 2: // ProjectDir
 			return p.commitDetailFieldEdit(todo, "project_dir", value)
-		case 3: // Prompt
-			return p.commitDetailFieldEdit(todo, "proposed_prompt", value)
 		}
 		return plugin.NoopAction()
 	case "esc":
