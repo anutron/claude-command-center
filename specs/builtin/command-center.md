@@ -245,6 +245,105 @@ Instead of polling on a timer, the command center uses lifecycle messages to rel
 
 When a todo has a `project_dir`, pressing enter launches a Claude session there. When a todo has no project_dir, the plugin sets `pendingLaunchTodo` and navigates to the sessions plugin via the host's "navigate" action.
 
+### Agent Sessions
+
+CCC can launch, monitor, and manage headless Claude Code sessions that work on todos in the background. Sessions run as subprocesses with stream-JSON output, allowing CCC to track progress without blocking the UI.
+
+#### Schema Fields on Todo
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `proposed_prompt` | `string` | The prompt to send to the Claude agent. Editable via task runner wizard. Falls back to `formatTodoContext(todo)` if empty. |
+| `session_status` | `string` | Current agent session state. Empty string means no session. |
+| `session_summary` | `string` | Summary of agent output after session completes. |
+| `session_id` | `string` | Claude session ID for resuming an existing interactive session (predates headless agent sessions). |
+
+#### Session Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `""` (empty) | No agent session associated with this todo |
+| `"queued"` | Session is waiting to launch (concurrency limit reached) |
+| `"active"` | Agent is running |
+| `"blocked"` | Agent is waiting for user input (detected via stream-JSON tool_use events) |
+| `"review"` | Agent finished successfully (exit code 0), output ready for review |
+| `"failed"` | Agent exited with non-zero exit code |
+
+#### Session Lifecycle
+
+1. **Launch or queue**: User presses `enter` in task runner step 3. `launchOrQueueAgent` either starts the session immediately or queues it based on `cfg.Agent.MaxConcurrent` (default 3).
+2. **Auto-accept**: Launching/queuing automatically sets the todo's `triage_status` to `"accepted"` so it leaves the "new" inbox.
+3. **Process start**: `launchAgent` spawns `claude --print --output-format stream-json --verbose [flags] <prompt>` as a subprocess. The session's `done` channel and exit code are managed by a background goroutine.
+4. **Monitoring**: A background goroutine reads stdout line-by-line, parsing stream-JSON events. It detects blocking events (tool_use with `SendUserMessage` or `AskUser`) and updates `sess.Status` to `"blocked"` with the question text.
+5. **Tick polling**: `checkAgentProcesses` runs on every UI tick. It checks the `done` channel for finished processes and reads `sess.Status` (protected by mutex) for status changes like `"blocked"`.
+6. **Completion**: When the process exits, `onAgentFinished` sets status to `"review"` (exit 0) or `"failed"` (non-zero), extracts a summary from the last ~500 chars of output, and persists both to DB.
+7. **Queue drain**: After a session finishes, `onAgentFinished` checks the queue and auto-launches the next `AutoStart` session if capacity is available.
+8. **Shutdown cleanup**: `Plugin.Shutdown()` cancels all active sessions to prevent zombie processes.
+
+#### Launch Options
+
+Sessions are configured via the task runner wizard (step 3) with two launch modes:
+
+- **Queue** (`taskRunnerLaunchCursor == 0`): `AutoStart = false` — session launches immediately if under concurrency limit, otherwise queues without auto-start
+- **Run Now** (`taskRunnerLaunchCursor == 1`): `AutoStart = true` — session launches immediately or queues with auto-start when capacity frees up
+
+#### CLI Flags
+
+The `claude` command is invoked with:
+
+- `--print` — headless mode (no interactive TUI)
+- `--output-format stream-json` — structured output for monitoring
+- `--verbose` — detailed output
+- `--permission-mode <perm>` — if perm is not "default" (options: "plan", "auto")
+- `--max-budget-usd <budget>` — if budget >= $0.50
+- `--worktree` — if mode is "worktree"
+
+#### Join/Resume Existing Sessions
+
+From the detail view or list view, pressing `o` on a todo with a `session_id` launches an interactive session with `resume_id` (not a headless agent — this resumes a previous interactive Claude session). If no `session_id` exists, the task runner wizard opens instead.
+
+#### Review Completed Sessions
+
+Completed sessions (`session_status == "review"` or `"failed"`) show:
+
+- **In the todo list**: styled status indicator (`● ready for review` in green, or `⏳ queued` in muted)
+- **In the detail view**: a session status indicator (`● Session: running`, `● Session: completed`, `● Session: failed`) and a `SESSION SUMMARY` section with wrapped output text
+- **In the expanded view triage tabs**: the "Review" and "Blocked" tabs filter todos by `session_status`
+
+#### Status Indicators in Todo List
+
+| Status | Indicator | Color |
+|--------|-----------|-------|
+| `active` | `● agent working` | Cyan |
+| `blocked` | `● needs input` | Yellow |
+| `review` | `● ready for review` | Green |
+| `queued` | `⏳ queued` | Muted |
+
+An agent status header line also appears when sessions are running: `"2/3 agents running, 1 queued"`.
+
+#### Concurrency Management
+
+- `cfg.Agent.MaxConcurrent` controls the max number of simultaneous sessions (default 3)
+- `canLaunchAgent()` checks `len(activeSessions) < maxConcurrent`
+- Excess sessions are pushed to `sessionQueue` with status `"queued"`
+- Queue is drained FIFO as sessions complete
+
+#### Event Bus Integration
+
+- `agent.started` — published when a session begins running
+- `agent.queued` — published when a session is added to the queue
+- `agent.blocked` — published when stream-JSON detects a blocking event (includes `question` in payload)
+- `agent.completed` — published when a session finishes (includes `exit_code` and `status`)
+
+#### Stream-JSON Monitoring
+
+The background goroutine parses each stdout line as JSON. It detects blocking events by checking:
+
+1. Top-level events with `type == "tool_use"` and `name` of `"SendUserMessage"` or `"AskUser"`
+2. `type == "assistant"` events containing `content` blocks with tool_use entries matching the same names
+
+When a blocking event is detected, the question text is extracted from `input.message` or `input.question` fields. The goroutine updates `sess.Status` and `sess.Question` under a mutex. The main UI thread picks up the change on the next tick via `checkAgentProcesses`.
+
 ### Task Runner Wizard
 
 The task runner is a 3-step linear wizard for configuring and launching a Claude agent session on a todo. Accessed via `o` from the detail view or `Y` from triage.
@@ -346,3 +445,21 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Task runner wizard: `c` sets refining state, LLM response updates prompt
 - Task runner wizard: `r` opens review loop, unchanged prompt = approved
 - Task runner wizard: `r` annotated prompt triggers LLM revision and reopens Plannotator
+- Agent sessions: launching sets session_status to "active" and auto-accepts the todo
+- Agent sessions: queuing sets session_status to "queued" when at max concurrency
+- Agent sessions: stream-JSON blocking event sets session_status to "blocked" with question text
+- Agent sessions: successful completion (exit 0) sets session_status to "review" with summary
+- Agent sessions: failed completion (non-zero exit) sets session_status to "failed" with summary
+- Agent sessions: queue drains FIFO — next AutoStart session launches when capacity frees
+- Agent sessions: `o` on todo with session_id returns launch action with resume_id
+- Agent sessions: `o` on todo without session_id opens task runner wizard
+- Agent sessions: checkAgentProcesses detects finished sessions via done channel on tick
+- Agent sessions: checkAgentProcesses detects blocked status change on tick
+- Agent sessions: Shutdown cancels all active sessions
+- Agent sessions: status indicators render correctly in todo list (active/blocked/review/queued)
+- Agent sessions: detail view shows session status and summary sections
+- Agent sessions: triage "Review" tab filters todos with session_status "review"
+- Agent sessions: triage "Blocked" tab filters todos with session_status "blocked"
+- Agent sessions: triage "Active" tab filters todos with session_status "active"
+- Agent sessions: normal view excludes todos with non-empty session_status from accepted list
+- Agent sessions: concurrency respects cfg.Agent.MaxConcurrent (default 3)
