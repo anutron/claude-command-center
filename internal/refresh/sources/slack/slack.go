@@ -127,11 +127,12 @@ type slackConversationsListResponse struct {
 }
 
 type slackChannel struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	IsIM   bool   `json:"is_im"`
-	IsMpim bool   `json:"is_mpim"`
-	User   string `json:"user"` // For IM channels: the other user's ID (or self for self-DMs)
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	IsIM    bool    `json:"is_im"`
+	IsMpim  bool    `json:"is_mpim"`
+	User    string  `json:"user"`    // For IM channels: the other user's ID (or self for self-DMs)
+	Updated float64 `json:"updated"` // Unix timestamp of last activity (0 if never)
 }
 
 type slackHistoryResponse struct {
@@ -232,50 +233,82 @@ func channelDisplayName(ctx context.Context, token string, ch slackChannel, self
 }
 
 // slackAPIGet performs a GET request to the Slack API and decodes the response.
+// Retries once on rate limit (429) using the Retry-After header.
 func slackAPIGet(ctx context.Context, token, endpoint string, params url.Values, dest interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		"https://slack.com/api/"+endpoint+"?"+params.Encode(), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	for attempt := 0; attempt < 3; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, "GET",
+			"https://slack.com/api/"+endpoint+"?"+params.Encode(), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
 
-	const maxResponseSize = 10 * 1024 * 1024 // 10MB
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
-	if err != nil {
-		return err
-	}
+		if resp.StatusCode == 429 {
+			resp.Body.Close()
+			retryAfter := 5 // default 5s
+			if ra := resp.Header.Get("Retry-After"); ra != "" {
+				if v, err := strconv.Atoi(ra); err == nil {
+					retryAfter = v
+				}
+			}
+			log.Printf("slack: rate limited on %s, retrying in %ds", endpoint, retryAfter)
+			select {
+			case <-time.After(time.Duration(retryAfter) * time.Second):
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
 
-	return json.Unmarshal(body, dest)
+		const maxResponseSize = 10 * 1024 * 1024 // 10MB
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+
+		return json.Unmarshal(body, dest)
+	}
+	return fmt.Errorf("%s: rate limited after retries", endpoint)
 }
 
-// fetchChannels retrieves the list of channels the user has access to, with pagination.
+// fetchChannels retrieves channels the user is a member of (public + private only).
+// DMs and group DMs are handled by the search.messages fallback to avoid fetching
+// history from thousands of conversations.
 func fetchChannels(ctx context.Context, token string) ([]slackChannel, error) {
 	var allChannels []slackChannel
 	cursor := ""
 
 	for {
 		params := url.Values{
-			"types":            {"public_channel,private_channel,im,mpim"},
+			"types":            {"public_channel,private_channel"},
 			"exclude_archived": {"true"},
-			"limit":            {"200"},
+			"limit":            {"999"},
 		}
 		if cursor != "" {
 			params.Set("cursor", cursor)
 		}
 
 		var result slackConversationsListResponse
-		if err := slackAPIGet(ctx, token, "conversations.list", params, &result); err != nil {
-			return nil, err
+		if err := slackAPIGet(ctx, token, "users.conversations", params, &result); err != nil {
+			return nil, fmt.Errorf("listing channels: %w", err)
 		}
 		if !result.OK {
-			return nil, fmt.Errorf("conversations.list error: %s", result.Error)
+			if result.Error == "ratelimited" {
+				log.Printf("slack: users.conversations rate limited, waiting 5s")
+				select {
+				case <-time.After(5 * time.Second):
+					continue
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return nil, fmt.Errorf("users.conversations error: %s", result.Error)
 		}
 
 		allChannels = append(allChannels, result.Channels...)
@@ -285,7 +318,7 @@ func fetchChannels(ctx context.Context, token string) ([]slackChannel, error) {
 			break
 		}
 		cursor = result.Meta.NextCursor
-		log.Printf("slack: conversations.list paginating (have %d channels so far)", len(allChannels))
+		log.Printf("slack: users.conversations paginating (have %d channels so far)", len(allChannels))
 	}
 
 	return allChannels, nil
@@ -364,11 +397,23 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 	log.Printf("slack: %d channels found (public/private=%d, im=%d, mpim=%d, other=%d)",
 		len(channels), nPublic, nIM, nMpim, nPrivate)
 
-	// Look back 3 days (matching the old search.messages "after:3days" filter)
-	oldest := strconv.FormatInt(time.Now().Add(-3*24*time.Hour).Unix(), 10)
+	// Look back 2 days for recent activity
+	cutoff := time.Now().Add(-2 * 24 * time.Hour)
+	oldest := strconv.FormatInt(cutoff.Unix(), 10)
+
+	// Filter to channels with recent activity to avoid hammering the API.
+	// Slack's updated field is in milliseconds, not seconds.
+	cutoffMs := float64(cutoff.UnixMilli())
+	var recentChannels []slackChannel
+	for _, ch := range channels {
+		if ch.Updated >= cutoffMs {
+			recentChannels = append(recentChannels, ch)
+		}
+	}
+	log.Printf("slack: %d/%d channels have recent activity (last 2 days)", len(recentChannels), len(channels))
 
 	var candidates []slackCandidate
-	for _, ch := range channels {
+	for _, ch := range recentChannels {
 		displayName := channelDisplayName(ctx, token, ch, selfUserID)
 
 		messages, err := fetchChannelHistory(ctx, token, ch.ID, oldest)
