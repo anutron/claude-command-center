@@ -900,11 +900,14 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	if detailMode == "commandInput" {
 		divider := s.DescMuted.Render(strings.Repeat("\u2500", innerWidth-2))
 		inputLabel := s.DescMuted.Render("Tell me what changed:")
+		// Use PaddingLeft to indent all textarea lines consistently (not just the first).
+		// String concatenation ("  " + multiLineStr) only indents the first line.
+		indentedInput := lipgloss.NewStyle().PaddingLeft(2).Render(commandInputView)
 		commandSection = lipgloss.JoinVertical(lipgloss.Left,
 			"",
 			"  "+divider,
 			"  "+inputLabel,
-			"  "+commandInputView,
+			indentedInput,
 		)
 	}
 
