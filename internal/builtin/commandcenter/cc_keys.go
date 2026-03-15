@@ -1435,7 +1435,7 @@ func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	case "c":
 		return p.taskRunnerRefinePrompt()
-	case "r":
+	case "r", "p":
 		return p.taskRunnerReviewLoop()
 	case "esc":
 		p.taskRunnerStep = 2

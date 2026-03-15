@@ -411,7 +411,7 @@ The task runner is a 3-step linear wizard for configuring and launching a Claude
 | `enter` | Launch agent with selected options |
 | `e` | Open prompt in external editor |
 | `c` | AI prompt refinement (LLM improves prompt clarity and structure) |
-| `r` | Review loop (Plannotator annotation → LLM revision cycle) |
+| `r`/`p` | Review loop (Plannotator annotation → LLM revision cycle) |
 | `esc` | Back to step 2 |
 
 #### AI Prompt Refinement (`c`)
