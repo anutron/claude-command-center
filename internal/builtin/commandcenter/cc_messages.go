@@ -100,10 +100,17 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.detailMode = "viewing"
 			p.detailSelectedField = 0
 
-			// If this was a resume/join session, update status from "active" to "review".
+			// Update session status when returning from a Claude session.
+			// - Resume/join sessions → "review" (user reviewed existing work)
+			// - Interactive sessions launched via "Run Claude" → "completed"
+			//   (only if not tracked as a headless agent, which has its own completion path)
 			if msg.WasResumeJoin {
 				p.setTodoSessionStatus(msg.TodoID, "review")
 				cmds = append(cmds, p.persistSessionStatus(msg.TodoID, "review"))
+			} else if _, isHeadless := p.activeSessions[msg.TodoID]; !isHeadless {
+				// Interactive session returned — detect completion.
+				p.setTodoSessionStatus(msg.TodoID, "completed")
+				cmds = append(cmds, p.persistSessionStatus(msg.TodoID, "completed"))
 			}
 		}
 
