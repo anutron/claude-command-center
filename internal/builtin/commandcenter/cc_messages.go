@@ -40,6 +40,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case claudeFocusFinishedMsg:
 		return p.handleClaudeFocusFinished(msg)
 
+	case claudeRefinePromptMsg:
+		return p.handleClaudeRefinePromptFinished(msg)
+
 	case claudeDateParseFinishedMsg:
 		return p.handleClaudeDateParseFinished(msg)
 
@@ -215,6 +218,42 @@ func (p *Plugin) handleClaudeEnrichFinished(msg claudeEnrichFinishedMsg) (bool, 
 			})}
 		}
 	}
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleClaudeRefinePromptFinished(msg claudeRefinePromptMsg) (bool, plugin.Action) {
+	p.taskRunnerRefining = false
+	if msg.err != nil {
+		p.flashMessage = "Refine failed: " + msg.err.Error()
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+	refined := strings.TrimSpace(msg.output)
+	if refined == "" {
+		p.flashMessage = "Refine returned empty result"
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+	// Update viewport
+	p.taskRunnerPrompt.SetContent(refined)
+	p.taskRunnerPrompt.GotoTop()
+	// Update in-memory todo
+	if p.cc != nil {
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == msg.todoID {
+				p.cc.Todos[i].ProposedPrompt = refined
+				updated := p.cc.Todos[i]
+				p.flashMessage = "Prompt refined"
+				p.flashMessageAt = time.Now()
+				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBUpdateTodo(database, updated.ID, updated)
+				})
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			}
+		}
+	}
+	p.flashMessage = "Prompt refined"
+	p.flashMessageAt = time.Now()
 	return true, plugin.NoopAction()
 }
 

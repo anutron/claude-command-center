@@ -41,6 +41,12 @@ type claudeDateParseFinishedMsg struct {
 	err    error
 }
 
+type claudeRefinePromptMsg struct {
+	todoID string
+	output string
+	err    error
+}
+
 func claudeEditCmd(l llm.LLM, prompt, todoID string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
@@ -78,6 +84,33 @@ func claudeDateParseCmd(l llm.LLM, input string, todoID string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
 		return claudeDateParseFinishedMsg{
+			todoID: todoID,
+			output: out,
+			err:    err,
+		}
+	}
+}
+
+func claudeRefinePromptCmd(l llm.LLM, todoID string, currentPrompt string) tea.Cmd {
+	prompt := fmt.Sprintf(`You are refining a task prompt that will be sent to Claude Code (an AI coding agent) as its instruction. Improve the prompt to be clearer, more specific, and more actionable.
+
+Rules:
+- Keep the same intent and scope as the original
+- Make instructions concrete and unambiguous
+- Add structure (numbered steps, bullet points) where helpful
+- Include acceptance criteria if not already present
+- Remove vague language, replace with specifics
+- Keep it concise — don't pad with unnecessary context
+
+Original prompt:
+"""
+%s
+"""
+
+Output ONLY the refined prompt text. No explanation, no quotes, no markdown fences wrapping the whole thing.`, currentPrompt)
+	return func() tea.Msg {
+		out, err := l.Complete(context.Background(), prompt)
+		return claudeRefinePromptMsg{
 			todoID: todoID,
 			output: out,
 			err:    err,

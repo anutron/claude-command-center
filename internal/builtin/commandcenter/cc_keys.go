@@ -1421,10 +1421,7 @@ func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.NoopAction()
 	case "c":
-		// Placeholder for inline LLM prompt refinement
-		p.flashMessage = "Prompt refinement not yet implemented"
-		p.flashMessageAt = time.Now()
-		return plugin.NoopAction()
+		return p.taskRunnerRefinePrompt()
 	case "r":
 		// Placeholder for review loop
 		p.flashMessage = "Review loop not yet implemented"
@@ -1492,6 +1489,24 @@ func (p *Plugin) handleTaskRunnerPathSelect(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.NoopAction()
 	}
+}
+
+// taskRunnerRefinePrompt triggers AI refinement of the current prompt.
+func (p *Plugin) taskRunnerRefinePrompt() plugin.Action {
+	if p.taskRunnerRefining {
+		return plugin.NoopAction()
+	}
+	todoPtr := p.detailTodo()
+	if todoPtr == nil {
+		return plugin.NoopAction()
+	}
+	prompt := todoPtr.ProposedPrompt
+	if prompt == "" {
+		prompt = formatTodoContext(*todoPtr)
+	}
+	p.taskRunnerRefining = true
+	cmd := claudeRefinePromptCmd(p.llm, todoPtr.ID, prompt)
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
 // taskRunnerFilteredPaths returns the path list filtered by the task runner's filter string.
