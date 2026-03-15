@@ -33,6 +33,7 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 - `showHelp bool` — help overlay toggle
 - `showBacklog bool` — show/hide completed todos
 - `detailView bool` — viewing a single todo's detail with edit input
+- `detailNotice string` — transient notice banner in detail view (auto-clears after 1s)
 - `addingTodoRich bool` — rich textarea for AI-powered todo creation
 - `addingThread bool` — text input for adding a new thread
 - `bookingMode bool` — calendar event booking flow
@@ -50,8 +51,8 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 | `down`/`j` | normal | Move cursor down |
 | `shift+up` | normal | Swap todo with the one above |
 | `shift+down` | normal | Swap todo with the one below |
-| `left`/`h` | expanded | Move cursor left (column navigation) |
-| `right`/`l` | expanded | Move cursor right (column navigation) |
+| `left`/`h` | expanded | Move cursor left; paginates to previous page at left edge |
+| `right`/`l` | expanded | Move cursor right; paginates to next page at right edge |
 | `x` | normal | Complete selected todo (pushes to undo stack) |
 | `X` | normal | Dismiss selected todo (pushes to undo stack) |
 | `u` | normal | Undo last complete/dismiss |
@@ -69,10 +70,18 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 
 ### Detail View
 
+Title bar shows "TODO #N" using the todo's `display_id`.
+
 | Key | Context | Description |
 |-----|---------|-------------|
 | `enter` | detail | Submit edit instruction to Claude LLM |
+| `j` | detail | Navigate to next todo |
+| `k` | detail | Navigate to previous todo |
+| `x` | detail | Complete todo (shows notice banner, auto-advances after 1s) |
+| `X` | detail | Dismiss todo (shows notice banner, auto-advances after 1s) |
 | `esc` | detail | Return to list |
+
+While a notice banner is showing (1s after complete/dismiss), all keys except `esc` are blocked. After the notice clears, the view auto-advances to the next todo.
 
 ### Rich Todo Creation
 
@@ -109,7 +118,11 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 
 ## Migrations
 
-None — uses existing `cc_todos`, `cc_threads`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta` tables created by `db.migrateSchema`.
+None — uses existing `cc_todos`, `cc_threads`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_source_sync` tables created by `db.migrateSchema`.
+
+### Display IDs
+
+Todos have a `display_id` column (auto-incrementing integer) for stable, human-readable references. Used in the detail view title ("TODO #N") and anywhere a short identifier is needed.
 
 ## Behavior
 
@@ -120,7 +133,7 @@ None — uses existing `cc_todos`, `cc_threads`, `cc_calendar_cache`, `cc_sugges
 3. Focus suggestion banner at top when available
 4. Warning bar when data is stale or services are unreachable
 5. Help overlay toggled with `?`
-6. Expanded multi-column view when scrolling past visible todos
+6. Expanded multi-column view when scrolling past visible todos. Rows per column use `(height - 7) / 2` to maximize vertical space (no panel borders/calendar/warnings chrome in expanded view). Left/right arrows paginate when at column edges.
 
 ### Todo Lifecycle
 
@@ -160,6 +173,9 @@ Instead of polling on a timer, the command center uses lifecycle messages to rel
 - Manual refresh via `r` key
 - Spawns `ccc-refresh` binary, then reloads from DB
 - Refresh binary located next to running executable, then falls back to PATH
+- **Incremental sync**: Granola and Slack sources check `cc_source_sync` for their last successful sync time and skip already-processed meetings/messages, reducing LLM calls
+- **Deterministic source_ref (Granola)**: Source refs use `{meeting_id}-{sha256(title)[:8]}` instead of LLM-generated values, making deduplication reliable
+- **Merge preserves completed todos**: Refresh merge logic preserves completed todos as-is rather than overwriting them with fresh data
 
 ### Cross-Plugin Navigation
 
