@@ -1352,7 +1352,7 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 }
 
 // renderTaskRunner renders the task runner launch configuration screen.
-func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float64, autoStart bool, selectedRow int, promptVP viewport.Model, width, height int, projectDir string) string {
+func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float64, autoStart bool, selectedRow int, promptVP viewport.Model, width, height int, projectDir string, pickingPath bool, filteredPaths []string, pathCursor int, pathFilter string) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -1392,7 +1392,70 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 			projectValue = lipgloss.NewStyle().Foreground(s.ColorWhite).Render(projectValue)
 		}
 	}
-	projectLine := fmt.Sprintf("  %-14s %s", projectLabel, projectValue+" "+s.DescMuted.Render("(<-> cycle)"))
+	projectHint := s.DescMuted.Render("(enter to pick)")
+	if pickingPath {
+		// Show filter input instead of hint
+		filterDisplay := pathFilter
+		if filterDisplay == "" {
+			filterDisplay = s.DescMuted.Render("type to filter...")
+		} else {
+			filterDisplay = lipgloss.NewStyle().Foreground(s.ColorCyan).Render(filterDisplay)
+		}
+		projectHint = filterDisplay
+	}
+	projectLine := fmt.Sprintf("  %-14s %s", projectLabel, projectValue+" "+projectHint)
+
+	// Path picker section (shown below config rows when picking)
+	var pathPickerSection string
+	if pickingPath && len(filteredPaths) > 0 {
+		maxVisible := 8
+		startIdx := 0
+		if pathCursor >= maxVisible {
+			startIdx = pathCursor - maxVisible + 1
+		}
+		endIdx := startIdx + maxVisible
+		if endIdx > len(filteredPaths) {
+			endIdx = len(filteredPaths)
+		}
+
+		var pathLines []string
+		for i := startIdx; i < endIdx; i++ {
+			path := filteredPaths[i]
+			displayPath := path
+			if len(displayPath) > innerWidth-8 {
+				displayPath = "..." + displayPath[len(displayPath)-(innerWidth-11):]
+			}
+			if i == pathCursor {
+				pathLines = append(pathLines, lipgloss.NewStyle().
+					Background(s.ColorCyan).
+					Foreground(lipgloss.Color("#000000")).
+					Bold(true).
+					Padding(0, 1).
+					Render(displayPath))
+			} else {
+				pathLines = append(pathLines, "  "+s.DescMuted.Render(displayPath))
+			}
+		}
+
+		if startIdx > 0 {
+			pathLines = append([]string{s.CalendarTime.Render(fmt.Sprintf("  ▲ %d more", startIdx))}, pathLines...)
+		}
+		if endIdx < len(filteredPaths) {
+			pathLines = append(pathLines, s.CalendarTime.Render(fmt.Sprintf("  ▼ %d more", len(filteredPaths)-endIdx)))
+		}
+
+		pickerHint := s.Hint.Render("  j/k navigate · type to filter · enter select · esc cancel")
+		pathLines = append(pathLines, pickerHint)
+
+		pathPickerSection = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(s.ColorCyan).
+			Width(innerWidth - 4).
+			Padding(0, 1).
+			Render(strings.Join(pathLines, "\n"))
+	} else if pickingPath && len(filteredPaths) == 0 {
+		pathPickerSection = "  " + s.DescMuted.Render("No paths match filter")
+	}
 
 	// Prompt section
 	divider := s.DescMuted.Render("  " + strings.Repeat("\u2500", innerWidth-4))
@@ -1407,14 +1470,18 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 		modeLine,
 		budgetLine,
 		projectLine,
-		"",
+	}
+	if pathPickerSection != "" {
+		parts = append(parts, pathPickerSection)
+	}
+	parts = append(parts, "",
 		divider,
 		promptHeader,
 		"",
 		promptVP.View(),
 		"",
 		hints,
-	}
+	)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return s.PanelBorder.Width(innerWidth).Render(content)

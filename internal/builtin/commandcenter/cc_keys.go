@@ -1328,6 +1328,11 @@ var taskRunnerModes = []string{"normal", "worktree", "sandbox"}
 var taskRunnerPerms = []string{"default", "plan", "auto"}
 
 func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
+	// Path picker sub-mode
+	if p.taskRunnerPickingPath {
+		return p.handleTaskRunnerPathSelect(msg)
+	}
+
 	switch msg.String() {
 	case "esc":
 		p.taskRunnerView = false
@@ -1347,6 +1352,16 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 
 	case "shift+tab", "up":
 		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow - 1 + 3) % 3
+		return plugin.NoopAction()
+
+	case "enter":
+		// Open path picker when on Project row
+		if p.taskRunnerSelectedRow == 2 && len(p.detailPaths) > 0 {
+			p.taskRunnerPickingPath = true
+			p.taskRunnerPathFilter = ""
+			// Pre-select current path cursor position
+			return plugin.NoopAction()
+		}
 		return plugin.NoopAction()
 
 	case "left", "h":
@@ -1387,6 +1402,71 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 	}
 
 	return plugin.NoopAction()
+}
+
+// handleTaskRunnerPathSelect handles key input in the task runner's scrollable path picker.
+func (p *Plugin) handleTaskRunnerPathSelect(msg tea.KeyMsg) plugin.Action {
+	filtered := p.taskRunnerFilteredPaths()
+
+	switch msg.String() {
+	case "up", "k":
+		if p.taskRunnerPathCursor > 0 {
+			p.taskRunnerPathCursor--
+		}
+		return plugin.NoopAction()
+	case "down", "j":
+		if p.taskRunnerPathCursor < len(filtered)-1 {
+			p.taskRunnerPathCursor++
+		}
+		return plugin.NoopAction()
+	case "enter":
+		if len(filtered) > 0 && p.taskRunnerPathCursor < len(filtered) {
+			// Find the index of the selected path in the full detailPaths list
+			selectedPath := filtered[p.taskRunnerPathCursor]
+			for i, path := range p.detailPaths {
+				if path == selectedPath {
+					p.taskRunnerPathCursor = i
+					break
+				}
+			}
+		}
+		p.taskRunnerPickingPath = false
+		p.taskRunnerPathFilter = ""
+		return plugin.NoopAction()
+	case "esc":
+		p.taskRunnerPickingPath = false
+		p.taskRunnerPathFilter = ""
+		return plugin.NoopAction()
+	case "backspace":
+		if len(p.taskRunnerPathFilter) > 0 {
+			p.taskRunnerPathFilter = p.taskRunnerPathFilter[:len(p.taskRunnerPathFilter)-1]
+			p.taskRunnerPathCursor = 0
+		}
+		return plugin.NoopAction()
+	default:
+		// Typing characters filters the list
+		key := msg.String()
+		if len(key) == 1 {
+			p.taskRunnerPathFilter += key
+			p.taskRunnerPathCursor = 0
+		}
+		return plugin.NoopAction()
+	}
+}
+
+// taskRunnerFilteredPaths returns the path list filtered by the task runner's filter string.
+func (p *Plugin) taskRunnerFilteredPaths() []string {
+	if p.taskRunnerPathFilter == "" {
+		return p.detailPaths
+	}
+	lower := strings.ToLower(p.taskRunnerPathFilter)
+	var out []string
+	for _, path := range p.detailPaths {
+		if strings.Contains(strings.ToLower(path), lower) {
+			out = append(out, path)
+		}
+	}
+	return out
 }
 
 // taskRunnerLaunch launches the agent, optionally forcing immediate start.
@@ -1443,10 +1523,7 @@ func (p *Plugin) taskRunnerCycleOption(dir int) {
 		if p.taskRunnerBudget < 1.00 {
 			p.taskRunnerBudget = 1.00
 		}
-	case 2: // Project
-		if len(p.detailPaths) > 0 {
-			p.taskRunnerPathCursor = (p.taskRunnerPathCursor + dir + len(p.detailPaths)) % len(p.detailPaths)
-		}
+	case 2: // Project — uses scrollable picker (enter key), no cycling
 	}
 }
 
