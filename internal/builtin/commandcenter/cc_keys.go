@@ -623,6 +623,12 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 
+	// Block edit/mutation operations when an agent is actively updating this todo.
+	agentActive := false
+	if todo := p.detailTodo(); todo != nil && todo.SessionStatus == "active" {
+		agentActive = true
+	}
+
 	switch msg.String() {
 	case "tab":
 		p.detailSelectedField = (p.detailSelectedField + 1) % detailFieldCount
@@ -631,10 +637,25 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		p.detailSelectedField = (p.detailSelectedField - 1 + detailFieldCount) % detailFieldCount
 		return plugin.ConsumedAction()
 	case "enter":
+		if agentActive {
+			p.flashMessage = "Todo is being updated by agent"
+			p.flashMessageAt = time.Now()
+			return plugin.ConsumedAction()
+		}
 		return p.enterDetailFieldEdit()
 	case "x":
+		if agentActive {
+			p.flashMessage = "Todo is being updated by agent"
+			p.flashMessageAt = time.Now()
+			return plugin.ConsumedAction()
+		}
 		return p.detailCompleteTodo()
 	case "X":
+		if agentActive {
+			p.flashMessage = "Todo is being updated by agent"
+			p.flashMessageAt = time.Now()
+			return plugin.ConsumedAction()
+		}
 		return p.detailDismissTodo()
 	case "j":
 		// Next todo
@@ -677,6 +698,11 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.NoopAction()
 	case "c":
+		if agentActive {
+			p.flashMessage = "Todo is being updated by agent"
+			p.flashMessageAt = time.Now()
+			return plugin.ConsumedAction()
+		}
 		p.detailMode = "commandInput"
 		p.commandTextArea.Reset()
 		inputWidth := p.textareaWidth()
