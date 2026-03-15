@@ -203,6 +203,33 @@ func TestMerge_PendingActionsPreserved(t *testing.T) {
 	}
 }
 
+func TestMerge_CompletedTodoNotOverwritten(t *testing.T) {
+	existing := &db.CommandCenter{
+		Todos: []db.Todo{
+			{ID: "abc", Title: "Create Google Slides", Status: "completed", SourceRef: "meeting-123-abc"},
+		},
+	}
+	fresh := &FreshData{
+		Todos: []db.Todo{
+			{Title: "Create Google Slides for data team", Source: "granola", SourceRef: "meeting-123-abc"},
+		},
+	}
+
+	result := Merge(existing, fresh)
+	for _, todo := range result.Todos {
+		if todo.SourceRef == "meeting-123-abc" {
+			if todo.Status != "completed" {
+				t.Errorf("completed todo was overwritten, status = %q", todo.Status)
+			}
+			if todo.Title != "Create Google Slides" {
+				t.Errorf("completed todo title was overwritten to %q", todo.Title)
+			}
+			return
+		}
+	}
+	t.Error("completed todo was dropped entirely")
+}
+
 func TestMerge_NilExisting(t *testing.T) {
 	fresh := &FreshData{
 		Calendar: db.CalendarData{

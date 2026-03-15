@@ -58,6 +58,10 @@ func mergeTodos(existing, fresh []db.Todo) []db.Todo {
 			matched[idx] = true
 
 			if et.Status == "dismissed" {
+				continue // tombstone — never recreate
+			}
+			if et.Status == "completed" {
+				merged = append(merged, et) // preserve as-is, don't overwrite
 				continue
 			}
 
