@@ -98,6 +98,7 @@ type Plugin struct {
 	taskRunnerBudget      float64
 	taskRunnerPrompt      viewport.Model
 	taskRunnerRefining      bool   // true when AI refine is active
+	taskRunnerReviewing     bool   // true when Plannotator is open in browser
 	taskRunnerInputting     bool   // true when user is typing instructions for c key
 	taskRunnerInstructInput textinput.Model
 	taskRunnerReviewClean   string // clean prompt text before review edits
@@ -641,7 +642,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		if p.taskRunnerPathCursor >= 0 && p.taskRunnerPathCursor < len(p.detailPaths) {
 			taskRunnerProjectDir = p.detailPaths[p.taskRunnerPathCursor]
 		}
-		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerBudget, p.taskRunnerStep, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter, p.taskRunnerRefining, p.taskRunnerInputting, p.taskRunnerInstructInput)
+		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerBudget, p.taskRunnerStep, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter, p.taskRunnerRefining, p.taskRunnerReviewing, p.taskRunnerInputting, p.taskRunnerInstructInput)
 		}
 	}
 

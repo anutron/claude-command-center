@@ -1297,6 +1297,7 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 		p.taskRunnerBudget = 5.00
 	}
 	p.taskRunnerRefining = false
+	p.taskRunnerReviewing = false
 	p.taskRunnerInputting = false
 	p.taskRunnerReviewClean = ""
 	// Initialize path cursor to match the todo's project dir
@@ -1396,6 +1397,18 @@ func (p *Plugin) handleWizardStep2(msg tea.KeyMsg) plugin.Action {
 
 // handleWizardStep3 handles Step 3: Prompt review & launch.
 func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
+	// Blocking modal while Plannotator is open in browser
+	if p.taskRunnerReviewing {
+		if msg.String() == "esc" {
+			p.taskRunnerReviewing = false
+			p.flashMessage = "Review cancelled"
+			p.flashMessageAt = time.Now()
+			// Note: the background plannotator process will still be running
+			// but its result will be ignored since reviewing is false.
+		}
+		return plugin.NoopAction()
+	}
+
 	// If user is typing instructions for AI refine (c key)
 	if p.taskRunnerInputting {
 		switch msg.Type {
@@ -1546,7 +1559,7 @@ func (p *Plugin) taskRunnerRefineWithInstruction(instruction string) plugin.Acti
 }
 
 func (p *Plugin) taskRunnerReviewLoop() plugin.Action {
-	if p.taskRunnerRefining {
+	if p.taskRunnerRefining || p.taskRunnerReviewing {
 		return plugin.NoopAction()
 	}
 	todoPtr := p.detailTodo()
@@ -1558,6 +1571,7 @@ func (p *Plugin) taskRunnerReviewLoop() plugin.Action {
 		prompt = formatTodoContext(*todoPtr)
 	}
 	p.taskRunnerReviewClean = prompt
+	p.taskRunnerReviewing = true
 	cmd := launchPlannotatorReview(todoPtr.ID, prompt, 1)
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }

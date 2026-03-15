@@ -436,15 +436,16 @@ func (p *Plugin) handlePlannotatorFinished(msg plannotatorFinishedMsg) (bool, pl
 }
 
 func (p *Plugin) handlePlannotatorReviewFinished(msg plannotatorReviewMsg) (bool, plugin.Action) {
+	// If user cancelled via esc, ignore the result.
+	if !p.taskRunnerReviewing {
+		return true, plugin.NoopAction()
+	}
+	p.taskRunnerReviewing = false
+
 	if msg.err != nil {
 		p.flashMessage = "Plannotator exited with error: " + msg.err.Error()
 		p.flashMessageAt = time.Now()
 		return true, plugin.NoopAction()
-	}
-
-	// Clean up temp files.
-	if msg.tempFile != "" {
-		os.Remove(msg.tempFile)
 	}
 
 	// User approved the prompt.
@@ -502,6 +503,7 @@ func (p *Plugin) handleClaudeReviewAddressed(msg claudeReviewAddressedMsg) (bool
 
 	// Store as new clean baseline and reopen Plannotator for next round.
 	p.taskRunnerReviewClean = refined
+	p.taskRunnerReviewing = true
 	reviewCmd := launchPlannotatorReview(msg.todoID, refined, msg.round+1)
 
 	if dbCmd != nil {

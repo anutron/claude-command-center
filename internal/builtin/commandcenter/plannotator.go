@@ -69,68 +69,44 @@ type plannotatorReviewMsg struct {
 	approved bool   // true if user clicked approve
 }
 
-// plannotatorReviewProcess implements tea.ExecCommand to run plannotator in
-// plan review mode. Pipes the prompt as a hook event on stdin, gets approve/deny
-// with feedback on stdout. Opens the browser with approve/deny buttons.
-type plannotatorReviewProcess struct {
-	prompt   string
-	stdin    io.Reader
-	stderr   io.Writer
-	approved bool
-	feedback string
-}
-
-func (p *plannotatorReviewProcess) SetStdin(r io.Reader)  { p.stdin = r }
-func (p *plannotatorReviewProcess) SetStdout(_ io.Writer) {}
-func (p *plannotatorReviewProcess) SetStderr(w io.Writer) { p.stderr = w }
-
-func (p *plannotatorReviewProcess) Run() error {
-	// Plannotator plan review mode reads a hook event from stdin.
-	hookEvent := fmt.Sprintf(`{"tool_input":{"plan":%q},"permission_mode":"default"}`, p.prompt)
-
-	cmd := exec.Command("plannotator")
-	cmd.Stdin = strings.NewReader(hookEvent)
-	cmd.Stderr = p.stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return err
-	}
-
-	// Parse the JSON response to extract approved/feedback.
-	// Response format: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny","message":"..."}}}
-	outStr := strings.TrimSpace(string(out))
-	p.approved = strings.Contains(outStr, `"behavior":"allow"`)
-	if !p.approved {
-		// Extract the feedback message from the deny decision.
-		// The message field contains the full feedback after the preamble.
-		if idx := strings.Index(outStr, `"message":"`); idx >= 0 {
-			rest := outStr[idx+len(`"message":"`):]
-			if end := strings.Index(rest, `"}`); end >= 0 {
-				p.feedback = rest[:end]
-			} else {
-				p.feedback = rest
-			}
-			// Unescape JSON string
-			p.feedback = strings.ReplaceAll(p.feedback, `\n`, "\n")
-			p.feedback = strings.ReplaceAll(p.feedback, `\"`, `"`)
-		}
-	}
-	return nil
-}
-
-// launchPlannotatorReview opens Plannotator in plan review mode with the prompt.
-// The user gets approve/deny buttons in the browser. Returns plannotatorReviewMsg.
+// launchPlannotatorReview runs plannotator in plan review mode as a background
+// process (TUI stays visible with a blocking modal). Returns a tea.Cmd that
+// sends plannotatorReviewMsg when the process exits.
 func launchPlannotatorReview(todoID string, prompt string, round int) tea.Cmd {
-	proc := &plannotatorReviewProcess{prompt: prompt}
-	return tea.Exec(proc, func(err error) tea.Msg {
+	return func() tea.Msg {
+		hookEvent := fmt.Sprintf(`{"tool_input":{"plan":%q},"permission_mode":"default"}`, prompt)
+
+		cmd := exec.Command("plannotator")
+		cmd.Stdin = strings.NewReader(hookEvent)
+		cmd.Stderr = os.Stderr
+		out, err := cmd.Output()
+		if err != nil {
+			return plannotatorReviewMsg{todoID: todoID, err: err, round: round}
+		}
+
+		outStr := strings.TrimSpace(string(out))
+		approved := strings.Contains(outStr, `"behavior":"allow"`)
+		var feedback string
+		if !approved {
+			if idx := strings.Index(outStr, `"message":"`); idx >= 0 {
+				rest := outStr[idx+len(`"message":"`):]
+				if end := strings.Index(rest, `"}`); end >= 0 {
+					feedback = rest[:end]
+				} else {
+					feedback = rest
+				}
+				feedback = strings.ReplaceAll(feedback, `\n`, "\n")
+				feedback = strings.ReplaceAll(feedback, `\"`, `"`)
+			}
+		}
+
 		return plannotatorReviewMsg{
 			todoID:   todoID,
-			err:      err,
 			round:    round,
-			feedback: proc.feedback,
-			approved: proc.approved,
+			feedback: feedback,
+			approved: approved,
 		}
-	})
+	}
 }
 
 // launchPlannotator writes the prompt to a temp file and returns a tea.Cmd

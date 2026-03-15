@@ -1357,7 +1357,7 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode string, budget float64,
 	step int, promptVP viewport.Model, width, height int,
 	projectDir string, launchCursor int,
 	pickingPath bool, filteredPaths []string, pathCursor int, pathFilter string,
-	refining bool, inputting bool, instructInput textinput.Model) string {
+	refining bool, reviewing bool, inputting bool, instructInput textinput.Model) string {
 
 	innerWidth := width - 4
 	if innerWidth < 40 {
@@ -1378,7 +1378,7 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode string, budget float64,
 	case 2:
 		return renderTaskRunnerStep2(s, header, projectDir, mode, innerWidth)
 	case 3:
-		return renderTaskRunnerStep3(s, header, projectDir, mode, promptVP, launchCursor, refining, inputting, instructInput, innerWidth)
+		return renderTaskRunnerStep3(s, header, projectDir, mode, promptVP, launchCursor, refining, reviewing, inputting, instructInput, innerWidth)
 	default:
 		return s.PanelBorder.Width(innerWidth).Render(header + "\n\n" + s.DescMuted.Render("  Unknown step"))
 	}
@@ -1464,7 +1464,7 @@ func renderTaskRunnerStep2(s *ccStyles, header, projectDir, mode string, innerWi
 }
 
 // renderTaskRunnerStep3 renders Step 3/3: Prompt review and launch.
-func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptVP viewport.Model, launchCursor int, refining bool, inputting bool, instructInput textinput.Model, innerWidth int) string {
+func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptVP viewport.Model, launchCursor int, refining bool, reviewing bool, inputting bool, instructInput textinput.Model, innerWidth int) string {
 	stepLabel := lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Step 3/3: Prompt")
 
 	// Project + mode reminder
@@ -1493,6 +1493,15 @@ func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptV
 		inputHint := s.Hint.Render("  enter send · esc cancel")
 		parts = append(parts, inputHint)
 
+		content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+		return s.PanelBorder.Width(innerWidth).Render(content)
+	}
+
+	// Reviewing modal — Plannotator is open in browser
+	if reviewing {
+		reviewLine := "  " + lipgloss.NewStyle().Foreground(s.ColorCyan).Render("\u25cf") + " Reviewing prompt in browser..."
+		reviewHint := s.Hint.Render("  esc cancel")
+		parts = append(parts, "", reviewLine, reviewHint)
 		content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 		return s.PanelBorder.Width(innerWidth).Render(content)
 	}
