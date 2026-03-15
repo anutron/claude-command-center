@@ -1369,7 +1369,7 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 	// Set up viewport for prompt. Use minimal initial dimensions;
 	// viewCommandTab will resize to the correct size on the first render.
 	vp := viewport.New(40, 5)
-	vp.SetContent(promptText)
+	vp.SetContent(wrapText(promptText, 40))
 	p.taskRunnerPrompt = vp
 }
 

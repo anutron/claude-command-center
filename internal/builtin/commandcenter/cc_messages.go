@@ -291,7 +291,7 @@ func (p *Plugin) handleClaudeRefinePromptFinished(msg claudeRefinePromptMsg) (bo
 	}
 	// Update viewport
 	p.taskRunnerPromptText = refined
-	p.taskRunnerPrompt.SetContent(refined)
+	p.taskRunnerPrompt.SetContent(wrapText(refined, p.taskRunnerPrompt.Width))
 	p.taskRunnerPrompt.GotoTop()
 	// Update in-memory todo
 	if p.cc != nil {
@@ -466,7 +466,7 @@ func (p *Plugin) handlePlannotatorFinished(msg plannotatorFinishedMsg) (bool, pl
 
 				// Refresh the task runner prompt viewport.
 				p.taskRunnerPromptText = newPrompt
-				p.taskRunnerPrompt.SetContent(newPrompt)
+				p.taskRunnerPrompt.SetContent(wrapText(newPrompt, p.taskRunnerPrompt.Width))
 				p.taskRunnerPrompt.GotoTop()
 
 				p.flashMessage = "Prompt updated"
@@ -533,7 +533,7 @@ func (p *Plugin) handleClaudeReviewAddressed(msg claudeReviewAddressedMsg) (bool
 
 	// Update viewport and in-memory ProposedPrompt, persist to DB.
 	p.taskRunnerPromptText = refined
-	p.taskRunnerPrompt.SetContent(refined)
+	p.taskRunnerPrompt.SetContent(wrapText(refined, p.taskRunnerPrompt.Width))
 	p.taskRunnerPrompt.GotoTop()
 
 	var dbCmd tea.Cmd

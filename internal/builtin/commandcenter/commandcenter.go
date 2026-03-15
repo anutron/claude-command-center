@@ -704,7 +704,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 			yOff := p.taskRunnerPrompt.YOffset
 			p.taskRunnerPrompt.Width = vpWidth
 			p.taskRunnerPrompt.Height = vpHeight
-			p.taskRunnerPrompt.SetContent(p.taskRunnerPromptText)
+			p.taskRunnerPrompt.SetContent(wrapText(p.taskRunnerPromptText, vpWidth))
 			p.taskRunnerPrompt.YOffset = yOff
 		}
 		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerBudget, p.taskRunnerStep, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter, p.taskRunnerRefining, p.taskRunnerReviewing, p.taskRunnerInputting, p.taskRunnerInstructInput)
