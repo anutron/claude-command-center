@@ -1103,15 +1103,9 @@ func renderTriageStatusBar(s *ccStyles, counts map[string]int, width int) string
 		{"active", "Active", "A"},
 	}
 
-	// Check if any non-zero counts exist (besides accepted)
-	hasAny := false
-	for _, it := range items {
-		if counts[it.key] > 0 {
-			hasAny = true
-			break
-		}
-	}
-	if !hasAny {
+	// Show the bar whenever there are active todos (any triage state).
+	// counts["all"] includes every active todo regardless of triage status.
+	if counts["all"] == 0 {
 		return ""
 	}
 
