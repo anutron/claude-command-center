@@ -307,14 +307,36 @@ Output ONLY the recommendation text, no quotes, no JSON, no explanation.`, sb.St
 }
 
 func buildEditPrompt(todo db.Todo, instruction string) string {
+	// Build a map from the todo so proposed_prompt always appears (even when empty).
+	// The struct uses omitempty which hides the field, but the LLM needs to see it.
 	todoJSON, _ := json.MarshalIndent(todo, "", "  ")
+	var todoMap map[string]interface{}
+	json.Unmarshal(todoJSON, &todoMap)
+	if _, ok := todoMap["proposed_prompt"]; !ok {
+		todoMap["proposed_prompt"] = ""
+	}
+	todoJSON, _ = json.MarshalIndent(todoMap, "", "  ")
 	return fmt.Sprintf(`You are updating a todo item. Here is the current todo:
 
 %s
 
 The user says: %q
 
-Update the todo based on the instruction. Return the COMPLETE updated todo as a JSON object.
+## Field Guide
+- "title": Short summary of the task (~80 chars max)
+- "context": Brief categorization/label (~30 chars)
+- "detail": Background information and notes
+- "proposed_prompt": The full prompt that will be sent to an AI coding agent. When the user says "update the prompt" or "change the prompt", THIS is the field they mean. It should contain detailed, actionable instructions for the agent. This is NOT the title or context.
+- "due": Due date (YYYY-MM-DD)
+- "who_waiting": Who is waiting on this
+- "effort": Estimated effort (e.g. "30m", "2h", "1d")
+- "project_dir": Path to the project directory
+
+## Rules
+- When the user mentions "prompt", they mean the "proposed_prompt" field — update it with the full agent instructions
+- Always return ALL fields, including "proposed_prompt" even if empty
+- Return the COMPLETE updated todo as a JSON object
+
 Output ONLY the JSON object, no markdown code fences, no explanation, no other text. Just raw JSON.`, string(todoJSON), instruction)
 }
 

@@ -200,10 +200,18 @@ func (p *Plugin) handleClaudeEditFinished(msg claudeEditFinishedMsg) (bool, plug
 			todoID := msg.todoID
 			for i := range p.cc.Todos {
 				if p.cc.Todos[i].ID == todoID {
-					updated.ID = p.cc.Todos[i].ID
+					// Preserve system-managed fields that the LLM shouldn't overwrite.
+					existing := p.cc.Todos[i]
+					updated.ID = existing.ID
 					if updated.CreatedAt.IsZero() {
-						updated.CreatedAt = p.cc.Todos[i].CreatedAt
+						updated.CreatedAt = existing.CreatedAt
 					}
+					updated.CompletedAt = existing.CompletedAt
+					updated.SessionID = existing.SessionID
+					updated.SessionStatus = existing.SessionStatus
+					updated.SessionSummary = existing.SessionSummary
+					updated.TriageStatus = existing.TriageStatus
+					updated.DisplayID = existing.DisplayID
 					p.cc.Todos[i] = updated
 					break
 				}
