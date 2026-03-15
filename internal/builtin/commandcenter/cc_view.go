@@ -686,6 +686,9 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	if todo.WhoWaiting != "" {
 		rightFields = append(rightFields, roField{"Who waiting", todo.WhoWaiting})
 	}
+	if todo.LaunchMode != "" {
+		rightFields = append(rightFields, roField{"Mode", todo.LaunchMode})
+	}
 	rightFields = append(rightFields, roField{"Created", todo.CreatedAt.Format("Jan 2, 2006")})
 
 	// Build left column lines

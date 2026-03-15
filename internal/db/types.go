@@ -104,6 +104,7 @@ type Todo struct {
 	Detail      string     `json:"detail"`
 	WhoWaiting  string     `json:"who_waiting"`
 	ProjectDir  string     `json:"project_dir"`
+	LaunchMode  string     `json:"launch_mode,omitempty"`
 	SessionID      string     `json:"session_id,omitempty"`
 	Due            string     `json:"due"`
 	Effort         string     `json:"effort"`

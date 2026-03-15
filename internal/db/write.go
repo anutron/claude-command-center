@@ -158,6 +158,17 @@ func DBUpdateTodoProjectDir(db *sql.DB, id string, projectDir string) error {
 	return nil
 }
 
+// DBUpdateTodoLaunchMode updates only the launch_mode column for a todo.
+func DBUpdateTodoLaunchMode(db *sql.DB, id string, launchMode string) error {
+	now := FormatTime(time.Now())
+	_, err := db.Exec(`UPDATE cc_todos SET launch_mode = NULLIF(?, ''), updated_at = ? WHERE id = ?`,
+		launchMode, now, id)
+	if err != nil {
+		return fmt.Errorf("update todo launch_mode %s: %w", id, err)
+	}
+	return nil
+}
+
 // DBUpdateTodoSessionID updates only the session_id column for a todo.
 func DBUpdateTodoSessionID(db *sql.DB, id string, sessionID string) error {
 	now := FormatTime(time.Now())

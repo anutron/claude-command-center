@@ -1338,10 +1338,13 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 		}
 	}
 
-	// Restore saved wizard selections for this todo (project, mode)
+	// Restore saved wizard selections for this todo (project, mode).
+	// First check in-memory cache, then fall back to persisted launch_mode.
 	if saved, ok := p.wizardSelections[todo.ID]; ok {
 		p.taskRunnerPathCursor = saved.pathCursor
 		p.taskRunnerMode = saved.mode
+	} else if todo.LaunchMode != "" {
+		p.taskRunnerMode = todo.LaunchMode
 	}
 
 	// Auto-open path picker if todo has no project dir and no saved selection
@@ -1660,9 +1663,10 @@ func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 			projectDir = home
 		}
 
-		// Mark todo as active and persist project dir so resume uses the right directory
+		// Mark todo as active and persist project dir + launch mode so resume uses the right settings
 		p.setTodoSessionStatus(todo.ID, "active")
 		p.setTodoProjectDir(todo.ID, projectDir)
+		p.setTodoLaunchMode(todo.ID, p.taskRunnerMode)
 		p.cc.AcceptTodo(todo.ID)
 
 		p.taskRunnerView = false
@@ -1680,6 +1684,7 @@ func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 		var cmds []tea.Cmd
 		cmds = append(cmds, p.persistSessionStatus(todo.ID, "active"))
 		cmds = append(cmds, p.persistProjectDir(todo.ID, projectDir))
+		cmds = append(cmds, p.persistLaunchMode(todo.ID, p.taskRunnerMode))
 		cmds = append(cmds, p.dbWriteCmd(func(database *sql.DB) error {
 			return db.DBAcceptTodo(database, todo.ID)
 		}))
@@ -1711,8 +1716,9 @@ func (p *Plugin) taskRunnerLaunch(immediate bool) plugin.Action {
 			home, _ := os.UserHomeDir()
 			projectDir = home
 		}
-		// Persist project dir so resume uses the right directory
+		// Persist project dir and launch mode so resume uses the right settings
 		p.setTodoProjectDir(todo.ID, projectDir)
+		p.setTodoLaunchMode(todo.ID, p.taskRunnerMode)
 		qs := queuedSession{
 			TodoID:     todo.ID,
 			Prompt:     prompt,
@@ -1722,7 +1728,7 @@ func (p *Plugin) taskRunnerLaunch(immediate bool) plugin.Action {
 			Budget:     p.taskRunnerBudget,
 			AutoStart:  immediate,
 		}
-		cmd := tea.Batch(p.persistProjectDir(todo.ID, projectDir), p.launchOrQueueAgent(qs))
+		cmd := tea.Batch(p.persistProjectDir(todo.ID, projectDir), p.persistLaunchMode(todo.ID, p.taskRunnerMode), p.launchOrQueueAgent(qs))
 		p.taskRunnerView = false
 		p.detailView = false
 		if p.canLaunchAgent() || len(p.sessionQueue) == 0 {
