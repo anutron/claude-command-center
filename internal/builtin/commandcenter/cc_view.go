@@ -871,11 +871,15 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	promptText := todo.ProposedPrompt
 	if promptText != "" {
 		promptHeader := s.SectionHeader.Render("  PROMPT")
-		// Truncate to ~3 lines
+		// Truncate to ~6 lines for preview; full prompt is in the task runner (o key)
 		promptLines := strings.Split(promptText, "\n")
-		if len(promptLines) > 3 {
-			promptLines = promptLines[:3]
-			promptLines = append(promptLines, "...")
+		truncated := false
+		if len(promptLines) > 6 {
+			promptLines = promptLines[:6]
+			truncated = true
+		}
+		if truncated {
+			promptLines = append(promptLines, s.DescMuted.Render("... (press o to see full prompt)"))
 		}
 		var styledLines []string
 		for _, line := range promptLines {
