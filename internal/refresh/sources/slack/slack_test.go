@@ -17,6 +17,9 @@ func TestHasCommitmentLanguage(t *testing.T) {
 		{"I'LL SEND IT", true}, // case insensitive
 		{"action item: review PR", true},
 		{"", false},
+		{"I promise I'll finish that email to zach tomorrow", true},
+		{"I promise to send the report", true},
+		{"I promised to follow up", true},
 	}
 	for _, tt := range tests {
 		got := hasCommitmentLanguage(tt.text)

@@ -48,10 +48,12 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 	log.Printf("slack: %d candidates found", len(candidates))
 
 	// Only send messages newer than our last successful sync to the LLM.
+	// Subtract a 2-minute overlap to avoid losing messages sent during a sync
+	// cycle (lastSuccess is recorded at sync completion, not fetch start).
 	var lastSuccess time.Time
 	if s.DB != nil {
 		if ss, err := db.DBLoadSourceSync(s.DB, "slack"); err == nil && ss.LastSuccess != nil {
-			lastSuccess = *ss.LastSuccess
+			lastSuccess = ss.LastSuccess.Add(-2 * time.Minute)
 		}
 	}
 
@@ -97,7 +99,7 @@ type slackCandidate struct {
 
 var commitmentPhrases = []string{
 	"i'll", "i will", "i need to", "let me", "i'm going to",
-	"action item", "i committed", "i promised", "follow up",
+	"action item", "i committed", "i promise", "follow up",
 	"send you", "set up", "schedule", "i can do", "i'll take",
 	"i'll handle", "i'll get", "i'll send", "i'll look",
 	"i'll check", "i'll follow", "i'll set", "i'll make",
@@ -173,7 +175,7 @@ func slackAPIGet(ctx context.Context, token, endpoint string, params url.Values,
 // fetchChannels retrieves the list of channels the bot has access to.
 func fetchChannels(ctx context.Context, token string) ([]slackChannel, error) {
 	params := url.Values{
-		"types":            {"public_channel,private_channel"},
+		"types":            {"public_channel,private_channel,im,mpim"},
 		"exclude_archived": {"true"},
 		"limit":            {"200"},
 	}
@@ -314,6 +316,7 @@ func fetchSlackCandidatesViaSearch(ctx context.Context, token string) ([]slackCa
 	searchQueries := []string{
 		"i'll",
 		"i will",
+		"i promise",
 		"action item",
 		"follow up",
 		"let me",
