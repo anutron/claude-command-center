@@ -154,6 +154,14 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		}
 		return true, plugin.NoopAction()
 	}
+	if p.detailView && p.detailMode == "commandInput" {
+		var cmd tea.Cmd
+		p.commandTextArea, cmd = p.commandTextArea.Update(msg)
+		if cmd != nil {
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
+		return true, plugin.NoopAction()
+	}
 	if p.detailView {
 		var cmd tea.Cmd
 		p.textInput, cmd = p.textInput.Update(msg)

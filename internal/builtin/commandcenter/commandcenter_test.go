@@ -10,6 +10,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // testDB opens an in-memory SQLite database for testing.
@@ -582,6 +583,101 @@ func TestDetailViewCommandInput(t *testing.T) {
 	}
 	if !strings.Contains(view, "submit to AI") {
 		t.Error("detail view in commandInput mode should show 'submit to AI' hint")
+	}
+}
+
+func TestCommandTextAreaWrapsText(t *testing.T) {
+	p := testPluginWithCC(t)
+	termWidth := 120
+
+	// Enter detail view, then command input
+	_ = p.HandleKey(keyMsg("enter"))
+	_ = p.HandleKey(keyMsg("c"))
+	if p.detailMode != "commandInput" {
+		t.Fatalf("detailMode = %q, want commandInput", p.detailMode)
+	}
+
+	// Type a long string via HandleKey (like a real user typing)
+	longText := strings.Repeat("x", 130) // Longer than textarea width
+	for _, ch := range longText {
+		p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+	}
+
+	// Render the view
+	view := p.View(termWidth, 40, 0)
+	lines := strings.Split(view, "\n")
+
+	// No rendered line should exceed the terminal width
+	maxLineWidth := 0
+	for _, line := range lines {
+		w := lipgloss.Width(line)
+		if w > maxLineWidth {
+			maxLineWidth = w
+		}
+	}
+	if maxLineWidth > termWidth {
+		t.Errorf("text overflows: max line width %d > terminal width %d", maxLineWidth, termWidth)
+	}
+
+	// The long text should wrap across multiple lines
+	xLines := 0
+	for _, line := range lines {
+		if strings.Contains(line, "xxx") {
+			xLines++
+		}
+	}
+	if xLines < 2 {
+		t.Errorf("expected text to wrap across multiple lines, but only found %d lines with 'xxx'", xLines)
+	}
+
+	// All textarea lines should be consistently indented (PaddingLeft applied uniformly)
+	taView := p.commandTextArea.View()
+	taLines := strings.Split(taView, "\n")
+	for _, line := range taLines {
+		w := lipgloss.Width(line)
+		if w > p.textareaWidth() {
+			t.Errorf("textarea line wider than textareaWidth(): %d > %d", w, p.textareaWidth())
+		}
+	}
+}
+
+func TestCommandTextAreaWrapsNarrowTerminal(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.width = 80
+
+	// Enter detail view, then command input
+	_ = p.HandleKey(keyMsg("enter"))
+	_ = p.HandleKey(keyMsg("c"))
+
+	// Type text that exceeds narrow terminal width
+	longText := strings.Repeat("y", 100)
+	for _, ch := range longText {
+		p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+	}
+
+	view := p.View(80, 40, 0)
+	lines := strings.Split(view, "\n")
+
+	maxLineWidth := 0
+	for _, line := range lines {
+		w := lipgloss.Width(line)
+		if w > maxLineWidth {
+			maxLineWidth = w
+		}
+	}
+	if maxLineWidth > 80 {
+		t.Errorf("text overflows narrow terminal: max line width %d > 80", maxLineWidth)
+	}
+
+	// Text should wrap
+	yLines := 0
+	for _, line := range lines {
+		if strings.Contains(line, "yyy") {
+			yLines++
+		}
+	}
+	if yLines < 2 {
+		t.Errorf("expected text to wrap in narrow terminal, but only found %d lines with 'yyy'", yLines)
 	}
 }
 
