@@ -78,9 +78,10 @@ func DBInsertTodo(db *sql.DB, t Todo) error {
 	}
 	_, err := db.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status,
-		sort_order, created_at, completed_at, updated_at)
+		display_id, sort_order, created_at, completed_at, updated_at)
 		VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+		(SELECT COALESCE(MAX(display_id), 0) + 1 FROM cc_todos),
 		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status = 'active'),
 		?, ?, ?)`,
 		t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
@@ -288,33 +289,56 @@ func DBRemovePath(db *sql.DB, path string) error {
 }
 
 // DBSwapPathOrder swaps the sort_order of two paths.
-func DBSwapPathOrder(db *sql.DB, pathA, pathB string) error {
-	_, err := db.Exec(`
-		UPDATE cc_learned_paths SET sort_order = CASE
-			WHEN path = ? THEN (SELECT sort_order FROM cc_learned_paths WHERE path = ?)
-			WHEN path = ? THEN (SELECT sort_order FROM cc_learned_paths WHERE path = ?)
-		END
-		WHERE path IN (?, ?)`,
-		pathA, pathB, pathB, pathA, pathA, pathB)
+func DBSwapPathOrder(database *sql.DB, pathA, pathB string) error {
+	tx, err := database.Begin()
 	if err != nil {
-		return fmt.Errorf("swap path order: %w", err)
+		return fmt.Errorf("swap path order: begin tx: %w", err)
 	}
-	return nil
+	defer tx.Rollback()
+
+	var orderA, orderB int
+	if err := tx.QueryRow(`SELECT sort_order FROM cc_learned_paths WHERE path = ?`, pathA).Scan(&orderA); err != nil {
+		return fmt.Errorf("swap path order: read A: %w", err)
+	}
+	if err := tx.QueryRow(`SELECT sort_order FROM cc_learned_paths WHERE path = ?`, pathB).Scan(&orderB); err != nil {
+		return fmt.Errorf("swap path order: read B: %w", err)
+	}
+
+	if _, err := tx.Exec(`UPDATE cc_learned_paths SET sort_order = ? WHERE path = ?`, orderB, pathA); err != nil {
+		return fmt.Errorf("swap path order: write A: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE cc_learned_paths SET sort_order = ? WHERE path = ?`, orderA, pathB); err != nil {
+		return fmt.Errorf("swap path order: write B: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // DBSwapTodoOrder swaps the sort_order of two todos by ID.
-func DBSwapTodoOrder(db *sql.DB, idA, idB string) error {
-	_, err := db.Exec(`
-		UPDATE cc_todos SET sort_order = CASE
-			WHEN id = ? THEN (SELECT sort_order FROM cc_todos WHERE id = ?)
-			WHEN id = ? THEN (SELECT sort_order FROM cc_todos WHERE id = ?)
-		END, updated_at = ?
-		WHERE id IN (?, ?)`,
-		idA, idB, idB, idA, FormatTime(time.Now()), idA, idB)
+func DBSwapTodoOrder(database *sql.DB, idA, idB string) error {
+	tx, err := database.Begin()
 	if err != nil {
-		return fmt.Errorf("swap todo order: %w", err)
+		return fmt.Errorf("swap todo order: begin tx: %w", err)
 	}
-	return nil
+	defer tx.Rollback()
+
+	var orderA, orderB int
+	if err := tx.QueryRow(`SELECT sort_order FROM cc_todos WHERE id = ?`, idA).Scan(&orderA); err != nil {
+		return fmt.Errorf("swap todo order: read A: %w", err)
+	}
+	if err := tx.QueryRow(`SELECT sort_order FROM cc_todos WHERE id = ?`, idB).Scan(&orderB); err != nil {
+		return fmt.Errorf("swap todo order: read B: %w", err)
+	}
+
+	now := FormatTime(time.Now())
+	if _, err := tx.Exec(`UPDATE cc_todos SET sort_order = ?, updated_at = ? WHERE id = ?`, orderB, now, idA); err != nil {
+		return fmt.Errorf("swap todo order: write A: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE cc_todos SET sort_order = ?, updated_at = ? WHERE id = ?`, orderA, now, idB); err != nil {
+		return fmt.Errorf("swap todo order: write B: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // ---------------------------------------------------------------------------

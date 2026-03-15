@@ -150,6 +150,16 @@ func migrateSchema(db *sql.DB) error {
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN proposed_prompt TEXT`)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN session_status TEXT`)
 
+	// Add display_id column for stable human-readable references (e.g. "TODO #19")
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN display_id INTEGER`)
+	// Backfill any rows missing a display_id
+	_, _ = db.Exec(`UPDATE cc_todos SET display_id = (
+		SELECT rn FROM (
+			SELECT id, ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
+			FROM cc_todos
+		) ranked WHERE ranked.id = cc_todos.id
+	) WHERE display_id IS NULL`)
+
 	// Source sync tracking table (added for BUG-015: data source connectivity validation)
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_source_sync (
 		source TEXT PRIMARY KEY,
@@ -157,10 +167,14 @@ func migrateSchema(db *sql.DB) error {
 		last_error TEXT,
 		updated_at TEXT NOT NULL
 	)`)
-	// Backfill sort_order from added_at order for existing rows
+	// Ensure every learned path has a unique sort_order (fixes duplicates from swap bug).
+	// Uses ROW_NUMBER to assign dense sequential values ordered by existing sort_order then added_at.
 	_, _ = db.Exec(`UPDATE cc_learned_paths SET sort_order = (
-		SELECT COUNT(*) FROM cc_learned_paths p2 WHERE p2.added_at < cc_learned_paths.added_at
-	) WHERE sort_order = 0`)
+		SELECT rn FROM (
+			SELECT path, ROW_NUMBER() OVER (ORDER BY sort_order ASC, added_at ASC) AS rn
+			FROM cc_learned_paths
+		) ranked WHERE ranked.path = cc_learned_paths.path
+	)`)
 
 	return nil
 }

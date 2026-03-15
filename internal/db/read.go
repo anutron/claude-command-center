@@ -55,7 +55,7 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 }
 
 func dbLoadTodos(db *sql.DB) ([]Todo, error) {
-	rows, err := db.Query(`SELECT id, title, status, source, source_ref, context, detail,
+	rows, err := db.Query(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status,
 		created_at, completed_at
 		FROM cc_todos ORDER BY sort_order ASC`)
@@ -71,7 +71,7 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		var completedStr sql.NullString
 		var sourceRef, ctx, detail, who, projDir, due, effort, sessionID, proposedPrompt, sessionStatus sql.NullString
 
-		err := rows.Scan(&t.ID, &t.Title, &t.Status, &t.Source,
+		err := rows.Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &due, &effort, &sessionID,
 			&proposedPrompt, &sessionStatus,
 			&createdStr, &completedStr)

@@ -95,6 +95,7 @@ type CalendarEvent struct {
 
 type Todo struct {
 	ID          string     `json:"id"`
+	DisplayID   int        `json:"display_id"`
 	Title       string     `json:"title"`
 	Status      string     `json:"status"`
 	Source      string     `json:"source"`
