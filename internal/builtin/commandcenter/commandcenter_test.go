@@ -2,6 +2,7 @@ package commandcenter
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -538,3 +539,35 @@ func TestExtractJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestDetailViewCommandInput(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	// Enter detail view
+	_ = p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("enter should open detail view")
+	}
+	if p.detailMode != "viewing" {
+		t.Fatalf("detailMode = %q, want viewing", p.detailMode)
+	}
+
+	// Press c for command input
+	action := p.HandleKey(keyMsg("c"))
+	if p.detailMode != "commandInput" {
+		t.Errorf("after c: detailMode = %q, want commandInput", p.detailMode)
+	}
+	if action.TeaCmd == nil {
+		t.Error("c should return a TeaCmd (blink)")
+	}
+
+	// Verify the view renders the command input section
+	view := p.View(120, 40, 0)
+	if !strings.Contains(view, "Tell me what changed") {
+		t.Error("detail view in commandInput mode should show 'Tell me what changed' label")
+	}
+	if !strings.Contains(view, "submit to AI") {
+		t.Error("detail view in commandInput mode should show 'submit to AI' hint")
+	}
+}
+
