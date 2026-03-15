@@ -40,20 +40,22 @@ Exit code 0 if all pass, 1 if any fail.
 
 ### `ccc install-schedule`
 
-Generates and loads a launchd plist for scheduled background refresh.
+Adds a crontab entry for scheduled background refresh. Uses crontab instead of launchd to avoid macOS "Background Items Added" notifications that re-trigger on every binary rebuild.
 
-- Plist at `~/Library/LaunchAgents/com.ccc.refresh.plist`
-- Interval from `config.refresh_interval` (default 5m)
+- Crontab entry with `# ccc-refresh schedule` marker comment
+- Interval from `config.refresh_interval` (default 5m), converted to cron `*/N * * * *`
+- Sources `~/.config/ccc/.env` before running (for API keys in cron environment)
 - Logs to `~/.config/ccc/data/refresh.log`
-- Runs `launchctl load` to activate
-- `RunAtLoad: true` for immediate first run
+- Cleans up legacy launchd plist (`~/Library/LaunchAgents/com.ccc.refresh.plist`) if present
+- Idempotent: skips if identical entry already exists, replaces if entry differs
 
 ### `ccc uninstall-schedule`
 
-Unloads and removes the launchd plist.
+Removes the ccc-refresh crontab entry.
 
-- Runs `launchctl unload`
-- Deletes the plist file
+- Removes lines containing the `# ccc-refresh schedule` marker
+- Clears crontab entirely if no other entries remain
+- Also cleans up legacy launchd plist if present
 - No-op if no schedule is installed
 
 ### `ccc notify [event]`
@@ -79,8 +81,9 @@ Prints usage information.
 - Doctor: all checks return DoctorCheck with correct OK/fail states
 - Doctor: missing config → `[!!]` with "run 'ccc setup'" message
 - Doctor: stale data (>30m) → `[!!]` with age warning
-- Schedule: plist template generates valid XML with correct binary path and interval
-- Schedule: uninstall with no plist → prints "No schedule installed"
+- Schedule: crontab entry contains binary path, interval, and marker comment
+- Schedule: uninstall with no entry → prints "No schedule installed"
+- Schedule: install cleans up legacy launchd plist if present
 - Config: ParseRefreshInterval with valid durations
 - Config: ParseRefreshInterval with empty/invalid → returns default
 - Config: ParseRefreshInterval with <1m → returns default

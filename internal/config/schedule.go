@@ -1,50 +1,27 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"text/template"
+	"strings"
 )
 
-const plistLabel = "com.ccc.refresh"
+const crontabMarker = "# ccc-refresh schedule"
 
-var plistTemplate = template.Must(template.New("plist").Parse(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{{.Label}}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{{.Binary}}</string>
-    </array>
-    <key>StartInterval</key>
-    <integer>{{.IntervalSeconds}}</integer>
-    <key>StandardErrorPath</key>
-    <string>{{.LogPath}}</string>
-    <key>StandardOutPath</key>
-    <string>{{.LogPath}}</string>
-    <key>RunAtLoad</key>
-    <true/>
-</dict>
-</plist>
-`))
-
-func plistPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "Library", "LaunchAgents", plistLabel+".plist")
-}
-
-// IsScheduleInstalled checks if the launchd plist file exists.
+// IsScheduleInstalled checks if a ccc-refresh crontab entry exists.
 func IsScheduleInstalled() bool {
-	_, err := os.Stat(plistPath())
-	return err == nil
+	out, err := exec.Command("crontab", "-l").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), crontabMarker)
 }
 
-// InstallSchedule generates a launchd plist for ccc-refresh and loads it.
+// InstallSchedule adds a crontab entry for ccc-refresh.
+// Uses crontab instead of launchd to avoid macOS "Background Items Added"
+// notifications that re-trigger on every binary rebuild.
 func InstallSchedule() error {
 	cfg, err := Load()
 	if err != nil {
@@ -72,71 +49,121 @@ func InstallSchedule() error {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
-	// Render plist content to buffer
-	data := struct {
-		Label           string
-		Binary          string
-		IntervalSeconds int
-		LogPath         string
-	}{
-		Label:           plistLabel,
-		Binary:          binary,
-		IntervalSeconds: int(interval.Seconds()),
-		LogPath:         logPath,
+	// Build cron interval (minutes, minimum 1)
+	minutes := int(interval.Minutes())
+	if minutes < 1 {
+		minutes = 1
 	}
-	var buf bytes.Buffer
-	if err := plistTemplate.Execute(&buf, data); err != nil {
-		return fmt.Errorf("rendering plist: %w", err)
-	}
-	newContent := buf.Bytes()
+	cronSchedule := fmt.Sprintf("*/%d * * * *", minutes)
 
-	// Compare with existing plist — skip reload if unchanged
-	path := plistPath()
-	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, newContent) {
+	// Source env file if it exists, then run the binary
+	envFile := filepath.Join(ConfigDir(), ".env")
+	cronCmd := fmt.Sprintf("[ -f %s ] && . %s; %s >> %s 2>&1",
+		envFile, envFile, binary, logPath)
+
+	newEntry := fmt.Sprintf("%s %s %s", cronSchedule, cronCmd, crontabMarker)
+
+	// Get existing crontab
+	existing := ""
+	if out, err := exec.Command("crontab", "-l").Output(); err == nil {
+		existing = string(out)
+	}
+
+	// Check if already installed with same entry
+	if strings.Contains(existing, newEntry) {
 		fmt.Println("Schedule already installed (no changes).")
 		return nil
 	}
 
-	// Ensure LaunchAgents directory exists
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating LaunchAgents dir: %w", err)
+	// Remove any old ccc-refresh entries
+	lines := strings.Split(existing, "\n")
+	var kept []string
+	for _, line := range lines {
+		if !strings.Contains(line, crontabMarker) {
+			kept = append(kept, line)
+		}
 	}
 
-	// Write plist
-	if err := os.WriteFile(path, newContent, 0o644); err != nil {
-		return fmt.Errorf("writing plist: %w", err)
-	}
+	// Add new entry
+	kept = append(kept, newEntry)
 
-	// Load with launchctl
-	cmd := exec.Command("launchctl", "load", path)
+	// Write back — ensure trailing newline
+	newCrontab := strings.TrimRight(strings.Join(kept, "\n"), "\n") + "\n"
+
+	cmd := exec.Command("crontab", "-")
+	cmd.Stdin = strings.NewReader(newCrontab)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("launchctl load failed: %s — %w", string(out), err)
+		return fmt.Errorf("crontab install failed: %s — %w", string(out), err)
 	}
 
-	fmt.Printf("Installed: %s\n", path)
+	// Clean up legacy launchd plist if present
+	cleanupLegacyPlist()
+
+	fmt.Printf("Installed crontab: %s\n", cronSchedule)
 	fmt.Printf("Refresh interval: %s\n", interval)
 	fmt.Printf("Log file: %s\n", logPath)
 	return nil
 }
 
-// UninstallSchedule unloads and removes the launchd plist.
+// UninstallSchedule removes the ccc-refresh crontab entry.
 func UninstallSchedule() error {
-	path := plistPath()
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	out, _ := exec.Command("crontab", "-l").Output()
+	existing := string(out)
+
+	hasCrontab := strings.Contains(existing, crontabMarker)
+	if !hasCrontab {
+		// Clean up legacy plist even if no crontab entry
+		cleanupLegacyPlist()
 		fmt.Println("No schedule installed.")
 		return nil
 	}
 
-	cmd := exec.Command("launchctl", "unload", path)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Printf("Warning: launchctl unload: %s — %v\n", string(out), err)
+	// Remove ccc-refresh entries
+	lines := strings.Split(existing, "\n")
+	var kept []string
+	for _, line := range lines {
+		if !strings.Contains(line, crontabMarker) {
+			kept = append(kept, line)
+		}
 	}
 
-	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("removing plist: %w", err)
+	newCrontab := strings.Join(kept, "\n")
+	// If only empty lines remain, clear the crontab entirely
+	if strings.TrimSpace(newCrontab) == "" {
+		if err := exec.Command("crontab", "-r").Run(); err != nil {
+			return fmt.Errorf("crontab remove failed: %w", err)
+		}
+	} else {
+		newCrontab = strings.TrimRight(newCrontab, "\n") + "\n"
+		cmd := exec.Command("crontab", "-")
+		cmd.Stdin = strings.NewReader(newCrontab)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("crontab update failed: %s — %w", string(out), err)
+		}
 	}
 
-	fmt.Printf("Uninstalled: %s\n", path)
+	// Also clean up legacy plist
+	cleanupLegacyPlist()
+
+	fmt.Println("Schedule uninstalled.")
 	return nil
+}
+
+// cleanupLegacyPlist removes the old launchd plist if it exists.
+func cleanupLegacyPlist() {
+	home, _ := os.UserHomeDir()
+	plist := filepath.Join(home, "Library", "LaunchAgents", "com.ccc.refresh.plist")
+
+	if _, err := os.Stat(plist); os.IsNotExist(err) {
+		return
+	}
+
+	// Unload first (ignore errors — may already be unloaded)
+	_ = exec.Command("launchctl", "unload", plist).Run()
+
+	if err := os.Remove(plist); err != nil {
+		fmt.Printf("Warning: could not remove legacy plist %s: %v\n", plist, err)
+	} else {
+		fmt.Printf("Cleaned up legacy launchd plist: %s\n", plist)
+	}
 }
