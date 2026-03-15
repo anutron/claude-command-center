@@ -18,6 +18,7 @@ import (
 // agentSession tracks a running headless Claude Code session.
 type agentSession struct {
 	TodoID    string
+	SessionID string // Claude session UUID, captured from first stream-JSON event
 	Cmd       *exec.Cmd
 	Cancel    context.CancelFunc
 	Status    string // "active", "blocked", "review", "failed"
@@ -29,7 +30,7 @@ type agentSession struct {
 	done     chan struct{}
 	exitCode int
 
-	// mu protects Status and Question for concurrent writes from the goroutine.
+	// mu protects Status, Question, and SessionID for concurrent writes from the goroutine.
 	mu sync.Mutex
 }
 
@@ -57,6 +58,11 @@ type agentStatusMsg struct {
 type agentFinishedMsg struct {
 	todoID   string
 	exitCode int
+}
+
+type agentSessionIDMsg struct {
+	todoID    string
+	sessionID string
 }
 
 // agentStartedInternalMsg carries process handles so Update can store them.
@@ -136,6 +142,7 @@ func launchAgent(qs queuedSession) tea.Cmd {
 			// Allow large lines (stream-JSON can be verbose).
 			scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+			sessionIDCaptured := false
 			for scanner.Scan() {
 				line := scanner.Text()
 				// Capture output for summary extraction.
@@ -148,6 +155,16 @@ func launchAgent(qs queuedSession) tea.Cmd {
 				var event map[string]interface{}
 				if err := json.Unmarshal([]byte(line), &event); err != nil {
 					continue
+				}
+
+				// Capture session_id from the first event that has one.
+				if !sessionIDCaptured {
+					if sid, ok := event["session_id"].(string); ok && sid != "" {
+						sessionIDCaptured = true
+						sess.mu.Lock()
+						sess.SessionID = sid
+						sess.mu.Unlock()
+					}
 				}
 
 				// Detect tool_use with SendUserMessage → agent is blocked.
@@ -408,23 +425,37 @@ func (p *Plugin) checkAgentProcesses() tea.Cmd {
 		default:
 			// Still running. Check for status changes from the goroutine.
 			sess.mu.Lock()
-			if sess.Status == "blocked" {
-				tid := todoID
-				question := sess.Question
-				sess.mu.Unlock()
-				// Only send status if the in-memory todo status differs.
-				if p.cc != nil {
-					for _, t := range p.cc.Todos {
-						if t.ID == tid && t.SessionStatus != "blocked" {
-							cmds = append(cmds, func() tea.Msg {
-								return agentStatusMsg{todoID: tid, status: "blocked", question: question}
-							})
-							break
-						}
+			sid := sess.SessionID
+			status := sess.Status
+			question := sess.Question
+			sess.mu.Unlock()
+
+			// Propagate session ID to the todo if not yet set.
+			if sid != "" && p.cc != nil {
+				for _, t := range p.cc.Todos {
+					if t.ID == todoID && t.SessionID != sid {
+						tid := todoID
+						s := sid
+						cmds = append(cmds, func() tea.Msg {
+							return agentSessionIDMsg{todoID: tid, sessionID: s}
+						})
+						break
 					}
 				}
-			} else {
-				sess.mu.Unlock()
+			}
+
+			// Only send blocked status if the in-memory todo status differs.
+			if status == "blocked" && p.cc != nil {
+				tid := todoID
+				q := question
+				for _, t := range p.cc.Todos {
+					if t.ID == tid && t.SessionStatus != "blocked" {
+						cmds = append(cmds, func() tea.Msg {
+							return agentStatusMsg{todoID: tid, status: "blocked", question: q}
+						})
+						break
+					}
+				}
 			}
 		}
 	}

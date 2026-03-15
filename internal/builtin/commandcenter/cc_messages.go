@@ -64,6 +64,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case agentStatusMsg:
 		return p.handleAgentStatus(msg)
 
+	case agentSessionIDMsg:
+		return p.handleAgentSessionID(msg)
+
 	case agentFinishedMsg:
 		return p.handleAgentFinished(msg)
 
@@ -536,6 +539,22 @@ func (p *Plugin) handleAgentStatus(msg agentStatusMsg) (bool, plugin.Action) {
 		})
 	}
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionStatus(msg.todoID, msg.status)}
+}
+
+func (p *Plugin) handleAgentSessionID(msg agentSessionIDMsg) (bool, plugin.Action) {
+	// Update in-memory todo with the captured session ID.
+	if p.cc != nil {
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == msg.todoID {
+				p.cc.Todos[i].SessionID = msg.sessionID
+				break
+			}
+		}
+	}
+	// Persist to DB.
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
+		return db.DBUpdateTodoSessionID(database, msg.todoID, msg.sessionID)
+	})}
 }
 
 func (p *Plugin) handleAgentFinished(msg agentFinishedMsg) (bool, plugin.Action) {
