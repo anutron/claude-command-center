@@ -1282,6 +1282,7 @@ func (p *Plugin) handleThreadsTab(msg tea.KeyMsg) plugin.Action {
 // enterTaskRunner initializes the task runner view for a given todo.
 func (p *Plugin) enterTaskRunner(todo db.Todo) {
 	p.taskRunnerView = true
+	p.taskRunnerStep = 1
 
 	// Initialize defaults from config
 	agentCfg := p.cfg.Agent
@@ -1295,8 +1296,8 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 	if p.taskRunnerBudget <= 0 {
 		p.taskRunnerBudget = 5.00
 	}
-	p.taskRunnerAutoStart = false
-	p.taskRunnerSelectedRow = 0
+	p.taskRunnerRefining = false
+	p.taskRunnerReviewClean = ""
 	// Initialize path cursor to match the todo's project dir
 	p.taskRunnerPathCursor = -1 // -1 means "use todo's original project dir"
 	for i, path := range p.detailPaths {
@@ -1328,73 +1329,85 @@ var taskRunnerModes = []string{"normal", "worktree", "sandbox"}
 var taskRunnerPerms = []string{"default", "plan", "auto"}
 
 func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
-	// Launch selector sub-mode
-	if p.taskRunnerLaunching {
-		switch msg.String() {
-		case "left", "h":
-			if p.taskRunnerLaunchCursor > 0 {
-				p.taskRunnerLaunchCursor--
-			}
-			return plugin.NoopAction()
-		case "right", "l":
-			if p.taskRunnerLaunchCursor < 1 {
-				p.taskRunnerLaunchCursor++
-			}
-			return plugin.NoopAction()
-		case "enter":
-			p.taskRunnerLaunching = false
-			return p.taskRunnerLaunch(p.taskRunnerLaunchCursor == 1)
-		case "esc":
-			p.taskRunnerLaunching = false
-			return plugin.NoopAction()
-		}
-		return plugin.NoopAction()
-	}
-
-	// Path picker sub-mode
+	// Path picker sub-mode (available from step 1)
 	if p.taskRunnerPickingPath {
 		return p.handleTaskRunnerPathSelect(msg)
 	}
 
+	switch p.taskRunnerStep {
+	case 1:
+		return p.handleWizardStep1(msg)
+	case 2:
+		return p.handleWizardStep2(msg)
+	case 3:
+		return p.handleWizardStep3(msg)
+	}
+	return plugin.NoopAction()
+}
+
+// handleWizardStep1 handles Step 1: Project selection.
+func (p *Plugin) handleWizardStep1(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
+	case "enter":
+		p.taskRunnerStep = 2
+		return plugin.NoopAction()
+	case "/":
+		if len(p.detailPaths) > 0 {
+			p.taskRunnerPickingPath = true
+			p.taskRunnerPathFilter = ""
+		}
+		return plugin.NoopAction()
 	case "esc":
 		p.taskRunnerView = false
 		return plugin.NoopAction()
+	}
+	return plugin.NoopAction()
+}
 
-	case "enter":
-		// Open path picker when on Project row
-		if p.taskRunnerSelectedRow == 2 && len(p.detailPaths) > 0 {
-			p.taskRunnerPickingPath = true
-			p.taskRunnerPathFilter = ""
-			return plugin.NoopAction()
-		}
-		// Otherwise show inline launch selector
-		p.taskRunnerLaunching = true
-		p.taskRunnerLaunchCursor = 0
-		return plugin.NoopAction()
-
-	case "tab", "down":
-		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 1) % 3
-		return plugin.NoopAction()
-
-	case "shift+tab", "up":
-		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow - 1 + 3) % 3
-		return plugin.NoopAction()
-
+// handleWizardStep2 handles Step 2: Mode selection.
+func (p *Plugin) handleWizardStep2(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
 	case "left", "h":
-		p.taskRunnerCycleOption(-1)
+		idx := indexOf(taskRunnerModes, p.taskRunnerMode)
+		idx = (idx - 1 + len(taskRunnerModes)) % len(taskRunnerModes)
+		p.taskRunnerMode = taskRunnerModes[idx]
 		return plugin.NoopAction()
-
 	case "right", "l":
-		p.taskRunnerCycleOption(1)
+		idx := indexOf(taskRunnerModes, p.taskRunnerMode)
+		idx = (idx + 1) % len(taskRunnerModes)
+		p.taskRunnerMode = taskRunnerModes[idx]
 		return plugin.NoopAction()
-
-	case "c":
-		// Placeholder for inline LLM prompt refinement
-		p.flashMessage = "Prompt refinement not yet implemented"
-		p.flashMessageAt = time.Now()
+	case "enter":
+		p.taskRunnerStep = 3
 		return plugin.NoopAction()
+	case "esc":
+		p.taskRunnerStep = 1
+		return plugin.NoopAction()
+	}
+	return plugin.NoopAction()
+}
 
+// handleWizardStep3 handles Step 3: Prompt review & launch.
+func (p *Plugin) handleWizardStep3(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "j":
+		p.taskRunnerPrompt.LineDown(1)
+		return plugin.NoopAction()
+	case "k":
+		p.taskRunnerPrompt.LineUp(1)
+		return plugin.NoopAction()
+	case "left", "h":
+		if p.taskRunnerLaunchCursor > 0 {
+			p.taskRunnerLaunchCursor--
+		}
+		return plugin.NoopAction()
+	case "right", "l":
+		if p.taskRunnerLaunchCursor < 1 {
+			p.taskRunnerLaunchCursor++
+		}
+		return plugin.NoopAction()
+	case "enter":
+		return p.taskRunnerLaunch(p.taskRunnerLaunchCursor == 1)
 	case "e":
 		// Launch external editor to refine the prompt (Plannotator).
 		if todoPtr := p.detailTodo(); todoPtr != nil {
@@ -1407,17 +1420,20 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
 		return plugin.NoopAction()
-
-	case "j":
-		// Scroll prompt viewport down
-		p.taskRunnerPrompt.LineDown(1)
+	case "c":
+		// Placeholder for inline LLM prompt refinement
+		p.flashMessage = "Prompt refinement not yet implemented"
+		p.flashMessageAt = time.Now()
 		return plugin.NoopAction()
-	case "k":
-		// Scroll prompt viewport up
-		p.taskRunnerPrompt.LineUp(1)
+	case "r":
+		// Placeholder for review loop
+		p.flashMessage = "Review loop not yet implemented"
+		p.flashMessageAt = time.Now()
+		return plugin.NoopAction()
+	case "esc":
+		p.taskRunnerStep = 2
 		return plugin.NoopAction()
 	}
-
 	return plugin.NoopAction()
 }
 
@@ -1535,21 +1551,6 @@ func (p *Plugin) taskRunnerLaunch(immediate bool) plugin.Action {
 	return plugin.NoopAction()
 }
 
-// taskRunnerCycleOption cycles the option on the currently selected row.
-func (p *Plugin) taskRunnerCycleOption(dir int) {
-	switch p.taskRunnerSelectedRow {
-	case 0: // Mode
-		idx := indexOf(taskRunnerModes, p.taskRunnerMode)
-		idx = (idx + dir + len(taskRunnerModes)) % len(taskRunnerModes)
-		p.taskRunnerMode = taskRunnerModes[idx]
-	case 1: // Budget
-		p.taskRunnerBudget += float64(dir) * 1.0
-		if p.taskRunnerBudget < 1.00 {
-			p.taskRunnerBudget = 1.00
-		}
-	case 2: // Project — uses scrollable picker (enter key), no cycling
-	}
-}
 
 // indexOf returns the index of s in the slice, or 0 if not found.
 func indexOf(slice []string, s string) int {

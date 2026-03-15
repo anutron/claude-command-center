@@ -90,16 +90,16 @@ type Plugin struct {
 	detailNoticeType    string    // "done" or "removed" — controls notice color
 	detailNoticeAt      time.Time // when the notice was set
 
-	// Task runner view
+	// Task runner view (3-step wizard: 1=Project, 2=Mode, 3=Prompt)
 	taskRunnerView        bool
-	taskRunnerMode        string // "normal", "worktree", "sandbox"
-	taskRunnerPerm        string // "default", "plan", "auto"
+	taskRunnerStep        int     // 1=Project, 2=Mode, 3=Prompt
+	taskRunnerMode        string  // "normal", "worktree", "sandbox"
+	taskRunnerPerm        string  // "default", "plan", "auto"
 	taskRunnerBudget      float64
 	taskRunnerPrompt      viewport.Model
-	taskRunnerAutoStart   bool
-	taskRunnerSelectedRow int // 0=Mode, 1=Budget, 2=Project
+	taskRunnerRefining    bool   // true when AI refine is active
+	taskRunnerReviewClean string // clean prompt text before review edits
 	taskRunnerPathCursor   int    // index into detailPaths for task runner project override
-	taskRunnerLaunching    bool   // true when launch selector is active
 	taskRunnerLaunchCursor int    // 0=Queue, 1=Run Now
 	taskRunnerPickingPath  bool   // true when scrollable path picker is open
 	taskRunnerPathFilter   string // type-to-filter string for path picker
