@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { google } from "googleapis";
+import { CodeChallengeMethod } from "google-auth-library";
 import { createServer } from "http";
 import { URL } from "url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from "fs";
@@ -102,7 +103,7 @@ async function runAuthFlow(account: string) {
     scope: SCOPES,
     prompt: "consent",
     code_challenge: codeChallenge,
-    code_challenge_method: "S256",
+    code_challenge_method: CodeChallengeMethod.S256,
   });
 
   console.log(`\nAuthenticating account: "${account}"`);
