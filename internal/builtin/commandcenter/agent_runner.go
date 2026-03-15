@@ -244,13 +244,20 @@ func (p *Plugin) queuedAgentCount() int {
 }
 
 // launchOrQueueAgent either launches an agent immediately or queues it.
+// It also auto-accepts the todo so it moves out of the "new" triage filter.
 func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
+	// Auto-accept the todo when launching/queuing an agent
+	p.cc.AcceptTodo(qs.TodoID)
+	acceptCmd := p.dbWriteCmd(func(database *sql.DB) error {
+		return db.DBAcceptTodo(database, qs.TodoID)
+	})
+
 	if p.canLaunchAgent() {
 		p.setTodoSessionStatus(qs.TodoID, "active")
 		p.publishEvent("agent.started", map[string]interface{}{
 			"todo_id": qs.TodoID,
 		})
-		return launchAgent(qs)
+		return tea.Batch(acceptCmd, launchAgent(qs))
 	}
 
 	// Queue it.
@@ -259,7 +266,7 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 	p.publishEvent("agent.queued", map[string]interface{}{
 		"todo_id": qs.TodoID,
 	})
-	return p.persistSessionStatus(qs.TodoID, "queued")
+	return tea.Batch(acceptCmd, p.persistSessionStatus(qs.TodoID, "queued"))
 }
 
 // onAgentFinished cleans up after an agent finishes and launches the next queued item.

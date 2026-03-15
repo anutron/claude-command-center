@@ -46,9 +46,9 @@ func testPluginWithCC(t *testing.T) *Plugin {
 	p.cc = &db.CommandCenter{
 		GeneratedAt: time.Now(),
 		Todos: []db.Todo{
-			{ID: "t1", Title: "First todo", Status: "active", Source: "manual", CreatedAt: time.Now()},
-			{ID: "t2", Title: "Second todo", Status: "active", Source: "manual", CreatedAt: time.Now()},
-			{ID: "t3", Title: "Third todo", Status: "active", Source: "manual", CreatedAt: time.Now()},
+			{ID: "t1", Title: "First todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now()},
+			{ID: "t2", Title: "Second todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now()},
+			{ID: "t3", Title: "Third todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now()},
 		},
 		Threads: []db.Thread{
 			{ID: "th1", Title: "Thread one", Status: "active", Type: "manual", CreatedAt: time.Now()},

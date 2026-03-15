@@ -14,6 +14,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// triageFilterOrder defines the tab order for triage filters in expanded view.
+var triageFilterOrder = []string{"accepted", "new", "review", "blocked", "active", "all"}
+
 // HandleKey handles key input and returns an action.
 func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	// Help overlay
@@ -100,10 +103,10 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 }
 
 func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
-	if p.cc == nil && msg.String() != "a" {
+	if p.cc == nil {
 		return plugin.NoopAction()
 	}
-	activeTodos := p.filteredActiveTodos()
+	activeTodos := p.filteredTodos()
 	maxCursor := len(activeTodos) - 1
 	if maxCursor < 0 {
 		maxCursor = 0
@@ -426,8 +429,94 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		p.searchInput.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
 
-	case "a":
-		p.agentFilterActive = !p.agentFilterActive
+	case "tab":
+		if p.ccExpanded {
+			// Cycle triage filter forward
+			idx := 0
+			for i, f := range triageFilterOrder {
+				if f == p.triageFilter {
+					idx = i
+					break
+				}
+			}
+			p.triageFilter = triageFilterOrder[(idx+1)%len(triageFilterOrder)]
+			p.ccCursor = 0
+			p.ccExpandedOffset = 0
+			return plugin.ConsumedAction()
+		}
+		return plugin.Action{Type: plugin.ActionUnhandled}
+
+	case "shift+tab":
+		if p.ccExpanded {
+			// Cycle triage filter backward
+			idx := 0
+			for i, f := range triageFilterOrder {
+				if f == p.triageFilter {
+					idx = i
+					break
+				}
+			}
+			p.triageFilter = triageFilterOrder[(idx-1+len(triageFilterOrder))%len(triageFilterOrder)]
+			p.ccCursor = 0
+			p.ccExpandedOffset = 0
+			return plugin.ConsumedAction()
+		}
+		return plugin.Action{Type: plugin.ActionUnhandled}
+
+	case "y":
+		if p.ccExpanded {
+			filtered := p.filteredTodos()
+			if len(filtered) > 0 && p.ccCursor < len(filtered) {
+				todo := filtered[p.ccCursor]
+				p.cc.AcceptTodo(todo.ID)
+				todoID := todo.ID
+				// Adjust cursor if the filtered list will shrink
+				newFiltered := p.filteredTodos()
+				if p.ccCursor >= len(newFiltered) && len(newFiltered) > 0 {
+					p.ccCursor = len(newFiltered) - 1
+				}
+				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBAcceptTodo(database, todoID)
+				})
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			}
+		}
+		return plugin.NoopAction()
+
+	case "Y":
+		if p.ccExpanded {
+			filtered := p.filteredTodos()
+			if len(filtered) > 0 && p.ccCursor < len(filtered) {
+				todo := filtered[p.ccCursor]
+				p.cc.AcceptTodo(todo.ID)
+				todoID := todo.ID
+
+				// Find the todo in the full active list for detail view
+				allActive := p.cc.ActiveTodos()
+				detailIdx := 0
+				for i, t := range allActive {
+					if t.ID == todoID {
+						detailIdx = i
+						break
+					}
+				}
+
+				// Enter detail/task runner view
+				p.detailView = true
+				p.detailTodoID = activeTodos[detailIdx].ID
+				p.detailMode = "viewing"
+				p.detailSelectedField = 0
+				p.textInput.Reset()
+				p.textInput.Placeholder = "Tell me what changed..."
+				p.detailFieldInput.Reset()
+				p.enterTaskRunner(allActive[detailIdx])
+
+				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBAcceptTodo(database, todoID)
+				})
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			}
+		}
 		return plugin.NoopAction()
 
 	case "b":

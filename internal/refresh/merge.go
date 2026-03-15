@@ -80,6 +80,7 @@ func mergeTodos(existing, fresh []db.Todo) []db.Todo {
 				et.ProposedPrompt = ft.ProposedPrompt
 			}
 			// Always preserve session_status (refresh never overwrites it)
+			// Always preserve triage_status (refresh never overwrites it)
 			merged = append(merged, et)
 		} else {
 			if ft.ID == "" {
@@ -90,6 +91,10 @@ func mergeTodos(existing, fresh []db.Todo) []db.Todo {
 			}
 			if ft.Status == "" {
 				ft.Status = "active"
+			}
+			// New external todos start in triage
+			if ft.TriageStatus == "" {
+				ft.TriageStatus = "new"
 			}
 			merged = append(merged, ft)
 		}

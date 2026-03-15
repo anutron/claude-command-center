@@ -133,8 +133,8 @@ type Plugin struct {
 	activeSessions map[string]*agentSession
 	sessionQueue   []queuedSession
 
-	// Agent filter
-	agentFilterActive bool
+	// Triage filter for expanded view tabs
+	triageFilter string
 
 	// Search filter
 	searchActive bool
@@ -154,7 +154,8 @@ type Plugin struct {
 // New creates a new commandcenter Plugin.
 func New() *Plugin {
 	return &Plugin{
-		subView: "command",
+		subView:      "command",
+		triageFilter: "accepted",
 	}
 }
 
@@ -251,7 +252,8 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "p", Description: "Promote todo to top"},
 		{Key: "s", Description: "Schedule time block"},
 		{Key: "/", Description: "Search/filter todos"},
-		{Key: "a", Description: "Toggle agent filter"},
+		{Key: "y", Description: "Accept todo (triage)"},
+		{Key: "tab", Description: "Cycle triage filter (expanded)"},
 		{Key: "b", Description: "Toggle completed backlog"},
 		{Key: "r", Description: "Refresh from all sources"},
 	}
@@ -443,12 +445,12 @@ func (p *Plugin) normalMaxVisibleTodos() int {
 func (p *Plugin) expandedRowsPerCol() int {
 	// p.height is the content area (terminal height minus TUI header).
 	// The expanded view needs space for its own chrome:
-	// header(1) + blank(1) + columns + blank(1) + hints(1) + footer(1) = 5 lines,
+	// header(1) + tabBar(1) + blank(1) + columns + blank(1) + hints(1) + footer(1) = 6 lines,
 	// plus 2 lines buffer for optional loading/flash messages.
 	// Each todo item takes 2 lines (title + details).
-	rows := (p.height - 7) / 2
-	if rows < 5 {
-		rows = 5
+	rows := (p.height - 8) / 2
+	if rows < 3 {
+		rows = 3
 	}
 	return rows
 }
@@ -458,6 +460,108 @@ func (p *Plugin) expandedNumCols() int {
 		return 1
 	}
 	return 2
+}
+
+// filteredTodos returns the subset of todos based on the current view mode, triage filter, and search query.
+func (p *Plugin) filteredTodos() []db.Todo {
+	if p.cc == nil {
+		return nil
+	}
+	allActive := p.cc.ActiveTodos()
+
+	var result []db.Todo
+	if !p.ccExpanded {
+		// Normal view: accepted todos with no session_status
+		for _, t := range allActive {
+			if t.TriageStatus == "accepted" && t.SessionStatus == "" {
+				result = append(result, t)
+			}
+		}
+	} else {
+		// Expanded view: filter based on triageFilter
+		switch p.triageFilter {
+		case "accepted":
+			for _, t := range allActive {
+				if t.TriageStatus == "accepted" && t.SessionStatus == "" {
+					result = append(result, t)
+				}
+			}
+		case "new":
+			for _, t := range allActive {
+				if t.TriageStatus == "new" {
+					result = append(result, t)
+				}
+			}
+		case "review":
+			for _, t := range allActive {
+				if t.SessionStatus == "review" {
+					result = append(result, t)
+				}
+			}
+		case "blocked":
+			for _, t := range allActive {
+				if t.SessionStatus == "blocked" {
+					result = append(result, t)
+				}
+			}
+		case "active":
+			for _, t := range allActive {
+				if t.SessionStatus == "active" {
+					result = append(result, t)
+				}
+			}
+		default:
+			result = allActive
+		}
+	}
+
+	// Apply search filter on top of triage filter
+	query := strings.TrimSpace(p.searchInput.Value())
+	if query == "" {
+		return result
+	}
+	lower := strings.ToLower(query)
+	var filtered []db.Todo
+	for _, t := range result {
+		if strings.Contains(strings.ToLower(flattenTitle(t.Title)), lower) {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
+}
+
+// triageCounts returns the count of todos matching each filter category.
+func (p *Plugin) triageCounts() map[string]int {
+	counts := map[string]int{
+		"accepted": 0,
+		"new":      0,
+		"review":   0,
+		"blocked":  0,
+		"active":   0,
+		"all":      0,
+	}
+	if p.cc == nil {
+		return counts
+	}
+	for _, t := range p.cc.ActiveTodos() {
+		counts["all"]++
+		if t.TriageStatus == "accepted" && t.SessionStatus == "" {
+			counts["accepted"]++
+		}
+		if t.TriageStatus == "new" {
+			counts["new"]++
+		}
+		if t.SessionStatus == "review" {
+			counts["review"]++
+		}
+		if t.SessionStatus == "blocked" {
+			counts["blocked"]++
+		}
+		if t.SessionStatus == "active" {
+			counts["active"]++
+		}
+	}
+	return counts
 }
 
 func (p *Plugin) triggerFocusRefresh() tea.Cmd {
@@ -545,7 +649,9 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	}
 
 	if p.ccExpanded && p.cc != nil {
-		view := renderExpandedTodoView(&p.styles, &p.grad, p.filteredActiveTodos(), p.ccCursor, p.ccExpandedOffset, p.expandedRowsPerCol(), p.expandedNumCols(), viewWidth, viewHeight, p.frame, p.claudeLoadingTodo, p.ccRefreshing)
+		filtered := p.filteredTodos()
+		counts := p.triageCounts()
+		view := renderExpandedTodoView(&p.styles, &p.grad, filtered, p.ccCursor, p.ccExpandedOffset, p.expandedRowsPerCol(), p.expandedNumCols(), viewWidth, viewHeight, p.frame, p.claudeLoadingTodo, p.ccRefreshing, p.triageFilter, counts)
 		if p.claudeLoading {
 			loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", loadingLine)
@@ -560,8 +666,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		return view
 	}
 
-	searchQuery := strings.TrimSpace(p.searchInput.Value())
-	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.agentFilterActive, searchQuery)
+	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.filteredTodos(), p.triageCounts())
 
 	if p.claudeLoading {
 		loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg
@@ -663,26 +768,6 @@ func (p *Plugin) detailTodoActiveIndex() int {
 		}
 	}
 	return -1
-}
-
-// filteredActiveTodos returns active todos filtered by the current search query.
-func (p *Plugin) filteredActiveTodos() []db.Todo {
-	if p.cc == nil {
-		return nil
-	}
-	todos := p.cc.ActiveTodos()
-	query := strings.TrimSpace(p.searchInput.Value())
-	if query == "" {
-		return todos
-	}
-	lower := strings.ToLower(query)
-	var filtered []db.Todo
-	for _, t := range todos {
-		if strings.Contains(strings.ToLower(flattenTitle(t.Title)), lower) {
-			filtered = append(filtered, t)
-		}
-	}
-	return filtered
 }
 
 // SubView returns the current sub-view name.

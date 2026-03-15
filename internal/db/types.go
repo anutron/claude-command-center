@@ -109,6 +109,7 @@ type Todo struct {
 	Effort         string     `json:"effort"`
 	ProposedPrompt string     `json:"proposed_prompt,omitempty"`
 	SessionStatus  string     `json:"session_status,omitempty"`
+	TriageStatus   string     `json:"triage_status,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	CompletedAt    *time.Time `json:"completed_at"`
 }
@@ -246,13 +247,23 @@ func (cc *CommandCenter) RestoreTodo(id, status string, completedAt *time.Time) 
 	}
 }
 
+func (cc *CommandCenter) AcceptTodo(id string) {
+	for i := range cc.Todos {
+		if cc.Todos[i].ID == id {
+			cc.Todos[i].TriageStatus = "accepted"
+			return
+		}
+	}
+}
+
 func (cc *CommandCenter) AddTodo(title string) *Todo {
 	t := Todo{
-		ID:        GenID(),
-		Title:     title,
-		Status:    "active",
-		Source:    "manual",
-		CreatedAt: time.Now(),
+		ID:           GenID(),
+		Title:        title,
+		Status:       "active",
+		Source:       "manual",
+		TriageStatus: "accepted",
+		CreatedAt:    time.Now(),
 	}
 	cc.Todos = append(cc.Todos, t)
 	return &cc.Todos[len(cc.Todos)-1]

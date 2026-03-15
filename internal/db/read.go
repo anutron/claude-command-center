@@ -57,7 +57,7 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 	rows, err := db.Query(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status,
-		created_at, completed_at
+		COALESCE(triage_status, 'accepted'), created_at, completed_at
 		FROM cc_todos ORDER BY sort_order ASC`)
 	if err != nil {
 		return nil, err
@@ -70,10 +70,11 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		var createdStr string
 		var completedStr sql.NullString
 		var sourceRef, ctx, detail, who, projDir, due, effort, sessionID, proposedPrompt, sessionStatus sql.NullString
+		var triageStatus string
 
 		err := rows.Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &due, &effort, &sessionID,
-			&proposedPrompt, &sessionStatus,
+			&proposedPrompt, &sessionStatus, &triageStatus,
 			&createdStr, &completedStr)
 		if err != nil {
 			return nil, err
@@ -89,6 +90,7 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		t.SessionID = sessionID.String
 		t.ProposedPrompt = proposedPrompt.String
 		t.SessionStatus = sessionStatus.String
+		t.TriageStatus = triageStatus
 		t.CreatedAt = ParseTime(createdStr)
 		if completedStr.Valid {
 			ct := ParseTime(completedStr.String)

@@ -38,6 +38,7 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 - `addingThread bool` — text input for adding a new thread
 - `bookingMode bool` — calendar event booking flow
 - `ccExpanded bool` — expanded multi-column todo view
+- `triageFilter string` — active triage filter tab in expanded view (default: "accepted")
 - `undoStack []undoEntry` — stack of undo-able todo actions
 - `pendingLaunchTodo *db.Todo` — todo awaiting session navigation
 
@@ -67,6 +68,10 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 | `enter` | normal | Open detail view for selected todo |
 | `o` | normal | Launch session for todo (by session_id, project_dir, or navigate to sessions) |
 | `?` | any | Toggle help overlay |
+| `tab` | expanded | Cycle triage filter forward |
+| `shift+tab` | expanded | Cycle triage filter backward |
+| `y` | expanded | Accept selected todo (triage) |
+| `Y` | expanded | Accept + open task runner for selected todo |
 | `esc` | expanded | Collapse expanded view |
 | `esc` | pending launch | Cancel pending launch, return to command view |
 
@@ -145,7 +150,7 @@ Todos have a `display_id` column (auto-incrementing integer) for stable, human-r
 3. Focus suggestion banner at top when available
 4. Warning bar when data is stale or services are unreachable
 5. Help overlay toggled with `?`
-6. Expanded multi-column view when scrolling past visible todos. Rows per column use `(height - 7) / 2` to maximize vertical space (no panel borders/calendar/warnings chrome in expanded view). Left/right arrows paginate when at column edges.
+6. Expanded multi-column view when scrolling past visible todos. Rows per column use `(height - 8) / 2` to maximize vertical space (the extra line accounts for the triage tab bar). Left/right arrows paginate when at column edges. A triage filter tab bar appears below the header.
 
 ### Todo Lifecycle
 
@@ -156,6 +161,53 @@ Todos have a `display_id` column (auto-incrementing integer) for stable, human-r
 - Promote with `p` (moves to top of list)
 - Detail view with `space` (shows full context, edit input for Claude-powered enrichment)
 - Launch with `enter` (resumes session_id, launches in project_dir, or navigates to sessions)
+
+### Triage Workflow
+
+Todos have a `triage_status` field that controls inbox behavior. This allows refresh-created todos to arrive in a "new" inbox for review before appearing in the main working list.
+
+#### Triage Status Values
+
+- `"new"` — unreviewed, appears in the New inbox tab
+- `"accepted"` — reviewed and accepted into the working list
+
+#### Defaults
+
+- **Refresh-created todos**: `triage_status = "new"` (set in `mergeTodos` for fresh external todos)
+- **Manually created todos**: `triage_status = "accepted"` (set in `AddTodo` and `DBInsertTodo`)
+- **Refresh merge**: never overwrites `triage_status` on existing todos (preserves user's triage decisions)
+
+#### Triage Filter Tabs (Expanded View)
+
+When the expanded multi-column view is active, a tab bar appears below the header showing filter categories:
+
+| Tab | Filter Logic |
+|-----|-------------|
+| Accepted | `triage_status == "accepted"` AND `session_status == ""` |
+| New | `triage_status == "new"` |
+| Review | `session_status == "review"` |
+| Blocked | `session_status == "blocked"` |
+| Active | `session_status == "active"` |
+| All | All active todos (no filter) |
+
+- **Tab order**: Accepted, New, Review, Blocked, Active, All
+- **Default tab**: Accepted
+- `tab` cycles filter forward, `shift+tab` cycles backward
+- Switching tabs resets cursor and scroll offset to 0
+- `y` accepts the selected todo (sets `triage_status = "accepted"`, persists to DB)
+- `Y` accepts the selected todo AND opens the task runner (detail view)
+
+#### Normal View Behavior
+
+In the normal (collapsed) view:
+
+- **Todo list** shows only accepted todos with no agent session (`triage_status == "accepted"` AND `session_status == ""`)
+- **Triage status bar** appears below the todo list showing counts: `New(N) · Review(N) · Blocked(N) · Active(N)` — only displayed if any count is non-zero
+
+#### Auto-Accept Rules
+
+- **Launching an agent** (`launchOrQueueAgent`) automatically accepts the todo, so it moves out of the "new" filter into the accepted working list
+- The old `agentFilterActive` toggle (key `a`) is replaced by the triage tab system
 
 ### Thread Lifecycle
 
@@ -232,3 +284,10 @@ When a todo has a `project_dir`, pressing enter launches a Claude session there.
 - Granola source_ref is deterministic (`{meeting_id}-{sha256(title)[:8]}`)
 - Refresh merge preserves completed todos
 - `DBSwapPathOrder` and `DBSwapTodoOrder` use transactions for atomicity
+- Triage: refresh-created todos default to triage_status "new"
+- Triage: manually created todos default to triage_status "accepted"
+- Triage: normal view shows only accepted todos with no session_status
+- Triage: tab/shift+tab cycles triage filter in expanded view
+- Triage: y accepts a todo, Y accepts + opens task runner
+- Triage: launching agent auto-accepts the todo
+- Triage: refresh merge preserves existing triage_status

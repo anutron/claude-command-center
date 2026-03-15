@@ -160,6 +160,9 @@ func migrateSchema(db *sql.DB) error {
 		) ranked WHERE ranked.id = cc_todos.id
 	) WHERE display_id IS NULL`)
 
+	// Add triage_status column to todos if missing (added for todo triage tabs)
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN triage_status TEXT NOT NULL DEFAULT 'accepted'`)
+
 	// Source sync tracking table (added for BUG-015: data source connectivity validation)
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_source_sync (
 		source TEXT PRIMARY KEY,

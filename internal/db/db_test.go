@@ -213,7 +213,7 @@ func TestPathDescription(t *testing.T) {
 	DBAddPath(db, "/home/user/project-b")
 
 	// Initially no descriptions
-	paths, err := DBLoadPathsWithMeta(db)
+	paths, err := DBLoadPathsFull(db)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestPathDescription(t *testing.T) {
 		t.Fatalf("set description: %v", err)
 	}
 
-	paths, _ = DBLoadPathsWithMeta(db)
+	paths, _ = DBLoadPathsFull(db)
 	if paths[0].Path != "/home/user/project-a" {
 		t.Fatalf("expected project-a first, got %s", paths[0].Path)
 	}
