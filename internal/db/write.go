@@ -288,6 +288,15 @@ func DBRemovePath(db *sql.DB, path string) error {
 	return nil
 }
 
+// DBUpdatePathDescription updates the description for a learned path.
+func DBUpdatePathDescription(db *sql.DB, path, description string) error {
+	_, err := db.Exec(`UPDATE cc_learned_paths SET description = ? WHERE path = ?`, description, path)
+	if err != nil {
+		return fmt.Errorf("update path description %s: %w", path, err)
+	}
+	return nil
+}
+
 // DBSwapPathOrder swaps the sort_order of two paths.
 func DBSwapPathOrder(database *sql.DB, pathA, pathB string) error {
 	tx, err := database.Begin()

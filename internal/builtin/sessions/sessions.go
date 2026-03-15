@@ -16,6 +16,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/anutron/claude-command-center/internal/worktree"
@@ -253,6 +254,7 @@ type Plugin struct {
 	cfg    *config.Config
 	bus    plugin.EventBus
 	logger plugin.Logger
+	llm    llm.LLM
 
 	styles sessionStyles
 	grad   ui.GradientColors
@@ -293,6 +295,11 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.cfg = ctx.Config
 	p.bus = ctx.Bus
 	p.logger = ctx.Logger
+	if ctx.LLM != nil {
+		p.llm = ctx.LLM
+	} else {
+		p.llm = llm.NoopLLM{}
+	}
 
 	pal := config.GetPalette(p.cfg.Palette, p.cfg.Colors)
 	p.styles = newSessionStyles(pal)
@@ -526,12 +533,25 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		p.paths = db.AddPath(p.paths, msg.path)
 		if p.db != nil {
 			_ = db.DBAddPath(p.db, msg.path)
+			// Write heuristic description immediately so the path has metadata
+			// even if the LLM upgrade doesn't complete before quit.
+			if heuristic := db.AutoDescribePath(msg.path); heuristic != "" {
+				_ = db.DBUpdatePathDescription(p.db, msg.path, heuristic)
+			}
 		}
 		p.newList.SetItems(p.buildNewItems())
+		// Fire background LLM description upgrade (may complete before app quits on launch)
+		go p.backgroundDescribe(msg.path)
 		return true, plugin.Action{
 			Type: "launch",
 			Args: map[string]string{"dir": msg.path},
 		}
+
+	case pathDescribeFinishedMsg:
+		if msg.description != "" && p.db != nil {
+			_ = db.DBUpdatePathDescription(p.db, msg.path, msg.description)
+		}
+		return true, plugin.NoopAction()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -1066,6 +1086,15 @@ func (p *Plugin) renderHints() string {
 // ---------------------------------------------------------------------------
 // Internal: helpers
 // ---------------------------------------------------------------------------
+
+// backgroundDescribe runs LLMDescribePath in a goroutine and writes the result
+// to DB. Used when the TUI is about to quit (launch) so a tea.Cmd wouldn't complete.
+func (p *Plugin) backgroundDescribe(path string) {
+	desc, _ := LLMDescribePath(p.llm, path)
+	if desc != "" && p.db != nil {
+		_ = db.DBUpdatePathDescription(p.db, path, desc)
+	}
+}
 
 func (p *Plugin) buildNewItems() []list.Item {
 	var items []list.Item

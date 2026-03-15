@@ -80,8 +80,20 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "todo":
+			if err := runTodo(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "add-bookmark":
 			if err := runAddBookmark(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "paths":
+			if err := runPaths(os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -234,7 +246,9 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  uninstall-schedule   Remove background refresh schedule")
 	fmt.Fprintln(os.Stderr, "  notify [event]       Notify running instances to reload (default: reload)")
 	fmt.Fprintln(os.Stderr, "  add-todo             Add a todo to the Command Center")
+	fmt.Fprintln(os.Stderr, "  todo --get <id>      Get a todo by display ID (JSON output)")
 	fmt.Fprintln(os.Stderr, "  add-bookmark         Save a session bookmark")
+	fmt.Fprintln(os.Stderr, "  paths                List learned project paths (--json, --auto-describe, --add-rule)")
 	fmt.Fprintln(os.Stderr, "  worktrees            List CCC-managed git worktrees")
 	fmt.Fprintln(os.Stderr, "  worktrees prune      Remove all CCC worktrees (or prune [path] for one repo)")
 	fmt.Fprintln(os.Stderr, "  sessions             Same as default")

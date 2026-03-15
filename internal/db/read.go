@@ -337,6 +337,30 @@ func DBLoadPaths(db *sql.DB) ([]string, error) {
 	return paths, rows.Err()
 }
 
+// DBLoadPathsFull loads all learned paths with full metadata.
+func DBLoadPathsFull(d *sql.DB) ([]PathEntry, error) {
+	rows, err := d.Query(`SELECT path, description, added_at, sort_order FROM cc_learned_paths ORDER BY sort_order ASC, added_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []PathEntry
+	for rows.Next() {
+		var e PathEntry
+		var addedAt string
+		if err := rows.Scan(&e.Path, &e.Description, &addedAt, &e.SortOrder); err != nil {
+			return nil, err
+		}
+		e.AddedAt = ParseTime(addedAt)
+		entries = append(entries, e)
+	}
+	if entries == nil {
+		entries = []PathEntry{}
+	}
+	return entries, rows.Err()
+}
+
 // DBLoadSourceSync loads the sync status for a given data source.
 func DBLoadSourceSync(d *sql.DB, source string) (*SourceSync, error) {
 	var ss SourceSync
@@ -384,6 +408,47 @@ func DBLoadAllSourceSync(d *sql.DB) (map[string]*SourceSync, error) {
 		result[ss.Source] = &ss
 	}
 	return result, rows.Err()
+}
+
+// DBLoadTodoByDisplayID loads a single todo by its display_id.
+// Returns nil, nil if no todo with that display_id exists.
+func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
+	var t Todo
+	var createdStr string
+	var completedStr sql.NullString
+	var sourceRef, ctx, detail, who, projDir, due, effort, sessionID, proposedPrompt, sessionStatus sql.NullString
+
+	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
+		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status,
+		created_at, completed_at
+		FROM cc_todos WHERE display_id = ?`, displayID).
+		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
+			&sourceRef, &ctx, &detail, &who, &projDir, &due, &effort, &sessionID,
+			&proposedPrompt, &sessionStatus,
+			&createdStr, &completedStr)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	t.SourceRef = sourceRef.String
+	t.Context = ctx.String
+	t.Detail = detail.String
+	t.WhoWaiting = who.String
+	t.ProjectDir = projDir.String
+	t.Due = due.String
+	t.Effort = effort.String
+	t.SessionID = sessionID.String
+	t.ProposedPrompt = proposedPrompt.String
+	t.SessionStatus = sessionStatus.String
+	t.CreatedAt = ParseTime(createdStr)
+	if completedStr.Valid {
+		ct := ParseTime(completedStr.String)
+		t.CompletedAt = &ct
+	}
+	return &t, nil
 }
 
 // DBIsEmpty returns true if no todos exist in the database yet.

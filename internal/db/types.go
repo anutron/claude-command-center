@@ -420,6 +420,14 @@ func (cc *CommandCenter) AddPendingBooking(todoID string, durationMinutes int) {
 	})
 }
 
+// PathEntry holds full metadata for a learned path row.
+type PathEntry struct {
+	Path        string    `json:"path"`
+	Description string    `json:"description"`
+	AddedAt     time.Time `json:"added_at"`
+	SortOrder   int       `json:"sort_order"`
+}
+
 // ---------------------------------------------------------------------------
 // Learned-paths CRUD (file-based)
 // ---------------------------------------------------------------------------

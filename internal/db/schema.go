@@ -176,6 +176,9 @@ func migrateSchema(db *sql.DB) error {
 		) ranked WHERE ranked.path = cc_learned_paths.path
 	)`)
 
+	// Add description column to learned paths if missing (for LLM-generated project summaries)
+	_, _ = db.Exec(`ALTER TABLE cc_learned_paths ADD COLUMN description TEXT NOT NULL DEFAULT ''`)
+
 	return nil
 }
 

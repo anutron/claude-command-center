@@ -2,8 +2,10 @@ package refresh
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/db"
@@ -57,10 +59,11 @@ func CleanJSON(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// generateProposedPrompts fills in ProposedPrompt for eligible todos (active,
-// has a source, but no prompt yet). Each prompt is a self-contained Claude Code
-// instruction derived from the todo's title, detail, context, and source.
-func generateProposedPrompts(ctx context.Context, l llm.LLM, todos []db.Todo) []db.Todo {
+// generateProposedPrompts fills in ProposedPrompt (and ProjectDir) for eligible
+// todos (active, has a source, but no prompt yet). Uses project context — path
+// descriptions, skills, and routing rules — to choose the best project and
+// generate a tailored prompt for each todo.
+func generateProposedPrompts(ctx context.Context, l llm.LLM, database *sql.DB, todos []db.Todo) []db.Todo {
 	var eligible []int
 	for i, t := range todos {
 		if t.Status == "active" && t.Source != "" && t.Source != "manual" && t.ProposedPrompt == "" {
@@ -71,7 +74,88 @@ func generateProposedPrompts(ctx context.Context, l llm.LLM, todos []db.Todo) []
 		return todos
 	}
 
-	// Build a batch prompt for all eligible todos at once to save LLM calls.
+	// Load project context for routing decisions.
+	pathCtx := loadPathContext(database)
+
+	// If we have no paths, there's nothing to route to — fall back to prompt-only
+	// generation without project assignment.
+	if len(pathCtx.Paths) == 0 {
+		return generateProposedPromptsLegacy(ctx, l, todos, eligible)
+	}
+
+	for _, i := range eligible {
+		result, err := GenerateTodoPrompt(ctx, l, todos[i], pathCtx)
+		if err != nil {
+			log.Printf("todo prompt generation for %q: %v", todos[i].ID, err)
+			continue
+		}
+		todos[i].ProposedPrompt = result.ProposedPrompt
+		if result.ProjectDir != "" {
+			todos[i].ProjectDir = result.ProjectDir
+		}
+	}
+
+	return todos
+}
+
+// loadPathContext gathers path metadata, skills, and routing rules for the
+// routing prompt. Errors are logged but not fatal — the agent can still work
+// with partial context.
+func loadPathContext(database *sql.DB) PathContext {
+	var ctx PathContext
+
+	if database == nil {
+		return ctx
+	}
+
+	// Load paths with descriptions from DB.
+	entries, err := db.DBLoadPathsFull(database)
+	if err != nil {
+		log.Printf("loading paths for routing: %v", err)
+		return ctx
+	}
+
+	// Load routing rules (from config file, not DB).
+	routingRules, err := db.LoadRoutingRules()
+	if err != nil {
+		log.Printf("loading routing rules: %v", err)
+	}
+
+	// Load global skills.
+	globalSkills, err := db.GetGlobalSkills(false)
+	if err != nil {
+		log.Printf("loading global skills: %v", err)
+	}
+	ctx.GlobalSkills = globalSkills
+
+	// Build path entries with skills and routing rules.
+	for _, entry := range entries {
+		pm := PathWithMeta{
+			Path:        entry.Path,
+			Description: entry.Description,
+		}
+
+		// Load project-specific skills (uses disk cache with 1hr TTL).
+		skills, err := db.GetProjectSkills(entry.Path, false)
+		if err != nil {
+			log.Printf("loading skills for %s: %v", entry.Path, err)
+		}
+		pm.Skills = skills
+
+		// Attach routing rules if present for this path.
+		if rule, ok := routingRules[entry.Path]; ok {
+			pm.RoutingRules = &rule
+		}
+
+		ctx.Paths = append(ctx.Paths, pm)
+	}
+
+	return ctx
+}
+
+// generateProposedPromptsLegacy is the original batch prompt approach, used as
+// a fallback when no learned paths are available (so routing is not possible).
+func generateProposedPromptsLegacy(ctx context.Context, l llm.LLM, todos []db.Todo, eligible []int) []db.Todo {
 	type todoSummary struct {
 		ID      string `json:"id"`
 		Title   string `json:"title"`

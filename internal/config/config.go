@@ -29,6 +29,7 @@ type Config struct {
 	Gmail           GmailConfig            `yaml:"gmail"`
 	ExternalPlugins []ExternalPluginConfig `yaml:"external_plugins"`
 	Agent           AgentConfig            `yaml:"agent"`
+	Refresh         RefreshConfig          `yaml:"refresh"`
 
 	// DisabledPlugins lists slugs of built-in plugins the user has turned off.
 	// e.g. ["sessions", "commandcenter"]
@@ -192,6 +193,13 @@ type AgentConfig struct {
 	DefaultPermission string  `yaml:"default_permission"`
 	DefaultMode       string  `yaml:"default_mode"`
 	MaxConcurrent     int     `yaml:"max_concurrent"`
+}
+
+// RefreshConfig controls ccc-refresh behavior.
+type RefreshConfig struct {
+	// Model selects which LLM model ccc-refresh uses for prompt generation.
+	// Empty string means use the CLI default.
+	Model string `yaml:"model,omitempty"`
 }
 
 // BannerVisible returns whether the banner should be shown.
