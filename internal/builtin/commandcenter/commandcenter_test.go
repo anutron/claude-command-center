@@ -512,6 +512,15 @@ func TestDisplayContext(t *testing.T) {
 		{"https://mycompany.slack.com/archives/C01ABC/p123456", "Slack"},
 		{"https://workspace.slack.com/messages/general", "Slack"},
 		{"https://github.com/owner/repo/issues/42", "GitHub"},
+		// Slack channel with description (BUG-074)
+		{"#proj-dashboard-permissions-via-rbac – RBAC feature is in QA/bug bash phase, these items are non-blocking but needed in parallel", "Slack: #proj-dashboard-permissions-vi..."},
+		{"#general – Company announcements", "Slack: #general"},
+		{"#general - Company announcements", "Slack: #general"},
+		{"#my-channel", "Slack: #my-channel"},
+		// Long plain text gets truncated
+		{"this is a very long context string that should be truncated to forty chars", "this is a very long context string th..."},
+		// Short plain text passes through
+		{"short", "short"},
 	}
 
 	for _, tt := range tests {
