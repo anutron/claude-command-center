@@ -675,6 +675,14 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 			flash := lipgloss.NewStyle().Foreground(p.styles.ColorGreen).Render("  > " + p.flashMessage)
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", flash)
 		}
+		if p.addingTodoQuick {
+			inputLine := p.styles.SectionHeader.Render("QUICK TODO (one per line, ctrl+d submit, esc cancel):") + "\n" + p.quickTodoTextArea.View()
+			view = lipgloss.JoinVertical(lipgloss.Left, view, "", inputLine)
+		}
+		if p.addingTodoRich {
+			inputLine := p.styles.SectionHeader.Render("COMMAND (ctrl+d submit, esc cancel):") + "\n" + p.todoTextArea.View()
+			view = lipgloss.JoinVertical(lipgloss.Left, view, "", inputLine)
+		}
 		if p.searchActive {
 			searchLine := p.styles.SectionHeader.Render("/") + " " + p.searchInput.View() + "  " + p.styles.Hint.Render("enter keep filter \u00b7 esc clear")
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", searchLine)
