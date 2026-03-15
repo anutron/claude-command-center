@@ -702,6 +702,7 @@ func (p *Plugin) detailCompleteTodo() plugin.Action {
 	}
 
 	p.detailNotice = fmt.Sprintf("Done: %s", flattenTitle(todo.Title))
+	p.detailNoticeType = "done"
 	p.detailNoticeAt = time.Now()
 
 	dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBCompleteTodo(database, todoID) })
@@ -738,6 +739,7 @@ func (p *Plugin) detailDismissTodo() plugin.Action {
 	}
 
 	p.detailNotice = fmt.Sprintf("Removed: %s", flattenTitle(todo.Title))
+	p.detailNoticeType = "removed"
 	p.detailNoticeAt = time.Now()
 
 	dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBDismissTodo(database, todoID) })

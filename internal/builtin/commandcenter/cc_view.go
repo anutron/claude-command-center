@@ -623,7 +623,7 @@ func wrapText(text string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string) string {
+func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string, noticeType string) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -791,12 +791,18 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	// Notice banner (shown after done/remove)
 	var noticeBanner string
 	if notice != "" {
+		bgColor := s.ColorGreen
+		icon := "\u2713"
+		if noticeType == "removed" {
+			bgColor = s.ColorYellow
+			icon = "\u2717"
+		}
 		noticeBanner = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#000000")).
-			Background(s.ColorGreen).
+			Background(bgColor).
 			Bold(true).
 			Padding(0, 1).
-			Render("\u2713 " + notice)
+			Render(icon + " " + notice)
 	}
 
 	// Footer hints based on mode

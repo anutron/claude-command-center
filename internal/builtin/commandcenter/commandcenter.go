@@ -85,6 +85,7 @@ type Plugin struct {
 	detailPaths         []string
 	detailPathCursor    int
 	detailNotice        string    // flash notice shown after done/remove
+	detailNoticeType    string    // "done" or "removed" — controls notice color
 	detailNoticeAt      time.Time // when the notice was set
 
 	// Task runner view
@@ -632,16 +633,22 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 
 	if p.detailView && p.cc != nil {
 		if todo := p.detailTodo(); todo != nil {
-			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice)
+			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice, p.detailNoticeType)
 		}
 		// Notice showing but no more active todos — render just the notice
 		if p.detailNotice != "" {
+			bgColor := p.styles.ColorGreen
+			icon := "\u2713"
+			if p.detailNoticeType == "removed" {
+				bgColor = p.styles.ColorYellow
+				icon = "\u2717"
+			}
 			notice := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#000000")).
-				Background(p.styles.ColorGreen).
+				Background(bgColor).
 				Bold(true).
 				Padding(0, 1).
-				Render("\u2713 " + p.detailNotice)
+				Render(icon + " " + p.detailNotice)
 			empty := p.styles.DescMuted.Render("No more active todos")
 			content := lipgloss.JoinVertical(lipgloss.Left, "", "  "+notice, "", "  "+empty)
 			return p.styles.PanelBorder.Width(viewWidth - 4).Render(content)
