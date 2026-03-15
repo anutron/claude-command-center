@@ -1300,8 +1300,8 @@ func (p *Plugin) taskRunnerCycleOption(dir int) {
 		p.taskRunnerPerm = taskRunnerPerms[idx]
 	case 2: // Budget
 		p.taskRunnerBudget += float64(dir) * 1.0
-		if p.taskRunnerBudget < 0.50 {
-			p.taskRunnerBudget = 0.50
+		if p.taskRunnerBudget < 1.00 {
+			p.taskRunnerBudget = 1.00
 		}
 	case 3: // Queue
 		p.taskRunnerAutoStart = !p.taskRunnerAutoStart
