@@ -663,6 +663,10 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 			loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", loadingLine)
 		}
+		if p.flashMessage != "" {
+			flash := lipgloss.NewStyle().Foreground(p.styles.ColorGreen).Render("  > " + p.flashMessage)
+			view = lipgloss.JoinVertical(lipgloss.Left, view, "", flash)
+		}
 		if p.searchActive {
 			searchLine := p.styles.SectionHeader.Render("/") + " " + p.searchInput.View() + "  " + p.styles.Hint.Render("enter keep filter \u00b7 esc clear")
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", searchLine)
