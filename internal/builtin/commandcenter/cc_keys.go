@@ -1307,6 +1307,12 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 		}
 	}
 
+	// Auto-open path picker if todo has no project dir
+	if todo.ProjectDir == "" && len(p.detailPaths) > 0 {
+		p.taskRunnerPickingPath = true
+		p.taskRunnerPathFilter = ""
+	}
+
 	// Build prompt text from todo context
 	promptText := formatTodoContext(todo)
 
