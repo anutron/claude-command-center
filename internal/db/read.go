@@ -56,7 +56,7 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 
 func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 	rows, err := db.Query(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
-		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status,
+		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status,
 		session_summary, COALESCE(triage_status, 'accepted'), created_at, completed_at
 		FROM cc_todos ORDER BY sort_order ASC`)
 	if err != nil {
@@ -69,11 +69,11 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		var t Todo
 		var createdStr string
 		var completedStr sql.NullString
-		var sourceRef, ctx, detail, who, projDir, due, effort, sessionID, proposedPrompt, sessionStatus, sessionSummary sql.NullString
+		var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionStatus, sessionSummary sql.NullString
 		var triageStatus string
 
 		err := rows.Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
-			&sourceRef, &ctx, &detail, &who, &projDir, &due, &effort, &sessionID,
+			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
 			&proposedPrompt, &sessionStatus, &sessionSummary, &triageStatus,
 			&createdStr, &completedStr)
 		if err != nil {
@@ -85,6 +85,7 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		t.Detail = detail.String
 		t.WhoWaiting = who.String
 		t.ProjectDir = projDir.String
+		t.LaunchMode = launchMode.String
 		t.Due = due.String
 		t.Effort = effort.String
 		t.SessionID = sessionID.String
@@ -419,14 +420,14 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	var t Todo
 	var createdStr string
 	var completedStr sql.NullString
-	var sourceRef, ctx, detail, who, projDir, due, effort, sessionID, proposedPrompt, sessionStatus, sessionSummary sql.NullString
+	var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionStatus, sessionSummary sql.NullString
 
 	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
-		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status,
+		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status,
 		session_summary, created_at, completed_at
 		FROM cc_todos WHERE display_id = ?`, displayID).
 		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
-			&sourceRef, &ctx, &detail, &who, &projDir, &due, &effort, &sessionID,
+			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
 			&proposedPrompt, &sessionStatus, &sessionSummary,
 			&createdStr, &completedStr)
 	if err == sql.ErrNoRows {
@@ -441,6 +442,7 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	t.Detail = detail.String
 	t.WhoWaiting = who.String
 	t.ProjectDir = projDir.String
+	t.LaunchMode = launchMode.String
 	t.Due = due.String
 	t.Effort = effort.String
 	t.SessionID = sessionID.String

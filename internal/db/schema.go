@@ -185,6 +185,9 @@ func migrateSchema(db *sql.DB) error {
 	// Add description column to learned paths if missing (for LLM-generated project summaries)
 	_, _ = db.Exec(`ALTER TABLE cc_learned_paths ADD COLUMN description TEXT NOT NULL DEFAULT ''`)
 
+	// Add launch_mode column to todos if missing (for persisting wizard mode selection)
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN launch_mode TEXT`)
+
 	return nil
 }
 
