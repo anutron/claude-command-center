@@ -84,6 +84,7 @@ type Plugin struct {
 	detailFieldInput    textinput.Model
 	detailPaths         []string
 	detailPathCursor    int
+	detailPathFilter    string
 	detailStatusCursor  int
 	detailNotice        string    // flash notice shown after done/remove
 	detailNoticeType    string    // "done" or "removed" — controls notice color
@@ -96,7 +97,8 @@ type Plugin struct {
 	taskRunnerBudget      float64
 	taskRunnerPrompt      viewport.Model
 	taskRunnerAutoStart   bool
-	taskRunnerSelectedRow int // 0=Mode, 1=Permission, 2=Budget, 3=Queue
+	taskRunnerSelectedRow int // 0=Mode, 1=Budget, 2=Project
+	taskRunnerPathCursor  int // index into detailPaths for task runner project override
 
 	// Help overlay
 	showHelp bool
@@ -628,13 +630,18 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 
 	if p.taskRunnerView && p.detailView && p.cc != nil {
 		if todo := p.detailTodo(); todo != nil {
-			return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerPerm, p.taskRunnerBudget, p.taskRunnerAutoStart, p.taskRunnerSelectedRow, p.taskRunnerPrompt, viewWidth, viewHeight)
+			// Determine the effective project dir for display
+		taskRunnerProjectDir := todo.ProjectDir
+		if p.taskRunnerPathCursor >= 0 && p.taskRunnerPathCursor < len(p.detailPaths) {
+			taskRunnerProjectDir = p.detailPaths[p.taskRunnerPathCursor]
+		}
+		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerPerm, p.taskRunnerBudget, p.taskRunnerAutoStart, p.taskRunnerSelectedRow, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir)
 		}
 	}
 
 	if p.detailView && p.cc != nil {
 		if todo := p.detailTodo(); todo != nil {
-			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice, p.detailNoticeType, p.detailStatusCursor)
+			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice, p.detailNoticeType, p.detailStatusCursor, p.filteredPaths(), p.detailPathCursor, p.detailPathFilter)
 		}
 		// Notice showing but no more active todos — render just the notice
 		if p.detailNotice != "" {

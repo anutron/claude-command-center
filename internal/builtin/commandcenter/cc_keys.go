@@ -604,6 +604,8 @@ func (p *Plugin) handleDetailView(msg tea.KeyMsg) plugin.Action {
 		return p.handleDetailEditingField(msg)
 	case "selectingStatus":
 		return p.handleDetailStatusSelect(msg)
+	case "selectingPath":
+		return p.handleDetailPathSelect(msg)
 	case "commandInput":
 		return p.handleDetailCommandInput(msg)
 	default:
@@ -784,7 +786,7 @@ func (p *Plugin) enterDetailFieldEdit() plugin.Action {
 		p.detailFieldInput.SetValue(todo.Due)
 		p.detailFieldInput.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
-	case 2: // ProjectDir — cycle through paths
+	case 2: // ProjectDir — open scrollable path picker
 		if len(p.detailPaths) == 0 {
 			// No paths available; open text input instead
 			p.detailMode = "editingField"
@@ -794,16 +796,17 @@ func (p *Plugin) enterDetailFieldEdit() plugin.Action {
 			p.detailFieldInput.Focus()
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
 		}
-		// Find current path in the list and pick the next one
+		// Enter path selection mode
+		p.detailMode = "selectingPath"
+		p.detailPathFilter = ""
 		p.detailPathCursor = 0
 		for i, path := range p.detailPaths {
 			if path == todo.ProjectDir {
-				p.detailPathCursor = (i + 1) % len(p.detailPaths)
+				p.detailPathCursor = i
 				break
 			}
 		}
-		newPath := p.detailPaths[p.detailPathCursor]
-		return p.commitDetailFieldEdit(todo, "project_dir", newPath)
+		return plugin.NoopAction()
 	}
 	return plugin.NoopAction()
 }
@@ -861,6 +864,73 @@ func (p *Plugin) handleDetailStatusSelect(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 	return plugin.NoopAction()
+}
+
+// filteredPaths returns the subset of detailPaths matching the current filter.
+func (p *Plugin) filteredPaths() []string {
+	if p.detailPathFilter == "" {
+		return p.detailPaths
+	}
+	lower := strings.ToLower(p.detailPathFilter)
+	var out []string
+	for _, path := range p.detailPaths {
+		if strings.Contains(strings.ToLower(path), lower) {
+			out = append(out, path)
+		}
+	}
+	return out
+}
+
+func (p *Plugin) handleDetailPathSelect(msg tea.KeyMsg) plugin.Action {
+	todoPtr := p.detailTodo()
+	if todoPtr == nil {
+		p.detailMode = "viewing"
+		return plugin.NoopAction()
+	}
+	todo := *todoPtr
+
+	filtered := p.filteredPaths()
+
+	switch msg.String() {
+	case "up", "k":
+		if p.detailPathCursor > 0 {
+			p.detailPathCursor--
+		}
+		return plugin.NoopAction()
+	case "down", "j":
+		if p.detailPathCursor < len(filtered)-1 {
+			p.detailPathCursor++
+		}
+		return plugin.NoopAction()
+	case "enter":
+		if len(filtered) > 0 && p.detailPathCursor < len(filtered) {
+			newPath := filtered[p.detailPathCursor]
+			p.detailMode = "viewing"
+			p.detailPathFilter = ""
+			return p.commitDetailFieldEdit(todo, "project_dir", newPath)
+		}
+		p.detailMode = "viewing"
+		p.detailPathFilter = ""
+		return plugin.NoopAction()
+	case "esc":
+		p.detailMode = "viewing"
+		p.detailPathFilter = ""
+		return plugin.NoopAction()
+	case "backspace":
+		if len(p.detailPathFilter) > 0 {
+			p.detailPathFilter = p.detailPathFilter[:len(p.detailPathFilter)-1]
+			p.detailPathCursor = 0
+		}
+		return plugin.NoopAction()
+	default:
+		// Typing characters filters the list
+		key := msg.String()
+		if len(key) == 1 {
+			p.detailPathFilter += key
+			p.detailPathCursor = 0
+		}
+		return plugin.NoopAction()
+	}
 }
 
 func (p *Plugin) handleDetailEditingField(msg tea.KeyMsg) plugin.Action {
@@ -1225,6 +1295,14 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 	}
 	p.taskRunnerAutoStart = false
 	p.taskRunnerSelectedRow = 0
+	// Initialize path cursor to match the todo's project dir
+	p.taskRunnerPathCursor = -1 // -1 means "use todo's original project dir"
+	for i, path := range p.detailPaths {
+		if path == todo.ProjectDir {
+			p.taskRunnerPathCursor = i
+			break
+		}
+	}
 
 	// Build prompt text from todo context
 	promptText := formatTodoContext(todo)
@@ -1262,11 +1340,11 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 		return p.taskRunnerLaunch(true)
 
 	case "tab", "down":
-		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 1) % 2
+		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 1) % 3
 		return plugin.NoopAction()
 
 	case "shift+tab", "up":
-		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 1) % 2
+		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow - 1 + 3) % 3
 		return plugin.NoopAction()
 
 	case "left", "h":
@@ -1317,7 +1395,11 @@ func (p *Plugin) taskRunnerLaunch(immediate bool) plugin.Action {
 		if prompt == "" {
 			prompt = formatTodoContext(todo)
 		}
+		// Use task runner's selected path if available, otherwise fall back to todo's
 		projectDir := todo.ProjectDir
+		if p.taskRunnerPathCursor >= 0 && p.taskRunnerPathCursor < len(p.detailPaths) {
+			projectDir = p.detailPaths[p.taskRunnerPathCursor]
+		}
 		if projectDir == "" {
 			home, _ := os.UserHomeDir()
 			projectDir = home
@@ -1358,6 +1440,10 @@ func (p *Plugin) taskRunnerCycleOption(dir int) {
 		p.taskRunnerBudget += float64(dir) * 1.0
 		if p.taskRunnerBudget < 1.00 {
 			p.taskRunnerBudget = 1.00
+		}
+	case 2: // Project
+		if len(p.detailPaths) > 0 {
+			p.taskRunnerPathCursor = (p.taskRunnerPathCursor + dir + len(p.detailPaths)) % len(p.detailPaths)
 		}
 	}
 }
