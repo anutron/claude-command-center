@@ -1328,18 +1328,40 @@ var taskRunnerModes = []string{"normal", "worktree", "sandbox"}
 var taskRunnerPerms = []string{"default", "plan", "auto"}
 
 func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
+	// Launch selector sub-mode
+	if p.taskRunnerLaunching {
+		switch msg.String() {
+		case "left", "h":
+			if p.taskRunnerLaunchCursor > 0 {
+				p.taskRunnerLaunchCursor--
+			}
+			return plugin.NoopAction()
+		case "right", "l":
+			if p.taskRunnerLaunchCursor < 1 {
+				p.taskRunnerLaunchCursor++
+			}
+			return plugin.NoopAction()
+		case "enter":
+			// Confirm: cursor 0 = queue, cursor 1 = run now (immediate)
+			p.taskRunnerLaunching = false
+			return p.taskRunnerLaunch(p.taskRunnerLaunchCursor == 1)
+		case "esc":
+			p.taskRunnerLaunching = false
+			return plugin.NoopAction()
+		}
+		return plugin.NoopAction()
+	}
+
 	switch msg.String() {
 	case "esc":
 		p.taskRunnerView = false
 		return plugin.NoopAction()
 
-	case "ctrl+enter":
-		// Launch or queue a headless agent session.
-		return p.taskRunnerLaunch(false)
-
-	case "ctrl+shift+enter":
-		// Launch immediately (bypass queue).
-		return p.taskRunnerLaunch(true)
+	case "enter":
+		// Show inline launch selector
+		p.taskRunnerLaunching = true
+		p.taskRunnerLaunchCursor = 0
+		return plugin.NoopAction()
 
 	case "tab", "down":
 		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 1) % 3

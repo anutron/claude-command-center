@@ -1352,7 +1352,7 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 }
 
 // renderTaskRunner renders the task runner launch configuration screen.
-func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float64, autoStart bool, selectedRow int, promptVP viewport.Model, width, height int, projectDir string) string {
+func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float64, autoStart bool, selectedRow int, promptVP viewport.Model, width, height int, projectDir string, launching bool, launchCursor int) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -1398,8 +1398,35 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 	divider := s.DescMuted.Render("  " + strings.Repeat("\u2500", innerWidth-4))
 	promptHeader := s.SectionHeader.Render("  PROMPT")
 
-	// Footer hints
-	hints := s.Hint.Render("  ctrl+enter launch \u00b7 ctrl+shift+enter launch now \u00b7 e edit prompt \u00b7 esc back")
+	// Footer: launch selector or hints
+	var footer string
+	if launching {
+		// Render inline launch selector
+		queueLabel := "Queue"
+		runNowLabel := "Run Now"
+		if launchCursor == 0 {
+			queueLabel = lipgloss.NewStyle().
+				Background(s.ColorCyan).
+				Foreground(lipgloss.Color("#000000")).
+				Bold(true).
+				Padding(0, 1).
+				Render(queueLabel)
+			runNowLabel = s.DescMuted.Render(runNowLabel)
+		} else {
+			queueLabel = s.DescMuted.Render(queueLabel)
+			runNowLabel = lipgloss.NewStyle().
+				Background(s.ColorCyan).
+				Foreground(lipgloss.Color("#000000")).
+				Bold(true).
+				Padding(0, 1).
+				Render(runNowLabel)
+		}
+		selector := "  " + queueLabel + "   " + runNowLabel
+		selectorHint := s.Hint.Render("  enter confirm \u00b7 esc cancel")
+		footer = selector + "\n" + selectorHint
+	} else {
+		footer = s.Hint.Render("  enter launch \u00b7 e edit prompt \u00b7 esc back")
+	}
 
 	parts := []string{
 		header,
@@ -1413,7 +1440,7 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 		"",
 		promptVP.View(),
 		"",
-		hints,
+		footer,
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
