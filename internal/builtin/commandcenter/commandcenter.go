@@ -98,9 +98,11 @@ type Plugin struct {
 	taskRunnerPrompt      viewport.Model
 	taskRunnerAutoStart   bool
 	taskRunnerSelectedRow int // 0=Mode, 1=Budget, 2=Project
-	taskRunnerPathCursor  int // index into detailPaths for task runner project override
-	taskRunnerLaunching   bool // true when launch selector is active
-	taskRunnerLaunchCursor int  // 0=Queue, 1=Run Now
+	taskRunnerPathCursor   int    // index into detailPaths for task runner project override
+	taskRunnerLaunching    bool   // true when launch selector is active
+	taskRunnerLaunchCursor int    // 0=Queue, 1=Run Now
+	taskRunnerPickingPath  bool   // true when scrollable path picker is open
+	taskRunnerPathFilter   string // type-to-filter string for path picker
 
 	// Help overlay
 	showHelp bool
@@ -637,7 +639,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		if p.taskRunnerPathCursor >= 0 && p.taskRunnerPathCursor < len(p.detailPaths) {
 			taskRunnerProjectDir = p.detailPaths[p.taskRunnerPathCursor]
 		}
-		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerPerm, p.taskRunnerBudget, p.taskRunnerAutoStart, p.taskRunnerSelectedRow, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunching, p.taskRunnerLaunchCursor)
+		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerPerm, p.taskRunnerBudget, p.taskRunnerAutoStart, p.taskRunnerSelectedRow, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunching, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter)
 		}
 	}
 
