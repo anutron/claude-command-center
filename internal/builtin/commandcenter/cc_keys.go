@@ -27,6 +27,20 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 
+	// Two-key chord: "g" prefix (Gmail-style shortcuts)
+	if p.gPending {
+		p.gPending = false
+		if msg.String() == "i" {
+			// "gi" = go inbox: return to list view from wherever we are
+			p.detailView = false
+			p.detailMode = "viewing"
+			p.taskRunnerView = false
+			p.detailNotice = ""
+			return plugin.NoopAction()
+		}
+		// Any other key after "g" — not a recognized chord, fall through
+	}
+
 	// Task runner view (sub-view of detail)
 	if p.taskRunnerView && p.detailView {
 		return p.handleTaskRunnerView(msg)
@@ -587,6 +601,10 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			return plugin.NoopAction()
 		}
 		return plugin.NoopAction()
+
+	case "g":
+		p.gPending = true
+		return plugin.NoopAction()
 	}
 
 	return plugin.NoopAction()
@@ -711,6 +729,9 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		p.commandTextArea.SetWidth(inputWidth)
 		cmd := p.commandTextArea.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	case "g":
+		p.gPending = true
+		return plugin.NoopAction()
 	case "esc":
 		p.detailView = false
 		p.detailMode = "viewing"

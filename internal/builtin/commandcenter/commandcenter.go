@@ -162,6 +162,9 @@ type Plugin struct {
 	searchActive bool
 	searchInput  textinput.Model
 
+	// Key chord state: "g" prefix for Gmail-style shortcuts (e.g., "gi" = go inbox)
+	gPending bool
+
 	// Sub-view: "command" or "threads"
 	subView string
 
@@ -279,6 +282,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "tab", Description: "Cycle triage filter (expanded)"},
 		{Key: "b", Description: "Toggle completed backlog"},
 		{Key: "r", Description: "Refresh from all sources"},
+		{Key: "gi", Description: "Go to inbox (list view)"},
 	}
 }
 
