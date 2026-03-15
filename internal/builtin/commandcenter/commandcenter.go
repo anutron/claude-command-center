@@ -88,6 +88,7 @@ type Plugin struct {
 	detailMode          string // "viewing", "editingField", "commandInput"
 	detailSelectedField int    // 0=Status, 1=Due, 2=ProjectDir, 3=Prompt
 	detailFieldInput    textinput.Model
+	commandTextArea     textarea.Model // multi-line wrapping input for detail "c" command
 	detailPaths         []string
 	detailPathCursor    int
 	detailPathFilter    string
@@ -356,6 +357,18 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	qta.FocusedStyle.CursorLine = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
 	qta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(p.styles.ColorMuted)
 	p.quickTodoTextArea = qta
+
+	// Set up command textarea for detail view (wrapping, Enter to submit)
+	cta := textarea.New()
+	cta.Placeholder = "Tell me what changed..."
+	cta.CharLimit = 0
+	cta.SetWidth(80)
+	cta.SetHeight(3)
+	cta.FocusedStyle.Base = cta.FocusedStyle.Base.Foreground(p.styles.ColorWhite)
+	cta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
+	cta.FocusedStyle.CursorLine = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
+	cta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(p.styles.ColorMuted)
+	p.commandTextArea = cta
 
 	// Set up search input
 	si := textinput.New()
@@ -694,7 +707,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 
 	if p.detailView && p.cc != nil {
 		if todo := p.detailTodo(); todo != nil {
-			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.textInput.View(), viewWidth, p.detailNotice, p.detailNoticeType, p.detailStatusCursor, p.filteredPaths(), p.detailPathCursor, p.detailPathFilter)
+			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.commandTextArea.View(), viewWidth, p.detailNotice, p.detailNoticeType, p.detailStatusCursor, p.filteredPaths(), p.detailPathCursor, p.detailPathFilter)
 		}
 		// Notice showing but no more active todos — render just the notice
 		if p.detailNotice != "" {

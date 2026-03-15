@@ -678,14 +678,10 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	case "c":
 		p.detailMode = "commandInput"
-		p.textInput.Reset()
-		p.textInput.Placeholder = "Tell me what changed..."
-		inputWidth := p.width - 10
-		if inputWidth < 40 {
-			inputWidth = 40
-		}
-		p.textInput.Width = inputWidth
-		cmd := p.textInput.Focus()
+		p.commandTextArea.Reset()
+		inputWidth := p.textareaWidth()
+		p.commandTextArea.SetWidth(inputWidth)
+		cmd := p.commandTextArea.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	case "esc":
 		p.detailView = false
@@ -986,35 +982,36 @@ func (p *Plugin) handleDetailEditingField(msg tea.KeyMsg) plugin.Action {
 func (p *Plugin) handleDetailCommandInput(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
 	case "enter":
-		instruction := strings.TrimSpace(p.textInput.Value())
+		// Enter submits the command (not a newline)
+		instruction := strings.TrimSpace(p.commandTextArea.Value())
 		if instruction == "" {
 			return plugin.NoopAction()
 		}
 		todoPtr := p.detailTodo()
 		if todoPtr == nil {
 			p.detailMode = "viewing"
-			p.textInput.Blur()
+			p.commandTextArea.Blur()
 			return plugin.NoopAction()
 		}
 		todo := *todoPtr
 		prompt := buildEditPrompt(todo, instruction)
 		p.detailView = false
 		p.detailMode = "viewing"
-		p.textInput.Blur()
-		p.textInput.Reset()
+		p.commandTextArea.Blur()
+		p.commandTextArea.Reset()
 		p.claudeLoading = true
 		p.claudeLoadingMsg = "Updating todo..."
 		p.claudeLoadingTodo = todo.ID
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeEditCmd(p.llm, prompt, todo.ID)}
 	case "esc":
 		p.detailMode = "viewing"
-		p.textInput.Blur()
-		p.textInput.Reset()
+		p.commandTextArea.Blur()
+		p.commandTextArea.Reset()
 		return plugin.NoopAction()
 	}
 
 	var cmd tea.Cmd
-	p.textInput, cmd = p.textInput.Update(msg)
+	p.commandTextArea, cmd = p.commandTextArea.Update(msg)
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
