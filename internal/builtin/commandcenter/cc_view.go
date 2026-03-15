@@ -1571,7 +1571,7 @@ func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptV
 		divider,
 		promptHeader,
 		"",
-		promptVP.View(),
+		lipgloss.NewStyle().PaddingLeft(3).Render(promptVP.View()),
 	}
 
 	// Instruction input (c key)
