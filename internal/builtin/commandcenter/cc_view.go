@@ -1352,7 +1352,12 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 }
 
 // renderTaskRunner renders the task runner launch configuration screen.
-func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float64, autoStart bool, selectedRow int, promptVP viewport.Model, width, height int, projectDir string, launching bool, launchCursor int, pickingPath bool, filteredPaths []string, pathCursor int, pathFilter string) string {
+func renderTaskRunner(s *ccStyles, todo db.Todo, mode string, budget float64,
+	step int, promptVP viewport.Model, width, height int,
+	projectDir string, launchCursor int,
+	pickingPath bool, filteredPaths []string, pathCursor int, pathFilter string,
+	refining bool) string {
+
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -1366,152 +1371,204 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 	title := truncateToWidth(flattenTitle(todo.Title), titleMax)
 	header := s.SectionHeader.Render("TASK RUNNER — " + title)
 
-	// Config rows (3 rows: Mode, Budget, Project)
-	modeOptions := []string{"Normal", "Worktree", "Sandbox"}
-	modeLine := renderTaskRunnerOptionRow(s, "Mode", modeOptions, mode, selectedRow == 0, innerWidth)
-
-	budgetStr := fmt.Sprintf("$%.2f", budget)
-	budgetLabel := s.SectionHeader.Render("Budget:")
-	budgetValue := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(budgetStr)
-	if selectedRow == 1 {
-		budgetLabel = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Budget:")
-		budgetValue = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(budgetStr)
+	switch step {
+	case 1:
+		return renderTaskRunnerStep1(s, header, projectDir, pickingPath, filteredPaths, pathCursor, pathFilter, innerWidth)
+	case 2:
+		return renderTaskRunnerStep2(s, header, projectDir, mode, innerWidth)
+	case 3:
+		return renderTaskRunnerStep3(s, header, projectDir, mode, promptVP, launchCursor, refining, innerWidth)
+	default:
+		return s.PanelBorder.Width(innerWidth).Render(header + "\n\n" + s.DescMuted.Render("  Unknown step"))
 	}
-	budgetLine := fmt.Sprintf("  %-14s %s", budgetLabel, budgetValue+" "+s.DescMuted.Render("(<-> adjust)"))
+}
 
-	// Project row
-	projectLabel := s.SectionHeader.Render("Project:")
-	projectValue := shortDirName(projectDir)
-	if projectValue == "" {
-		projectValue = s.DescMuted.Render("(not set)")
+// renderTaskRunnerStep1 renders Step 1/3: Project selection.
+func renderTaskRunnerStep1(s *ccStyles, header, projectDir string, pickingPath bool, filteredPaths []string, pathCursor int, pathFilter string, innerWidth int) string {
+	stepLabel := lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Step 1/3: Project")
+
+	dirName := shortDirName(projectDir)
+	if dirName == "" {
+		dirName = s.DescMuted.Render("(not set)")
 	} else {
-		if selectedRow == 2 {
-			projectLabel = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Project:")
-			projectValue = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(projectValue)
-		} else {
-			projectValue = lipgloss.NewStyle().Foreground(s.ColorWhite).Render(projectValue)
-		}
+		dirName = lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(dirName)
 	}
-	projectHint := s.DescMuted.Render("(enter to pick)")
+
+	fullPath := s.DescMuted.Render(projectDir)
+
+	parts := []string{
+		header,
+		"",
+		"  " + stepLabel,
+		"",
+		"  " + dirName,
+		"  " + fullPath,
+	}
+
+	// Path picker overlay
 	if pickingPath {
-		// Show filter input instead of hint
 		filterDisplay := pathFilter
 		if filterDisplay == "" {
 			filterDisplay = s.DescMuted.Render("type to filter...")
 		} else {
 			filterDisplay = lipgloss.NewStyle().Foreground(s.ColorCyan).Render(filterDisplay)
 		}
-		projectHint = filterDisplay
-	}
-	projectLine := fmt.Sprintf("  %-14s %s", projectLabel, projectValue+" "+projectHint)
+		parts = append(parts, "", "  "+filterDisplay)
 
-	// Path picker section (shown below config rows when picking)
-	var pathPickerSection string
-	if pickingPath && len(filteredPaths) > 0 {
-		maxVisible := 8
-		startIdx := 0
-		if pathCursor >= maxVisible {
-			startIdx = pathCursor - maxVisible + 1
+		pickerSection := renderPathPickerOverlay(s, filteredPaths, pathCursor, innerWidth)
+		if pickerSection != "" {
+			parts = append(parts, pickerSection)
 		}
-		endIdx := startIdx + maxVisible
-		if endIdx > len(filteredPaths) {
-			endIdx = len(filteredPaths)
-		}
-
-		var pathLines []string
-		for i := startIdx; i < endIdx; i++ {
-			path := filteredPaths[i]
-			displayPath := path
-			if len(displayPath) > innerWidth-8 {
-				displayPath = "..." + displayPath[len(displayPath)-(innerWidth-11):]
-			}
-			if i == pathCursor {
-				pathLines = append(pathLines, lipgloss.NewStyle().
-					Background(s.ColorCyan).
-					Foreground(lipgloss.Color("#000000")).
-					Bold(true).
-					Padding(0, 1).
-					Render(displayPath))
-			} else {
-				pathLines = append(pathLines, "  "+s.DescMuted.Render(displayPath))
-			}
-		}
-
-		if startIdx > 0 {
-			pathLines = append([]string{s.CalendarTime.Render(fmt.Sprintf("  ▲ %d more", startIdx))}, pathLines...)
-		}
-		if endIdx < len(filteredPaths) {
-			pathLines = append(pathLines, s.CalendarTime.Render(fmt.Sprintf("  ▼ %d more", len(filteredPaths)-endIdx)))
-		}
-
-		pickerHint := s.Hint.Render("  j/k navigate · type to filter · enter select · esc cancel")
-		pathLines = append(pathLines, pickerHint)
-
-		pathPickerSection = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(s.ColorCyan).
-			Width(innerWidth - 4).
-			Padding(0, 1).
-			Render(strings.Join(pathLines, "\n"))
-	} else if pickingPath && len(filteredPaths) == 0 {
-		pathPickerSection = "  " + s.DescMuted.Render("No paths match filter")
 	}
 
-	// Prompt section
-	divider := s.DescMuted.Render("  " + strings.Repeat("\u2500", innerWidth-4))
-	promptHeader := s.SectionHeader.Render("  PROMPT")
-
-	// Footer: launch selector or hints
-	var footer string
-	if launching {
-		// Render inline launch selector
-		queueLabel := "Queue"
-		runNowLabel := "Run Now"
-		if launchCursor == 0 {
-			queueLabel = lipgloss.NewStyle().
-				Background(s.ColorCyan).
-				Foreground(lipgloss.Color("#000000")).
-				Bold(true).
-				Padding(0, 1).
-				Render(queueLabel)
-			runNowLabel = s.DescMuted.Render(runNowLabel)
-		} else {
-			queueLabel = s.DescMuted.Render(queueLabel)
-			runNowLabel = lipgloss.NewStyle().
-				Background(s.ColorCyan).
-				Foreground(lipgloss.Color("#000000")).
-				Bold(true).
-				Padding(0, 1).
-				Render(runNowLabel)
-		}
-		selector := "  " + queueLabel + "   " + runNowLabel
-		selectorHint := s.Hint.Render("  enter confirm \u00b7 esc cancel")
-		footer = selector + "\n" + selectorHint
+	// Hints
+	var hint string
+	if pickingPath {
+		hint = s.Hint.Render("  j/k navigate \u00b7 type to filter \u00b7 enter select \u00b7 esc cancel")
 	} else {
-		footer = s.Hint.Render("  enter launch \u00b7 e edit prompt \u00b7 esc back")
+		hint = s.Hint.Render("  enter pick project \u00b7 tab next step \u00b7 esc back")
 	}
+	parts = append(parts, "", hint)
+
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return s.PanelBorder.Width(innerWidth).Render(content)
+}
+
+// renderTaskRunnerStep2 renders Step 2/3: Mode selection.
+func renderTaskRunnerStep2(s *ccStyles, header, projectDir, mode string, innerWidth int) string {
+	stepLabel := lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Step 2/3: Mode")
+
+	// Project reminder
+	projectReminder := s.DescMuted.Render("  Project: " + shortDirName(projectDir))
+
+	// Mode selector using renderTaskRunnerOptionRow (always highlighted since it's the active step)
+	modeOptions := []string{"Normal", "Worktree", "Sandbox"}
+	modeLine := renderTaskRunnerOptionRow(s, "Mode", modeOptions, mode, true, innerWidth)
+
+	hint := s.Hint.Render("  \u2190/\u2192 select mode \u00b7 tab next step \u00b7 shift+tab back \u00b7 esc cancel")
 
 	parts := []string{
 		header,
 		"",
+		"  " + stepLabel,
+		projectReminder,
+		"",
 		modeLine,
-		budgetLine,
-		projectLine,
+		"",
+		hint,
 	}
-	if pathPickerSection != "" {
-		parts = append(parts, pathPickerSection)
-	}
-	parts = append(parts, "",
+
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	return s.PanelBorder.Width(innerWidth).Render(content)
+}
+
+// renderTaskRunnerStep3 renders Step 3/3: Prompt review and launch.
+func renderTaskRunnerStep3(s *ccStyles, header, projectDir, mode string, promptVP viewport.Model, launchCursor int, refining bool, innerWidth int) string {
+	stepLabel := lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Step 3/3: Prompt")
+
+	// Project + mode reminder
+	reminder := s.DescMuted.Render(fmt.Sprintf("  Project: %s \u00b7 Mode: %s", shortDirName(projectDir), mode))
+
+	// Prompt viewport
+	divider := s.DescMuted.Render("  " + strings.Repeat("\u2500", innerWidth-4))
+	promptHeader := s.SectionHeader.Render("  PROMPT")
+
+	parts := []string{
+		header,
+		"",
+		"  " + stepLabel,
+		reminder,
+		"",
 		divider,
 		promptHeader,
 		"",
 		promptVP.View(),
-		"",
-		footer,
-	)
+	}
+
+	// Refining spinner
+	if refining {
+		refiningLine := "  " + lipgloss.NewStyle().Foreground(s.ColorCyan).Render("\u25cf") + " Refining prompt..."
+		parts = append(parts, refiningLine)
+	}
+
+	// Launch selector: [ Queue ] Run Now
+	queueLabel := "Queue"
+	runNowLabel := "Run Now"
+	if launchCursor == 0 {
+		queueLabel = lipgloss.NewStyle().
+			Background(s.ColorCyan).
+			Foreground(lipgloss.Color("#000000")).
+			Bold(true).
+			Padding(0, 1).
+			Render(queueLabel)
+		runNowLabel = s.DescMuted.Render(runNowLabel)
+	} else {
+		queueLabel = s.DescMuted.Render(queueLabel)
+		runNowLabel = lipgloss.NewStyle().
+			Background(s.ColorCyan).
+			Foreground(lipgloss.Color("#000000")).
+			Bold(true).
+			Padding(0, 1).
+			Render(runNowLabel)
+	}
+	selector := "  " + queueLabel + "   " + runNowLabel
+
+	hint := s.Hint.Render("  e edit prompt \u00b7 r refine with AI \u00b7 \u2190/\u2192 launch option \u00b7 enter launch \u00b7 shift+tab back \u00b7 esc cancel")
+
+	parts = append(parts, "", selector, hint)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return s.PanelBorder.Width(innerWidth).Render(content)
+}
+
+// renderPathPickerOverlay renders the scrollable path picker list.
+func renderPathPickerOverlay(s *ccStyles, filteredPaths []string, pathCursor int, innerWidth int) string {
+	if len(filteredPaths) == 0 {
+		return "  " + s.DescMuted.Render("No paths match filter")
+	}
+
+	maxVisible := 8
+	startIdx := 0
+	if pathCursor >= maxVisible {
+		startIdx = pathCursor - maxVisible + 1
+	}
+	endIdx := startIdx + maxVisible
+	if endIdx > len(filteredPaths) {
+		endIdx = len(filteredPaths)
+	}
+
+	var pathLines []string
+	for i := startIdx; i < endIdx; i++ {
+		path := filteredPaths[i]
+		displayPath := path
+		if len(displayPath) > innerWidth-8 {
+			displayPath = "..." + displayPath[len(displayPath)-(innerWidth-11):]
+		}
+		if i == pathCursor {
+			pathLines = append(pathLines, lipgloss.NewStyle().
+				Background(s.ColorCyan).
+				Foreground(lipgloss.Color("#000000")).
+				Bold(true).
+				Padding(0, 1).
+				Render(displayPath))
+		} else {
+			pathLines = append(pathLines, "  "+s.DescMuted.Render(displayPath))
+		}
+	}
+
+	if startIdx > 0 {
+		pathLines = append([]string{s.CalendarTime.Render(fmt.Sprintf("  \u25b2 %d more", startIdx))}, pathLines...)
+	}
+	if endIdx < len(filteredPaths) {
+		pathLines = append(pathLines, s.CalendarTime.Render(fmt.Sprintf("  \u25bc %d more", len(filteredPaths)-endIdx)))
+	}
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(s.ColorCyan).
+		Width(innerWidth - 4).
+		Padding(0, 1).
+		Render(strings.Join(pathLines, "\n"))
 }
 
 // renderTaskRunnerOptionRow renders a single config row with selectable options.

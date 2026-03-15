@@ -639,7 +639,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		if p.taskRunnerPathCursor >= 0 && p.taskRunnerPathCursor < len(p.detailPaths) {
 			taskRunnerProjectDir = p.detailPaths[p.taskRunnerPathCursor]
 		}
-		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerPerm, p.taskRunnerBudget, p.taskRunnerAutoStart, p.taskRunnerSelectedRow, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunching, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter)
+		return renderTaskRunner(&p.styles, *todo, p.taskRunnerMode, p.taskRunnerBudget, p.taskRunnerStep, p.taskRunnerPrompt, viewWidth, viewHeight, taskRunnerProjectDir, p.taskRunnerLaunchCursor, p.taskRunnerPickingPath, p.taskRunnerFilteredPaths(), p.taskRunnerPathCursor, p.taskRunnerPathFilter, p.taskRunnerRefining)
 		}
 	}
 
