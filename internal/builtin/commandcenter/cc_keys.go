@@ -1506,7 +1506,7 @@ func (p *Plugin) handleTaskRunnerPathSelect(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.NoopAction()
 	case "enter":
-		if len(filtered) > 0 && p.taskRunnerPathCursor < len(filtered) {
+		if len(filtered) > 0 && p.taskRunnerPathCursor >= 0 && p.taskRunnerPathCursor < len(filtered) {
 			// Find the index of the selected path in the full detailPaths list
 			selectedPath := filtered[p.taskRunnerPathCursor]
 			for i, path := range p.detailPaths {
