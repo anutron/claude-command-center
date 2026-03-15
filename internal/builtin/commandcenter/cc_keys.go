@@ -1173,10 +1173,8 @@ func (p *Plugin) enterTaskRunner(todo db.Todo) {
 	if p.taskRunnerMode == "" {
 		p.taskRunnerMode = "normal"
 	}
-	p.taskRunnerPerm = agentCfg.DefaultPermission
-	if p.taskRunnerPerm == "" {
-		p.taskRunnerPerm = "default"
-	}
+	// Headless agents should always execute — default to "auto" permission.
+	p.taskRunnerPerm = "auto"
 	p.taskRunnerBudget = agentCfg.DefaultBudget
 	if p.taskRunnerBudget <= 0 {
 		p.taskRunnerBudget = 5.00
@@ -1211,49 +1209,20 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 		p.taskRunnerView = false
 		return plugin.NoopAction()
 
-	case "enter":
+	case "ctrl+enter":
 		// Launch or queue a headless agent session.
-		if todoPtr := p.detailTodo(); todoPtr != nil {
-			todo := *todoPtr
-			prompt := todo.ProposedPrompt
-			if prompt == "" {
-				prompt = formatTodoContext(todo)
-			}
-			projectDir := todo.ProjectDir
-			if projectDir == "" {
-				home, _ := os.UserHomeDir()
-				projectDir = home
-			}
-			qs := queuedSession{
-				TodoID:     todo.ID,
-				Prompt:     prompt,
-				ProjectDir: projectDir,
-				Mode:       p.taskRunnerMode,
-				Perm:       p.taskRunnerPerm,
-				Budget:     p.taskRunnerBudget,
-				AutoStart:  p.taskRunnerAutoStart,
-			}
-			cmd := p.launchOrQueueAgent(qs)
-			p.taskRunnerView = false
-			p.detailView = false
-			if p.canLaunchAgent() || len(p.sessionQueue) == 0 {
-				p.flashMessage = fmt.Sprintf("Agent launched for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
-			} else {
-				p.flashMessage = fmt.Sprintf("Agent queued for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
-			}
-			p.flashMessageAt = time.Now()
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-		}
-		p.taskRunnerView = false
-		p.detailView = false
-		return plugin.NoopAction()
+		return p.taskRunnerLaunch(false)
+
+	case "ctrl+shift+enter":
+		// Launch immediately (bypass queue).
+		return p.taskRunnerLaunch(true)
 
 	case "tab", "down":
-		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 1) % 4
+		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 1) % 2
 		return plugin.NoopAction()
 
 	case "shift+tab", "up":
-		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 3) % 4
+		p.taskRunnerSelectedRow = (p.taskRunnerSelectedRow + 1) % 2
 		return plugin.NoopAction()
 
 	case "left", "h":
@@ -1270,7 +1239,7 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 		p.flashMessageAt = time.Now()
 		return plugin.NoopAction()
 
-	case "p":
+	case "e":
 		// Launch external editor to refine the prompt (Plannotator).
 		if todoPtr := p.detailTodo(); todoPtr != nil {
 			todo := *todoPtr
@@ -1296,6 +1265,44 @@ func (p *Plugin) handleTaskRunnerView(msg tea.KeyMsg) plugin.Action {
 	return plugin.NoopAction()
 }
 
+// taskRunnerLaunch launches the agent, optionally forcing immediate start.
+func (p *Plugin) taskRunnerLaunch(immediate bool) plugin.Action {
+	if todoPtr := p.detailTodo(); todoPtr != nil {
+		todo := *todoPtr
+		prompt := todo.ProposedPrompt
+		if prompt == "" {
+			prompt = formatTodoContext(todo)
+		}
+		projectDir := todo.ProjectDir
+		if projectDir == "" {
+			home, _ := os.UserHomeDir()
+			projectDir = home
+		}
+		qs := queuedSession{
+			TodoID:     todo.ID,
+			Prompt:     prompt,
+			ProjectDir: projectDir,
+			Mode:       p.taskRunnerMode,
+			Perm:       p.taskRunnerPerm,
+			Budget:     p.taskRunnerBudget,
+			AutoStart:  immediate,
+		}
+		cmd := p.launchOrQueueAgent(qs)
+		p.taskRunnerView = false
+		p.detailView = false
+		if p.canLaunchAgent() || len(p.sessionQueue) == 0 {
+			p.flashMessage = fmt.Sprintf("Agent launched for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
+		} else {
+			p.flashMessage = fmt.Sprintf("Agent queued for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
+		}
+		p.flashMessageAt = time.Now()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	}
+	p.taskRunnerView = false
+	p.detailView = false
+	return plugin.NoopAction()
+}
+
 // taskRunnerCycleOption cycles the option on the currently selected row.
 func (p *Plugin) taskRunnerCycleOption(dir int) {
 	switch p.taskRunnerSelectedRow {
@@ -1303,17 +1310,11 @@ func (p *Plugin) taskRunnerCycleOption(dir int) {
 		idx := indexOf(taskRunnerModes, p.taskRunnerMode)
 		idx = (idx + dir + len(taskRunnerModes)) % len(taskRunnerModes)
 		p.taskRunnerMode = taskRunnerModes[idx]
-	case 1: // Permission
-		idx := indexOf(taskRunnerPerms, p.taskRunnerPerm)
-		idx = (idx + dir + len(taskRunnerPerms)) % len(taskRunnerPerms)
-		p.taskRunnerPerm = taskRunnerPerms[idx]
-	case 2: // Budget
+	case 1: // Budget
 		p.taskRunnerBudget += float64(dir) * 1.0
 		if p.taskRunnerBudget < 1.00 {
 			p.taskRunnerBudget = 1.00
 		}
-	case 3: // Queue
-		p.taskRunnerAutoStart = !p.taskRunnerAutoStart
 	}
 }
 

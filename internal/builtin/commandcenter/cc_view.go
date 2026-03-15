@@ -1222,44 +1222,32 @@ func renderTaskRunner(s *ccStyles, todo db.Todo, mode, perm string, budget float
 		projectLine += s.DescMuted.Render("(not set)")
 	}
 
-	// Config rows
+	// Config rows (2 rows: Mode, Budget)
 	modeOptions := []string{"Normal", "Worktree", "Sandbox"}
 	modeLine := renderTaskRunnerOptionRow(s, "Mode", modeOptions, mode, selectedRow == 0, innerWidth)
-
-	permOptions := []string{"default", "plan", "auto"}
-	permLine := renderTaskRunnerOptionRow(s, "Permission", permOptions, perm, selectedRow == 1, innerWidth)
 
 	budgetStr := fmt.Sprintf("$%.2f", budget)
 	budgetLabel := s.SectionHeader.Render("Budget:")
 	budgetValue := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(budgetStr)
-	if selectedRow == 2 {
+	if selectedRow == 1 {
 		budgetLabel = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Budget:")
 		budgetValue = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(budgetStr)
 	}
 	budgetLine := fmt.Sprintf("  %-14s %s", budgetLabel, budgetValue+" "+s.DescMuted.Render("(<-> adjust)"))
-
-	queueOptions := []string{"Launch Now", "Queue & Auto-start"}
-	queueVal := "Launch Now"
-	if autoStart {
-		queueVal = "Queue & Auto-start"
-	}
-	queueLine := renderTaskRunnerOptionRow(s, "Queue", queueOptions, queueVal, selectedRow == 3, innerWidth)
 
 	// Prompt section
 	divider := s.DescMuted.Render("  " + strings.Repeat("\u2500", innerWidth-4))
 	promptHeader := s.SectionHeader.Render("  PROMPT")
 
 	// Footer hints
-	hints := s.Hint.Render("  enter launch \u00b7 p plannotator \u00b7 c refine \u00b7 esc back")
+	hints := s.Hint.Render("  ctrl+enter launch \u00b7 ctrl+shift+enter launch now \u00b7 e edit prompt \u00b7 esc back")
 
 	parts := []string{
 		header,
 		"",
 		projectLine,
 		modeLine,
-		permLine,
 		budgetLine,
-		queueLine,
 		"",
 		divider,
 		promptHeader,
