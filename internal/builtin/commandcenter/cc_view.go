@@ -638,7 +638,7 @@ func wrapText(text string, maxWidth int) string {
 	return strings.Join(lines, "\n")
 }
 
-func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string, noticeType string, statusCursor int, filteredPaths []string, pathCursor int, pathFilter string) string {
+func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width int, notice string, noticeType string, statusCursor int, filteredPaths []string, pathCursor int, pathFilter string, frame int) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -839,7 +839,8 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	// Session status indicator (for active/review sessions)
 	var sessionSection string
 	if todo.SessionStatus == "active" {
-		sessionIndicator := lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("● Session: running")
+		spinnerChar := refreshSpinner(frame)
+		sessionIndicator := spinnerChar + " " + lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Agent updating — edits blocked")
 		sessionSection = "\n  " + sessionIndicator
 	} else if todo.SessionStatus == "review" || todo.SessionStatus == "failed" {
 		statusLabel := "completed"
