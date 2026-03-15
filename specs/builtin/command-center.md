@@ -245,6 +245,54 @@ Instead of polling on a timer, the command center uses lifecycle messages to rel
 
 When a todo has a `project_dir`, pressing enter launches a Claude session there. When a todo has no project_dir, the plugin sets `pendingLaunchTodo` and navigates to the sessions plugin via the host's "navigate" action.
 
+### Task Runner Wizard
+
+The task runner is a 3-step linear wizard for configuring and launching a Claude agent session on a todo. Accessed via `o` from the detail view or `Y` from triage.
+
+#### Steps
+
+1. **Project** (Step 1/3) — Shows the current project directory. `/` opens a scrollable path picker to change it. `enter` accepts and advances. `esc` exits the wizard.
+2. **Mode** (Step 2/3) — Shows a reminder of the selected project. Inline mode selector cycles through Normal / Worktree / Sandbox with `←→`. `enter` advances. `esc` goes back to step 1.
+3. **Prompt** (Step 3/3) — Shows project + mode reminder. Scrollable prompt viewport (`j/k` to scroll). Launch selector at bottom: `[ Queue ] Run Now` toggled with `←→`. `enter` launches. `esc` goes back to step 2.
+
+#### Defaults
+
+- **Budget**: $5 (hardcoded)
+- **Permission**: "auto"
+- **Launch cursor**: 0 (Queue)
+
+#### Key Bindings (Step 3)
+
+| Key | Description |
+|-----|-------------|
+| `j`/`k` | Scroll prompt viewport |
+| `←`/`→` | Toggle launch cursor (Queue / Run Now) |
+| `enter` | Launch agent with selected options |
+| `e` | Open prompt in external editor |
+| `c` | AI prompt refinement (LLM improves prompt clarity and structure) |
+| `r` | Review loop (Plannotator annotation → LLM revision cycle) |
+| `esc` | Back to step 2 |
+
+#### AI Prompt Refinement (`c`)
+
+1. Sets `taskRunnerRefining = true` (shows spinner in UI)
+2. Sends current prompt to LLM asking it to improve clarity, structure, and actionability
+3. On response: updates prompt viewport, persists to DB, flashes "Prompt refined", clears spinner
+
+#### Review Loop (`r`)
+
+1. Stores current prompt as clean baseline
+2. Opens Plannotator with prompt for user annotation
+3. On return:
+   - If unchanged → "Prompt approved" flash, done
+   - If annotated → sends original + annotated to LLM to address feedback, sets refining spinner
+4. On LLM response: updates prompt, stores as new clean baseline, reopens Plannotator (loop continues)
+5. Loop repeats until user approves (makes no changes)
+
+#### Path Picker
+
+Reused from previous implementation. `/` opens picker, type to filter, `j/k` or `↑/↓` to navigate, `enter` to select, `esc` to cancel.
+
 ## Test Cases
 
 - Slug and tab name are correct
@@ -291,3 +339,10 @@ When a todo has a `project_dir`, pressing enter launches a Claude session there.
 - Triage: y accepts a todo, Y accepts + opens task runner
 - Triage: launching agent auto-accepts the todo
 - Triage: refresh merge preserves existing triage_status
+- Task runner wizard: enter advances steps (1→2→3), esc goes back (3→2→1)
+- Task runner wizard: esc at step 1 exits wizard
+- Task runner wizard: left/right cycles mode in step 2
+- Task runner wizard: enter at step 3 launches with queue (cursor 0) or run now (cursor 1)
+- Task runner wizard: `c` sets refining state, LLM response updates prompt
+- Task runner wizard: `r` opens review loop, unchanged prompt = approved
+- Task runner wizard: `r` annotated prompt triggers LLM revision and reopens Plannotator
