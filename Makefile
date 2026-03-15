@@ -11,7 +11,6 @@ build:
 	go build -o $(BINARY) ./cmd/ccc/
 	go build -o $(REFRESH_BINARY) ./cmd/ccc-refresh/
 	codesign -s - --identifier "com.ccc.tui" -f $(BINARY)
-	codesign -s - --identifier "com.ccc.refresh" -f $(REFRESH_BINARY)
 
 test:
 	go test -v ./...
