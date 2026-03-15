@@ -645,7 +645,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			p.detailTodoID = activeTodos[idx+1].ID
 			p.detailSelectedField = 0
 		}
-		return plugin.NoopAction()
+		return plugin.ConsumedAction()
 	case "k":
 		// Previous todo
 		activeTodos := p.cc.ActiveTodos()
@@ -654,7 +654,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			p.detailTodoID = activeTodos[idx-1].ID
 			p.detailSelectedField = 0
 		}
-		return plugin.NoopAction()
+		return plugin.ConsumedAction()
 	case "o":
 		// Open task runner view
 		if todo := p.detailTodo(); todo != nil {
