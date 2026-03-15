@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/db"
@@ -55,12 +56,18 @@ Return ONLY a JSON array. Return [] if no real commitments found. Expect 0-3 res
 Messages:
 %s`, len(candidates), sb.String())
 
+	log.Printf("slack: sending %d candidates to LLM for extraction", len(candidates))
+	for i, c := range candidates {
+		log.Printf("slack: candidate %d: channel=%s text=%q", i+1, c.Channel, truncate(c.Message, 80))
+	}
+
 	text, err := l.Complete(ctx, prompt)
 	if err != nil {
 		return nil, fmt.Errorf("slack commitment extraction: %w", err)
 	}
 
 	text = refresh.CleanJSON(text)
+	log.Printf("slack: LLM response (first 500 chars): %s", truncate(text, 500))
 
 	var items []struct {
 		Title      string `json:"title"`
@@ -74,8 +81,11 @@ Messages:
 		return nil, fmt.Errorf("parsing slack commitment response: %w (raw: %s)", err, text[:min(200, len(text))])
 	}
 
+	log.Printf("slack: LLM extracted %d commitments from %d candidates", len(items), len(candidates))
+
 	var todos []db.Todo
 	for _, item := range items {
+		log.Printf("slack: extracted todo: %q (source_ref=%s)", item.Title, truncate(item.SourceRef, 60))
 		todos = append(todos, db.Todo{
 			Title:      item.Title,
 			Source:     "slack",
@@ -89,4 +99,11 @@ Messages:
 	}
 
 	return todos, nil
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

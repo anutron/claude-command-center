@@ -54,6 +54,10 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 	if s.DB != nil {
 		if ss, err := db.DBLoadSourceSync(s.DB, "slack"); err == nil && ss.LastSuccess != nil {
 			lastSuccess = ss.LastSuccess.Add(-2 * time.Minute)
+			log.Printf("slack: last successful sync: %s (with 2min overlap: %s)",
+				ss.LastSuccess.Format(time.RFC3339), lastSuccess.Format(time.RFC3339))
+		} else {
+			log.Printf("slack: no previous successful sync found — processing all candidates")
 		}
 	}
 
@@ -78,12 +82,16 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 	if len(newCandidates) > 0 && s.LLM != nil {
 		todos, err = extractSlackCommitments(ctx, s.LLM, newCandidates)
 		if err != nil {
+			log.Printf("slack: LLM extraction failed: %v", err)
 			return &refresh.SourceResult{
 				Warnings: []db.Warning{{Source: "slack", Message: fmt.Sprintf("LLM extraction failed: %v", err)}},
 			}, nil
 		}
+	} else if len(newCandidates) > 0 && s.LLM == nil {
+		log.Printf("slack: WARNING — %d candidates found but LLM is nil, cannot extract commitments", len(newCandidates))
 	}
 
+	log.Printf("slack: returning %d todos", len(todos))
 	return &refresh.SourceResult{Todos: todos}, nil
 }
 
@@ -119,8 +127,11 @@ type slackConversationsListResponse struct {
 }
 
 type slackChannel struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	IsIM   bool   `json:"is_im"`
+	IsMpim bool   `json:"is_mpim"`
+	User   string `json:"user"` // For IM channels: the other user's ID (or self for self-DMs)
 }
 
 type slackHistoryResponse struct {
@@ -148,6 +159,78 @@ type slackRepliesResponse struct {
 	Error    string       `json:"error,omitempty"`
 }
 
+// slackAuthTestResponse is the response from auth.test API.
+type slackAuthTestResponse struct {
+	OK     bool   `json:"ok"`
+	Error  string `json:"error,omitempty"`
+	UserID string `json:"user_id"`
+	User   string `json:"user"`
+	TeamID string `json:"team_id"`
+}
+
+// slackUserInfoResponse is the response from users.info API.
+type slackUserInfoResponse struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+	User  struct {
+		RealName    string `json:"real_name"`
+		DisplayName string `json:"display_name"`
+		Name        string `json:"name"`
+	} `json:"user"`
+}
+
+// fetchAuthIdentity calls auth.test to get the authenticated user's ID.
+func fetchAuthIdentity(ctx context.Context, token string) (userID string, userName string, err error) {
+	var result slackAuthTestResponse
+	if err := slackAPIGet(ctx, token, "auth.test", url.Values{}, &result); err != nil {
+		return "", "", err
+	}
+	if !result.OK {
+		return "", "", fmt.Errorf("auth.test error: %s", result.Error)
+	}
+	return result.UserID, result.User, nil
+}
+
+// fetchUserName looks up a user's display name by ID. Returns "" on error.
+func fetchUserName(ctx context.Context, token, userID string) string {
+	var result slackUserInfoResponse
+	if err := slackAPIGet(ctx, token, "users.info", url.Values{"user": {userID}}, &result); err != nil {
+		return ""
+	}
+	if !result.OK {
+		return ""
+	}
+	if result.User.RealName != "" {
+		return result.User.RealName
+	}
+	if result.User.DisplayName != "" {
+		return result.User.DisplayName
+	}
+	return result.User.Name
+}
+
+// channelDisplayName returns a human-readable channel name, handling IM channels
+// which have no name field in the Slack API response.
+func channelDisplayName(ctx context.Context, token string, ch slackChannel, selfUserID string) string {
+	if ch.Name != "" {
+		return ch.Name
+	}
+	if ch.IsIM {
+		if ch.User == selfUserID {
+			return "self-DM"
+		}
+		name := fetchUserName(ctx, token, ch.User)
+		if name != "" {
+			return "DM:" + name
+		}
+		return "DM:" + ch.User
+	}
+	if ch.IsMpim {
+		return "group-DM:" + ch.ID
+	}
+	return ch.ID
+}
+
 // slackAPIGet performs a GET request to the Slack API and decodes the response.
 func slackAPIGet(ctx context.Context, token, endpoint string, params url.Values, dest interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, "GET",
@@ -172,23 +255,40 @@ func slackAPIGet(ctx context.Context, token, endpoint string, params url.Values,
 	return json.Unmarshal(body, dest)
 }
 
-// fetchChannels retrieves the list of channels the bot has access to.
+// fetchChannels retrieves the list of channels the user has access to, with pagination.
 func fetchChannels(ctx context.Context, token string) ([]slackChannel, error) {
-	params := url.Values{
-		"types":            {"public_channel,private_channel,im,mpim"},
-		"exclude_archived": {"true"},
-		"limit":            {"200"},
+	var allChannels []slackChannel
+	cursor := ""
+
+	for {
+		params := url.Values{
+			"types":            {"public_channel,private_channel,im,mpim"},
+			"exclude_archived": {"true"},
+			"limit":            {"200"},
+		}
+		if cursor != "" {
+			params.Set("cursor", cursor)
+		}
+
+		var result slackConversationsListResponse
+		if err := slackAPIGet(ctx, token, "conversations.list", params, &result); err != nil {
+			return nil, err
+		}
+		if !result.OK {
+			return nil, fmt.Errorf("conversations.list error: %s", result.Error)
+		}
+
+		allChannels = append(allChannels, result.Channels...)
+
+		// Paginate if there are more results
+		if result.Meta.NextCursor == "" {
+			break
+		}
+		cursor = result.Meta.NextCursor
+		log.Printf("slack: conversations.list paginating (have %d channels so far)", len(allChannels))
 	}
 
-	var result slackConversationsListResponse
-	if err := slackAPIGet(ctx, token, "conversations.list", params, &result); err != nil {
-		return nil, err
-	}
-	if !result.OK {
-		return nil, fmt.Errorf("conversations.list error: %s", result.Error)
-	}
-
-	return result.Channels, nil
+	return allChannels, nil
 }
 
 // fetchChannelHistory retrieves recent messages from a channel since the given timestamp.
@@ -227,32 +327,63 @@ func isMissingScopeError(err error) bool {
 }
 
 func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, error) {
+	// Get the authenticated user's identity for labeling self-DMs
+	selfUserID, selfUserName, authErr := fetchAuthIdentity(ctx, token)
+	if authErr != nil {
+		log.Printf("slack: auth.test failed (non-fatal): %v", authErr)
+	} else {
+		log.Printf("slack: authenticated as %s (ID: %s)", selfUserName, selfUserID)
+	}
+
 	// Try conversations-based approach first (requires channels:read scope).
 	// If it fails due to missing scope, fall back to search.messages (requires search:read only).
 	channels, err := fetchChannels(ctx, token)
 	if err != nil {
 		if isMissingScopeError(err) {
-			// Fall back to search.messages which only requires search:read scope
+			log.Printf("slack: conversations.list missing scope, falling back to search.messages")
 			return fetchSlackCandidatesViaSearch(ctx, token)
 		}
 		return nil, fmt.Errorf("listing channels: %w", err)
 	}
+
+	// Log channel type breakdown for diagnostics
+	var nPublic, nPrivate, nIM, nMpim int
+	for _, ch := range channels {
+		switch {
+		case ch.IsIM:
+			nIM++
+		case ch.IsMpim:
+			nMpim++
+		case ch.Name != "":
+			// Heuristic: named channels are public or private
+			nPublic++
+		default:
+			nPrivate++
+		}
+	}
+	log.Printf("slack: %d channels found (public/private=%d, im=%d, mpim=%d, other=%d)",
+		len(channels), nPublic, nIM, nMpim, nPrivate)
 
 	// Look back 3 days (matching the old search.messages "after:3days" filter)
 	oldest := strconv.FormatInt(time.Now().Add(-3*24*time.Hour).Unix(), 10)
 
 	var candidates []slackCandidate
 	for _, ch := range channels {
+		displayName := channelDisplayName(ctx, token, ch, selfUserID)
+
 		messages, err := fetchChannelHistory(ctx, token, ch.ID, oldest)
 		if err != nil {
 			if isMissingScopeError(err) {
-				// Token lacks channels:history — fall back to search API
+				log.Printf("slack: conversations.history missing scope for %s (%s), falling back to search.messages",
+					displayName, ch.ID)
 				return fetchSlackCandidatesViaSearch(ctx, token)
 			}
-			// Skip individual channel errors (permissions, etc.) — non-fatal
+			// Log individual channel errors instead of silently skipping
+			log.Printf("slack: error fetching history for %s (%s): %v", displayName, ch.ID, err)
 			continue
 		}
 
+		var commitmentCount int
 		for _, msg := range messages {
 			if msg.Type != "message" || msg.Text == "" {
 				continue
@@ -260,11 +391,12 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 			if !hasCommitmentLanguage(msg.Text) {
 				continue
 			}
+			commitmentCount++
 
 			c := slackCandidate{
 				Message:   msg.Text,
 				Permalink: buildPermalink(ch.ID, msg.TS),
-				Channel:   ch.Name,
+				Channel:   displayName,
 				ChannelID: ch.ID,
 				Timestamp: msg.TS,
 			}
@@ -281,6 +413,11 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 			}
 
 			candidates = append(candidates, c)
+		}
+
+		if len(messages) > 0 || ch.IsIM || ch.IsMpim {
+			log.Printf("slack: %s (%s): %d messages, %d with commitment language",
+				displayName, ch.ID, len(messages), commitmentCount)
 		}
 	}
 
@@ -309,6 +446,8 @@ type slackSearchMatch struct {
 // fetchSlackCandidatesViaSearch uses the search.messages API (requires only search:read scope)
 // to find commitment-language messages. This is the fallback when conversations.list is unavailable.
 func fetchSlackCandidatesViaSearch(ctx context.Context, token string) ([]slackCandidate, error) {
+	log.Printf("slack: using search.messages fallback path")
+
 	var allCandidates []slackCandidate
 
 	// Search for commitment phrases in batches — Slack search supports basic query strings
@@ -338,6 +477,7 @@ func fetchSlackCandidatesViaSearch(ctx context.Context, token string) ([]slackCa
 			return nil, fmt.Errorf("search.messages error: %s", result.Error)
 		}
 
+		var matchCount int
 		for _, match := range result.Messages.Matches {
 			if match.Text == "" {
 				continue
@@ -352,22 +492,31 @@ func fetchSlackCandidatesViaSearch(ctx context.Context, token string) ([]slackCa
 			if !hasCommitmentLanguage(match.Text) {
 				continue
 			}
+			matchCount++
 
 			permalink := match.Permalink
 			if permalink == "" {
 				permalink = buildPermalink(match.Channel.ID, match.Timestamp)
 			}
 
+			channelName := match.Channel.Name
+			if channelName == "" {
+				channelName = "DM:" + match.Channel.ID
+			}
+
 			allCandidates = append(allCandidates, slackCandidate{
 				Message:   match.Text,
 				Permalink: permalink,
-				Channel:   match.Channel.Name,
+				Channel:   channelName,
 				ChannelID: match.Channel.ID,
 				Timestamp: match.Timestamp,
 			})
 		}
+		log.Printf("slack: search query %q: %d matches, %d with commitment language",
+			query, len(result.Messages.Matches), matchCount)
 	}
 
+	log.Printf("slack: search fallback found %d total candidates", len(allCandidates))
 	return allCandidates, nil
 }
 
