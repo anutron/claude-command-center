@@ -30,6 +30,9 @@ Provides all data persistence for the Claude Command Center (CCC). Manages SQLit
 | `write.go` | All `DB*` write functions for todos, threads, calendar, suggestions, pending actions, bookmarks, paths, meta; `DBSaveRefreshResult` bulk write |
 | `sessions.go` | Session types, file-based session parsing (`ParseSessionFile`, `LoadWinddownSessions`, `LoadBookmarks`, `LoadAllSessions`, `RemoveBookmark`) -- used by sessions plugin only |
 | `migrate.go` | `MigrateFromJSON` -- one-time import from legacy JSON/text files into SQLite |
+| `skill_discover.go` | `SkillInfo`, `SkillCache` types, `DiscoverSkills`, `DiscoverGlobalSkills`, disk cache read/write, `GetProjectSkills`, `GetGlobalSkills` |
+| `routing_rules.go` | `RoutingRule` type, file-based routing rules CRUD (`LoadRoutingRules`, `SaveRoutingRules`, `AddRoutingRule`) |
+| `path_describe.go` | `AutoDescribePath` — heuristic project description from common project files (go.mod, package.json, etc.) |
 
 ## Types
 
@@ -47,6 +50,10 @@ All types are exported for use by other packages:
 - `Session` -- resumable Claude Code session (bookmark or winddown) -- used by sessions plugin only
 - `SessionType` -- enum: `SessionWinddown`, `SessionBookmark`
 - `Bookmark` -- JSON serialization format for bookmarks file
+- `PathEntry` -- full metadata for a learned path row: path, description, added_at, sort_order
+- `SkillInfo` -- name + description parsed from a SKILL.md frontmatter
+- `SkillCache` -- list of `SkillInfo` with a `ScannedAt` timestamp for TTL-based disk caching
+- `RoutingRule` -- `use_for` and `not_for` string lists describing which tasks a path handles
 
 ## Behavior
 
@@ -54,7 +61,8 @@ All types are exported for use by other packages:
 1. `OpenDB(dbPath)` creates directories, opens SQLite, sets WAL + busy_timeout + synchronous=NORMAL, max 1 connection, runs `migrateSchema`
 2. Schema creates 8 tables: `cc_todos`, `cc_threads`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`
 3. Unique indexes on `source_ref` for todos and threads (WHERE NOT NULL/empty)
-4. Post-DDL migration adds `calendar_id` column if missing (ALTER TABLE, errors ignored)
+4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks
+5. Post-DDL migration fixes duplicate `sort_order` values on `cc_learned_paths` using `ROW_NUMBER()` window function
 
 ### Todo Operations
 - `DBInsertTodo` -- auto-assigns sort_order = max+1
@@ -82,7 +90,32 @@ All types are exported for use by other packages:
 
 ### Bookmarks & Paths (DB)
 - `DBLoadBookmarks`, `DBInsertBookmark`, `DBRemoveBookmark`
-- `DBLoadPaths` (returns `[]string`), `DBLoadPathsWithMeta` (returns `[]LearnedPath` with descriptions), `DBAddPath` (INSERT OR IGNORE), `DBRemovePath`, `DBUpdatePathDescription`
+- `DBLoadPaths` (returns `[]string`), `DBLoadPathsFull` (returns `[]PathEntry` with description, added_at, sort_order), `DBAddPath` (INSERT OR IGNORE), `DBRemovePath`, `DBUpdatePathDescription`
+
+### Path Descriptions
+- `AutoDescribePath(dir)` -- heuristic description from project files (go.mod, package.json, Cargo.toml, pyproject.toml, setup.py, Gemfile, pom.xml, build.gradle, Package.swift)
+- Returns language/framework label + module name if available (e.g., "Go project (github.com/user/repo)")
+- Returns empty string if no recognizable project files found
+- `DBUpdatePathDescription` -- persists a description for a learned path; fails if path not in DB
+
+### Skills Discovery
+- Skills are defined by `SKILL.md` files with YAML frontmatter containing `name` and `description`
+- `DiscoverSkills(dir)` -- scans `<dir>/.claude/skills/*/SKILL.md`
+- `DiscoverGlobalSkills()` -- scans `~/.claude/skills/*/SKILL.md`
+- Frontmatter must start with `---\n` and end with `\n---`; `name` field is required, files without it are skipped
+- **Disk cache**: skills are cached per-project as JSON files in `~/.config/ccc/cache/skills/` with 1-hour TTL
+  - Cache key is SHA-256 hash (first 16 bytes, hex) of the directory path
+  - Global skills cached as `global.json`
+  - `GetProjectSkills(dir, forceRefresh)` and `GetGlobalSkills(forceRefresh)` manage the cache lifecycle
+  - Cache miss or TTL expiry triggers a fresh scan; results are written back even on forceRefresh
+
+### Routing Rules
+- Stored in `~/.config/ccc/routing-rules.yaml` (file-based, not in SQLite)
+- Map of directory path -> `RoutingRule` with `use_for` and `not_for` string lists
+- `LoadRoutingRules()` -- returns empty map if file is missing or malformed (logs warning on parse failure)
+- `SaveRoutingRules(rules)` -- writes full map to YAML, creates parent directories
+- `AddRoutingRule(path, ruleType, text)` -- appends a single entry; ruleType must be `"use_for"` or `"not_for"`
+- Rules inform the LLM routing prompt but are not hard constraints
 
 ### Meta & Pending Actions
 - `DBSetMeta` -- upserts a key-value pair in `cc_meta`
@@ -145,3 +178,20 @@ All types are exported for use by other packages:
 - Bookmarks from JSON file (valid, missing file)
 - LoadAllSessions merged and sorted
 - RemoveBookmark from JSON file
+- Path description: set and load round-trip via `DBUpdatePathDescription` / `DBLoadPathsFull`
+- Path description: update on nonexistent path returns error
+- AutoDescribePath: detects Go, Node, Rust, Python, Ruby, Java, Swift projects
+- AutoDescribePath: returns empty string for unrecognized directory
+- Skills discovery: finds SKILL.md files with valid frontmatter
+- Skills discovery: returns empty for directory without `.claude/skills/`
+- Skills discovery: skips malformed YAML, missing frontmatter, missing name
+- Skills disk cache: returns cached skills within TTL
+- Skills disk cache: misses on expired TTL (>1 hour)
+- Skills disk cache: misses on missing file
+- Skills disk cache: write then load round-trip
+- Routing rules: load from valid YAML with use_for and not_for entries
+- Routing rules: missing file returns empty map (no error)
+- Routing rules: malformed YAML returns empty map (logs warning)
+- Routing rules: AddRoutingRule creates file and appends entries
+- Routing rules: AddRoutingRule rejects invalid rule type
+- Routing rules: save and load round-trip preserves all entries

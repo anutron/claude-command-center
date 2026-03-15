@@ -24,6 +24,13 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 | `refresh.go` | Background refresh command (finds and spawns `ccc-refresh` binary) |
 | `claude.go` | Background Claude CLI/LLM commands (edit, enrich, command, focus), prompt builders |
 
+**Related refresh files** (in `internal/refresh/`):
+
+| File | Responsibility |
+|------|---------------|
+| `todo_agent.go` | `GenerateTodoPrompt` — LLM-based project routing and prompt generation for todos |
+| `llm.go` | `generateSuggestions`, `generateProposedPrompts`, `loadPathContext` — orchestrates path metadata, skills, and routing rules into LLM calls |
+
 ## State
 
 - `cc *db.CommandCenter` — loaded from DB, contains todos, threads, calendar, suggestions
@@ -344,6 +351,41 @@ The background goroutine parses each stdout line as JSON. It detects blocking ev
 
 When a blocking event is detected, the question text is extracted from `input.message` or `input.question` fields. The goroutine updates `sess.Status` and `sess.Question` under a mutex. The main UI thread picks up the change on the next tick via `checkAgentProcesses`.
 
+### Todo-Agent Prompt Generation Pipeline
+
+During refresh, the system generates `proposed_prompt` values and assigns `project_dir` for eligible todos (active, has a source other than "manual", no prompt yet). This pipeline runs in `generateProposedPrompts` within the refresh cycle.
+
+#### Path Context Assembly (`loadPathContext`)
+
+1. Load all learned paths with descriptions from `cc_learned_paths` via `DBLoadPathsFull`
+2. Load routing rules from `~/.config/ccc/routing-rules.yaml` via `LoadRoutingRules`
+3. Load global skills from `~/.claude/skills/*/SKILL.md` via `GetGlobalSkills` (cached, 1hr TTL)
+4. For each learned path, load project-specific skills from `<path>/.claude/skills/*/SKILL.md` via `GetProjectSkills` (cached, 1hr TTL)
+5. Attach routing rules to paths where a match exists
+6. Assemble into `PathContext` struct: `Paths []PathWithMeta` + `GlobalSkills []SkillInfo`
+7. Errors at any step are logged but not fatal — the pipeline works with partial context
+
+#### Routing Prompt (`buildRoutingPrompt`)
+
+For each eligible todo, builds a prompt containing:
+
+1. **Task section** — todo title, detail, context, source, who_waiting, due date
+2. **Available Projects section** — for each path: path, description, project skills (name + description), routing preferences (use_for / not_for)
+3. **Global Skills section** — skills available in all projects, with a note not to prefer a project just because it shares global skills
+4. **Instructions** — choose best project, generate an actionable prompt in imperative mood, include context, mention who is waiting, suggest what "done" looks like
+
+The LLM returns JSON: `{"project_dir": "...", "proposed_prompt": "...", "reasoning": "..."}`
+
+#### Fallback (Legacy Batch Mode)
+
+If no learned paths exist (empty `PathContext.Paths`), falls back to `generateProposedPromptsLegacy`, which batches all eligible todos into a single LLM call that returns prompt-only results (no project assignment). Returns a map of `{todo_id: prompt_string}`.
+
+#### Types
+
+- `PathContext` — `Paths []PathWithMeta` + `GlobalSkills []SkillInfo`
+- `PathWithMeta` — path, description, skills (per-project), routing_rules (optional)
+- `TodoPromptResult` — project_dir, proposed_prompt, reasoning
+
 ### Task Runner Wizard
 
 The task runner is a 3-step linear wizard for configuring and launching a Claude agent session on a todo. Accessed via `o` from the detail view or `Y` from triage.
@@ -463,3 +505,9 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Agent sessions: triage "Active" tab filters todos with session_status "active"
 - Agent sessions: normal view excludes todos with non-empty session_status from accepted list
 - Agent sessions: concurrency respects cfg.Agent.MaxConcurrent (default 3)
+- Todo-agent pipeline: eligible todos are active, have a source != "manual", and no proposed_prompt
+- Todo-agent pipeline: with learned paths, calls GenerateTodoPrompt per todo (sets project_dir + proposed_prompt)
+- Todo-agent pipeline: without learned paths, falls back to legacy batch prompt (prompt-only, no project_dir)
+- Todo-agent pipeline: loadPathContext assembles path descriptions, project skills, global skills, and routing rules
+- Todo-agent pipeline: partial context failures (missing skills, missing rules) are logged but don't block other paths
+- Todo-agent pipeline: LLM parse failure for one todo is logged and skipped, other todos still processed
