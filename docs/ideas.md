@@ -23,11 +23,11 @@ Private Slack channel dedicated to the user's todo agent. The user forwards thre
 
 ---
 
-## Interactive Headless Sessions (PTY-based)
+## Live Agent Session Viewer *(in progress)*
 
-For tasks where the agent should be able to ask clarifying questions during execution. Instead of stream-JSON monitoring, use a PTY to detect when Claude is waiting for input. Surface the question in CCC's todo list as a "blocked" state. User can answer from within CCC or join the session.
+Bidirectional stream-json viewer built into the TUI. Watch agent activity live, send messages/answers via stdin pipe, or join interactively and re-queue headless.
 
-**Challenge**: Reliably distinguishing "Claude is thinking" from "Claude is waiting for input." Requires stable prompt-pattern detection or structured output format from Claude CLI.
+**Plan:** `~/.claude/plans/ticklish-floating-dragon.md`
 
 ---
 
