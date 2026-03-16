@@ -42,8 +42,8 @@ func extractCommitments(ctx context.Context, l llm.LLM, meetings []RawMeeting) (
 - [Aaron] = the user (this is whose todo list we are building)
 - [Other] = other meeting participants
 
-Extract ONLY action items and commitments that Aaron personally made or that others are explicitly expecting Aaron to do. Do NOT extract:
-- Things other people said THEY would do (those are their commitments, not Aaron's)
+Extract ONLY action items and commitments that Aaron personally made or that others are explicitly expecting Aaron to do. A commitment is Aaron's ONLY if it appears in an [Aaron] labeled block. Do NOT extract:
+- Anything said in [Other] blocks — those are other people's words, not Aaron's
 - General discussion points or ideas without a clear commitment from Aaron
 - Action items assigned to other participants
 
