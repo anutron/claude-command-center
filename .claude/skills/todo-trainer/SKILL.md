@@ -47,13 +47,13 @@ This returns JSON with:
 - `paths[]` — each with `path`, `description`, `skills[]`, `routing_rules`
 - `global_skills[]` — skills available in all projects
 
-### Step 4: Determine the Refresh Model
+### Step 4: Determine the Routing Model
 
-Read the `refresh.model` value from context above. If not found, default to `haiku`.
+The routing step always uses **sonnet** (the real refresh pipeline uses haiku for extraction, sonnet for routing/validation).
 
 ### Step 5: Run the Routing Sub-Agent
 
-Use the **Agent tool** with the `model` parameter set to the refresh model from Step 4.
+Use the **Agent tool** with the `model` parameter set to `sonnet`.
 
 Give the sub-agent this exact prompt, filling in the todo fields and project context from Steps 2-3:
 
@@ -100,15 +100,21 @@ Note: Do not prefer a project just because it has skills that are also available
 {end if}
 
 ## Instructions
-1. Choose the best project directory for this task. Explain your reasoning briefly.
-2. Generate an actionable prompt for a Claude Code agent working in that directory.
-   The prompt should:
+1. First, verify this is actually Aaron's task. If the source context (transcript/thread) shows
+   this commitment was made by someone else — not Aaron — then reject it.
+   A task is Aaron's ONLY if Aaron stated he would do it or explicitly agreed to do it.
+   Statements like "I will" or "I'll" in [Other] blocks are OTHER people's commitments, not Aaron's.
+2. If this is Aaron's task, choose the best project directory and generate an actionable prompt
+   for a Claude Code agent working in that directory. The prompt should:
    - State the objective clearly in imperative mood
    - Include relevant context from the todo detail
    - Mention who is waiting (for attribution)
    - Suggest what "done" looks like
 
-Return ONLY JSON:
+Return ONLY JSON. If rejecting:
+{"project_dir": "REJECT", "proposed_prompt": "", "reasoning": "This is [name]'s commitment, not Aaron's — [evidence]"}
+
+If accepting:
 {"project_dir": "/path/to/project", "proposed_prompt": "## Objective\n...", "reasoning": "One sentence explaining why this project"}
 ```
 
@@ -118,7 +124,20 @@ Parse the JSON response from the sub-agent.
 
 ### Step 6: Present the Result
 
-Show the user:
+If the sub-agent returned `project_dir: "REJECT"`, show:
+
+```
+## REJECTED
+
+**Todo:** {todo title} (#{display_id})
+**Reasoning:** {reasoning}
+
+This todo would be auto-dismissed by the routing step.
+```
+
+Then ask: "Is this rejection correct? If this IS Aaron's task, say so and I'll adjust."
+
+If the sub-agent returned a valid project, show:
 
 ```
 ## Routing Decision
