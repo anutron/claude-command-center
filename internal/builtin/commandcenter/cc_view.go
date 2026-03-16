@@ -612,34 +612,8 @@ func renderSuggestionBanner(s *ccStyles, suggestions *db.Suggestions, width int)
 	return s.PanelBorder.Width(width - 2).Render(content)
 }
 
-func wrapText(text string, maxWidth int) string {
-	if maxWidth <= 0 {
-		return text
-	}
-	var lines []string
-	for _, paragraph := range strings.Split(text, "\n") {
-		if paragraph == "" {
-			lines = append(lines, "")
-			continue
-		}
-		words := strings.Fields(paragraph)
-		if len(words) == 0 {
-			lines = append(lines, "")
-			continue
-		}
-		current := words[0]
-		for _, word := range words[1:] {
-			if len(current)+1+len(word) > maxWidth {
-				lines = append(lines, current)
-				current = word
-			} else {
-				current += " " + word
-			}
-		}
-		lines = append(lines, current)
-	}
-	return strings.Join(lines, "\n")
-}
+// wrapText delegates to ui.WrapText.
+var wrapText = ui.WrapText
 
 func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width, height int, notice string, noticeType string, statusCursor int, filteredPaths []string, pathCursor int, pathFilter string, frame int) string {
 	innerWidth := width - 4
@@ -1094,16 +1068,8 @@ func renderCCFooter(s *ccStyles, generatedAt time.Time, width int, refreshing bo
 	return left + strings.Repeat(" ", gap) + right
 }
 
-func truncateToWidth(s string, maxWidth int) string {
-	if maxWidth <= 0 {
-		return ""
-	}
-	runes := []rune(s)
-	if len(runes) <= maxWidth {
-		return s
-	}
-	return string(runes[:maxWidth-1]) + "~"
-}
+// truncateToWidth delegates to ui.TruncateToWidth.
+var truncateToWidth = ui.TruncateToWidth
 
 // displayContext returns a compact display string for a todo's Context field.
 // Slack URLs like "https://foo.slack.com/archives/C01ABC/p123..." become "Slack"
@@ -1145,14 +1111,8 @@ func displayContext(ctx string) string {
 	return ctx
 }
 
-func flattenTitle(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
-	for strings.Contains(s, "  ") {
-		s = strings.ReplaceAll(s, "  ", " ")
-	}
-	return strings.TrimSpace(s)
-}
+// flattenTitle delegates to ui.FlattenTitle.
+var flattenTitle = ui.FlattenTitle
 
 func renderExpandedTodoItem(s *ccStyles, g *gradientColors, todo db.Todo, num int, isCursor bool, maxWidth int, frame int, isLoading bool) string {
 	prefix := fmt.Sprintf("%d. ", num)
