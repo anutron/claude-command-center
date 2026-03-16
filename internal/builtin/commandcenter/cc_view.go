@@ -45,7 +45,7 @@ func shortDirName(path string) string {
 }
 
 // renderCommandCenterView is the main entry point for the command center tab.
-func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool, lastRefreshError string, filteredTodos []db.Todo, triageCounts map[string]int) string {
+func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool, lastRefreshError string, filteredTodos []db.Todo, triageCounts map[string]int, maxConcurrent int) string {
 	if cc == nil {
 		empty := lipgloss.NewStyle().
 			Foreground(s.ColorMuted).
@@ -85,7 +85,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 			maxVisibleTodos = 5
 		}
 		calCol := renderCalendarColumn(s, calendars, &cc.Calendar, colWidth, panelHeight)
-		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, colWidth, frame, loadingTodoID, triageCounts)
+		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, colWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
 		calPanel := s.PanelBorder.Width(colWidth).Render(calCol)
 		todoPanel := s.PanelBorder.Width(colWidth).Render(todoCol)
 		columns = lipgloss.JoinHorizontal(lipgloss.Top, calPanel, " ", todoPanel)
@@ -96,7 +96,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 		if maxVisibleTodos < 5 {
 			maxVisibleTodos = 5
 		}
-		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, todoWidth, frame, loadingTodoID, triageCounts)
+		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, todoWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
 		hint := s.CalendarFree.Render("  Configure calendar in Settings to see your schedule here")
 		todoContent := lipgloss.JoinVertical(lipgloss.Left, todoCol, "", hint)
 		columns = s.PanelBorder.Width(todoWidth).Render(todoContent)
@@ -422,14 +422,14 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 	return strings.Join(lines, "\n")
 }
 
-func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string, triageCounts map[string]int) string {
+func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string, triageCounts map[string]int, maxConcurrent int) string {
 	var lines []string
 
 	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active)", len(todos)))
 	lines = append(lines, header)
 
 	// Agent status header line
-	agentHeader := renderAgentStatusHeader(s, todos)
+	agentHeader := renderAgentStatusHeader(s, todos, maxConcurrent)
 	if agentHeader != "" {
 		lines = append(lines, agentHeader)
 	}
@@ -551,7 +551,10 @@ func agentStatusIndicator(s *ccStyles, status string) string {
 }
 
 // renderAgentStatusHeader returns a summary line like "2/3 agents running, 1 queued".
-func renderAgentStatusHeader(s *ccStyles, todos []db.Todo) string {
+func renderAgentStatusHeader(s *ccStyles, todos []db.Todo, maxConcurrent int) string {
+	if maxConcurrent <= 0 {
+		maxConcurrent = 3
+	}
 	var active, queued int
 	for _, t := range todos {
 		switch t.SessionStatus {
@@ -565,7 +568,7 @@ func renderAgentStatusHeader(s *ccStyles, todos []db.Todo) string {
 		return ""
 	}
 	parts := []string{}
-	parts = append(parts, fmt.Sprintf("%d/3 agents running", active))
+	parts = append(parts, fmt.Sprintf("%d/%d agents running", active, maxConcurrent))
 	if queued > 0 {
 		parts = append(parts, fmt.Sprintf("%d queued", queued))
 	}
@@ -895,9 +898,9 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	}
 
 	// Calculate fixed chrome height to determine how much space prompt/summary get.
-	// Fixed lines: TODO #N (1) + blank (1) + title (1) + blank (1) + field rows (len(leftLines) or len(rightLines))
+	// Fixed lines: TODO #N (1) + blank (1) + title (1) + blank (1) + field rows (len(fieldRows))
 	// + blank before hints (1) + hints (1) + panel border (2)
-	fixedLines := 8 + len(leftLines) // header, blanks, title, field rows, footer hint, border
+	fixedLines := 8 + len(fieldRows) // header, blanks, title, field rows, footer hint, border
 	if noticeBanner != "" {
 		fixedLines += 2 // notice + blank
 	}

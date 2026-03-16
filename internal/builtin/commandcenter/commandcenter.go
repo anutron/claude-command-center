@@ -770,7 +770,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		return view
 	}
 
-	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.filteredTodos(), p.triageCounts())
+	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.filteredTodos(), p.triageCounts(), p.cfg.Agent.MaxConcurrent)
 
 	if p.claudeLoading {
 		loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg
@@ -864,7 +864,7 @@ func (p *Plugin) detailTodo() *db.Todo {
 
 // detailTodoActiveIndex returns the index of the detail todo within ActiveTodos(), or -1.
 func (p *Plugin) detailTodoActiveIndex() int {
-	if p.detailTodoID == "" {
+	if p.cc == nil || p.detailTodoID == "" {
 		return -1
 	}
 	for i, t := range p.cc.ActiveTodos() {
