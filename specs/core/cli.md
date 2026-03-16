@@ -68,6 +68,15 @@ Sends a notification event to all running CCC instances, causing them to reload 
 - Prints count of instances notified
 - Useful for external scripts (e.g., after ccc-refresh runs in launchd)
 
+### `ccc update-todo`
+
+Updates fields on an existing todo. Designed for headless agents to submit structured session summaries.
+
+- Flags: `--id` (required), `--session-summary`, `--session-status`
+- `--session-summary -` reads summary text from stdin (for long summaries)
+- Calls `tui.SendNotify("reload")` after update so all running CCC instances refresh
+- Exits with error if `--id` is empty
+
 ### `ccc sessions`
 
 Alias for default (launches TUI).

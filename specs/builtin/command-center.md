@@ -283,7 +283,7 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 3. **Process start**: `launchAgent` spawns `claude --print --output-format stream-json --verbose [flags] <prompt>` as a subprocess. The session's `done` channel and exit code are managed by a background goroutine.
 4. **Monitoring**: A background goroutine reads stdout line-by-line, parsing stream-JSON events. It detects blocking events (tool_use with `SendUserMessage` or `AskUser`) and updates `sess.Status` to `"blocked"` with the question text.
 5. **Tick polling**: `checkAgentProcesses` runs on every UI tick. It checks the `done` channel for finished processes and reads `sess.Status` (protected by mutex) for status changes like `"blocked"`.
-6. **Completion**: When the process exits, `onAgentFinished` sets status to `"review"` (exit 0) or `"failed"` (non-zero), extracts a summary from the last ~500 chars of output, and persists both to DB.
+6. **Completion**: When the process exits, `onAgentFinished` sets status to `"review"` (exit 0) or `"failed"` (non-zero). It checks the DB for an agent-authored summary (submitted via `ccc update-todo` during the session). If none exists, falls back to `extractSessionSummary()` which parses the stream-json output. Persists status and summary to DB.
 7. **Queue drain**: After a session finishes, `onAgentFinished` checks the queue and auto-launches the next `AutoStart` session if capacity is available.
 8. **Shutdown cleanup**: `Plugin.Shutdown()` cancels all active sessions to prevent zombie processes.
 
@@ -305,6 +305,10 @@ The `claude` command is invoked with:
 - `--permission-mode <perm>` — if perm is not "default" (options: "plan", "auto")
 - `--max-budget-usd <budget>` — if budget >= $0.50
 - `--worktree` — if mode is "worktree"
+
+#### Prompt Postscript
+
+The agent prompt is the user's prompt with a postscript appended. The postscript instructs the agent to call `ccc update-todo --id <todo-id> --session-summary` with a structured summary (what was done, key decisions, items needing review, open questions) before shutting down. This lets the agent author its own summary rather than relying on output scraping.
 
 #### Join/Resume Existing Sessions
 
