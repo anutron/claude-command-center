@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"sync"
@@ -26,11 +27,18 @@ type agentSession struct {
 	StartedAt time.Time
 	Output    strings.Builder // captures output
 
+	// Stdin pipe for sending messages to the agent (stream-json input).
+	Stdin io.WriteCloser
+
+	// Events tracks parsed session events for the live viewer.
+	Events   []sessionEvent
+	EventsCh chan sessionEvent
+
 	// done is closed when the process exits. ExitCode is set before closing.
 	done     chan struct{}
 	exitCode int
 
-	// mu protects Status, Question, and SessionID for concurrent writes from the goroutine.
+	// mu protects Status, Question, SessionID, and Events for concurrent writes from the goroutine.
 	mu sync.Mutex
 }
 
@@ -81,6 +89,7 @@ func launchAgent(qs queuedSession) tea.Cmd {
 		args := []string{
 			"--print",
 			"--output-format", "stream-json",
+			"--input-format", "stream-json",
 			"--verbose",
 		}
 		if qs.Perm != "" && qs.Perm != "default" {
@@ -127,6 +136,12 @@ SUMMARY
 			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
 		}
 
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			cancel()
+			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
+		}
+
 		if err := cmd.Start(); err != nil {
 			cancel()
 			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
@@ -138,13 +153,19 @@ SUMMARY
 			Cancel:    cancel,
 			Status:    "active",
 			StartedAt: time.Now(),
+			Stdin:     stdin,
+			EventsCh:  make(chan sessionEvent, 64),
 			done:      make(chan struct{}),
 		}
 
 		// Background goroutine: read stream-JSON stdout, detect blocking events,
-		// and signal completion via done channel.
+		// parse events for the live viewer, and signal completion via done channel.
 		go func() {
 			defer func() {
+				// Close the events channel before waiting so listeners know
+				// no more events will arrive.
+				close(sess.EventsCh)
+
 				// Wait for process to finish, capture exit code, then signal done.
 				exitCode := 0
 				if err := cmd.Wait(); err != nil {
@@ -186,6 +207,19 @@ SUMMARY
 						sess.mu.Lock()
 						sess.SessionID = sid
 						sess.mu.Unlock()
+					}
+				}
+
+				// Parse event for the live session viewer.
+				parsed := parseSessionEvent(event)
+				if parsed.Type != "" {
+					sess.mu.Lock()
+					sess.Events = append(sess.Events, parsed)
+					sess.mu.Unlock()
+					// Non-blocking send to EventsCh — drop if buffer is full.
+					select {
+					case sess.EventsCh <- parsed:
+					default:
 					}
 				}
 
@@ -330,6 +364,10 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 		// Fall back to extraction from stream output if no summary was submitted.
 		if summary == "" {
 			summary = extractSessionSummary(sess)
+		}
+		// Close stdin pipe if still open.
+		if sess.Stdin != nil {
+			sess.Stdin.Close()
 		}
 		if sess.Cancel != nil {
 			sess.Cancel()
@@ -571,6 +609,38 @@ func extractTextFromContent(event map[string]interface{}) string {
 		}
 	}
 	return strings.Join(texts, "\n")
+}
+
+// sendUserMessage writes an NDJSON user message to the agent's stdin pipe.
+// The format follows the Claude CLI stream-json input protocol.
+func sendUserMessage(sess *agentSession, message string) error {
+	if sess.Stdin == nil {
+		return fmt.Errorf("session stdin is not available")
+	}
+	payload := map[string]interface{}{
+		"type": "user",
+		"message": map[string]interface{}{
+			"role":    "user",
+			"content": message,
+		},
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal user message: %w", err)
+	}
+	data = append(data, '\n')
+	_, err = sess.Stdin.Write(data)
+	if err != nil {
+		return fmt.Errorf("write to agent stdin: %w", err)
+	}
+	// Clear blocked status since we've responded.
+	sess.mu.Lock()
+	if sess.Status == "blocked" {
+		sess.Status = "active"
+		sess.Question = ""
+	}
+	sess.mu.Unlock()
+	return nil
 }
 
 // checkAgentProcesses polls active sessions for completion and status changes.

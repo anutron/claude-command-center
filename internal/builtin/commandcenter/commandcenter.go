@@ -426,6 +426,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 // It cancels all active agent sessions to prevent zombie processes.
 func (p *Plugin) Shutdown() {
 	for _, sess := range p.activeSessions {
+		if sess.Stdin != nil {
+			sess.Stdin.Close()
+		}
 		if sess.Cancel != nil {
 			sess.Cancel()
 		}
