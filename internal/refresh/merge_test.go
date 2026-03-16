@@ -230,6 +230,113 @@ func TestMerge_CompletedTodoNotOverwritten(t *testing.T) {
 	t.Error("completed todo was dropped entirely")
 }
 
+func TestMergeTriageStatus(t *testing.T) {
+	t.Run("new external todo gets triage_status new", func(t *testing.T) {
+		existing := &db.CommandCenter{}
+		fresh := &FreshData{
+			Todos: []db.Todo{
+				{Title: "Review PR", Source: "github", SourceRef: "gh-999"},
+			},
+		}
+
+		result := Merge(existing, fresh)
+		if len(result.Todos) != 1 {
+			t.Fatalf("expected 1 todo, got %d", len(result.Todos))
+		}
+		if result.Todos[0].TriageStatus != "new" {
+			t.Errorf("expected triage_status 'new', got %q", result.Todos[0].TriageStatus)
+		}
+	})
+
+	t.Run("fresh todo with no source_ref keeps its triage_status", func(t *testing.T) {
+		existing := &db.CommandCenter{}
+		fresh := &FreshData{
+			Todos: []db.Todo{
+				{Title: "Loose item", Source: "manual", TriageStatus: "accepted"},
+			},
+		}
+
+		result := Merge(existing, fresh)
+		if len(result.Todos) != 1 {
+			t.Fatalf("expected 1 todo, got %d", len(result.Todos))
+		}
+		if result.Todos[0].TriageStatus != "accepted" {
+			t.Errorf("expected triage_status 'accepted', got %q", result.Todos[0].TriageStatus)
+		}
+	})
+
+	t.Run("existing todo triage_status preserved on merge", func(t *testing.T) {
+		existing := &db.CommandCenter{
+			Todos: []db.Todo{
+				{ID: "t1", Title: "Old", Status: "active", SourceRef: "ref-1", TriageStatus: "accepted"},
+			},
+		}
+		fresh := &FreshData{
+			Todos: []db.Todo{
+				{Title: "Updated", SourceRef: "ref-1", TriageStatus: "new"},
+			},
+		}
+
+		result := Merge(existing, fresh)
+		for _, todo := range result.Todos {
+			if todo.SourceRef == "ref-1" {
+				if todo.TriageStatus != "accepted" {
+					t.Errorf("expected triage_status preserved as 'accepted', got %q", todo.TriageStatus)
+				}
+				return
+			}
+		}
+		t.Error("todo with ref-1 not found")
+	})
+
+	t.Run("completed todo preserved as-is including triage_status", func(t *testing.T) {
+		existing := &db.CommandCenter{
+			Todos: []db.Todo{
+				{ID: "t2", Title: "Done", Status: "completed", SourceRef: "ref-2", TriageStatus: "accepted"},
+			},
+		}
+		fresh := &FreshData{
+			Todos: []db.Todo{
+				{Title: "Done Updated", SourceRef: "ref-2", TriageStatus: "new"},
+			},
+		}
+
+		result := Merge(existing, fresh)
+		for _, todo := range result.Todos {
+			if todo.SourceRef == "ref-2" {
+				if todo.Status != "completed" {
+					t.Errorf("expected status 'completed', got %q", todo.Status)
+				}
+				if todo.TriageStatus != "accepted" {
+					t.Errorf("expected triage_status preserved as 'accepted', got %q", todo.TriageStatus)
+				}
+				return
+			}
+		}
+		t.Error("completed todo not found")
+	})
+
+	t.Run("dismissed todo remains tombstoned", func(t *testing.T) {
+		existing := &db.CommandCenter{
+			Todos: []db.Todo{
+				{ID: "t3", Title: "Gone", Status: "dismissed", SourceRef: "ref-3", TriageStatus: "new"},
+			},
+		}
+		fresh := &FreshData{
+			Todos: []db.Todo{
+				{Title: "Gone Recreated", Source: "granola", SourceRef: "ref-3"},
+			},
+		}
+
+		result := Merge(existing, fresh)
+		for _, todo := range result.Todos {
+			if todo.SourceRef == "ref-3" && todo.Status != "dismissed" {
+				t.Error("dismissed todo was recreated as non-dismissed")
+			}
+		}
+	})
+}
+
 func TestMerge_NilExisting(t *testing.T) {
 	fresh := &FreshData{
 		Calendar: db.CalendarData{
