@@ -456,6 +456,62 @@ func TestDBSaveRefreshResult(t *testing.T) {
 	}
 }
 
+func TestDBLoadTodoByDisplayIDIncludesTriageStatus(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	todo := Todo{
+		ID:           "triage-test",
+		Title:        "Test triage status",
+		Status:       "active",
+		Source:       "manual",
+		TriageStatus: "new",
+		CreatedAt:    time.Now(),
+	}
+	if err := DBInsertTodo(db, todo); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Load by display_id (assigned automatically by DBInsertTodo)
+	loaded, err := DBLoadTodoByDisplayID(db, 1)
+	if err != nil {
+		t.Fatalf("DBLoadTodoByDisplayID: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("expected non-nil todo")
+	}
+	if loaded.TriageStatus != "new" {
+		t.Errorf("expected TriageStatus 'new', got %q", loaded.TriageStatus)
+	}
+
+	// Also test the COALESCE default: insert a todo with empty triage_status
+	// which should default to "accepted"
+	todo2 := Todo{
+		ID:        "triage-default",
+		Title:     "Default triage",
+		Status:    "active",
+		Source:    "manual",
+		CreatedAt: time.Now(),
+	}
+	if err := DBInsertTodo(db, todo2); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	loaded2, err := DBLoadTodoByDisplayID(db, 2)
+	if err != nil {
+		t.Fatalf("DBLoadTodoByDisplayID: %v", err)
+	}
+	if loaded2 == nil {
+		t.Fatal("expected non-nil todo")
+	}
+	if loaded2.TriageStatus != "accepted" {
+		t.Errorf("expected default TriageStatus 'accepted', got %q", loaded2.TriageStatus)
+	}
+}
+
 func TestDBSaveRefreshResultPreservesLaunchMode(t *testing.T) {
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))

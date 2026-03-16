@@ -422,13 +422,14 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	var completedStr sql.NullString
 	var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionStatus, sessionSummary sql.NullString
 
+	var triageStatus string
 	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status,
-		session_summary, created_at, completed_at
+		session_summary, COALESCE(triage_status, 'accepted'), created_at, completed_at
 		FROM cc_todos WHERE display_id = ?`, displayID).
 		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
-			&proposedPrompt, &sessionStatus, &sessionSummary,
+			&proposedPrompt, &sessionStatus, &sessionSummary, &triageStatus,
 			&createdStr, &completedStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -449,6 +450,7 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	t.ProposedPrompt = proposedPrompt.String
 	t.SessionStatus = sessionStatus.String
 	t.SessionSummary = sessionSummary.String
+	t.TriageStatus = triageStatus
 	t.CreatedAt = ParseTime(createdStr)
 	if completedStr.Valid {
 		ct := ParseTime(completedStr.String)
