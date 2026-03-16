@@ -1076,6 +1076,170 @@ func TestRemovePath_NotFound(t *testing.T) {
 	}
 }
 
+func TestAutoDescribePath(t *testing.T) {
+	t.Run("go.mod returns Go project", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module github.com/user/repo\n"), 0o644)
+		desc := AutoDescribePath(dir)
+		if desc == "" {
+			t.Fatal("expected non-empty description")
+		}
+		if !strContains(desc, "Go project") {
+			t.Errorf("expected description containing 'Go project', got %q", desc)
+		}
+	})
+
+	t.Run("package.json returns Node.js", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "package.json"), []byte("{}"), 0o644)
+		desc := AutoDescribePath(dir)
+		if desc != "Node.js/JavaScript project" {
+			t.Errorf("expected 'Node.js/JavaScript project', got %q", desc)
+		}
+	})
+
+	t.Run("Cargo.toml returns Rust", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(""), 0o644)
+		desc := AutoDescribePath(dir)
+		if desc != "Rust project" {
+			t.Errorf("expected 'Rust project', got %q", desc)
+		}
+	})
+
+	t.Run("pyproject.toml returns Python", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte(""), 0o644)
+		desc := AutoDescribePath(dir)
+		if desc != "Python project" {
+			t.Errorf("expected 'Python project', got %q", desc)
+		}
+	})
+
+	t.Run("Gemfile returns Ruby", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "Gemfile"), []byte(""), 0o644)
+		desc := AutoDescribePath(dir)
+		if desc != "Ruby project" {
+			t.Errorf("expected 'Ruby project', got %q", desc)
+		}
+	})
+
+	t.Run("pom.xml returns Java", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "pom.xml"), []byte(""), 0o644)
+		desc := AutoDescribePath(dir)
+		if desc != "Java project" {
+			t.Errorf("expected 'Java project', got %q", desc)
+		}
+	})
+
+	t.Run("Package.swift returns Swift", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "Package.swift"), []byte(""), 0o644)
+		desc := AutoDescribePath(dir)
+		if desc != "Swift project" {
+			t.Errorf("expected 'Swift project', got %q", desc)
+		}
+	})
+
+	t.Run("empty dir returns empty string", func(t *testing.T) {
+		dir := t.TempDir()
+		desc := AutoDescribePath(dir)
+		if desc != "" {
+			t.Errorf("expected empty string, got %q", desc)
+		}
+	})
+
+	t.Run("random file returns empty string", func(t *testing.T) {
+		dir := t.TempDir()
+		os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Hello"), 0o644)
+		desc := AutoDescribePath(dir)
+		if desc != "" {
+			t.Errorf("expected empty string, got %q", desc)
+		}
+	})
+}
+
+// strContains is a test helper -- avoids importing strings just for Contains.
+func strContains(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
+func TestSwapTodoOrder(t *testing.T) {
+	dir := t.TempDir()
+	database, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	DBInsertTodo(database, Todo{ID: "a", Title: "First", Status: "active", Source: "manual", CreatedAt: time.Now()})
+	DBInsertTodo(database, Todo{ID: "b", Title: "Second", Status: "active", Source: "manual", CreatedAt: time.Now()})
+	DBInsertTodo(database, Todo{ID: "c", Title: "Third", Status: "active", Source: "manual", CreatedAt: time.Now()})
+
+	// Verify initial order: a, b, c
+	cc, _ := LoadCommandCenterFromDB(database)
+	if cc.Todos[0].ID != "a" || cc.Todos[1].ID != "b" || cc.Todos[2].ID != "c" {
+		t.Fatalf("unexpected initial order: %s, %s, %s", cc.Todos[0].ID, cc.Todos[1].ID, cc.Todos[2].ID)
+	}
+
+	// Swap first two: a <-> b -> order becomes b, a, c
+	if err := DBSwapTodoOrder(database, "a", "b"); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+
+	cc, _ = LoadCommandCenterFromDB(database)
+	if cc.Todos[0].ID != "b" || cc.Todos[1].ID != "a" || cc.Todos[2].ID != "c" {
+		t.Fatalf("expected b, a, c after swap, got %s, %s, %s", cc.Todos[0].ID, cc.Todos[1].ID, cc.Todos[2].ID)
+	}
+
+	// Swap with itself -> no change, no error
+	if err := DBSwapTodoOrder(database, "c", "c"); err != nil {
+		t.Fatalf("self-swap should not error: %v", err)
+	}
+
+	cc, _ = LoadCommandCenterFromDB(database)
+	if cc.Todos[2].ID != "c" {
+		t.Fatalf("expected c still last after self-swap, got %s", cc.Todos[2].ID)
+	}
+}
+
+func TestSwapPathOrder(t *testing.T) {
+	dir := t.TempDir()
+	database, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	DBAddPath(database, "/path/one")
+	DBAddPath(database, "/path/two")
+	DBAddPath(database, "/path/three")
+
+	// Verify initial order
+	paths, _ := DBLoadPaths(database)
+	if paths[0] != "/path/one" || paths[1] != "/path/two" || paths[2] != "/path/three" {
+		t.Fatalf("unexpected initial order: %v", paths)
+	}
+
+	// Swap last two: two <-> three
+	if err := DBSwapPathOrder(database, "/path/two", "/path/three"); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+
+	paths, _ = DBLoadPaths(database)
+	if paths[0] != "/path/one" || paths[1] != "/path/three" || paths[2] != "/path/two" {
+		t.Fatalf("expected one, three, two after swap, got %v", paths)
+	}
+}
+
+
 func TestParseSessionFile_Valid(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "session1.md")
