@@ -89,6 +89,12 @@ func generateProposedPrompts(ctx context.Context, l llm.LLM, database *sql.DB, t
 			log.Printf("todo prompt generation for %q: %v", todos[i].ID, err)
 			continue
 		}
+		if result.ProjectDir == "REJECT" {
+			log.Printf("todo %q rejected by routing: %s", todos[i].Title, result.Reasoning)
+			todos[i].Status = "dismissed"
+			todos[i].ProposedPrompt = "REJECTED: " + result.Reasoning
+			continue
+		}
 		todos[i].ProposedPrompt = result.ProposedPrompt
 		if result.ProjectDir != "" {
 			todos[i].ProjectDir = result.ProjectDir

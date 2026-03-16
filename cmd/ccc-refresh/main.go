@@ -47,10 +47,13 @@ func main() {
 	}
 	defer release()
 
-	// Construct LLM implementation
+	// Construct LLM implementations.
+	// Haiku for extraction (cheap, wide net), sonnet for routing (validates + writes prompts).
 	var l llm.LLM
+	var routingLLM llm.LLM
 	if !*noLLM && llm.Available() {
-		l = llm.ClaudeCLI{}
+		l = llm.ClaudeCLI{Model: "haiku"}
+		routingLLM = llm.ClaudeCLI{Model: "sonnet"}
 	} else {
 		l = llm.NoopLLM{}
 	}
@@ -87,6 +90,7 @@ func main() {
 		DB:              database,
 		Sources:         sources,
 		LLM:             l,
+		RoutingLLM:      routingLLM,
 		ContextRegistry: contextRegistry,
 	}
 

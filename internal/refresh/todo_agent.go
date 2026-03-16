@@ -138,15 +138,21 @@ and generating a prompt to execute it there.
 
 	b.WriteString(`
 ## Instructions
-1. Choose the best project directory for this task. Explain your reasoning briefly.
-2. Generate an actionable prompt for a Claude Code agent working in that directory.
-   The prompt should:
+1. First, verify this is actually Aaron's task. If the source context (transcript/thread) shows
+   this commitment was made by someone else — not Aaron — then reject it.
+   A task is Aaron's ONLY if Aaron stated he would do it or explicitly agreed to do it.
+   Statements like "I will" or "I'll" in [Other] blocks are OTHER people's commitments, not Aaron's.
+2. If this is Aaron's task, choose the best project directory and generate an actionable prompt
+   for a Claude Code agent working in that directory. The prompt should:
    - State the objective clearly in imperative mood
    - Include relevant context from the todo detail
    - Mention who is waiting (for attribution)
    - Suggest what "done" looks like
 
-Return ONLY JSON:
+Return ONLY JSON. If rejecting:
+{"project_dir": "REJECT", "proposed_prompt": "", "reasoning": "This is [name]'s commitment, not Aaron's — [evidence]"}
+
+If accepting:
 {"project_dir": "/path/to/project", "proposed_prompt": "## Objective\n...", "reasoning": "One sentence explaining why this project"}
 `)
 

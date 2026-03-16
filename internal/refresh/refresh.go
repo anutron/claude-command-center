@@ -21,7 +21,8 @@ type Options struct {
 	DryRun          bool
 	DB              *sql.DB
 	Sources         []DataSource
-	LLM             llm.LLM // for suggestions (post-merge)
+	LLM             llm.LLM // for extraction and suggestions (haiku)
+	RoutingLLM      llm.LLM // for routing and validation (sonnet) — falls back to LLM if nil
 	ContextRegistry *ContextRegistry
 }
 
@@ -127,9 +128,14 @@ func Run(opts Options) error {
 		}
 	}
 
-	// Generate proposed prompts for todos that have a source but no prompt yet
-	if opts.LLM != nil && len(merged.Todos) > 0 {
-		merged.Todos = generateProposedPrompts(ctx, opts.LLM, opts.DB, merged.Todos)
+	// Generate proposed prompts for todos that have a source but no prompt yet.
+	// Use RoutingLLM (sonnet) if available, otherwise fall back to LLM (haiku).
+	routingLLM := opts.RoutingLLM
+	if routingLLM == nil {
+		routingLLM = opts.LLM
+	}
+	if routingLLM != nil && len(merged.Todos) > 0 {
+		merged.Todos = generateProposedPrompts(ctx, routingLLM, opts.DB, merged.Todos)
 	}
 
 	// Fetch source context for todos that have a source_ref

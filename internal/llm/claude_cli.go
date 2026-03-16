@@ -8,16 +8,20 @@ import (
 )
 
 // ClaudeCLI implements LLM by shelling out to the claude CLI.
-type ClaudeCLI struct{}
+// If Model is set (e.g., "haiku", "sonnet"), it is passed via --model.
+type ClaudeCLI struct {
+	Model string
+}
 
 // Compile-time interface check.
 var _ LLM = ClaudeCLI{}
 
 func (c ClaudeCLI) Complete(ctx context.Context, prompt string) (string, error) {
-	cmd := exec.CommandContext(ctx, "claude",
-		"-p", prompt,
-		"--output-format", "text",
-	)
+	args := []string{"-p", prompt, "--output-format", "text"}
+	if c.Model != "" {
+		args = append(args, "--model", c.Model)
+	}
+	cmd := exec.CommandContext(ctx, "claude", args...)
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
