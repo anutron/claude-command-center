@@ -15,6 +15,7 @@ Interactive training harness that simulates the refresh agent's routing decision
 
 - Config file: !`cat ~/.config/ccc/config.yaml 2>/dev/null | grep -A2 'refresh:' || echo "NO_CONFIG"`
 - Refresh model: !`cat ~/.config/ccc/config.yaml 2>/dev/null | grep 'model:' | head -1 | awk '{print $2}' || echo "haiku"`
+- Todo instructions: !`cat todo_instructions.md 2>/dev/null || echo "NO_INSTRUCTIONS_FILE"`
 
 ## Instructions
 
@@ -68,6 +69,16 @@ Source: {todo.source}
 Who waiting: {todo.who_waiting}
 Due: {todo.due}
 
+{if todo.source_context is not empty}
+## Source Context
+Source: {todo.source} (ref: {todo.source_ref})
+Fetched: {todo.source_context_at}
+
+<source_context>
+{todo.source_context}
+</source_context>
+{end if}
+
 ## Available Projects
 {for each path from ccc paths --json output}
 ### {path}
@@ -82,6 +93,11 @@ Routing preferences — not for: {not_for rules, semicolon-separated}
 - {name}: {description}
 {end}
 Note: Do not prefer a project just because it has skills that are also available globally. Focus on whether the project's PURPOSE matches the task.
+
+{if todo_instructions from context is not "NO_INSTRUCTIONS_FILE"}
+## User Instructions
+{paste the full todo_instructions content here}
+{end if}
 
 ## Instructions
 1. Choose the best project directory for this task. Explain your reasoning briefly.
@@ -120,9 +136,13 @@ Then ask:
 
 ### Step 7: Handle Corrections
 
-**If the user says it's correct:** Say "Great, no rule changes needed." and stop.
+Corrections fall into two categories:
+- **Routing corrections** — wrong project was chosen → apply routing rules via `ccc paths --add-rule`
+- **Prompt/behavior corrections** — right project but the prompt content needs improvement → update `todo_instructions.md`
 
-**If the user corrects the routing:**
+**If the user says it's correct:** Say "Great, no changes needed." and stop.
+
+**If the user corrects the routing (wrong project):**
 
 1. Based on their feedback, propose one or both of:
    - A `use_for` rule on the correct project (why it SHOULD go there)
@@ -147,6 +167,15 @@ Then ask:
    ```
 
 5. **On edit:** Let the user modify the rule text, then apply.
+
+**If the user gives prompt/behavior feedback (right project, but prompt needs work):**
+
+1. Read the current `todo_instructions.md` file in the project root
+2. Propose an addition or edit to the instructions based on the user's feedback
+3. Show the proposed change as a diff
+4. Ask: "Update todo_instructions.md? (yes/no/edit)"
+5. **On confirm:** Write the updated content to `todo_instructions.md` using the Edit or Write tool
+6. **On edit:** Let the user modify the text, then write it
 
 ### Step 8: Verify the Correction
 

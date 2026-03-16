@@ -318,7 +318,8 @@ func granolaGetTranscript(ctx context.Context, token, documentID string) (string
 	}
 
 	var chunks []struct {
-		Text string `json:"text"`
+		Text   string `json:"text"`
+		Source string `json:"source"` // "microphone" = user, "system" = other participant
 	}
 	if err := json.Unmarshal(data, &chunks); err != nil {
 		return "", fmt.Errorf("parsing transcript: %w", err)
@@ -329,11 +330,27 @@ func granolaGetTranscript(ctx context.Context, token, documentID string) (string
 	}
 
 	var sb strings.Builder
+	lastSource := ""
 	for _, c := range chunks {
-		if c.Text != "" {
-			sb.WriteString(c.Text)
-			sb.WriteString(" ")
+		if c.Text == "" {
+			continue
 		}
+		if c.Source != lastSource {
+			if lastSource != "" {
+				sb.WriteString("\n")
+			}
+			switch c.Source {
+			case "microphone":
+				sb.WriteString("[Aaron]: ")
+			case "system":
+				sb.WriteString("[Other]: ")
+			default:
+				sb.WriteString("[Unknown]: ")
+			}
+			lastSource = c.Source
+		}
+		sb.WriteString(c.Text)
+		sb.WriteString(" ")
 	}
 
 	return strings.TrimSpace(sb.String()), nil
