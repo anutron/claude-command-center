@@ -455,12 +455,12 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			displayID = maxDisplayID
 		}
 		_, err := tx.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
-			who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status, session_summary,
+			who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status, session_summary,
 			triage_status, display_id, sort_order, created_at, completed_at, updated_at)
 			VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?)`,
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?)`,
 			t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
-			t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionStatus, t.SessionSummary,
+			t.WhoWaiting, t.ProjectDir, t.LaunchMode, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionStatus, t.SessionSummary,
 			triageStatus, displayID, i, createdAt, completedAt, now)
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)

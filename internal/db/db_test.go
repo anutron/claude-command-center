@@ -456,6 +456,43 @@ func TestDBSaveRefreshResult(t *testing.T) {
 	}
 }
 
+func TestDBSaveRefreshResultPreservesLaunchMode(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now()
+	cc := &CommandCenter{
+		GeneratedAt: now,
+		Todos: []Todo{
+			{ID: "t1", Title: "Todo with launch mode", Status: "active", Source: "manual", LaunchMode: "worktree", CreatedAt: now},
+			{ID: "t2", Title: "Todo without launch mode", Status: "active", Source: "manual", CreatedAt: now},
+		},
+	}
+
+	if err := DBSaveRefreshResult(db, cc); err != nil {
+		t.Fatalf("DBSaveRefreshResult: %v", err)
+	}
+
+	loaded, err := LoadCommandCenterFromDB(db)
+	if err != nil {
+		t.Fatalf("LoadCommandCenterFromDB: %v", err)
+	}
+
+	if len(loaded.Todos) != 2 {
+		t.Fatalf("expected 2 todos, got %d", len(loaded.Todos))
+	}
+	if loaded.Todos[0].LaunchMode != "worktree" {
+		t.Errorf("expected LaunchMode 'worktree', got %q", loaded.Todos[0].LaunchMode)
+	}
+	if loaded.Todos[1].LaunchMode != "" {
+		t.Errorf("expected empty LaunchMode, got %q", loaded.Todos[1].LaunchMode)
+	}
+}
+
 func TestDBSaveSuggestions(t *testing.T) {
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
