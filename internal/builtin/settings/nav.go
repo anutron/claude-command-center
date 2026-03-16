@@ -492,7 +492,7 @@ func (p *Plugin) applyNavToggle(item *NavItem) {
 		// Threads data source — uses ThreadsConfig.Enabled
 		if item.Slug == "threads" {
 			p.cfg.Threads.Enabled = enabled
-			if err := config.Save(p.cfg); err == nil {
+			if err := config.Save(p.cfg, true); err == nil {
 				if enabled {
 					p.flashMessage = "Threads enabled"
 				} else {
@@ -517,7 +517,7 @@ func (p *Plugin) applyNavToggle(item *NavItem) {
 				return
 			}
 			p.cfg.ExternalPlugins[epIdx].Enabled = enabled
-			if err := config.Save(p.cfg); err == nil {
+			if err := config.Save(p.cfg, true); err == nil {
 				if enabled {
 					p.flashMessage = item.Label + " enabled"
 				} else {
@@ -530,7 +530,7 @@ func (p *Plugin) applyNavToggle(item *NavItem) {
 		} else {
 			// Built-in plugin
 			p.cfg.SetPluginEnabled(item.Slug, enabled)
-			if err := config.Save(p.cfg); err == nil {
+			if err := config.Save(p.cfg, true); err == nil {
 				if enabled {
 					p.flashMessage = item.Label + " enabled"
 				} else {
@@ -565,7 +565,7 @@ func (p *Plugin) applyNavToggle(item *NavItem) {
 		case "gmail":
 			p.cfg.Gmail.Enabled = enabled
 		}
-		if err := config.Save(p.cfg); err == nil {
+		if err := config.Save(p.cfg, true); err == nil {
 			p.flashMessage = "Changes apply on next refresh"
 			p.publishConfigSaved(item.Slug)
 			if p.bus != nil {

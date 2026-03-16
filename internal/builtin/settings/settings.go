@@ -866,7 +866,7 @@ func (p *Plugin) saveSlackToken() tea.Cmd {
 
 	p.cfg.Slack.Token = strings.TrimSpace(tok.Token)
 	p.cfg.Slack.Enabled = true
-	if err := config.Save(p.cfg); err != nil {
+	if err := config.Save(p.cfg, true); err != nil {
 		p.flashMessage = "Failed to save token: " + err.Error()
 		p.flashMessageAt = time.Now()
 		return nil

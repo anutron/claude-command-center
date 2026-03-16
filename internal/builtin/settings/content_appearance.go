@@ -81,7 +81,7 @@ func (p *Plugin) saveBannerValues() {
 		p.cfg.SetBannerTopPadding(v)
 	}
 
-	if err := config.Save(p.cfg); err == nil {
+	if err := config.Save(p.cfg, true); err == nil {
 		p.flashMessage = "Banner saved"
 		p.publishConfigSaved("banner")
 	} else {
@@ -107,7 +107,7 @@ func (p *Plugin) handleBannerFormCompletion() tea.Cmd {
 		p.cfg.SetBannerTopPadding(v)
 	}
 
-	if err := config.Save(p.cfg); err == nil {
+	if err := config.Save(p.cfg, true); err == nil {
 		p.flashMessage = "Banner saved"
 		p.publishConfigSaved("banner")
 	} else {
@@ -182,7 +182,7 @@ func (p *Plugin) savePaletteValues() {
 
 	p.cfg.Palette = selected
 
-	if err := config.Save(p.cfg); err == nil {
+	if err := config.Save(p.cfg, true); err == nil {
 		newPal := config.GetPalette(selected, p.cfg.Colors)
 		p.styles = newSettingsStyles(newPal)
 
@@ -224,7 +224,7 @@ func (p *Plugin) handlePaletteFormCompletion() tea.Cmd {
 	previous := p.cfg.Palette
 	p.cfg.Palette = selected
 
-	if err := config.Save(p.cfg); err == nil {
+	if err := config.Save(p.cfg, true); err == nil {
 		// Rebuild all styles (including huh theme) so the palette change
 		// is visible immediately.
 		newPal := config.GetPalette(selected, p.cfg.Colors)

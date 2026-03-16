@@ -320,7 +320,7 @@ func (c *Config) MarkLoadedFromFile() {
 // regressed to defaults. This prevents scenarios where the in-memory config
 // has been corrupted or reset (e.g. by process crash, binary rebuild, or
 // accidental pointer sharing).
-func Save(cfg *Config) error {
+func Save(cfg *Config, force ...bool) error {
 	dir := ConfigDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -343,9 +343,13 @@ func Save(cfg *Config) error {
 
 	// Safety check 2: if an existing config file is present, reload it and
 	// verify we are not regressing user-specific data to defaults.
+	// Skip this check when force is true (user-initiated saves from the settings UI).
+	skipRegression := len(force) > 0 && force[0]
 	if existing, readErr := os.ReadFile(path); readErr == nil && len(existing) > 0 {
-		if err := detectRegression(existing, data); err != nil {
-			return fmt.Errorf("refusing to save %s: %w", path, err)
+		if !skipRegression {
+			if err := detectRegression(existing, data); err != nil {
+				return fmt.Errorf("refusing to save %s: %w", path, err)
+			}
 		}
 		// Create a backup of the existing file before writing.
 		_ = os.WriteFile(path+".bak", existing, 0o600)
