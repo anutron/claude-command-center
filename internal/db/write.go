@@ -185,6 +185,17 @@ func DBUpdateTodoSessionID(db *sql.DB, id string, sessionID string) error {
 	return nil
 }
 
+// DBUpdateTodoSessionSummary updates only the session_summary column for a todo.
+func DBUpdateTodoSessionSummary(db *sql.DB, id string, summary string) error {
+	now := FormatTime(time.Now())
+	_, err := db.Exec(`UPDATE cc_todos SET session_summary = NULLIF(?, ''), updated_at = ? WHERE id = ?`,
+		summary, now, id)
+	if err != nil {
+		return fmt.Errorf("update todo session summary %s: %w", id, err)
+	}
+	return nil
+}
+
 // DBUpdateTodoSourceContext updates only the source_context columns for a todo.
 func DBUpdateTodoSourceContext(db *sql.DB, id, sourceContext, sourceContextAt string) error {
 	now := FormatTime(time.Now())
