@@ -379,7 +379,12 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	var hints string
 	switch detailMode {
 	case "viewing":
-		hints = s.Hint.Render("j/k prev/next \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch \u00b7 c command \u00b7 esc back")
+		baseHints := "j/k prev/next \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch"
+		if todo.SessionID != "" && todo.SessionStatus != "active" && todo.SessionStatus != "queued" {
+			baseHints += " \u00b7 r resume"
+		}
+		baseHints += " \u00b7 c command \u00b7 esc back"
+		hints = s.Hint.Render(baseHints)
 	case "editingField":
 		hints = s.Hint.Render("enter confirm \u00b7 esc cancel")
 	case "selectingStatus":

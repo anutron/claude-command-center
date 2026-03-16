@@ -51,6 +51,7 @@ type queuedSession struct {
 	Perm       string
 	Budget     float64
 	AutoStart  bool
+	ResumeID   string // If set, resume an existing session instead of starting a new one
 }
 
 // Tea messages for agent lifecycle.
@@ -100,6 +101,9 @@ func launchAgent(qs queuedSession) tea.Cmd {
 		}
 		if qs.Mode == "worktree" {
 			args = append(args, "--worktree")
+		}
+		if qs.ResumeID != "" {
+			args = append(args, "--resume", qs.ResumeID)
 		}
 		// Append summary instructions so the agent self-reports what it did.
 		enhancedPrompt := fmt.Sprintf(`%s

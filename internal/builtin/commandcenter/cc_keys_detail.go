@@ -139,6 +139,36 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			p.enterTaskRunner(*todo)
 		}
 		return plugin.NoopAction()
+	case "r":
+		// Resume a completed/failed agent session as a new headless agent
+		if todo := p.detailTodo(); todo != nil && todo.SessionID != "" && !agentActive {
+			dir := todo.ProjectDir
+			if dir == "" {
+				home, _ := os.UserHomeDir()
+				dir = home
+			}
+			qs := queuedSession{
+				TodoID:     todo.ID,
+				Prompt:     todo.ProposedPrompt,
+				ProjectDir: dir,
+				Mode:       todo.LaunchMode,
+				Perm:       p.cfg.Agent.DefaultPermission,
+				Budget:     p.cfg.Agent.DefaultBudget,
+				AutoStart:  true,
+				ResumeID:   todo.SessionID,
+			}
+			cmd := p.launchOrQueueAgent(qs)
+			p.detailView = false
+			p.detailMode = "viewing"
+			if p.canLaunchAgent() || len(p.sessionQueue) == 0 {
+				p.flashMessage = fmt.Sprintf("Agent resumed for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
+			} else {
+				p.flashMessage = fmt.Sprintf("Agent queued for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
+			}
+			p.flashMessageAt = time.Now()
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
+		return plugin.ConsumedAction()
 	case "c":
 		if agentActive {
 			p.flashMessage = "Todo is being updated by agent"
