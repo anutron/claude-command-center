@@ -68,6 +68,14 @@ func (c *SafeGmailClient) GetMessageBody(ctx context.Context, id string) (string
 	return extractTextBody(msg.Payload), nil
 }
 
+// GetThread fetches a full thread by ID.
+func (c *SafeGmailClient) GetThread(ctx context.Context, threadID string) (*gmail.Thread, error) {
+	return c.svc.Users.Threads.Get("me", threadID).
+		Format("full").
+		Context(ctx).
+		Do()
+}
+
 // ModifyLabels adds or removes labels from a message.
 // Returns an error if the client is not in advanced mode.
 func (c *SafeGmailClient) ModifyLabels(ctx context.Context, messageID string, addLabelIDs, removeLabelIDs []string) error {
