@@ -32,5 +32,6 @@ credentials/
 
 # Config (user-specific)
 config.yaml
+todo_instructions.md
 .superpowers/
 .bug-bash/

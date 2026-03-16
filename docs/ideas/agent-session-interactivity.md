@@ -32,3 +32,4 @@ Use stream-json for answering blocked questions (common case), tmux for full "dr
 - Does `--input-format stream-json` support sending tool results / user messages to a running session?
 - Can we pipe stdin to a running subprocess after launch?
 - What's the UX for answering a blocked question inline in CCC vs opening a full terminal?
+- When a task/agent session is complete, show a summary of work completed when the ticket is viewed in the detail view
