@@ -1217,6 +1217,47 @@ func TestParseDueDate(t *testing.T) {
 	}
 }
 
+func TestYKeyInTriageFilterDoesNotPanic(t *testing.T) {
+	p := testPluginWithCC(t)
+	// Set up todos with different triage statuses
+	p.cc.Todos = []db.Todo{
+		{ID: "t-new-1", Title: "New todo 1", Status: "active", Source: "manual", TriageStatus: "new", CreatedAt: time.Now(), ProjectDir: "/tmp/proj1"},
+		{ID: "t-acc-1", Title: "Accepted todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now(), ProjectDir: "/tmp/proj2"},
+		{ID: "t-new-2", Title: "New todo 2", Status: "active", Source: "manual", TriageStatus: "new", CreatedAt: time.Now(), ProjectDir: "/tmp/proj3"},
+	}
+	insertTestPaths(t, p.database, []string{"/tmp/proj1", "/tmp/proj2", "/tmp/proj3"})
+
+	// Enter expanded view and set triage filter to "new"
+	p.HandleKey(keyMsg(" ")) // toggle expanded
+	if !p.ccExpanded {
+		t.Fatal("expected expanded view")
+	}
+	// Set filter to "new" — only t-new-1 and t-new-2 should be visible
+	p.triageFilter = "new"
+	p.ccCursor = 0
+
+	filtered := p.filteredTodos()
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 filtered todos in 'new' filter, got %d", len(filtered))
+	}
+	if filtered[0].ID != "t-new-1" {
+		t.Fatalf("expected first filtered todo to be t-new-1, got %s", filtered[0].ID)
+	}
+
+	// Press Y on cursor 0 — should NOT panic and should open task runner for t-new-1
+	p.HandleKey(keyMsg("Y"))
+
+	if !p.detailView {
+		t.Error("Y should open detail view")
+	}
+	if !p.taskRunnerView {
+		t.Error("Y should open task runner view")
+	}
+	if p.detailTodoID != "t-new-1" {
+		t.Errorf("detailTodoID = %q, want %q", p.detailTodoID, "t-new-1")
+	}
+}
+
 func TestExtractSessionSummary(t *testing.T) {
 	tests := []struct {
 		name     string

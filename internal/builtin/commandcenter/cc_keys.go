@@ -511,25 +511,15 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				p.cc.AcceptTodo(todo.ID)
 				todoID := todo.ID
 
-				// Find the todo in the full active list for detail view
-				allActive := p.cc.ActiveTodos()
-				detailIdx := 0
-				for i, t := range allActive {
-					if t.ID == todoID {
-						detailIdx = i
-						break
-					}
-				}
-
 				// Enter detail/task runner view
 				p.detailView = true
-				p.detailTodoID = activeTodos[detailIdx].ID
+				p.detailTodoID = todoID
 				p.detailMode = "viewing"
 				p.detailSelectedField = 0
 				p.textInput.Reset()
 				p.textInput.Placeholder = "Tell me what changed..."
 				p.detailFieldInput.Reset()
-				p.enterTaskRunner(allActive[detailIdx])
+				p.enterTaskRunner(todo)
 
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBAcceptTodo(database, todoID)
