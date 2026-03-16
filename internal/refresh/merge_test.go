@@ -337,6 +337,32 @@ func TestMergeTriageStatus(t *testing.T) {
 	})
 }
 
+func TestMerge_SuggestionsPreserved(t *testing.T) {
+	existing := &db.CommandCenter{
+		Suggestions: db.Suggestions{
+			Focus:         "Ship the calendar fix",
+			RankedTodoIDs: []string{"todo-1", "todo-2"},
+			Reasons:       map[string]string{"todo-1": "urgent deadline"},
+		},
+	}
+	fresh := &FreshData{
+		Todos: []db.Todo{
+			{Title: "New task", Source: "granola", SourceRef: "g-1"},
+		},
+	}
+
+	result := Merge(existing, fresh)
+	if result.Suggestions.Focus != "Ship the calendar fix" {
+		t.Errorf("expected suggestions.Focus preserved, got %q", result.Suggestions.Focus)
+	}
+	if len(result.Suggestions.RankedTodoIDs) != 2 {
+		t.Errorf("expected 2 ranked todo IDs preserved, got %d", len(result.Suggestions.RankedTodoIDs))
+	}
+	if result.Suggestions.Reasons["todo-1"] != "urgent deadline" {
+		t.Errorf("expected reasons preserved, got %v", result.Suggestions.Reasons)
+	}
+}
+
 func TestMerge_NilExisting(t *testing.T) {
 	fresh := &FreshData{
 		Calendar: db.CalendarData{
