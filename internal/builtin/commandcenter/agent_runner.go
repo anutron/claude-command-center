@@ -92,7 +92,29 @@ func launchAgent(qs queuedSession) tea.Cmd {
 		if qs.Mode == "worktree" {
 			args = append(args, "--worktree")
 		}
-		args = append(args, "--", qs.Prompt)
+		// Append summary instructions so the agent self-reports what it did.
+		enhancedPrompt := fmt.Sprintf(`%s
+
+---
+
+When you have completed your work, run this command to submit a detailed summary of what you did:
+
+ccc update-todo --id %s --session-summary "$(cat <<'SUMMARY'
+## What was done
+<files created/modified and why>
+
+## Key decisions
+<choices made and rationale>
+
+## Needs review
+<anything requiring human attention>
+
+## Open questions
+<unresolved items, if any>
+SUMMARY
+)"`, qs.Prompt, qs.TodoID)
+
+		args = append(args, "--", enhancedPrompt)
 
 		cmd := exec.CommandContext(ctx, "claude", args...)
 		if qs.ProjectDir != "" {
