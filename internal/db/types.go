@@ -111,6 +111,8 @@ type Todo struct {
 	ProposedPrompt string     `json:"proposed_prompt,omitempty"`
 	SessionStatus  string     `json:"session_status,omitempty"`
 	SessionSummary string     `json:"session_summary,omitempty"`
+	SourceContext    string     `json:"source_context,omitempty"`
+	SourceContextAt  string     `json:"source_context_at,omitempty"`
 	TriageStatus   string     `json:"triage_status,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	CompletedAt    *time.Time `json:"completed_at"`
