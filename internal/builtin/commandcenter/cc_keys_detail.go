@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -121,6 +122,12 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		// If todo has a session_id, join/resume that session directly
 		if todo := p.detailTodo(); todo != nil {
 			if todo.SessionID != "" {
+				// Verify session file still exists before attempting to join.
+				if !sessionFileExists(todo.SessionID) {
+					p.flashMessage = "Session expired — use r to re-run or c to edit prompt first"
+					p.flashMessageAt = time.Now()
+					return plugin.ConsumedAction()
+				}
 				dir := todo.ProjectDir
 				if dir == "" {
 					home, _ := os.UserHomeDir()
@@ -147,6 +154,11 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 				home, _ := os.UserHomeDir()
 				dir = home
 			}
+			// Only pass ResumeID if the session file still exists.
+			resumeID := todo.SessionID
+			if !sessionFileExists(resumeID) {
+				resumeID = ""
+			}
 			qs := queuedSession{
 				TodoID:     todo.ID,
 				Prompt:     todo.ProposedPrompt,
@@ -155,13 +167,17 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 				Perm:       p.cfg.Agent.DefaultPermission,
 				Budget:     p.cfg.Agent.DefaultBudget,
 				AutoStart:  true,
-				ResumeID:   todo.SessionID,
+				ResumeID:   resumeID,
 			}
 			cmd := p.launchOrQueueAgent(qs)
 			p.detailView = false
 			p.detailMode = "viewing"
+			verb := "resumed"
+			if resumeID == "" {
+				verb = "re-launched"
+			}
 			if p.canLaunchAgent() || len(p.sessionQueue) == 0 {
-				p.flashMessage = fmt.Sprintf("Agent resumed for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
+				p.flashMessage = fmt.Sprintf("Agent %s for: %s", verb, truncateToWidth(flattenTitle(todo.Title), 40))
 			} else {
 				p.flashMessage = fmt.Sprintf("Agent queued for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
 			}
@@ -520,4 +536,27 @@ func (p *Plugin) handleDetailCommandInput(msg tea.KeyMsg) plugin.Action {
 	var cmd tea.Cmd
 	p.commandTextArea, cmd = p.commandTextArea.Update(msg)
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+// sessionFileExists checks whether a Claude session file exists in any project directory.
+func sessionFileExists(sessionID string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	projectsDir := filepath.Join(home, ".claude", "projects")
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return false
+	}
+	sessionFile := sessionID + ".jsonl"
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(projectsDir, e.Name(), sessionFile)); err == nil {
+			return true
+		}
+	}
+	return false
 }

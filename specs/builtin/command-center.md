@@ -97,7 +97,9 @@ Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectD
 | `enter` | detail:viewing | Edit selected field (Status opens inline selector; Due opens text input; ProjectDir opens scrollable path picker) |
 | `enter` | detail:editing | Confirm field edit |
 | `c` | detail:viewing | Open command input to edit todo via Claude LLM |
-| `o` | detail:viewing | Open task runner view |
+| `o` | detail:viewing | Join session (if session_id exists and session file is live) or open task runner |
+| `r` | detail:viewing | Resume/re-launch agent (skips ResumeID if session expired) |
+| `w` | detail:viewing | Open live session viewer (active sessions only) |
 | `j` | detail:viewing | Navigate to next active todo |
 | `k` | detail:viewing | Navigate to previous active todo |
 | `x` | detail:viewing | Complete todo (shows notice banner, auto-advances after 1s) |
@@ -316,7 +318,12 @@ The agent prompt is the user's prompt with a postscript appended. The postscript
 
 #### Join/Resume Existing Sessions
 
-From the detail view or list view, pressing `o` on a todo with a `session_id` launches an interactive session with `resume_id` (not a headless agent — this resumes a previous interactive Claude session). If no `session_id` exists, the task runner wizard opens instead.
+From the detail view, pressing `o` on a todo with a `session_id` launches an interactive session with `resume_id` (not a headless agent — this resumes a previous interactive Claude session). If no `session_id` exists, the task runner wizard opens instead.
+
+**Expired session detection:** Before attempting to join (`o`) or resume (`r`), the system checks whether the Claude session file still exists on disk (`~/.claude/projects/<project>/<session_id>.jsonl`). Claude garbage-collects old session files, so a valid `session_id` in the database may point to a session that no longer exists.
+
+- **`o` (join):** If the session file is missing, shows a flash message ("Session expired — use r to re-run or c to edit prompt first") instead of launching Claude into an error.
+- **`r` (resume as headless agent):** If the session file is missing, drops the `ResumeID` and launches a fresh agent with the existing prompt. Flash message says "re-launched" instead of "resumed" so the user knows it started fresh.
 
 #### Review Completed Sessions
 
