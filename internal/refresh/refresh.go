@@ -17,11 +17,12 @@ import (
 
 // Options configures a refresh run.
 type Options struct {
-	Verbose bool
-	DryRun  bool
-	DB      *sql.DB
-	Sources []DataSource
-	LLM     llm.LLM // for suggestions (post-merge)
+	Verbose         bool
+	DryRun          bool
+	DB              *sql.DB
+	Sources         []DataSource
+	LLM             llm.LLM // for suggestions (post-merge)
+	ContextRegistry *ContextRegistry
 }
 
 // Run performs a full data refresh: iterates DataSources in parallel,
@@ -129,6 +130,13 @@ func Run(opts Options) error {
 	// Generate proposed prompts for todos that have a source but no prompt yet
 	if opts.LLM != nil && len(merged.Todos) > 0 {
 		merged.Todos = generateProposedPrompts(ctx, opts.LLM, opts.DB, merged.Todos)
+	}
+
+	// Fetch source context for todos that have a source_ref
+	if opts.ContextRegistry != nil && opts.DB != nil {
+		for i := range merged.Todos {
+			FetchContextBestEffort(ctx, opts.DB, opts.ContextRegistry, &merged.Todos[i])
+		}
 	}
 
 	merged.Warnings = warnings

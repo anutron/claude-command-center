@@ -72,12 +72,22 @@ func main() {
 		granolasrc.New(cfg.Granola.Enabled, l, database),
 	}
 
+	// Build context registry for source context fetching
+	contextRegistry := refresh.NewContextRegistry()
+	contextRegistry.Register("granola", granolasrc.NewContextFetcher())
+	contextRegistry.Register("github", githubsrc.NewContextFetcher())
+	if token := cfg.Slack.EffectiveToken(); token != "" {
+		contextRegistry.Register("slack", slacksrc.NewContextFetcher(token))
+	}
+	contextRegistry.Register("gmail", gmailsrc.NewContextFetcher(cfg.Gmail))
+
 	opts := refresh.Options{
-		Verbose: *verbose,
-		DryRun:  *dryRun,
-		DB:      database,
-		Sources: sources,
-		LLM:     l,
+		Verbose:         *verbose,
+		DryRun:          *dryRun,
+		DB:              database,
+		Sources:         sources,
+		LLM:             l,
+		ContextRegistry: contextRegistry,
 	}
 
 	if err := refresh.Run(opts); err != nil {
