@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/db"
@@ -78,6 +80,17 @@ and generating a prompt to execute it there.
 		fmt.Fprintf(&b, "Due: %s\n", todo.Due)
 	}
 
+	if todo.SourceContext != "" {
+		b.WriteString("\n## Source Context\n")
+		fmt.Fprintf(&b, "Source: %s (ref: %s)\n", todo.Source, todo.SourceRef)
+		if todo.SourceContextAt != "" {
+			fmt.Fprintf(&b, "Fetched: %s\n", todo.SourceContextAt)
+		}
+		b.WriteString("\n<source_context>\n")
+		b.WriteString(todo.SourceContext)
+		b.WriteString("\n</source_context>\n")
+	}
+
 	b.WriteString("\n## Available Projects\n")
 	for _, p := range paths.Paths {
 		fmt.Fprintf(&b, "\n### %s\n", p.Path)
@@ -119,6 +132,10 @@ and generating a prompt to execute it there.
 		b.WriteString("Note: Do not prefer a project just because it has skills that are also\navailable globally. Focus on whether the project's PURPOSE matches the task.\n")
 	}
 
+	if instructions := loadTodoInstructions(); instructions != "" {
+		fmt.Fprintf(&b, "\n## User Instructions\n%s\n", instructions)
+	}
+
 	b.WriteString(`
 ## Instructions
 1. Choose the best project directory for this task. Explain your reasoning briefly.
@@ -134,4 +151,22 @@ Return ONLY JSON:
 `)
 
 	return b.String()
+}
+
+// loadTodoInstructions reads todo_instructions.md from the project root.
+// Returns empty string if the file doesn't exist.
+func loadTodoInstructions() string {
+	// Walk up from the executable or use a known path.
+	// The refresh binary runs from the project root.
+	candidates := []string{
+		"todo_instructions.md",
+		filepath.Join(os.Getenv("HOME"), ".config", "ccc", "todo_instructions.md"),
+	}
+	for _, path := range candidates {
+		data, err := os.ReadFile(path)
+		if err == nil && len(data) > 0 {
+			return strings.TrimSpace(string(data))
+		}
+	}
+	return ""
 }
