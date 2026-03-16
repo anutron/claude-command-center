@@ -27,6 +27,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code
+.claude/worktrees/
+
 # Credentials (never commit)
 credentials/
 
