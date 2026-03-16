@@ -1410,7 +1410,7 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 			{"tab", "Cycle triage filter (expanded view)"},
 			{"b", "Toggle completed backlog"},
 			{"r", "Refresh from all sources"},
-			{"gi", "Go to inbox (list view)"},
+			{"gi/gu", "Go to inbox (list view)"},
 		}
 		sections = append(sections, "", s.SectionHeader.Render("  Command Center"), "")
 		for _, sh := range cmds {

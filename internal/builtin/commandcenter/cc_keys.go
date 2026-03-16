@@ -30,8 +30,8 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	// Two-key chord: "g" prefix (Gmail-style shortcuts)
 	if p.gPending {
 		p.gPending = false
-		if msg.String() == "i" {
-			// "gi" = go inbox: return to list view from wherever we are
+		if msg.String() == "i" || msg.String() == "u" {
+			// "gi" = go inbox, "gu" = go up: return to list view from wherever we are
 			p.detailView = false
 			p.detailMode = "viewing"
 			p.taskRunnerView = false

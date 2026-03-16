@@ -282,7 +282,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "tab", Description: "Cycle triage filter (expanded)"},
 		{Key: "b", Description: "Toggle completed backlog"},
 		{Key: "r", Description: "Refresh from all sources"},
-		{Key: "gi", Description: "Go to inbox (list view)"},
+		{Key: "gi/gu", Description: "Go to inbox (list view)"},
 	}
 }
 
