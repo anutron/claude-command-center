@@ -82,14 +82,17 @@ func DBInsertTodo(db *sql.DB, t Todo) error {
 	}
 	_, err := db.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status, session_summary,
+		source_context, source_context_at,
 		triage_status, display_id, sort_order, created_at, completed_at, updated_at)
 		VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?,
+		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+		NULLIF(?, ''), NULLIF(?, ''), ?,
 		(SELECT COALESCE(MAX(display_id), 0) + 1 FROM cc_todos),
 		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status = 'active'),
 		?, ?, ?)`,
 		t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
 		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionStatus, t.SessionSummary,
+		t.SourceContext, t.SourceContextAt,
 		triageStatus, createdAt, completedAt, now)
 	if err != nil {
 		return fmt.Errorf("insert todo %s: %w", t.ID, err)
@@ -113,12 +116,14 @@ func DBUpdateTodo(db *sql.DB, id string, t Todo) error {
 		who_waiting = NULLIF(?, ''), project_dir = NULLIF(?, ''), due = NULLIF(?, ''),
 		effort = NULLIF(?, ''), session_id = NULLIF(?, ''),
 		proposed_prompt = NULLIF(?, ''), session_status = NULLIF(?, ''),
-		session_summary = NULLIF(?, ''), triage_status = ?,
+		session_summary = NULLIF(?, ''), source_context = NULLIF(?, ''),
+		source_context_at = NULLIF(?, ''), triage_status = ?,
 		completed_at = ?, updated_at = ?
 		WHERE id = ?`,
 		t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
 		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID,
-		t.ProposedPrompt, t.SessionStatus, t.SessionSummary, triageStatus, completedAt, now, id)
+		t.ProposedPrompt, t.SessionStatus, t.SessionSummary, t.SourceContext,
+		t.SourceContextAt, triageStatus, completedAt, now, id)
 	if err != nil {
 		return fmt.Errorf("update todo %s: %w", id, err)
 	}
@@ -176,6 +181,17 @@ func DBUpdateTodoSessionID(db *sql.DB, id string, sessionID string) error {
 		sessionID, now, id)
 	if err != nil {
 		return fmt.Errorf("update todo session_id %s: %w", id, err)
+	}
+	return nil
+}
+
+// DBUpdateTodoSourceContext updates only the source_context columns for a todo.
+func DBUpdateTodoSourceContext(db *sql.DB, id, sourceContext, sourceContextAt string) error {
+	now := FormatTime(time.Now())
+	_, err := db.Exec(`UPDATE cc_todos SET source_context = NULLIF(?, ''), source_context_at = NULLIF(?, ''), updated_at = ? WHERE id = ?`,
+		sourceContext, sourceContextAt, now, id)
+	if err != nil {
+		return fmt.Errorf("update todo source_context %s: %w", id, err)
 	}
 	return nil
 }
@@ -456,11 +472,14 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 		}
 		_, err := tx.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
 			who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status, session_summary,
+			source_context, source_context_at,
 			triage_status, display_id, sort_order, created_at, completed_at, updated_at)
 			VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?)`,
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+			NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?)`,
 			t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
 			t.WhoWaiting, t.ProjectDir, t.LaunchMode, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionStatus, t.SessionSummary,
+			t.SourceContext, t.SourceContextAt,
 			triageStatus, displayID, i, createdAt, completedAt, now)
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)
