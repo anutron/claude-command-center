@@ -131,7 +131,7 @@ func WriteCachedSkills(cacheFile string, skills []SkillInfo) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(cacheFile, data, 0o644)
+	return os.WriteFile(cacheFile, data, 0o600)
 }
 
 // GetProjectSkills returns skills for a project directory, using disk cache

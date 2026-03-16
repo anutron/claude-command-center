@@ -58,7 +58,7 @@ func InstallSchedule() error {
 
 	// Source env file if it exists, then run the binary
 	envFile := filepath.Join(ConfigDir(), ".env")
-	cronCmd := fmt.Sprintf("[ -f %s ] && . %s; %s >> %s 2>&1",
+	cronCmd := fmt.Sprintf("[ -f '%s' ] && . '%s'; '%s' >> '%s' 2>&1",
 		envFile, envFile, binary, logPath)
 
 	newEntry := fmt.Sprintf("%s %s %s", cronSchedule, cronCmd, crontabMarker)
