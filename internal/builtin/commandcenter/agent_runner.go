@@ -92,7 +92,7 @@ func launchAgent(qs queuedSession) tea.Cmd {
 		if qs.Mode == "worktree" {
 			args = append(args, "--worktree")
 		}
-		args = append(args, qs.Prompt)
+		args = append(args, "--", qs.Prompt)
 
 		cmd := exec.CommandContext(ctx, "claude", args...)
 		if qs.ProjectDir != "" {
