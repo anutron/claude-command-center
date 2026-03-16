@@ -32,10 +32,16 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 			p.detailView = false
 			p.detailMode = "viewing"
 			p.taskRunnerView = false
+			p.sessionViewerActive = false
 			p.detailNotice = ""
 			return plugin.NoopAction()
 		}
 		// Any other key after "g" — not a recognized chord, fall through
+	}
+
+	// Session viewer (sub-view of detail)
+	if p.sessionViewerActive && p.detailView {
+		return p.handleSessionViewer(msg)
 	}
 
 	// Task runner view (sub-view of detail)

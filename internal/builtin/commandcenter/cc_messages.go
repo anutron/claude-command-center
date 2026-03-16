@@ -55,6 +55,12 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case claudeReviewAddressedMsg:
 		return p.handleClaudeReviewAddressed(msg)
 
+	case agentEventMsg:
+		return p.handleAgentEvent(msg)
+
+	case agentEventsDoneMsg:
+		return p.handleAgentEventsDone(msg)
+
 	case agentStartedInternalMsg:
 		return p.handleAgentStartedInternal(msg)
 
@@ -567,7 +573,17 @@ func (p *Plugin) handleAgentStartedInternal(msg agentStartedInternalMsg) (bool, 
 
 	// Update the todo session status in-memory and persist.
 	p.setTodoSessionStatus(msg.todoID, "active")
-	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionStatus(msg.todoID, "active")}
+
+	var cmds []tea.Cmd
+	cmds = append(cmds, p.persistSessionStatus(msg.todoID, "active"))
+
+	// If session viewer is open for this todo, start listening for events.
+	if p.sessionViewerActive && p.sessionViewerTodoID == msg.todoID && !p.sessionViewerListening {
+		p.sessionViewerListening = true
+		cmds = append(cmds, listenForAgentEvent(msg.todoID, msg.session.EventsCh))
+	}
+
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 }
 
 func (p *Plugin) handleAgentStarted(msg agentStartedMsg) (bool, plugin.Action) {
@@ -609,6 +625,29 @@ func (p *Plugin) handleAgentSessionID(msg agentSessionIDMsg) (bool, plugin.Actio
 func (p *Plugin) handleAgentFinished(msg agentFinishedMsg) (bool, plugin.Action) {
 	cmd := p.onAgentFinished(msg.todoID, msg.exitCode)
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+func (p *Plugin) handleAgentEvent(msg agentEventMsg) (bool, plugin.Action) {
+	// Update session viewer if it's active and watching this todo
+	if p.sessionViewerActive && p.sessionViewerTodoID == msg.todoID {
+		p.updateSessionViewerContent()
+	}
+
+	// Continue listening for more events
+	if sess, ok := p.activeSessions[msg.todoID]; ok {
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForAgentEvent(msg.todoID, sess.EventsCh)}
+	}
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleAgentEventsDone(msg agentEventsDoneMsg) (bool, plugin.Action) {
+	p.sessionViewerListening = false
+	// Mark the viewer as done if it's active for this todo
+	if p.sessionViewerActive && p.sessionViewerTodoID == msg.todoID {
+		p.sessionViewerDone = true
+		p.updateSessionViewerContent()
+	}
+	return true, plugin.NoopAction()
 }
 
 func (p *Plugin) handleTickMsg() (bool, plugin.Action) {

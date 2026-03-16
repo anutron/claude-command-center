@@ -152,6 +152,14 @@ type Plugin struct {
 	activeSessions map[string]*agentSession
 	sessionQueue   []queuedSession
 
+	// Session viewer
+	sessionViewerActive     bool
+	sessionViewerTodoID     string
+	sessionViewerVP         viewport.Model
+	sessionViewerAutoScroll bool
+	sessionViewerDone       bool           // true when session has ended
+	sessionViewerListening  bool           // true when listenForAgentEvent cmd is active
+
 	// Wizard selections per-todo (persisted across open/close cycles)
 	wizardSelections map[string]wizardSelection
 
@@ -683,6 +691,10 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	viewHeight := height - 14
 	if viewHeight < 10 {
 		viewHeight = 10
+	}
+
+	if p.sessionViewerActive && p.detailView {
+		return p.renderSessionViewer(width, height)
 	}
 
 	if p.taskRunnerView && p.detailView && p.cc != nil {

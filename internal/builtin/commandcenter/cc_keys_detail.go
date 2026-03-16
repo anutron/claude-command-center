@@ -98,6 +98,25 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			p.detailSelectedField = 0
 		}
 		return plugin.ConsumedAction()
+	case "w":
+		// Open session viewer for todos with active agent sessions
+		if todo := p.detailTodo(); todo != nil {
+			if _, hasSession := p.activeSessions[todo.ID]; hasSession {
+				p.initSessionViewer(todo.ID)
+				// Start listening for events if not already
+				if !p.sessionViewerListening {
+					if sess, ok := p.activeSessions[todo.ID]; ok {
+						p.sessionViewerListening = true
+						return plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForAgentEvent(todo.ID, sess.EventsCh)}
+					}
+				}
+				return plugin.ConsumedAction()
+			}
+			// No active session
+			p.flashMessage = "No active session for this todo"
+			p.flashMessageAt = time.Now()
+		}
+		return plugin.ConsumedAction()
 	case "o":
 		// If todo has a session_id, join/resume that session directly
 		if todo := p.detailTodo(); todo != nil {
