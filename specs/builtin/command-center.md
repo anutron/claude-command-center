@@ -66,7 +66,7 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 | `u` | normal | Undo last complete/dismiss |
 | `d` | normal | Defer selected todo to bottom of list |
 | `p` | normal | Promote selected todo to top of list |
-| `space` | normal | Open detail view with edit text input |
+| `space` | normal | Cycle expanded view: collapsed → 2-col → 1-col → collapsed |
 | `c` | normal | Create todo via rich textarea (AI-powered) |
 | `/` | normal | Search/filter todos (case insensitive) |
 | `b` | normal | Toggle backlog (completed items) |
@@ -88,13 +88,13 @@ Title bar shows "TODO #N" using the todo's `display_id`.
 
 The detail view tracks the todo by **ID** (not list index), so status changes (e.g. cycling active → waiting) don't cause the view to jump to a different todo.
 
-Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectDir (2), Prompt (3).
+Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectDir (2). Prompt is not editable in the detail view — it is managed via the task runner wizard.
 
 | Key | Context | Description |
 |-----|---------|-------------|
 | `tab` | detail:viewing | Cycle to next editable field |
 | `shift+tab` | detail:viewing | Cycle to previous editable field |
-| `enter` | detail:viewing | Edit selected field (Status cycles value; Due/ProjectDir/Prompt open text input) |
+| `enter` | detail:viewing | Edit selected field (Status opens inline selector; Due opens text input; ProjectDir opens scrollable path picker) |
 | `enter` | detail:editing | Confirm field edit |
 | `c` | detail:viewing | Open command input to edit todo via Claude LLM |
 | `o` | detail:viewing | Open task runner view |
@@ -166,7 +166,7 @@ Todos have a `display_id` column (auto-incrementing integer) for stable, human-r
 - Dismiss with `X` (tombstoned, never recreated by refresh)
 - Defer with `d` (moves to bottom of list)
 - Promote with `p` (moves to top of list)
-- Detail view with `space` (shows full context, edit input for Claude-powered enrichment)
+- Expanded view with `space` (cycles: collapsed → 2-col → 1-col → collapsed)
 - Launch with `enter` (resumes session_id, launches in project_dir, or navigates to sessions)
 
 ### Triage Workflow
@@ -289,10 +289,11 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 
 #### Launch Options
 
-Sessions are configured via the task runner wizard (step 3) with two launch modes:
+Sessions are configured via the task runner wizard (step 3) with three launch modes:
 
-- **Queue** (`taskRunnerLaunchCursor == 0`): `AutoStart = false` — session launches immediately if under concurrency limit, otherwise queues without auto-start
-- **Run Now** (`taskRunnerLaunchCursor == 1`): `AutoStart = true` — session launches immediately or queues with auto-start when capacity frees up
+- **Run Claude** (`taskRunnerLaunchCursor == 0`): Launches an interactive Claude session (not a headless agent)
+- **Queue Agent** (`taskRunnerLaunchCursor == 1`): `AutoStart = false` — agent launches immediately if under concurrency limit, otherwise queues without auto-start
+- **Run Agent Now** (`taskRunnerLaunchCursor == 2`): `AutoStart = true` — agent launches immediately or queues with auto-start when capacity frees up
 
 #### CLI Flags
 
@@ -394,20 +395,20 @@ The task runner is a 3-step linear wizard for configuring and launching a Claude
 
 1. **Project** (Step 1/3) — Shows the current project directory. `/` opens a scrollable path picker to change it. `enter` accepts and advances. `esc` exits the wizard.
 2. **Mode** (Step 2/3) — Shows a reminder of the selected project. Inline mode selector cycles through Normal / Worktree / Sandbox with `←→`. `enter` advances. `esc` goes back to step 1.
-3. **Prompt** (Step 3/3) — Shows project + mode reminder. Scrollable prompt viewport (`j/k` to scroll). Launch selector at bottom: `[ Queue ] Run Now` toggled with `←→`. `enter` launches. `esc` goes back to step 2.
+3. **Prompt** (Step 3/3) — Shows project + mode reminder. Scrollable prompt viewport (`j/k` to scroll). Launch selector at bottom: `[ Run Claude ] Queue Agent  Run Agent Now` toggled with `←→`. `enter` launches. `esc` goes back to step 2.
 
 #### Defaults
 
 - **Budget**: $5 (hardcoded)
 - **Permission**: "auto"
-- **Launch cursor**: 0 (Queue)
+- **Launch cursor**: 0 (Run Claude)
 
 #### Key Bindings (Step 3)
 
 | Key | Description |
 |-----|-------------|
 | `j`/`k` | Scroll prompt viewport |
-| `←`/`→` | Toggle launch cursor (Queue / Run Now) |
+| `←`/`→` | Cycle launch cursor (Run Claude / Queue Agent / Run Agent Now) |
 | `enter` | Launch agent with selected options |
 | `e` | Open prompt in external editor |
 | `c` | AI prompt refinement (LLM improves prompt clarity and structure) |
@@ -464,7 +465,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Expanded view left/right paginates at column edges
 - Detail view shows "TODO #N" title with display_id
 - Detail view tracks todo by ID (not index) — status changes don't jump to different todo
-- Detail view `enter` edits selected field (Status cycles, others open text input)
+- Detail view `enter` edits selected field (Status opens inline selector, Due opens text input, ProjectDir opens path picker)
 - Detail view `x` completes todo with notice banner, auto-advances after 1s
 - Detail view `X` dismisses todo with notice banner, auto-advances after 1s
 - Detail view `j`/`k` navigates between active todos
@@ -483,7 +484,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Task runner wizard: enter advances steps (1→2→3), esc goes back (3→2→1)
 - Task runner wizard: esc at step 1 exits wizard
 - Task runner wizard: left/right cycles mode in step 2
-- Task runner wizard: enter at step 3 launches with queue (cursor 0) or run now (cursor 1)
+- Task runner wizard: enter at step 3 launches with Run Claude (cursor 0), Queue Agent (cursor 1), or Run Agent Now (cursor 2)
 - Task runner wizard: `c` sets refining state, LLM response updates prompt
 - Task runner wizard: `r` opens review loop, unchanged prompt = approved
 - Task runner wizard: `r` annotated prompt triggers LLM revision and reopens Plannotator
