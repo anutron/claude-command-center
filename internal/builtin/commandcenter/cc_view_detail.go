@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width, height int, notice string, noticeType string, statusCursor int, filteredPaths []string, pathCursor int, pathFilter string, frame int) string {
+func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedField int, fieldInputView string, commandInputView string, width, height int, notice string, noticeType string, statusCursor int, filteredPaths []string, pathCursor int, pathFilter string, frame int, hasActiveSession bool) string {
 	innerWidth := width - 4
 	if innerWidth < 40 {
 		innerWidth = 40
@@ -382,6 +382,9 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		baseHints := "j/k prev/next \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch"
 		if todo.SessionID != "" && todo.SessionStatus != "active" && todo.SessionStatus != "queued" {
 			baseHints += " \u00b7 r resume"
+		}
+		if hasActiveSession {
+			baseHints += " \u00b7 w watch"
 		}
 		baseHints += " \u00b7 c command \u00b7 esc back"
 		hints = s.Hint.Render(baseHints)

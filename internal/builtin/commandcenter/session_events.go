@@ -31,18 +31,18 @@ type agentEventsDoneMsg struct {
 	todoID string
 }
 
-// parseSessionEvent maps a raw stream-json event (already unmarshaled) to a sessionEvent.
-func parseSessionEvent(raw map[string]interface{}) sessionEvent {
+// parseSessionEvent maps a raw stream-json event (already unmarshaled) to one or more sessionEvents.
+// Assistant messages with multiple content blocks (e.g., text + tool_use) produce one event per block.
+func parseSessionEvent(raw map[string]interface{}) []sessionEvent {
 	eventType, _ := raw["type"].(string)
-
-	var ev sessionEvent
 
 	switch eventType {
 	case "assistant":
 		content, ok := raw["content"].([]interface{})
 		if !ok {
-			return ev
+			return nil
 		}
+		var events []sessionEvent
 		for _, block := range content {
 			blockMap, ok := block.(map[string]interface{})
 			if !ok {
@@ -52,20 +52,26 @@ func parseSessionEvent(raw map[string]interface{}) sessionEvent {
 			switch blockType {
 			case "text":
 				text, _ := blockMap["text"].(string)
-				ev.Type = "assistant_text"
-				ev.Text = text
+				events = append(events, sessionEvent{
+					Type: "assistant_text",
+					Text: text,
+				})
 			case "tool_use":
-				ev.Type = "tool_use"
+				ev := sessionEvent{
+					Type: "tool_use",
+				}
 				ev.ToolName, _ = blockMap["name"].(string)
 				ev.ToolID, _ = blockMap["id"].(string)
 				if input, ok := blockMap["input"].(map[string]interface{}); ok {
 					ev.ToolInput = truncateToolInput(input)
 				}
+				events = append(events, ev)
 			}
 		}
+		return events
 
 	case "tool_result":
-		ev.Type = "tool_result"
+		ev := sessionEvent{Type: "tool_result"}
 		ev.ResultToolID, _ = raw["tool_use_id"].(string)
 		// Extract content — can be string or array of content blocks
 		switch c := raw["content"].(type) {
@@ -84,9 +90,10 @@ func parseSessionEvent(raw map[string]interface{}) sessionEvent {
 		if isErr, ok := raw["is_error"].(bool); ok {
 			ev.IsError = isErr
 		}
+		return []sessionEvent{ev}
 
 	case "result":
-		ev.Type = "assistant_text"
+		ev := sessionEvent{Type: "assistant_text"}
 		// Result events may have a "result" string or nested content
 		switch r := raw["result"].(type) {
 		case string:
@@ -94,31 +101,34 @@ func parseSessionEvent(raw map[string]interface{}) sessionEvent {
 		case map[string]interface{}:
 			ev.Text = extractTextFromContent(r)
 		}
+		return []sessionEvent{ev}
 
 	case "error":
-		ev.Type = "error"
-		ev.IsError = true
+		ev := sessionEvent{Type: "error", IsError: true}
 		if errObj, ok := raw["error"].(map[string]interface{}); ok {
 			ev.Text, _ = errObj["message"].(string)
 		}
 		if ev.Text == "" {
 			ev.Text, _ = raw["message"].(string)
 		}
+		return []sessionEvent{ev}
 
 	case "user":
-		ev.Type = "user"
+		ev := sessionEvent{Type: "user"}
 		if msg, ok := raw["message"].(map[string]interface{}); ok {
 			if content, ok := msg["content"].(string); ok {
 				ev.Text = content
 			}
 		}
+		return []sessionEvent{ev}
 
 	case "system":
-		ev.Type = "system"
+		ev := sessionEvent{Type: "system"}
 		ev.Text, _ = raw["message"].(string)
+		return []sessionEvent{ev}
 	}
 
-	return ev
+	return nil
 }
 
 // truncateToolInput returns a short string representation of tool input for display.

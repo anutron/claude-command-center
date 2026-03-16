@@ -215,8 +215,8 @@ SUMMARY
 				}
 
 				// Parse event for the live session viewer.
-				parsed := parseSessionEvent(event)
-				if parsed.Type != "" {
+				parsedEvents := parseSessionEvent(event)
+				for _, parsed := range parsedEvents {
 					sess.mu.Lock()
 					sess.Events = append(sess.Events, parsed)
 					sess.mu.Unlock()

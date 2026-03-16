@@ -15,7 +15,11 @@ func TestParseSessionEvent_AssistantText(t *testing.T) {
 		},
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "assistant_text" {
 		t.Errorf("expected type assistant_text, got %q", ev.Type)
 	}
@@ -37,7 +41,11 @@ func TestParseSessionEvent_ToolUse(t *testing.T) {
 		},
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "tool_use" {
 		t.Errorf("expected type tool_use, got %q", ev.Type)
 	}
@@ -57,7 +65,11 @@ func TestParseSessionEvent_ToolResult(t *testing.T) {
 		"is_error":    false,
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "tool_result" {
 		t.Errorf("expected type tool_result, got %q", ev.Type)
 	}
@@ -80,7 +92,11 @@ func TestParseSessionEvent_ToolResultError(t *testing.T) {
 		"is_error":    true,
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "tool_result" {
 		t.Errorf("expected type tool_result, got %q", ev.Type)
 	}
@@ -104,7 +120,11 @@ func TestParseSessionEvent_ToolResultContentBlocks(t *testing.T) {
 		},
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "tool_result" {
 		t.Errorf("expected type tool_result, got %q", ev.Type)
 	}
@@ -119,7 +139,11 @@ func TestParseSessionEvent_Result(t *testing.T) {
 		"result": "Task completed successfully.",
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "assistant_text" {
 		t.Errorf("expected type assistant_text, got %q", ev.Type)
 	}
@@ -141,7 +165,11 @@ func TestParseSessionEvent_ResultWithContent(t *testing.T) {
 		},
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "assistant_text" {
 		t.Errorf("expected type assistant_text, got %q", ev.Type)
 	}
@@ -158,7 +186,11 @@ func TestParseSessionEvent_Error(t *testing.T) {
 		},
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "error" {
 		t.Errorf("expected type error, got %q", ev.Type)
 	}
@@ -176,7 +208,11 @@ func TestParseSessionEvent_ErrorFallbackMessage(t *testing.T) {
 		"message": "something went wrong",
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "error" {
 		t.Errorf("expected type error, got %q", ev.Type)
 	}
@@ -193,7 +229,11 @@ func TestParseSessionEvent_User(t *testing.T) {
 		},
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "user" {
 		t.Errorf("expected type user, got %q", ev.Type)
 	}
@@ -208,7 +248,11 @@ func TestParseSessionEvent_System(t *testing.T) {
 		"message": "session started",
 	}
 
-	ev := parseSessionEvent(raw)
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
 	if ev.Type != "system" {
 		t.Errorf("expected type system, got %q", ev.Type)
 	}
@@ -222,14 +266,14 @@ func TestParseSessionEvent_Unknown(t *testing.T) {
 		"type": "unknown_type",
 	}
 
-	ev := parseSessionEvent(raw)
-	if ev.Type != "" {
-		t.Errorf("expected empty type for unknown event, got %q", ev.Type)
+	events := parseSessionEvent(raw)
+	if len(events) != 0 {
+		t.Errorf("expected 0 events for unknown type, got %d", len(events))
 	}
 }
 
 func TestParseSessionEvent_MixedContentBlocks(t *testing.T) {
-	// When an assistant event has both text and tool_use, the last block wins
+	// When an assistant event has both text and tool_use, each becomes its own event
 	raw := map[string]interface{}{
 		"type": "assistant",
 		"content": []interface{}{
@@ -246,13 +290,79 @@ func TestParseSessionEvent_MixedContentBlocks(t *testing.T) {
 		},
 	}
 
-	ev := parseSessionEvent(raw)
-	// The last content block (tool_use) should win
-	if ev.Type != "tool_use" {
-		t.Errorf("expected type tool_use for mixed content, got %q", ev.Type)
+	events := parseSessionEvent(raw)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events for mixed content, got %d", len(events))
 	}
-	if ev.ToolName != "Read" {
-		t.Errorf("expected tool name Read, got %q", ev.ToolName)
+
+	// First event: text
+	if events[0].Type != "assistant_text" {
+		t.Errorf("expected first event type assistant_text, got %q", events[0].Type)
+	}
+	if events[0].Text != "Let me read that file." {
+		t.Errorf("unexpected first event text: %q", events[0].Text)
+	}
+
+	// Second event: tool_use
+	if events[1].Type != "tool_use" {
+		t.Errorf("expected second event type tool_use, got %q", events[1].Type)
+	}
+	if events[1].ToolName != "Read" {
+		t.Errorf("expected tool name Read, got %q", events[1].ToolName)
+	}
+	if events[1].ToolID != "tool_mixed" {
+		t.Errorf("expected tool id tool_mixed, got %q", events[1].ToolID)
+	}
+}
+
+func TestParseSessionEvent_MultipleToolUseBlocks(t *testing.T) {
+	// Assistant message with multiple tool_use blocks
+	raw := map[string]interface{}{
+		"type": "assistant",
+		"content": []interface{}{
+			map[string]interface{}{
+				"type": "text",
+				"text": "I'll read both files.",
+			},
+			map[string]interface{}{
+				"type":  "tool_use",
+				"name":  "Read",
+				"id":    "tool_1",
+				"input": map[string]interface{}{"file_path": "/tmp/a.go"},
+			},
+			map[string]interface{}{
+				"type":  "tool_use",
+				"name":  "Read",
+				"id":    "tool_2",
+				"input": map[string]interface{}{"file_path": "/tmp/b.go"},
+			},
+		},
+	}
+
+	events := parseSessionEvent(raw)
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(events))
+	}
+	if events[0].Type != "assistant_text" {
+		t.Errorf("expected first event assistant_text, got %q", events[0].Type)
+	}
+	if events[1].Type != "tool_use" || events[1].ToolID != "tool_1" {
+		t.Errorf("expected second event tool_use with id tool_1, got type=%q id=%q", events[1].Type, events[1].ToolID)
+	}
+	if events[2].Type != "tool_use" || events[2].ToolID != "tool_2" {
+		t.Errorf("expected third event tool_use with id tool_2, got type=%q id=%q", events[2].Type, events[2].ToolID)
+	}
+}
+
+func TestParseSessionEvent_AssistantEmptyContent(t *testing.T) {
+	raw := map[string]interface{}{
+		"type":    "assistant",
+		"content": []interface{}{},
+	}
+
+	events := parseSessionEvent(raw)
+	if len(events) != 0 {
+		t.Errorf("expected 0 events for empty content, got %d", len(events))
 	}
 }
 
