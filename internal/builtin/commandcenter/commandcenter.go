@@ -3,6 +3,7 @@ package commandcenter
 import (
 	"database/sql"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
@@ -433,14 +434,23 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 }
 
 // Shutdown is called when the plugin is being shut down.
-// It cancels all active agent sessions to prevent zombie processes.
+// It sends SIGINT to all active agent sessions so Claude CLI can save session state.
 func (p *Plugin) Shutdown() {
 	for _, sess := range p.activeSessions {
 		if sess.Stdin != nil {
 			sess.Stdin.Close()
 		}
-		if sess.Cancel != nil {
-			sess.Cancel()
+		if sess.Cmd != nil && sess.Cmd.Process != nil {
+			sess.Cmd.Process.Signal(syscall.SIGINT)
+		}
+	}
+	// Give agents a moment to save state before the process exits.
+	for _, sess := range p.activeSessions {
+		if sess.done != nil {
+			select {
+			case <-sess.done:
+			case <-time.After(3 * time.Second):
+			}
 		}
 	}
 }
@@ -636,10 +646,14 @@ func (p *Plugin) triageCounts() map[string]int {
 }
 
 func (p *Plugin) triggerFocusRefresh() tea.Cmd {
-	if p.cc == nil || len(p.cc.ActiveTodos()) == 0 {
+	if p.cc == nil {
 		return nil
 	}
 	p.claudeLoading = true
+	if len(p.cc.ActiveTodos()) == 0 {
+		p.claudeLoadingMsg = "Admiring the empty list..."
+		return claudeFocusCmd(p.llm, buildEmptyFocusPrompt(p.cc))
+	}
 	p.claudeLoadingMsg = "Updating focus..."
 	return claudeFocusCmd(p.llm, buildFocusPrompt(p.cc))
 }

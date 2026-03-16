@@ -306,6 +306,35 @@ Write a 1-2 sentence recommendation of what to focus on next and why. Consider: 
 Output ONLY the recommendation text, no quotes, no JSON, no explanation.`, sb.String())
 }
 
+func buildEmptyFocusPrompt(cc *db.CommandCenter) string {
+	var calItems []string
+	now := time.Now()
+	for _, e := range cc.Calendar.Today {
+		if e.Declined || e.End.Before(now) {
+			continue
+		}
+		calItems = append(calItems, fmt.Sprintf("- %s (%s-%s)",
+			e.Title, e.Start.Format("3:04pm"), e.End.Format("3:04pm")))
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Current time: %s\n", now.Format("Monday 3:04pm")))
+	if len(calItems) > 0 {
+		sb.WriteString("\nRemaining calendar today:\n")
+		sb.WriteString(strings.Join(calItems, "\n"))
+	} else {
+		sb.WriteString("\nNo more meetings today.")
+	}
+
+	return fmt.Sprintf(`The user's todo list is completely empty. Zero items. They cleared everything.
+
+%s
+
+Write a 1-2 sentence remark about their empty todo list. Be surprising, witty, and entertaining. You can be snarky, deadpan, celebratory, philosophical, or absurd — mix it up. Reference their calendar situation if it's funny. Don't be generic or corny. Make them smile.
+
+Output ONLY the remark text, no quotes, no JSON, no explanation.`, sb.String())
+}
+
 func buildEditPrompt(todo db.Todo, instruction string) string {
 	// Build a map from the todo so proposed_prompt always appears (even when empty).
 	// The struct uses omitempty which hides the field, but the LLM needs to see it.

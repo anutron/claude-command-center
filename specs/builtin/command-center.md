@@ -226,7 +226,11 @@ In the normal (collapsed) view:
 
 - `c` key opens rich textarea; `ctrl+d` submits text to Claude LLM for todo creation
 - `space` on todo opens detail view with edit input for Claude-powered enrichment
-- Focus suggestion auto-refreshes after todo mutations
+- Focus suggestion is always visible — never renders as empty:
+  - Auto-generates on data load when focus is empty (first launch, DB clear, post-refresh)
+  - Auto-refreshes after todo mutations
+  - When zero active todos: sends calendar context to LLM for a witty, surprising remark about the empty list
+  - When active todos exist: generates LLM-based recommendation considering deadlines, who's waiting, calendar gaps, effort, and momentum
 - All Claude calls run as background `tea.Cmd` (non-blocking)
 - Uses `LLM` abstraction layer (not direct CLI calls)
 
@@ -516,3 +520,6 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Todo-agent pipeline: loadPathContext assembles path descriptions, project skills, global skills, and routing rules
 - Todo-agent pipeline: partial context failures (missing skills, missing rules) are logged but don't block other paths
 - Todo-agent pipeline: LLM parse failure for one todo is logged and skipped, other todos still processed
+- Focus suggestion: always visible after data load (never empty banner)
+- Focus suggestion: zero active todos generates LLM-powered witty remark with calendar context
+- Focus suggestion: data load with empty focus triggers generation automatically

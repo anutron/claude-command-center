@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"database/sql"
@@ -91,6 +92,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
 		}
 		return true, plugin.NoopAction()
+
+	case plugin.LaunchMsg:
+		return p.handleLaunchMsg(msg)
 
 	case plugin.ReturnMsg:
 		// Always reload from DB when returning from a Claude session.
@@ -185,6 +189,12 @@ func (p *Plugin) handleCCLoaded(msg ccLoadedMsg) (bool, plugin.Action) {
 		p.cc = msg.cc
 	}
 	p.ccLastRead = time.Now()
+	// Generate focus suggestion if empty (first load, or DB was cleared).
+	if p.cc != nil && p.cc.Suggestions.Focus == "" && !p.claudeLoading {
+		if cmd := p.triggerFocusRefresh(); cmd != nil {
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
+	}
 	return true, plugin.NoopAction()
 }
 
@@ -604,6 +614,37 @@ func (p *Plugin) handleAgentStatus(msg agentStatusMsg) (bool, plugin.Action) {
 		})
 	}
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionStatus(msg.todoID, msg.status)}
+}
+
+func (p *Plugin) handleLaunchMsg(msg plugin.LaunchMsg) (bool, plugin.Action) {
+	// When joining a session (--resume), gracefully stop the headless agent first
+	// so Claude CLI can save state and the interactive resume finds the session.
+	if msg.ResumeID != "" {
+		for todoID, sess := range p.activeSessions {
+			sess.mu.Lock()
+			sid := sess.SessionID
+			sess.mu.Unlock()
+			if sid == msg.ResumeID {
+				// Send SIGINT for graceful shutdown, then wait for exit.
+				if sess.Stdin != nil {
+					sess.Stdin.Close()
+				}
+				if sess.Cmd != nil && sess.Cmd.Process != nil {
+					sess.Cmd.Process.Signal(syscall.SIGINT)
+				}
+				// Wait for the agent to exit (up to 5s).
+				if sess.done != nil {
+					select {
+					case <-sess.done:
+					case <-time.After(5 * time.Second):
+					}
+				}
+				delete(p.activeSessions, todoID)
+				break
+			}
+		}
+	}
+	return false, plugin.NoopAction() // Let host continue with the launch
 }
 
 func (p *Plugin) handleAgentSessionID(msg agentSessionIDMsg) (bool, plugin.Action) {
