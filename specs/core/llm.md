@@ -30,6 +30,7 @@ Package-level function that checks whether the `claude` CLI binary is on PATH.
 ### ClaudeCLI
 
 - Shells out to `claude -p <prompt> --output-format text`
+- Optional `Model` field (e.g., `"haiku"`, `"sonnet"`) — passed via `--model` flag when set
 - Trims whitespace from output
 - Wraps exec errors with exit code and stderr
 
@@ -50,7 +51,7 @@ Package-level function that checks whether the `claude` CLI binary is on PATH.
 
 ### cmd/ccc-refresh
 
-Constructs `ClaudeCLI` or `NoopLLM` based on `--no-llm` flag and `Available()`, passes into `refresh.Options`.
+Constructs two `ClaudeCLI` instances: `{Model: "haiku"}` for extraction/suggestions and `{Model: "sonnet"}` for routing/validation. Falls back to `NoopLLM` if `--no-llm` or `claude` not available. Passes `LLM` (haiku) and `RoutingLLM` (sonnet) into `refresh.Options`.
 
 ### cmd/ccc
 
@@ -63,9 +64,16 @@ The `claudeEditCmd`, `claudeEnrichCmd`, `claudeCommandCmd`, and `claudeFocusCmd`
 ## Behavior
 
 1. On startup, check `Available()` (or `--no-llm` flag)
-2. Construct `ClaudeCLI{}` if available, `NoopLLM{}` otherwise
-3. Pass the chosen implementation through Options/Context
+2. Construct `ClaudeCLI{Model: "haiku"}` for extraction, `ClaudeCLI{Model: "sonnet"}` for routing (or `NoopLLM{}` for both)
+3. Pass the chosen implementations through Options/Context
 4. All LLM call sites use the interface — never shell out directly
+
+## Two-Tier Architecture
+
+The refresh pipeline uses two LLM tiers:
+
+- **Haiku** (cheap, wide net): Extracts candidate todos from meetings/Slack/Gmail. May produce false positives.
+- **Sonnet** (accurate, quality gate): Routes todos to projects and validates ownership. Can REJECT todos that aren't Aaron's, auto-dismissing them. Also writes the actionable prompt.
 
 ## Test Cases
 

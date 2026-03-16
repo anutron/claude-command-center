@@ -10,7 +10,9 @@ Fetches data from multiple external sources (Google Calendar, Gmail, GitHub, Sla
   - `DryRun bool` — print JSON to stdout instead of writing
   - `DB *sql.DB` — open SQLite database connection
   - `Sources []DataSource` — list of data sources to fetch from
-  - `LLM llm.LLM` — LLM for post-merge suggestion generation
+  - `LLM llm.LLM` — LLM for extraction and suggestions (haiku)
+  - `RoutingLLM llm.LLM` — LLM for routing/validation (sonnet); falls back to `LLM` if nil
+  - `ContextRegistry *ContextRegistry` — for fetching source context on todos
 - **Output**: `error` (nil on success)
 - **Entry point**: `refresh.Run(opts Options) error`
 - **Dependencies**: Google OAuth2 tokens (Calendar, Gmail), Slack bot token, Granola stored auth, `gh` CLI, `claude` CLI
@@ -29,7 +31,9 @@ See `specs/core/datasource.md` for full details. Each source implements `Name()`
 6. **Merge**: Combine fresh data with existing state preserving IDs, statuses, dismissed items, manual items, and pause states
 7. **Execute pending actions**: Process booking requests by creating calendar events in free slots (loads calendar auth independently)
 8. **Generate suggestions**: LLM-based priority ranking of todos (if `opts.LLM` is non-nil)
-9. Save merged state to SQLite via `db.DBSaveRefreshResult(opts.DB, merged)` (or print to stdout if DryRun)
+9. **Generate proposed prompts**: Route eligible todos (active, has source, no prompt yet) using `RoutingLLM` (sonnet). The routing step validates ownership — for Granola-sourced todos, it checks speaker labels to confirm Aaron committed to the task. If the LLM returns `project_dir: "REJECT"`, the todo is auto-dismissed. Otherwise, it assigns a project directory and generates an actionable prompt.
+10. **Fetch source context**: For todos with a `source_ref`, fetch raw source content (transcripts, threads, PR comments) via `ContextRegistry` and cache in `source_context`/`source_context_at` columns.
+11. Save merged state to SQLite via `db.DBSaveRefreshResult(opts.DB, merged)` (or print to stdout if DryRun)
 
 ## Types
 
@@ -164,4 +168,41 @@ Refresh locking uses `syscall.Flock()` for atomic advisory file locking (`intern
 - State stored in SQLite (via `internal/db`) instead of `command-center.json`
 - DataSource interface replaces hardcoded goroutines — each source owns its auth, enablement, and fetching
 - LLM extraction for Slack/Granola happens inside each source's Fetch(), not as a separate phase
-- LLM prompts use generic "user" language instead of "Aaron"
+- LLM extraction prompts reference speaker labels ([Aaron] / [Other]) for ownership validation
+- Two-tier LLM: haiku for cheap extraction, sonnet for routing/validation with rejection capability
+
+## Source Context
+
+Raw source excerpts (transcripts, Slack threads, PR comments, email threads) are cached on todos for use in routing prompts and agent execution.
+
+### ContextFetcher Interface
+
+```go
+type ContextFetcher interface {
+    FetchContext(sourceRef string) (string, error)
+    ContextTTL() time.Duration // 0 = immutable
+}
+```
+
+### ContextRegistry
+
+Maps source names to `ContextFetcher` implementations. Registered at startup in `ccc-refresh`.
+
+| Source | TTL | Fetch Strategy |
+|--------|-----|---------------|
+| Granola | 0 (immutable) | Meeting transcript via `/v1/get-document-transcript` with speaker labels |
+| Slack | 24h | +/-24h message window around source message + thread replies |
+| GitHub | 24h | PR/issue body + comments via `gh` CLI |
+| Gmail | 24h | Full email thread via Gmail API |
+
+### Speaker Attribution (Granola)
+
+Granola transcript chunks include a `source` field: `"microphone"` = Aaron, `"system"` = other participants. Transcripts are formatted with `[Aaron]:` and `[Other]:` labels, enabling the LLM to determine who made each commitment.
+
+### Refresh Integration
+
+After prompt generation, `FetchContextBestEffort` is called for each todo. Context is stored in `source_context` and `source_context_at` columns. The routing prompt includes source context in `<source_context>` tags.
+
+### CLI
+
+`ccc todo --fetch-context <display_id>` — manually fetch and cache source context for a specific todo.

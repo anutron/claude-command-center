@@ -42,7 +42,7 @@ All types are exported for use by other packages:
 - `CalendarData` -- today/tomorrow event lists
 - `CalendarEvent` -- title, start/end times, all-day, declined, calendar_id
 - `CalendarConflict` -- overlap between two events
-- `Todo` -- task with status, source, due date, effort, project_dir, session_id, etc.
+- `Todo` -- task with status, source, due date, effort, project_dir, session_id, source_context, source_context_at, etc.
 - `Thread` -- PR/issue/conversation tracker with pause/resume/close lifecycle
 - `Suggestions` -- AI-generated focus and ranked todo ordering with per-todo reasons
 - `PendingAction` -- queued actions (e.g., calendar bookings)
@@ -61,7 +61,7 @@ All types are exported for use by other packages:
 1. `OpenDB(dbPath)` creates directories, opens SQLite, sets WAL + busy_timeout + synchronous=NORMAL, max 1 connection, runs `migrateSchema`
 2. Schema creates 8 tables: `cc_todos`, `cc_threads`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`
 3. Unique indexes on `source_ref` for todos and threads (WHERE NOT NULL/empty)
-4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks
+4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos
 5. Post-DDL migration fixes duplicate `sort_order` values on `cc_learned_paths` using `ROW_NUMBER()` window function
 
 ### Todo Operations
@@ -72,6 +72,7 @@ All types are exported for use by other packages:
 - `DBDeferTodo` -- sets sort_order to max+1 (moves to bottom)
 - `DBPromoteTodo` -- sets sort_order to min-1 (moves to top)
 - `DBUpdateTodo` -- updates all fields except sort_order
+- `DBUpdateTodoSourceContext` -- focused update for source_context and source_context_at columns
 
 ### Thread Operations
 - `DBInsertThread` -- creates with status=active
