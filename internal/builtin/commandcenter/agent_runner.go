@@ -317,8 +317,20 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 // onAgentFinished cleans up after an agent finishes and launches the next queued item.
 func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 	var summary string
+
+	// Check if the agent already submitted a summary via `ccc update-todo`.
+	// That command writes directly to the DB, so we reload the todo to check.
+	if p.database != nil {
+		if dbTodo, err := db.DBLoadTodoByID(p.database, todoID); err == nil && dbTodo != nil && dbTodo.SessionSummary != "" {
+			summary = dbTodo.SessionSummary
+		}
+	}
+
 	if sess, ok := p.activeSessions[todoID]; ok {
-		summary = extractSessionSummary(sess)
+		// Fall back to extraction from stream output if no summary was submitted.
+		if summary == "" {
+			summary = extractSessionSummary(sess)
+		}
 		if sess.Cancel != nil {
 			sess.Cancel()
 		}

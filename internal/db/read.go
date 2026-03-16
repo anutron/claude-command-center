@@ -419,6 +419,52 @@ func DBLoadAllSourceSync(d *sql.DB) (map[string]*SourceSync, error) {
 
 // DBLoadTodoByDisplayID loads a single todo by its display_id.
 // Returns nil, nil if no todo with that display_id exists.
+func DBLoadTodoByID(db *sql.DB, id string) (*Todo, error) {
+	var t Todo
+	var createdStr string
+	var completedStr sql.NullString
+	var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionStatus, sessionSummary sql.NullString
+
+	var sourceContext, sourceContextAt sql.NullString
+	var triageStatus string
+	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
+		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status,
+		session_summary, source_context, source_context_at, COALESCE(triage_status, 'accepted'), created_at, completed_at
+		FROM cc_todos WHERE id = ?`, id).
+		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
+			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
+			&proposedPrompt, &sessionStatus, &sessionSummary, &sourceContext, &sourceContextAt, &triageStatus,
+			&createdStr, &completedStr)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	t.SourceRef = sourceRef.String
+	t.Context = ctx.String
+	t.Detail = detail.String
+	t.WhoWaiting = who.String
+	t.ProjectDir = projDir.String
+	t.LaunchMode = launchMode.String
+	t.Due = due.String
+	t.Effort = effort.String
+	t.SessionID = sessionID.String
+	t.ProposedPrompt = proposedPrompt.String
+	t.SessionStatus = sessionStatus.String
+	t.SessionSummary = sessionSummary.String
+	t.SourceContext = sourceContext.String
+	t.SourceContextAt = sourceContextAt.String
+	t.TriageStatus = triageStatus
+	t.CreatedAt = ParseTime(createdStr)
+	if completedStr.Valid {
+		ct := ParseTime(completedStr.String)
+		t.CompletedAt = &ct
+	}
+	return &t, nil
+}
+
 func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	var t Todo
 	var createdStr string
