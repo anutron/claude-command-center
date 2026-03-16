@@ -188,6 +188,10 @@ func migrateSchema(db *sql.DB) error {
 	// Add launch_mode column to todos if missing (for persisting wizard mode selection)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN launch_mode TEXT`)
 
+	// Add source_context columns to todos if missing (for todo source context feature)
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN source_context TEXT`)
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN source_context_at TEXT`)
+
 	// BUG-101: Backfill display_id for existing rows that have display_id=0.
 	// The original backfill only handled NULL, but rows may have ended up with 0
 	// (e.g. explicit default or COALESCE in reads masking NULL). This assigns
