@@ -22,10 +22,67 @@ type LaunchAction struct {
 	WasResumeJoin   bool     // true if this was a join/resume of an existing session
 }
 
+// resolveSessionDir finds the correct project directory for a Claude session ID.
+// Claude stores sessions under ~/.claude/projects/<project-path>/<session-id>.jsonl,
+// where <project-path> encodes the working directory by replacing "/" with "-".
+// When resuming, we need to chdir to the directory that maps to the correct project
+// path, otherwise --resume won't find the session.
+// Returns the original dir if the session can't be found (fall through to Claude's error).
+func resolveSessionDir(sessionID, fallbackDir string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fallbackDir
+	}
+	projectsDir := filepath.Join(home, ".claude", "projects")
+
+	// First, check if the session exists in the fallback dir's project.
+	if fallbackDir != "" {
+		encoded := strings.ReplaceAll(filepath.Clean(fallbackDir), "/", "-")
+		candidate := filepath.Join(projectsDir, encoded, sessionID+".jsonl")
+		if _, err := os.Stat(candidate); err == nil {
+			return fallbackDir // Session is where we expect it.
+		}
+	}
+
+	// Session not in expected project — scan all project directories.
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		return fallbackDir
+	}
+
+	sessionFile := sessionID + ".jsonl"
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(projectsDir, e.Name(), sessionFile)
+		if _, err := os.Stat(candidate); err == nil {
+			// Found the session file. Reverse the project-path encoding:
+			// "-Users-aaron-Personal-proj" → "/Users/aaron/Personal/proj"
+			projectPath := strings.ReplaceAll(e.Name(), "-", "/")
+			// The encoding replaces "/" with "-", so the first char becomes "/"
+			// because the leading "-" maps to a leading "/".
+			if _, err := os.Stat(projectPath); err == nil {
+				return projectPath
+			}
+		}
+	}
+	return fallbackDir
+}
+
 // RunClaude runs claude as a child process and returns when it exits.
 // It returns the resolved launch directory (which may be a worktree path).
 func RunClaude(action LaunchAction) (resolvedDir string, err error) {
 	dir := action.Dir
+
+	// When resuming a session, verify the session exists in the expected project
+	// directory. If not, search across all Claude project directories to find
+	// the correct one. This handles cases where the session was created in a
+	// different directory (e.g., via --worktree or project dir mismatch).
+	if action.WasResumeJoin && len(action.Args) >= 2 && action.Args[0] == "--resume" {
+		sessionID := action.Args[1]
+		dir = resolveSessionDir(sessionID, dir)
+	}
 
 	if action.Worktree {
 		wtDir, branch, wtErr := worktree.PrepareWorktree(dir)
