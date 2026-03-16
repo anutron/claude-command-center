@@ -39,6 +39,10 @@ type ContextFetcher interface {
 
 The core code never contains source-specific logic. It resolves the source name to a `ContextFetcher` via a registry and calls it polymorphically. Sources that don't support context fetching (e.g., `cli`) simply don't register a fetcher.
 
+### Registry
+
+The `ContextFetcher` registry lives in `internal/refresh/context.go` alongside the existing refresh orchestration code. Each source package registers its fetcher during initialization. The registry is a `map[string]ContextFetcher` keyed by source name, built by the refresh package and passed to the CLI command when needed.
+
 ```go
 fetcher, ok := registry[todo.Source]
 if !ok {
@@ -48,6 +52,13 @@ return fetcher.FetchContext(todo.SourceRef)
 ```
 
 Adding a new source with context support requires only: implement `ContextFetcher`, register it. No core code changes.
+
+### Error Handling
+
+Context fetching is best-effort. If a source API is unreachable or returns an error:
+- During refresh: log a warning, leave `source_context` empty, continue with todo creation
+- During CLI `--fetch-context`: print the error to stderr, exit non-zero
+- Never block todo creation on a context fetch failure
 
 ### Per-Source Fetch Strategies
 
@@ -87,7 +98,7 @@ ccc todo --fetch-context <display_id>
 4. If no fetcher registered -> print empty, done
 5. Call `fetcher.FetchContext(todo.SourceRef)`
 6. Save result to `source_context`, set `source_context_at` to current time
-7. Print the content to stdout
+7. Print the raw content to stdout (plain text, not JSON — intended for piping or agent consumption)
 
 ### TTL Logic
 
