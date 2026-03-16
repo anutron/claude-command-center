@@ -1,22 +1,34 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/refresh"
+	githubsrc "github.com/anutron/claude-command-center/internal/refresh/sources/github"
+	gmailsrc "github.com/anutron/claude-command-center/internal/refresh/sources/gmail"
+	granolasrc "github.com/anutron/claude-command-center/internal/refresh/sources/granola"
+	slacksrc "github.com/anutron/claude-command-center/internal/refresh/sources/slack"
 )
 
 func runTodo(args []string) error {
 	fs := flag.NewFlagSet("todo", flag.ContinueOnError)
 	getID := fs.String("get", "", "Get todo by display_id (integer)")
+	fetchContextID := fs.String("fetch-context", "", "Fetch source context for todo by display_id (integer)")
 
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+
+	if *fetchContextID != "" {
+		return runFetchContext(*fetchContextID)
 	}
 
 	if *getID == "" {
@@ -45,4 +57,57 @@ func runTodo(args []string) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(todo)
+}
+
+func runFetchContext(idStr string) error {
+	displayID, err := strconv.Atoi(idStr)
+	if err != nil {
+		return fmt.Errorf("invalid display_id %q: must be an integer", idStr)
+	}
+
+	database, err := db.OpenDB(config.DBPath())
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer database.Close()
+
+	todo, err := db.DBLoadTodoByDisplayID(database, displayID)
+	if err != nil {
+		return fmt.Errorf("query todo: %w", err)
+	}
+	if todo == nil {
+		return fmt.Errorf("no todo with display_id %d", displayID)
+	}
+
+	registry := buildContextRegistry()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	content, err := refresh.FetchAndSave(ctx, database, registry, todo)
+	if err != nil {
+		return fmt.Errorf("fetch context: %w", err)
+	}
+
+	fmt.Print(content)
+	return nil
+}
+
+func buildContextRegistry() *refresh.ContextRegistry {
+	registry := refresh.NewContextRegistry()
+
+	// Granola and GitHub need no config
+	registry.Register("granola", granolasrc.NewContextFetcher())
+	registry.Register("github", githubsrc.NewContextFetcher())
+
+	// Slack needs bot token from config
+	cfg, err := config.Load()
+	if err == nil {
+		if token := cfg.Slack.EffectiveToken(); token != "" {
+			registry.Register("slack", slacksrc.NewContextFetcher(token))
+		}
+		registry.Register("gmail", gmailsrc.NewContextFetcher(cfg.Gmail))
+	}
+
+	return registry
 }

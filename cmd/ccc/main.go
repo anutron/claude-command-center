@@ -252,6 +252,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  notify [event]       Notify running instances to reload (default: reload)")
 	fmt.Fprintln(os.Stderr, "  add-todo             Add a todo to the Command Center")
 	fmt.Fprintln(os.Stderr, "  todo --get <id>      Get a todo by display ID (JSON output)")
+	fmt.Fprintln(os.Stderr, "  todo --fetch-context <id>  Fetch source context for a todo")
 	fmt.Fprintln(os.Stderr, "  add-bookmark         Save a session bookmark")
 	fmt.Fprintln(os.Stderr, "  paths                List learned project paths (--json, --auto-describe, --add-rule)")
 	fmt.Fprintln(os.Stderr, "  worktrees            List CCC-managed git worktrees")
