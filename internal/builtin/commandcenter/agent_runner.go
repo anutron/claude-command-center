@@ -2,7 +2,6 @@ package commandcenter
 
 import (
 	"bufio"
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -21,7 +20,6 @@ type agentSession struct {
 	TodoID    string
 	SessionID string // Claude session UUID, captured from first stream-JSON event
 	Cmd       *exec.Cmd
-	Cancel    context.CancelFunc
 	Status    string // "active", "blocked", "review", "failed"
 	Question  string // populated when blocked
 	StartedAt time.Time
@@ -85,8 +83,6 @@ type agentStartedInternalMsg struct {
 // for stream-JSON events and signals completion via the session's done channel.
 func launchAgent(qs queuedSession) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithCancel(context.Background())
-
 		args := []string{
 			"--print",
 			"--output-format", "stream-json",
@@ -129,32 +125,28 @@ SUMMARY
 
 		args = append(args, "--", enhancedPrompt)
 
-		cmd := exec.CommandContext(ctx, "claude", args...)
+		cmd := exec.Command("claude", args...)
 		if qs.ProjectDir != "" {
 			cmd.Dir = qs.ProjectDir
 		}
 
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
-			cancel()
 			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
 		}
 
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
-			cancel()
 			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
 		}
 
 		if err := cmd.Start(); err != nil {
-			cancel()
 			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
 		}
 
 		sess := &agentSession{
 			TodoID:    qs.TodoID,
 			Cmd:       cmd,
-			Cancel:    cancel,
 			Status:    "active",
 			StartedAt: time.Now(),
 			Stdin:     stdin,
@@ -372,9 +364,6 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 		// Close stdin pipe if still open.
 		if sess.Stdin != nil {
 			sess.Stdin.Close()
-		}
-		if sess.Cancel != nil {
-			sess.Cancel()
 		}
 		delete(p.activeSessions, todoID)
 	}
