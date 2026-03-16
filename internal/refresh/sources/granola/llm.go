@@ -38,9 +38,16 @@ func extractCommitments(ctx context.Context, l llm.LLM, meetings []RawMeeting) (
 		sb.WriteString("\n---\n\n")
 	}
 
-	prompt := fmt.Sprintf(`Analyze these meeting notes and transcripts. Extract action items, commitments, and things the user said they would do or that others are expecting from them.
+	prompt := fmt.Sprintf(`Analyze these meeting notes and transcripts. The transcripts use speaker labels:
+- [Aaron] = the user (this is whose todo list we are building)
+- [Other] = other meeting participants
 
-For each commitment, provide:
+Extract ONLY action items and commitments that Aaron personally made or that others are explicitly expecting Aaron to do. Do NOT extract:
+- Things other people said THEY would do (those are their commitments, not Aaron's)
+- General discussion points or ideas without a clear commitment from Aaron
+- Action items assigned to other participants
+
+For each of Aaron's commitments, provide:
 - title: Brief actionable title (imperative mood)
 - meeting_id: The meeting ID (from the ID: field) this commitment came from
 - context: Which project or area this relates to
