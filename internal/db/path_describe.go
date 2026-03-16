@@ -13,7 +13,7 @@ func AutoDescribePath(dir string) string {
 	var parts []string
 
 	// Check for language/framework indicators
-	if fileContains(filepath.Join(dir, "go.mod"), "") {
+	if fileExists(filepath.Join(dir, "go.mod")) {
 		mod := readFirstLine(filepath.Join(dir, "go.mod"))
 		parts = append(parts, "Go project")
 		if strings.Contains(mod, "module ") {
@@ -42,11 +42,6 @@ func AutoDescribePath(dir string) string {
 }
 
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-func fileContains(path, _ string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
