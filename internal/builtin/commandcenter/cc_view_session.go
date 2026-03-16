@@ -48,7 +48,12 @@ func (p *Plugin) renderSessionViewer(width, height int) string {
 
 	// Resize viewport to fit current dimensions.
 	// Chrome: header(1) + blank(1) + statusLine(1) + divider(1) + blank(1) + viewport + blank(1) + hints(1) + border(2) = 8
-	vpHeight := viewHeight - 8
+	// When input mode is active, add space for the label(1) + textarea(2) + blank(1) = 4
+	inputChrome := 0
+	if p.sessionViewerInputting {
+		inputChrome = 4
+	}
+	vpHeight := viewHeight - 8 - inputChrome
 	if vpHeight < 3 {
 		vpHeight = 3
 	}
@@ -67,7 +72,9 @@ func (p *Plugin) renderSessionViewer(width, height int) string {
 
 	// Hints
 	var hints string
-	if p.sessionViewerDone {
+	if p.sessionViewerInputting {
+		hints = s.Hint.Render("enter send \u00b7 esc cancel")
+	} else if p.sessionViewerDone {
 		hints = s.Hint.Render("j/k scroll \u00b7 G bottom \u00b7 g top \u00b7 o join \u00b7 esc back \u00b7 session ended")
 	} else {
 		hints = s.Hint.Render("j/k scroll \u00b7 G bottom \u00b7 g top \u00b7 c message \u00b7 o join \u00b7 esc back")
@@ -80,9 +87,15 @@ func (p *Plugin) renderSessionViewer(width, height int) string {
 		"  " + divider,
 		"",
 		lipgloss.NewStyle().PaddingLeft(2).Render(p.sessionViewerVP.View()),
-		"",
-		"  " + hints,
 	}
+
+	// Add textarea input area when in input mode
+	if p.sessionViewerInputting {
+		inputLabel := s.SectionHeader.Render("MESSAGE:")
+		parts = append(parts, "", "  "+inputLabel, "  "+p.sessionViewerInput.View())
+	}
+
+	parts = append(parts, "", "  "+hints)
 
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return s.PanelBorder.Width(innerWidth).Render(content)
@@ -200,6 +213,7 @@ func (p *Plugin) initSessionViewer(todoID string) {
 	p.sessionViewerTodoID = todoID
 	p.sessionViewerAutoScroll = true
 	p.sessionViewerDone = false
+	p.sessionViewerInputting = false
 
 	p.sessionViewerVP = viewport.New(80, 20) // will be resized on render
 	p.sessionViewerVP.SetContent(p.buildSessionViewerContent(&p.styles))

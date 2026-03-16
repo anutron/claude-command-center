@@ -2,13 +2,21 @@ package commandcenter
 
 import (
 	"os"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/plugin"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // handleSessionViewer handles key input when the session viewer is active.
 func (p *Plugin) handleSessionViewer(msg tea.KeyMsg) plugin.Action {
+	// When inputting, route keys to the textarea first.
+	if p.sessionViewerInputting {
+		return p.handleSessionViewerInput(msg)
+	}
+
 	switch msg.String() {
 	case "j", "down":
 		p.sessionViewerAutoScroll = false
@@ -33,8 +41,20 @@ func (p *Plugin) handleSessionViewer(msg tea.KeyMsg) plugin.Action {
 		return plugin.ConsumedAction()
 
 	case "c":
-		// Phase 3 will implement message input. For now, set a flag placeholder.
-		// TODO: implement message input in Phase 3
+		// Open message input textarea
+		p.sessionViewerInputting = true
+		ta := textarea.New()
+		ta.Placeholder = "Type a message..."
+		ta.CharLimit = 0
+		ta.ShowLineNumbers = false
+		ta.SetWidth(p.textareaWidth())
+		ta.SetHeight(2)
+		ta.FocusedStyle.Base = ta.FocusedStyle.Base.Foreground(p.styles.ColorWhite)
+		ta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
+		ta.FocusedStyle.CursorLine = lipgloss.NewStyle().Foreground(p.styles.ColorWhite)
+		ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(p.styles.ColorMuted)
+		ta.Focus()
+		p.sessionViewerInput = ta
 		return plugin.ConsumedAction()
 
 	case "o":
@@ -67,6 +87,63 @@ func (p *Plugin) handleSessionViewer(msg tea.KeyMsg) plugin.Action {
 	// Pass viewport-related messages (page up/down, etc.)
 	var cmd tea.Cmd
 	p.sessionViewerVP, cmd = p.sessionViewerVP.Update(msg)
+	if cmd != nil {
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	}
+	return plugin.ConsumedAction()
+}
+
+// handleSessionViewerInput handles key input when the session viewer textarea is active.
+func (p *Plugin) handleSessionViewerInput(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "esc":
+		// Cancel input, blur textarea
+		p.sessionViewerInputting = false
+		p.sessionViewerInput.Blur()
+		return plugin.ConsumedAction()
+
+	case "enter":
+		// Send message to agent
+		text := p.sessionViewerInput.Value()
+		if text == "" {
+			// Don't send empty messages, just cancel
+			p.sessionViewerInputting = false
+			p.sessionViewerInput.Blur()
+			return plugin.ConsumedAction()
+		}
+
+		sess := p.activeSessions[p.sessionViewerTodoID]
+		if sess != nil {
+			// Send the message via stdin pipe
+			if err := sendUserMessage(sess, text); err != nil {
+				if p.logger != nil {
+					p.logger.Warn("commandcenter", "failed to send user message", "err", err)
+				}
+			} else {
+				// Append a user event to the session's Events slice for display
+				userEvent := sessionEvent{
+					Type:      "user",
+					Text:      text,
+					Timestamp: time.Now().Format(time.RFC3339),
+				}
+				sess.mu.Lock()
+				sess.Events = append(sess.Events, userEvent)
+				sess.mu.Unlock()
+
+				// Refresh the viewport content
+				p.updateSessionViewerContent()
+			}
+		}
+
+		// Clear input and exit input mode
+		p.sessionViewerInputting = false
+		p.sessionViewerInput.Blur()
+		return plugin.ConsumedAction()
+	}
+
+	// Pass all other keys to the textarea
+	var cmd tea.Cmd
+	p.sessionViewerInput, cmd = p.sessionViewerInput.Update(msg)
 	if cmd != nil {
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	}

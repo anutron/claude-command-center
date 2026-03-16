@@ -159,6 +159,8 @@ type Plugin struct {
 	sessionViewerAutoScroll bool
 	sessionViewerDone       bool           // true when session has ended
 	sessionViewerListening  bool           // true when listenForAgentEvent cmd is active
+	sessionViewerInputting  bool           // true when textarea input is active
+	sessionViewerInput      textarea.Model // textarea for sending messages to agent
 
 	// Wizard selections per-todo (persisted across open/close cycles)
 	wizardSelections map[string]wizardSelection
