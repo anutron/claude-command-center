@@ -122,6 +122,7 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 - **Signal handling**: SIGINT and SIGTERM trigger graceful shutdown — all external plugin subprocesses are cleaned up
 - **Claude exit errors**: If `claude` exits non-zero, the error is printed to stderr but the TUI loop continues
 - **RunClaude error propagation**: `launch.go:RunClaude()` returns errors from `cmd.Run()`
+- **Interactive launch with InitialPrompt**: When `LaunchAction.InitialPrompt` is set, `RunClaude` passes the prompt via `--append-system-prompt` (persistent context across the session) and a short kickoff message as the positional prompt argument so Claude starts working immediately instead of waiting for user input
 
 ## Key Design Decisions
 

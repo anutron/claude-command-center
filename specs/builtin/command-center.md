@@ -275,7 +275,7 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 
 Sessions are configured via the task runner wizard (step 3) with three launch modes:
 
-- **Run Claude** (`taskRunnerLaunchCursor == 0`): Launches an interactive Claude session (not a headless agent)
+- **Run Claude** (`taskRunnerLaunchCursor == 0`): Launches an interactive Claude session (not a headless agent). The todo prompt is passed via `--append-system-prompt` for persistent context and a short kickoff message ("Execute the task described in your system prompt.") is passed as the positional prompt argument so Claude starts working immediately without waiting for user input.
 - **Queue Agent** (`taskRunnerLaunchCursor == 1`): `AutoStart = false` — agent launches immediately if under concurrency limit, otherwise queues without auto-start
 - **Run Agent Now** (`taskRunnerLaunchCursor == 2`): `AutoStart = true` — agent launches immediately or queues with auto-start when capacity frees up
 

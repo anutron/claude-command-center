@@ -100,8 +100,7 @@ func RunClaude(action LaunchAction) (resolvedDir string, err error) {
 
 	args := append([]string{}, action.Args...)
 	if action.InitialPrompt != "" {
-		// Write context to file for reference, and inject into Claude via --append-system-prompt
-		// so the session has task context available.
+		// Write context to file for reference.
 		stateDir := os.Getenv("CCC_STATE_DIR")
 		if stateDir == "" {
 			home, _ := os.UserHomeDir()
@@ -111,7 +110,11 @@ func RunClaude(action LaunchAction) (resolvedDir string, err error) {
 		contextPath := filepath.Join(stateDir, "task-context.md")
 		_ = os.WriteFile(contextPath, []byte(action.InitialPrompt), 0o644)
 		fmt.Fprintf(os.Stderr, "\nTask context written to %s\n\n", contextPath)
+		// Inject into system prompt for persistent context across the session,
+		// and pass as the first user message so Claude starts working immediately
+		// instead of waiting for the user to type something.
 		args = append(args, "--append-system-prompt", action.InitialPrompt)
+		args = append(args, "--", "Execute the task described in your system prompt.")
 	}
 
 	cmd := exec.Command("claude", args...)
