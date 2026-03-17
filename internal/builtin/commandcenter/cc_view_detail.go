@@ -29,8 +29,29 @@ func (p *Plugin) renderDetailViewScrollable(width, height int) string {
 	// Footer hints (always visible, outside viewport)
 	hints := p.buildDetailHints(s, *todo, hasActiveSession)
 
+	// Command input section (pinned to bottom, outside viewport)
+	var commandSection string
+	if p.detailMode == "commandInput" || p.detailMode == "trainingInput" {
+		divider := s.DescMuted.Render(strings.Repeat("\u2500", innerWidth-2))
+		label := "Tell me what changed:"
+		if p.detailMode == "trainingInput" {
+			label = "Train routing & prompt rules (applies to all future todos):"
+		}
+		inputLabel := s.DescMuted.Render(label)
+		indentedInput := lipgloss.NewStyle().PaddingLeft(2).Render(p.commandTextArea.View())
+		commandSection = lipgloss.JoinVertical(lipgloss.Left,
+			"  "+divider,
+			"  "+inputLabel,
+			indentedInput,
+		)
+	}
+
 	// Viewport sizing: total height minus hints(1) + blank(1) + border(2) = 4 lines of chrome
-	vpHeight := height - 4
+	fixedChrome := 4
+	if commandSection != "" {
+		fixedChrome += lipgloss.Height(commandSection) + 1 // +1 for blank line
+	}
+	vpHeight := height - fixedChrome
 	if vpHeight < 5 {
 		vpHeight = 5
 	}
@@ -46,9 +67,11 @@ func (p *Plugin) renderDetailViewScrollable(width, height int) string {
 
 	parts := []string{
 		p.detailVP.View(),
-		"",
-		"  " + hints,
 	}
+	if commandSection != "" {
+		parts = append(parts, "", commandSection)
+	}
+	parts = append(parts, "", "  "+hints)
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return s.PanelBorder.Width(innerWidth).Height(height - 2).Render(content)
 }
@@ -127,24 +150,6 @@ func (p *Plugin) buildDetailBody(s *ccStyles, todo db.Todo, innerWidth int, hasA
 		promptSection = "\n  " + s.SectionHeader.Render("PROMPT") + "  " + s.DescMuted.Render("(no prompt set)")
 	}
 
-	// Command input section
-	var commandSection string
-	if p.detailMode == "commandInput" || p.detailMode == "trainingInput" {
-		divider := s.DescMuted.Render(strings.Repeat("\u2500", innerWidth-2))
-		label := "Tell me what changed:"
-		if p.detailMode == "trainingInput" {
-			label = "Train routing & prompt rules (applies to all future todos):"
-		}
-		inputLabel := s.DescMuted.Render(label)
-		indentedInput := lipgloss.NewStyle().PaddingLeft(2).Render(p.commandTextArea.View())
-		commandSection = lipgloss.JoinVertical(lipgloss.Left,
-			"",
-			"  "+divider,
-			"  "+inputLabel,
-			indentedInput,
-		)
-	}
-
 	// Notice banner
 	var noticeBanner string
 	if p.detailNotice != "" {
@@ -188,9 +193,6 @@ func (p *Plugin) buildDetailBody(s *ccStyles, todo db.Todo, innerWidth int, hasA
 		parts = append(parts, detailSection)
 	}
 	parts = append(parts, promptSection)
-	if commandSection != "" {
-		parts = append(parts, commandSection)
-	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
