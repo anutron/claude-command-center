@@ -2,8 +2,11 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -127,6 +130,20 @@ func (p *Plugin) handleDatasourceFormCompletion(slug string) tea.Cmd {
 			return initCmd
 		}
 		if isGoogleDatasource(slug) {
+			// Try to reuse existing client credentials from the token file
+			// so users don't have to re-enter them when re-authenticating
+			// (e.g. to upgrade scopes).
+			if existingCreds := p.loadExistingGoogleCreds(slug); existingCreds != nil {
+				p.pendingAuthCreds = existingCreds
+				p.pendingAuthSlug = slug
+				label := slug
+				if item != nil {
+					label = item.Label
+				}
+				p.flashMessage = "Re-authenticating " + label + " with existing credentials..."
+				p.flashMessageAt = currentTime()
+				return p.startAuthFlowForDatasource()
+			}
 			form, creds := newClientCredForm(p.styles.huhTheme)
 			p.activeForm = form
 			p.activeFormSlug = slug
@@ -317,4 +334,43 @@ func (p *Plugin) startAuthFlowForDatasource() tea.Cmd {
 	p.flashMessageAt = time.Now()
 
 	return authFlowCmdFunc(ctx, oauthConf, tokenPath, creds.ClientID, creds.ClientSecret)
+}
+
+// loadExistingGoogleCreds reads client credentials from an existing token file
+// for the given datasource slug. Returns nil if no token file exists or if it
+// lacks client credentials.
+func (p *Plugin) loadExistingGoogleCreds(slug string) *clientCredentials {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	var tokenPath string
+	switch slug {
+	case "calendar":
+		tokenPath = filepath.Join(home, ".config", "google-calendar-mcp", "credentials.json")
+	case "gmail":
+		tokenPath = filepath.Join(home, ".gmail-mcp", "work.json")
+	default:
+		return nil
+	}
+
+	data, err := os.ReadFile(tokenPath)
+	if err != nil {
+		return nil
+	}
+
+	var tf auth.GoogleTokenFile
+	if err := json.Unmarshal(data, &tf); err != nil {
+		return nil
+	}
+
+	if tf.ClientID == "" || tf.ClientSecret == "" {
+		return nil
+	}
+
+	return &clientCredentials{
+		ClientID:     tf.ClientID,
+		ClientSecret: tf.ClientSecret,
+	}
 }

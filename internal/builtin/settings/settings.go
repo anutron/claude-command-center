@@ -797,8 +797,12 @@ func (p *Plugin) oauthConfigForSlug(slug, clientID, clientSecret string) (*oauth
 			gcal.CalendarScope, gcal.CalendarEventsScope,
 		), filepath.Join(home, ".config", "google-calendar-mcp", "credentials.json")
 	case "gmail":
+		scopes := []string{gm.GmailReadonlyScope}
+		if p.cfg.Gmail.Advanced {
+			scopes = []string{gm.GmailModifyScope, gm.GmailComposeScope}
+		}
 		return auth.LoadGoogleOAuth2Config(clientID, clientSecret,
-			gm.GmailReadonlyScope,
+			scopes...,
 		), filepath.Join(home, ".gmail-mcp", "work.json")
 	}
 	return nil, ""

@@ -18,7 +18,11 @@ func testSetup(t *testing.T) (*Plugin, *plugin.Registry) {
 	t.Helper()
 	// Redirect config writes to a temp dir so tests never touch the real
 	// user config at ~/.config/ccc/config.yaml (root cause of BUG-046).
-	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
+	// Also redirect HOME so tests don't find real Google OAuth tokens
+	// (which would skip the credential form in auth flow tests).
+	tmpHome := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", tmpHome)
+	t.Setenv("HOME", tmpHome)
 
 	reg := plugin.NewRegistry()
 	p := New(reg)
