@@ -56,6 +56,18 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 	}
 
 	switch msg.String() {
+	case "up":
+		p.detailVP.LineUp(1)
+		return plugin.ConsumedAction()
+	case "down":
+		p.detailVP.LineDown(1)
+		return plugin.ConsumedAction()
+	case "pgup":
+		p.detailVP.HalfViewUp()
+		return plugin.ConsumedAction()
+	case "pgdown":
+		p.detailVP.HalfViewDown()
+		return plugin.ConsumedAction()
 	case "tab":
 		p.detailSelectedField = (p.detailSelectedField + 1) % detailFieldCount
 		return plugin.ConsumedAction()

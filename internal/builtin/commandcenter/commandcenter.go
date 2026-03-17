@@ -93,6 +93,8 @@ type Plugin struct {
 	detailNotice        string    // flash notice shown after done/remove
 	detailNoticeType    string    // "done" or "removed" — controls notice color
 	detailNoticeAt      time.Time // when the notice was set
+	detailVP            viewport.Model // scrollable viewport for detail view body
+	detailVPReady       bool           // whether viewport has been initialized with dimensions
 
 	// Task runner view (3-step wizard: 1=Project, 2=Mode, 3=Prompt)
 	taskRunnerView        bool
@@ -711,8 +713,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 
 	if p.detailView && p.cc != nil {
 		if todo := p.detailTodo(); todo != nil {
-			_, hasActiveSession := p.activeSessions[todo.ID]
-			return renderDetailView(&p.styles, *todo, p.detailMode, p.detailSelectedField, p.detailFieldInput.View(), p.commandTextArea.View(), viewWidth, viewHeight, p.detailNotice, p.detailNoticeType, p.detailStatusCursor, p.filteredPaths(), p.detailPathCursor, p.detailPathFilter, p.frame, hasActiveSession)
+			return p.renderDetailViewScrollable(viewWidth, viewHeight)
 		}
 		// Notice showing but no more active todos — render just the notice
 		if p.detailNotice != "" {

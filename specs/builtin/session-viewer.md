@@ -195,6 +195,24 @@ If the agent fails before the goroutine starts (stdout pipe, stdin pipe, or `cmd
 - **Raw, not parsed**: logs contain the exact stream-json output, not the parsed `sessionEvent` structs, so nothing is lost in translation
 - **No automatic cleanup**: logs accumulate until manually deleted (future: age-based rotation)
 
+## Detail View: Scrollable Viewport
+
+The detail view uses a `viewport.Model` for its body content, allowing full content display with scrolling instead of truncation.
+
+### Scrolling Controls
+- **Up/down arrows** — scroll viewport line by line
+- **PgUp/PgDown** — scroll half-page
+- **Mouse wheel / trackpad** — scroll viewport (requires `tea.WithMouseCellMotion()` on the program)
+
+### Content Rendering
+- Session summary, detail, and prompt sections render at full length (no truncation)
+- The viewport occupies all available height minus hints bar and border
+- Hints bar is fixed at the bottom, outside the viewport
+
+## Agent Lifecycle: Kill on Summary Submission
+
+When a headless agent submits a session summary via `ccc update-todo --session-summary`, the running CCC instance detects this on the next DB reload and kills the agent process. This is detected in `handleCCLoaded`: any todo with a non-empty `SessionSummary` that still has an active agent session gets the agent killed.
+
 ## Agent Lifecycle: Kill on Todo Completion
 
 When a todo is completed (`x`) or dismissed (`X`) from either the list view or detail view, any running agent session for that todo is automatically killed via `killAgent`:

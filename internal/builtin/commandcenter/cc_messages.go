@@ -20,6 +20,26 @@ import (
 // HandleMessage handles non-key messages and returns whether it was handled.
 func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		// Forward mouse events to the active viewport for scroll support.
+		if p.detailView && p.detailVPReady && !p.sessionViewerActive && !p.taskRunnerView {
+			var cmd tea.Cmd
+			p.detailVP, cmd = p.detailVP.Update(msg)
+			if cmd != nil {
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+			}
+			return true, plugin.NoopAction()
+		}
+		if p.sessionViewerActive {
+			var cmd tea.Cmd
+			p.sessionViewerVP, cmd = p.sessionViewerVP.Update(msg)
+			if cmd != nil {
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+			}
+			return true, plugin.NoopAction()
+		}
+		return false, plugin.NoopAction()
+
 	case ccLoadedMsg:
 		return p.handleCCLoaded(msg)
 
@@ -192,11 +212,30 @@ func (p *Plugin) handleCCLoaded(msg ccLoadedMsg) (bool, plugin.Action) {
 		p.cc = msg.cc
 	}
 	p.ccLastRead = time.Now()
+
+	var cmds []tea.Cmd
+
+	// When an agent submits a session summary (via ccc update-todo), the DB
+	// reload picks it up here. Kill the agent since it has declared its work done.
+	if p.cc != nil {
+		for _, todo := range p.cc.Todos {
+			if todo.SessionSummary != "" {
+				if killCmd := p.killAgent(todo.ID); killCmd != nil {
+					cmds = append(cmds, killCmd)
+				}
+			}
+		}
+	}
+
 	// Generate focus suggestion if empty (first load, or DB was cleared).
 	if p.cc != nil && p.cc.Suggestions.Focus == "" && !p.claudeLoading {
 		if cmd := p.triggerFocusRefresh(); cmd != nil {
-			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+			cmds = append(cmds, cmd)
 		}
+	}
+
+	if len(cmds) > 0 {
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 	}
 	return true, plugin.NoopAction()
 }
