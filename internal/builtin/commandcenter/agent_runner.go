@@ -334,6 +334,39 @@ func extractBlockingQuestion(event map[string]interface{}) string {
 	return ""
 }
 
+// killAgent terminates a running agent session for a given todo.
+// It sends SIGTERM to the process, closes stdin, and cleans up the session.
+// Returns a tea.Cmd for any DB/event side effects, or nil if no session was running.
+func (p *Plugin) killAgent(todoID string) tea.Cmd {
+	sess, ok := p.activeSessions[todoID]
+	if !ok {
+		return nil
+	}
+	// Close stdin so the process knows we're done.
+	if sess.Stdin != nil {
+		sess.Stdin.Close()
+	}
+	// Terminate the process.
+	if sess.Cmd != nil && sess.Cmd.Process != nil {
+		sess.Cmd.Process.Kill()
+	}
+	delete(p.activeSessions, todoID)
+
+	p.setTodoSessionStatus(todoID, "failed")
+	p.publishEvent("agent.killed", map[string]interface{}{
+		"todo_id": todoID,
+	})
+
+	// If the session viewer is watching this session, mark it done.
+	if p.sessionViewerActive && p.sessionViewerTodoID == todoID {
+		p.sessionViewerDone = true
+		p.sessionViewerListening = false
+		p.updateSessionViewerContent()
+	}
+
+	return p.persistSessionStatus(todoID, "failed")
+}
+
 // Concurrency manager methods on Plugin.
 
 // canLaunchAgent checks if there is room to launch another agent session.

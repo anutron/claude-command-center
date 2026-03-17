@@ -298,6 +298,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				cursorPos:  p.ccCursor,
 			})
 			todoID := todo.ID
+			killCmd := p.killAgent(todoID)
 			p.cc.CompleteTodo(todoID)
 			p.publishEvent("todo.completed", map[string]interface{}{"id": todoID, "title": todo.Title})
 			newFiltered := len(p.filteredTodos())
@@ -308,10 +309,14 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				p.ccScrollOffset = p.ccCursor
 			}
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBCompleteTodo(database, todoID) })
-			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, focusCmd)}
+			cmds := []tea.Cmd{dbCmd}
+			if killCmd != nil {
+				cmds = append(cmds, killCmd)
 			}
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
+				cmds = append(cmds, focusCmd)
+			}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 		}
 		return plugin.NoopAction()
 
@@ -325,6 +330,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				cursorPos:  p.ccCursor,
 			})
 			todoID := todo.ID
+			killCmd := p.killAgent(todoID)
 			p.cc.RemoveTodo(todoID)
 			p.publishEvent("todo.dismissed", map[string]interface{}{"id": todoID, "title": todo.Title})
 			newFiltered := len(p.filteredTodos())
@@ -335,10 +341,14 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				p.ccScrollOffset = p.ccCursor
 			}
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBDismissTodo(database, todoID) })
-			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, focusCmd)}
+			cmds := []tea.Cmd{dbCmd}
+			if killCmd != nil {
+				cmds = append(cmds, killCmd)
 			}
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
+				cmds = append(cmds, focusCmd)
+			}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 		}
 		return plugin.NoopAction()
 

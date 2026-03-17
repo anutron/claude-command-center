@@ -211,9 +211,9 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 
 	// Session status indicator (for active/review sessions)
 	var sessionSection string
-	if todo.SessionStatus == "active" {
+	if hasActiveSession {
 		spinnerChar := refreshSpinner(frame)
-		sessionIndicator := spinnerChar + " " + lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Agent updating \u2014 edits blocked")
+		sessionIndicator := spinnerChar + " " + lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Agent running")
 		sessionSection = "\n  " + sessionIndicator
 	} else if todo.SessionStatus == "review" || todo.SessionStatus == "failed" {
 		statusLabel := "completed"

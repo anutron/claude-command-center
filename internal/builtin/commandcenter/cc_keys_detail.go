@@ -49,10 +49,10 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 
-	// Block edit/mutation operations when an agent is actively updating this todo.
+	// Block edit/mutation operations only when THIS instance owns the running agent.
 	agentActive := false
-	if todo := p.detailTodo(); todo != nil && todo.SessionStatus == "active" {
-		agentActive = true
+	if todo := p.detailTodo(); todo != nil {
+		_, agentActive = p.activeSessions[todo.ID]
 	}
 
 	switch msg.String() {
@@ -70,19 +70,21 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return p.enterDetailFieldEdit()
 	case "x":
-		if agentActive {
-			p.flashMessage = "Todo is being updated by agent"
-			p.flashMessageAt = time.Now()
-			return plugin.ConsumedAction()
-		}
 		return p.detailCompleteTodo()
 	case "X":
-		if agentActive {
-			p.flashMessage = "Todo is being updated by agent"
-			p.flashMessageAt = time.Now()
-			return plugin.ConsumedAction()
-		}
 		return p.detailDismissTodo()
+	case "delete", "backspace":
+		// Kill running agent session for this todo
+		if todo := p.detailTodo(); todo != nil {
+			if killCmd := p.killAgent(todo.ID); killCmd != nil {
+				p.flashMessage = "Agent killed"
+				p.flashMessageAt = time.Now()
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: killCmd}
+			}
+			p.flashMessage = "No running agent for this todo"
+			p.flashMessageAt = time.Now()
+		}
+		return plugin.ConsumedAction()
 	case "j":
 		// Next todo
 		activeTodos := p.cc.ActiveTodos()
@@ -235,6 +237,10 @@ func (p *Plugin) detailCompleteTodo() plugin.Action {
 		cursorPos:  p.ccCursor,
 	})
 	todoID := todo.ID
+
+	// Kill any running agent session for this todo.
+	killCmd := p.killAgent(todoID)
+
 	p.cc.CompleteTodo(todoID)
 	p.publishEvent("todo.completed", map[string]interface{}{"id": todoID, "title": todo.Title})
 
@@ -252,10 +258,14 @@ func (p *Plugin) detailCompleteTodo() plugin.Action {
 	p.detailNoticeAt = time.Now()
 
 	dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBCompleteTodo(database, todoID) })
-	if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, focusCmd)}
+	cmds := []tea.Cmd{dbCmd}
+	if killCmd != nil {
+		cmds = append(cmds, killCmd)
 	}
-	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+	if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
+		cmds = append(cmds, focusCmd)
+	}
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 }
 
 // detailDismissTodo removes the current detail todo and shows a notice.
@@ -272,6 +282,10 @@ func (p *Plugin) detailDismissTodo() plugin.Action {
 		cursorPos:  p.ccCursor,
 	})
 	todoID := todo.ID
+
+	// Kill any running agent session for this todo.
+	killCmd := p.killAgent(todoID)
+
 	p.cc.RemoveTodo(todoID)
 	p.publishEvent("todo.dismissed", map[string]interface{}{"id": todoID, "title": todo.Title})
 
@@ -289,10 +303,14 @@ func (p *Plugin) detailDismissTodo() plugin.Action {
 	p.detailNoticeAt = time.Now()
 
 	dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBDismissTodo(database, todoID) })
-	if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, focusCmd)}
+	cmds := []tea.Cmd{dbCmd}
+	if killCmd != nil {
+		cmds = append(cmds, killCmd)
 	}
-	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+	if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
+		cmds = append(cmds, focusCmd)
+	}
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 }
 
 func (p *Plugin) enterDetailFieldEdit() plugin.Action {

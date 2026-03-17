@@ -16,6 +16,9 @@ The session viewer is a sub-view of the command center plugin, accessed from the
 | `c` | Session viewer (not inputting) | Open message textarea to send input to agent |
 | `o` | Session viewer | Join session interactively (launches Claude TUI with `--resume`) |
 | `r` | Detail view, todo has SessionID, no active session | Resume agent headless with `--resume` flag |
+| `del` | Detail view, todo has active agent session | Kill running agent (SIGKILL, sets status to "failed") |
+| `x` | List or detail view | Complete todo — also kills any running agent |
+| `X` | List or detail view | Dismiss todo — also kills any running agent |
 
 ## State
 
@@ -192,6 +195,23 @@ If the agent fails before the goroutine starts (stdout pipe, stdin pipe, or `cmd
 - **Raw, not parsed**: logs contain the exact stream-json output, not the parsed `sessionEvent` structs, so nothing is lost in translation
 - **No automatic cleanup**: logs accumulate until manually deleted (future: age-based rotation)
 
+## Agent Lifecycle: Kill on Todo Completion
+
+When a todo is completed (`x`) or dismissed (`X`) from either the list view or detail view, any running agent session for that todo is automatically killed via `killAgent`:
+
+1. Close the process stdin pipe
+2. Send `SIGKILL` to the process
+3. Remove from `activeSessions` map
+4. Set todo session status to `"failed"`
+5. Publish `agent.killed` event
+6. If session viewer is watching this session, mark it done
+
+The `del` key in the detail view provides explicit agent kill without completing/dismissing the todo.
+
+### Help Overlay
+
+The `?` key toggles a help overlay. When in detail view, it shows detail-specific keybindings (including `del` for kill agent). When in list view, it shows list-specific keybindings.
+
 ## Test Cases
 
 - `w` on a todo with active session opens session viewer (`sessionViewerActive = true`)
@@ -223,4 +243,10 @@ If the agent fails before the goroutine starts (stdout pipe, stdin pipe, or `cmd
 - `r` respects concurrency limits (queues if at max)
 - Status bar shows correct indicator color for active/blocked/completed/inactive states
 - Status bar shows truncated session ID (first 8 chars)
+- `del` in detail view kills running agent and shows "Agent killed" flash
+- `del` in detail view with no running agent shows "No running agent" flash
+- `x` in list/detail view kills running agent before completing todo
+- `X` in list/detail view kills running agent before dismissing todo
+- `?` in detail view shows detail-specific keybindings
+- `?` in list view shows list-specific keybindings
 - Status bar shows elapsed time in seconds or minutes+seconds format

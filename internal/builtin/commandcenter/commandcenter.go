@@ -652,7 +652,11 @@ func (p *Plugin) View(width, height, frame int) string {
 	p.frame = frame
 
 	if p.showHelp {
-		return renderHelpOverlay(&p.styles, p.subView, width, height)
+		helpView := p.subView
+		if p.detailView {
+			helpView = "detail"
+		}
+		return renderHelpOverlay(&p.styles, helpView, width, height)
 	}
 
 	return p.viewCommandTab(width, height)

@@ -965,6 +965,27 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 				s.CalendarTime.Render(sh.desc)))
 		}
 
+	case "detail":
+		detail := []struct{ key, desc string }{
+			{"j / k", "Next / previous todo"},
+			{"tab / shift+tab", "Cycle detail fields"},
+			{"enter", "Edit selected field"},
+			{"x", "Mark todo done (kills agent if running)"},
+			{"X", "Dismiss todo (kills agent if running)"},
+			{"del", "Kill running agent"},
+			{"w", "Watch live agent session"},
+			{"o", "Open / join interactive session"},
+			{"r", "Resume agent headless"},
+			{"c", "Command — tell Claude what to do"},
+			{"T", "Train routing rules"},
+			{"esc", "Back to list"},
+		}
+		sections = append(sections, "", s.SectionHeader.Render("  Todo Detail"), "")
+		for _, sh := range detail {
+			sections = append(sections, fmt.Sprintf("    %-20s %s",
+				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
+				s.CalendarTime.Render(sh.desc)))
+		}
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
