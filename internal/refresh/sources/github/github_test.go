@@ -1,10 +1,10 @@
 package github
 
 import (
+	"context"
 	"testing"
 
 	"github.com/anutron/claude-command-center/internal/config"
-	"github.com/anutron/claude-command-center/internal/db"
 )
 
 func TestNew(t *testing.T) {
@@ -67,59 +67,17 @@ func TestEnabled(t *testing.T) {
 	}
 }
 
-func TestNewReposSliceIndependence(t *testing.T) {
-	repos := []string{"owner/repo1", "owner/repo2"}
-	src := New(true, repos, "user", false)
-
-	// Mutating the original slice should not affect the source
-	// (since Go slices share backing arrays, this tests current behavior)
-	repos[0] = "changed/repo"
-	if src.Repos[0] != "changed/repo" {
-		t.Log("Note: New() does not defensively copy the repos slice")
-	}
-}
-
-func TestSummarizePRDraftFallback(t *testing.T) {
-	// summarizePR falls back to "Draft" when gh api fails and PR is draft
-	pr := ghPR{Number: 1, Title: "test", Draft: true}
-	got := summarizePR(nil, "owner/repo", pr)
-	if got != "Draft" {
-		t.Errorf("summarizePR(draft PR) = %q, want %q", got, "Draft")
-	}
-}
-
-func TestSummarizePROpenFallback(t *testing.T) {
-	// summarizePR falls back to "Open" when gh api fails and PR is not draft
-	pr := ghPR{Number: 1, Title: "test", Draft: false}
-	got := summarizePR(nil, "owner/repo", pr)
-	if got != "Open" {
-		t.Errorf("summarizePR(non-draft PR) = %q, want %q", got, "Open")
-	}
-}
-
-func TestFetchGitHubThreadsEmptyRepos(t *testing.T) {
-	threads, err := fetchGitHubThreads(nil, nil)
+func TestFetchReturnsEmptyResult(t *testing.T) {
+	src := New(true, []string{"owner/repo"}, "user", true)
+	result, err := src.Fetch(context.Background())
 	if err != nil {
-		t.Fatalf("fetchGitHubThreads(nil repos) returned error: %v", err)
+		t.Fatalf("Fetch() returned error: %v", err)
 	}
-	if len(threads) != 0 {
-		t.Errorf("fetchGitHubThreads(nil repos) returned %d threads, want 0", len(threads))
+	if result == nil {
+		t.Fatal("Fetch() returned nil result")
 	}
-}
-
-func TestDeduplicateThreads(t *testing.T) {
-	threads := []db.Thread{
-		{URL: "https://github.com/org/repo/pull/1", Title: "PR 1"},
-		{URL: "https://github.com/org/repo/pull/2", Title: "PR 2"},
-		{URL: "https://github.com/org/repo/pull/1", Title: "PR 1 duplicate"},
-		{URL: "", Title: "No URL"},
-	}
-	got := deduplicateThreads(threads)
-	if len(got) != 3 {
-		t.Errorf("deduplicateThreads returned %d threads, want 3", len(got))
-	}
-	if got[0].Title != "PR 1" {
-		t.Errorf("first thread title = %q, want %q", got[0].Title, "PR 1")
+	if len(result.Todos) != 0 {
+		t.Errorf("expected 0 todos, got %d", len(result.Todos))
 	}
 }
 

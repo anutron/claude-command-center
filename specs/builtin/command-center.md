@@ -2,24 +2,22 @@
 
 ## Purpose
 
-The main productivity hub plugin. Manages todos, threads, calendar events, AI-powered suggestions, and Claude integration. Provides two routes: the command center view (calendar + todos) and the threads view.
+The main productivity hub plugin. Manages todos, calendar events, AI-powered suggestions, and Claude integration. Provides one route: the command center view (calendar + todos).
 
 ## Slug: `commandcenter`
 
 ## Routes
 
 - `commandcenter` — default view (calendar + todo panels)
-- `commandcenter/threads` — threads sub-view (active + paused threads)
 
 ## File Organization
 
 | File | Responsibility |
 |------|---------------|
 | `commandcenter.go` | Main plugin struct, Init, NavigateTo, HandleMessage, Refresh, state management |
-| `cc_keys.go` | All key handling: `HandleKey`, sub-handlers for command tab, threads tab, detail view, rich todo creation, text input, booking mode |
+| `cc_keys.go` | All key handling: `HandleKey`, sub-handlers for command tab, detail view, rich todo creation, booking mode |
 | `cc_messages.go` | Message handling for async results (Claude responses, refresh finished, DB writes) |
 | `cc_view.go` | Command center rendering: calendar panel, todo panel, warnings, suggestions, help overlay, detail view, booking UI |
-| `threads_view.go` | Threads tab: active/paused sections with type prefixes |
 | `styles.go` | Local style/gradient types populated from `config.Palette` (avoids circular imports with tui) |
 | `refresh.go` | Background refresh command (finds and spawns `ccc-refresh` binary) |
 | `claude.go` | Background Claude CLI/LLM commands (edit, enrich, command, focus), prompt builders |
@@ -33,16 +31,14 @@ The main productivity hub plugin. Manages todos, threads, calendar events, AI-po
 
 ## State
 
-- `cc *db.CommandCenter` — loaded from DB, contains todos, threads, calendar, suggestions
+- `cc *db.CommandCenter` — loaded from DB, contains todos, calendar, suggestions
 - `ccCursor int` — selected todo index in command tab
-- `threadCursor int` — selected thread index in threads tab
-- `subView string` — active sub-view: `"command"` or `"threads"`
+- `subView string` — active sub-view (currently only `"command"`)
 - `showHelp bool` — help overlay toggle
 - `showBacklog bool` — show/hide completed todos
 - `detailView bool` — viewing a single todo's detail with edit input
 - `detailNotice string` — transient notice banner in detail view (auto-clears after 1s)
 - `addingTodoRich bool` — rich textarea for AI-powered todo creation
-- `addingThread bool` — text input for adding a new thread
 - `bookingMode bool` — calendar event booking flow
 - `ccExpanded bool` — expanded multi-column todo view
 - `triageFilter string` — active triage filter tab in expanded view (default: "accepted")
@@ -125,18 +121,6 @@ While a notice banner is showing (1s after complete/dismiss), all keys except `e
 | `enter` | booking | Confirm booking and trigger refresh |
 | `esc` | booking | Cancel booking |
 
-### Threads Tab
-
-| Key | Context | Description |
-|-----|---------|-------------|
-| `up`/`k` | threads | Move cursor up |
-| `down`/`j` | threads | Move cursor down |
-| `p` | threads | Pause active thread |
-| `s` | threads | Start (resume) paused thread |
-| `x` | threads | Close thread |
-| `a` | threads | Add new thread (text input) |
-| `enter` | threads | Launch session in thread's project_dir |
-
 ## Event Bus
 
 - Publishes: `todo.completed`, `todo.dismissed`, `todo.deferred`, `todo.promoted`, `pending.todo`
@@ -144,7 +128,7 @@ While a notice banner is showing (1s after complete/dismiss), all keys except `e
 
 ## Migrations
 
-None — uses existing `cc_todos`, `cc_threads`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_source_sync` tables created by `db.migrateSchema`.
+None — uses existing `cc_todos`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_source_sync` tables created by `db.migrateSchema`.
 
 ### Display IDs
 
@@ -217,12 +201,6 @@ In the normal (collapsed) view:
 
 - **Launching an agent** (`launchOrQueueAgent`) automatically accepts the todo, so it moves out of the "new" filter into the accepted working list
 - The old `agentFilterActive` toggle (key `a`) is replaced by the triage tab system
-
-### Thread Lifecycle
-
-- Active threads shown with type prefix (PR, issue, conversation)
-- Pause with `p`, start/resume with `s`, close with `x`, add with `a`
-- Launch in thread's project_dir with `enter`
 
 ### Claude Integration
 
@@ -463,9 +441,6 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Enter on todo with session_id returns launch action with resume_id
 - Enter on todo with project_dir returns launch action
 - Enter on todo without project_dir navigates to sessions
-- Sub-view switching between command and threads
-- Thread navigation works independently
-- Thread pause/start/close operations
 - Defer (d) moves todo to bottom
 - Promote (p) moves todo to top
 - Shift+up/down swaps todo with neighbor, persists via DB sort_order swap (transaction-based)
@@ -474,8 +449,6 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - View renders without panic (with and without data)
 - Help overlay toggles
 - HandleMessage processes async results
-- Add thread creates new thread
-- Close thread updates status
 - Expanded view navigation (left/right columns)
 - Expanded view left/right paginates at column edges
 - Detail view shows "TODO #N" title with display_id

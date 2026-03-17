@@ -30,7 +30,6 @@ type PostMerger interface {
 type SourceResult struct {
 	Calendar *db.CalendarData
 	Todos    []db.Todo
-	Threads  []db.Thread
 	Warnings []db.Warning
 }
 
@@ -49,10 +48,8 @@ func combineResults(results []*SourceResult) *FreshData {
 			fresh.Calendar = cal
 		}
 		fresh.Todos = append(fresh.Todos, r.Todos...)
-		fresh.Threads = append(fresh.Threads, r.Threads...)
 	}
 	sanitizeTodos(fresh.Todos)
-	sanitizeThreads(fresh.Threads)
 	return fresh
 }
 
@@ -75,10 +72,3 @@ func sanitizeTodos(todos []db.Todo) {
 	}
 }
 
-// sanitizeThreads strips ANSI escapes from thread display fields.
-func sanitizeThreads(threads []db.Thread) {
-	for i := range threads {
-		threads[i].Title = sanitize.StripANSI(threads[i].Title)
-		threads[i].Summary = sanitize.StripANSI(threads[i].Summary)
-	}
-}

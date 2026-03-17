@@ -8,5 +8,4 @@ import (
 type FreshData struct {
 	Calendar db.CalendarData
 	Todos    []db.Todo
-	Threads  []db.Thread
 }

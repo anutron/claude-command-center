@@ -50,13 +50,7 @@ func (s *GmailSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 	}
 	s.client = client
 
-	// Fetch unread email threads (existing behavior)
-	threads, err := fetchActionableEmails(ctx, client)
-	if err != nil {
-		return nil, fmt.Errorf("fetch emails: %w", err)
-	}
-
-	result := &refresh.SourceResult{Threads: threads}
+	result := &refresh.SourceResult{}
 
 	// Fetch label-based todos if configured
 	if s.cfg.TodoLabel != "" {
@@ -160,51 +154,6 @@ func loadGmailAuth(advanced bool) (oauth2.TokenSource, error) {
 	conf := auth.LoadGoogleOAuth2Config(clientID, clientSecret, scopes...)
 	tok := tf.ToOAuth2Token()
 	return conf.TokenSource(context.Background(), tok), nil
-}
-
-func fetchActionableEmails(ctx context.Context, client *SafeGmailClient) ([]db.Thread, error) {
-	msgs, err := client.ListMessages(ctx, "is:unread newer_than:3d", 20)
-	if err != nil {
-		return nil, err
-	}
-
-	var threads []db.Thread
-	for _, msg := range msgs {
-		detail, err := client.GetMessage(ctx, msg.Id, "metadata", "Subject", "From", "Date")
-		if err != nil {
-			continue
-		}
-
-		var subject, from string
-		for _, h := range detail.Payload.Headers {
-			switch h.Name {
-			case "Subject":
-				subject = h.Value
-			case "From":
-				from = h.Value
-			}
-		}
-
-		if subject == "" {
-			continue
-		}
-
-		url := fmt.Sprintf("https://mail.google.com/mail/u/0/#inbox/%s", msg.Id)
-
-		senderName := from
-		if idx := strings.Index(from, "<"); idx > 0 {
-			senderName = strings.TrimSpace(from[:idx])
-		}
-
-		threads = append(threads, db.Thread{
-			Type:    "email",
-			Title:   subject,
-			URL:     url,
-			Summary: fmt.Sprintf("From: %s", senderName),
-		})
-	}
-
-	return threads, nil
 }
 
 // fetchLabeledTodos queries emails with the given label and returns todos + the set of message IDs found.

@@ -965,21 +965,6 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 				s.CalendarTime.Render(sh.desc)))
 		}
 
-	case "threads":
-		cmds := []struct{ key, desc string }{
-			{"\u2191\u2193 / k j", "Navigate threads"},
-			{"enter", "Launch Claude session for thread"},
-			{"a", "Add new thread"},
-			{"p", "Pause active thread"},
-			{"s", "Start paused thread"},
-			{"x", "Close thread"},
-		}
-		sections = append(sections, "", s.SectionHeader.Render("  Threads"), "")
-		for _, sh := range cmds {
-			sections = append(sections, fmt.Sprintf("    %-20s %s",
-				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
-				s.CalendarTime.Render(sh.desc)))
-		}
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)

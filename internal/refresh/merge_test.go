@@ -133,62 +133,6 @@ func TestMerge_ManualTodosPreserved(t *testing.T) {
 	}
 }
 
-func TestMerge_ThreadDismissedNotRecreated(t *testing.T) {
-	existing := &db.CommandCenter{
-		Threads: []db.Thread{
-			{ID: "t1", Title: "Old PR", Status: "dismissed", URL: "https://github.com/pr/1"},
-		},
-	}
-	fresh := &FreshData{
-		Threads: []db.Thread{
-			{Title: "Old PR Updated", URL: "https://github.com/pr/1", Type: "pr"},
-		},
-	}
-
-	result := Merge(existing, fresh)
-	active := 0
-	for _, th := range result.Threads {
-		if th.URL == "https://github.com/pr/1" && th.Status != "dismissed" && th.Status != "completed" {
-			active++
-		}
-	}
-	if active != 0 {
-		t.Error("dismissed thread was recreated")
-	}
-}
-
-func TestMerge_ThreadPauseStatePreserved(t *testing.T) {
-	pausedAt := time.Now()
-	existing := &db.CommandCenter{
-		Threads: []db.Thread{
-			{ID: "t1", Title: "PR", Status: "paused", URL: "https://github.com/pr/2",
-				PausedAt: &pausedAt},
-		},
-	}
-	fresh := &FreshData{
-		Threads: []db.Thread{
-			{Title: "PR Updated", URL: "https://github.com/pr/2", Summary: "3 comments"},
-		},
-	}
-
-	result := Merge(existing, fresh)
-	for _, th := range result.Threads {
-		if th.URL == "https://github.com/pr/2" {
-			if th.Status != "paused" {
-				t.Errorf("expected status preserved as 'paused', got %q", th.Status)
-			}
-			if th.PausedAt == nil {
-				t.Error("expected paused_at preserved")
-			}
-			if th.Summary != "3 comments" {
-				t.Errorf("expected summary updated to '3 comments', got %q", th.Summary)
-			}
-			return
-		}
-	}
-	t.Error("thread not found in result")
-}
-
 func TestMerge_PendingActionsPreserved(t *testing.T) {
 	existing := &db.CommandCenter{
 		PendingActions: []db.PendingAction{

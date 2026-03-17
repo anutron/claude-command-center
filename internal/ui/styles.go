@@ -51,10 +51,6 @@ type Styles struct {
 
 	// Calendar past-event style
 	CalendarPast lipgloss.Style
-
-	// Thread styles
-	ThreadActive lipgloss.Style
-	ThreadPaused lipgloss.Style
 }
 
 // NewStyles creates a Styles from a palette.
@@ -115,8 +111,6 @@ func NewStyles(p config.Palette) Styles {
 
 		CalendarPast: lipgloss.NewStyle().Foreground(colorMuted).Faint(true),
 
-		ThreadActive: lipgloss.NewStyle().Foreground(colorWhite),
-		ThreadPaused: lipgloss.NewStyle().Foreground(colorMuted),
 	}
 }
 

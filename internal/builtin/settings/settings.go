@@ -521,9 +521,7 @@ func (p *Plugin) syncNavFromConfig() {
 			}
 			switch item.Kind {
 			case "plugin":
-				if item.Slug == "threads" {
-					*item.Enabled = p.cfg.Threads.Enabled
-				} else if len(item.Slug) > 9 && item.Slug[:9] == "external-" {
+				if len(item.Slug) > 9 && item.Slug[:9] == "external-" {
 					// External plugins — find matching config entry
 					for k, ep := range p.cfg.ExternalPlugins {
 						if item.Slug == fmt.Sprintf("external-%d", k) {

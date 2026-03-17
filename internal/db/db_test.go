@@ -133,47 +133,6 @@ func TestDBDeferTodo(t *testing.T) {
 	}
 }
 
-func TestThreadRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	db, err := OpenDB(filepath.Join(dir, "test.db"))
-	if err != nil {
-		t.Fatalf("OpenDB: %v", err)
-	}
-	defer db.Close()
-
-	thread := Thread{
-		ID: "th01", Type: "pr", Title: "Fix bug", URL: "https://github.com/test/1",
-		Status: "active", CreatedAt: time.Now(),
-	}
-	DBInsertThread(db, thread)
-
-	cc, _ := LoadCommandCenterFromDB(db)
-	if len(cc.Threads) != 1 {
-		t.Fatalf("expected 1 thread, got %d", len(cc.Threads))
-	}
-	if cc.Threads[0].Title != "Fix bug" {
-		t.Fatalf("expected 'Fix bug', got %s", cc.Threads[0].Title)
-	}
-
-	DBPauseThread(db, "th01")
-	cc, _ = LoadCommandCenterFromDB(db)
-	if cc.Threads[0].Status != "paused" {
-		t.Fatalf("expected paused, got %s", cc.Threads[0].Status)
-	}
-
-	DBStartThread(db, "th01")
-	cc, _ = LoadCommandCenterFromDB(db)
-	if cc.Threads[0].Status != "active" {
-		t.Fatalf("expected active, got %s", cc.Threads[0].Status)
-	}
-
-	DBCloseThread(db, "th01")
-	cc, _ = LoadCommandCenterFromDB(db)
-	if cc.Threads[0].Status != "completed" {
-		t.Fatalf("expected completed, got %s", cc.Threads[0].Status)
-	}
-}
-
 func TestPathRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
@@ -332,9 +291,6 @@ func TestMigrateFromJSON(t *testing.T) {
 	if cc.Todos[1].Status != "dismissed" {
 		t.Fatalf("expected dismissed status preserved, got %s", cc.Todos[1].Status)
 	}
-	if len(cc.Threads) != 1 {
-		t.Fatalf("expected 1 thread, got %d", len(cc.Threads))
-	}
 	if cc.Suggestions.Focus != "Do the first thing" {
 		t.Fatalf("expected suggestions focus, got %s", cc.Suggestions.Focus)
 	}
@@ -382,9 +338,6 @@ func TestDBSaveRefreshResult(t *testing.T) {
 			{ID: "t1", Title: "Fix bug", Status: "active", Source: "github", CreatedAt: now},
 			{ID: "t2", Title: "Done task", Status: "completed", Source: "manual", CreatedAt: now, CompletedAt: &now},
 		},
-		Threads: []Thread{
-			{ID: "th1", Type: "pr", Title: "PR #42", URL: "https://github.com/repo/42", Status: "active", CreatedAt: now},
-		},
 		Suggestions: Suggestions{
 			Focus:        "Fix the bug first",
 			RankedTodoIDs: []string{"t1", "t2"},
@@ -413,11 +366,6 @@ func TestDBSaveRefreshResult(t *testing.T) {
 	}
 	if loaded.Todos[1].CompletedAt == nil {
 		t.Fatal("expected completed_at to be preserved")
-	}
-
-	// Threads
-	if len(loaded.Threads) != 1 || loaded.Threads[0].URL != "https://github.com/repo/42" {
-		t.Fatalf("thread mismatch")
 	}
 
 	// Calendar
@@ -742,73 +690,6 @@ func TestDeferTodo(t *testing.T) {
 	}
 }
 
-func TestPauseThread(t *testing.T) {
-	cc := &CommandCenter{
-		Threads: []Thread{
-			{ID: "t1", Status: "active"},
-		},
-	}
-	cc.PauseThread("t1")
-
-	if cc.Threads[0].Status != "paused" {
-		t.Errorf("expected paused, got %s", cc.Threads[0].Status)
-	}
-	if cc.Threads[0].PausedAt == nil {
-		t.Error("expected PausedAt to be set")
-	}
-}
-
-func TestStartThread(t *testing.T) {
-	now := time.Now()
-	cc := &CommandCenter{
-		Threads: []Thread{
-			{ID: "t1", Status: "paused", PausedAt: &now},
-		},
-	}
-	cc.StartThread("t1")
-
-	if cc.Threads[0].Status != "active" {
-		t.Errorf("expected active, got %s", cc.Threads[0].Status)
-	}
-	if cc.Threads[0].PausedAt != nil {
-		t.Error("expected PausedAt to be nil")
-	}
-}
-
-func TestCloseThread(t *testing.T) {
-	cc := &CommandCenter{
-		Threads: []Thread{
-			{ID: "t1", Status: "active"},
-		},
-	}
-	cc.CloseThread("t1")
-
-	if cc.Threads[0].Status != "completed" {
-		t.Errorf("expected completed, got %s", cc.Threads[0].Status)
-	}
-	if cc.Threads[0].CompletedAt == nil {
-		t.Error("expected CompletedAt to be set")
-	}
-}
-
-func TestAddThread(t *testing.T) {
-	cc := &CommandCenter{}
-	thread := cc.AddThread("New thread", "pr")
-
-	if len(cc.Threads) != 1 {
-		t.Fatalf("expected 1 thread, got %d", len(cc.Threads))
-	}
-	if thread.Title != "New thread" {
-		t.Errorf("expected title 'New thread', got %q", thread.Title)
-	}
-	if thread.Type != "pr" {
-		t.Errorf("expected type 'pr', got %q", thread.Type)
-	}
-	if thread.Status != "active" {
-		t.Errorf("expected status 'active', got %q", thread.Status)
-	}
-}
-
 func TestActiveTodos(t *testing.T) {
 	cc := &CommandCenter{
 		Todos: []Todo{
@@ -820,31 +701,6 @@ func TestActiveTodos(t *testing.T) {
 	active := cc.ActiveTodos()
 	if len(active) != 2 {
 		t.Fatalf("expected 2 active, got %d", len(active))
-	}
-}
-
-func TestActiveAndPausedThreads(t *testing.T) {
-	now := time.Now()
-	cc := &CommandCenter{
-		Threads: []Thread{
-			{ID: "1", Status: "active", CreatedAt: now},
-			{ID: "2", Status: "paused", PausedAt: &now},
-			{ID: "3", Status: "completed"},
-			{ID: "4", Status: "active", CreatedAt: now.Add(-time.Hour)},
-		},
-	}
-
-	active := cc.ActiveThreads()
-	if len(active) != 2 {
-		t.Fatalf("expected 2 active, got %d", len(active))
-	}
-	if active[0].ID != "4" {
-		t.Errorf("expected oldest first, got %s", active[0].ID)
-	}
-
-	paused := cc.PausedThreads()
-	if len(paused) != 1 {
-		t.Fatalf("expected 1 paused, got %d", len(paused))
 	}
 }
 

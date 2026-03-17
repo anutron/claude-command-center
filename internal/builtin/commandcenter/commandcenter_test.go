@@ -52,10 +52,6 @@ func testPluginWithCC(t *testing.T) *Plugin {
 			{ID: "t2", Title: "Second todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now()},
 			{ID: "t3", Title: "Third todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now()},
 		},
-		Threads: []db.Thread{
-			{ID: "th1", Title: "Thread one", Status: "active", Type: "manual", CreatedAt: time.Now()},
-			{ID: "th2", Title: "Thread two", Status: "paused", Type: "manual", CreatedAt: time.Now()},
-		},
 	}
 	p.width = 120
 	p.height = 40
@@ -96,14 +92,11 @@ func TestSlugAndTabName(t *testing.T) {
 func TestRoutes(t *testing.T) {
 	p := testPlugin(t)
 	routes := p.Routes()
-	if len(routes) != 2 {
-		t.Fatalf("Routes() returned %d routes, want 2", len(routes))
+	if len(routes) != 1 {
+		t.Fatalf("Routes() returned %d routes, want 1", len(routes))
 	}
 	if routes[0].Slug != "commandcenter" {
 		t.Errorf("routes[0].Slug = %q, want %q", routes[0].Slug, "commandcenter")
-	}
-	if routes[1].Slug != "commandcenter/threads" {
-		t.Errorf("routes[1].Slug = %q, want %q", routes[1].Slug, "commandcenter/threads")
 	}
 }
 
@@ -299,33 +292,9 @@ func TestSubViewSwitching(t *testing.T) {
 		t.Fatalf("initial subView = %q, want %q", p.subView, "command")
 	}
 
-	p.NavigateTo("commandcenter/threads", nil)
-	if p.subView != "threads" {
-		t.Errorf("after NavigateTo threads: subView = %q, want %q", p.subView, "threads")
-	}
-
 	p.NavigateTo("commandcenter", nil)
 	if p.subView != "command" {
 		t.Errorf("after NavigateTo command: subView = %q, want %q", p.subView, "command")
-	}
-}
-
-func TestThreadsNavigation(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.NavigateTo("commandcenter/threads", nil)
-
-	if p.threadCursor != 0 {
-		t.Fatalf("initial thread cursor = %d, want 0", p.threadCursor)
-	}
-
-	p.HandleKey(keyMsg("j"))
-	if p.threadCursor != 1 {
-		t.Errorf("after j: thread cursor = %d, want 1", p.threadCursor)
-	}
-
-	p.HandleKey(keyMsg("k"))
-	if p.threadCursor != 0 {
-		t.Errorf("after k: thread cursor = %d, want 0", p.threadCursor)
 	}
 }
 
@@ -387,13 +356,6 @@ func TestViewRendersWithoutPanic(t *testing.T) {
 	output := p.View(120, 40, 0)
 	if output == "" {
 		t.Error("command view should not be empty")
-	}
-
-	// Threads view
-	p.NavigateTo("commandcenter/threads", nil)
-	output = p.View(120, 40, 0)
-	if output == "" {
-		t.Error("threads view should not be empty")
 	}
 }
 
@@ -487,36 +449,6 @@ func TestHandleMessageRefreshFinished(t *testing.T) {
 	}
 	if p.ccRefreshing {
 		t.Error("ccRefreshing should be false after refresh finished")
-	}
-}
-
-func TestAddThread(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.NavigateTo("commandcenter/threads", nil)
-
-	// Enter add mode
-	action := p.HandleKey(keyMsg("a"))
-	if !p.addingThread {
-		t.Error("a should enter addingThread mode")
-	}
-	if action.TeaCmd == nil {
-		t.Error("a should return a TeaCmd (textinput blink)")
-	}
-}
-
-func TestCloseThread(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.NavigateTo("commandcenter/threads", nil)
-
-	threadsBefore := len(p.cc.ActiveThreads()) + len(p.cc.PausedThreads())
-	action := p.HandleKey(keyMsg("x"))
-	threadsAfter := len(p.cc.ActiveThreads()) + len(p.cc.PausedThreads())
-
-	if threadsAfter != threadsBefore-1 {
-		t.Errorf("after x: total threads = %d, want %d", threadsAfter, threadsBefore-1)
-	}
-	if action.TeaCmd == nil {
-		t.Error("x should return a TeaCmd for DB write")
 	}
 }
 

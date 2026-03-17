@@ -87,34 +87,6 @@ func migrateCommandCenter(db *sql.DB, ccPath string) error {
 		}
 	}
 
-	// Migrate threads
-	for _, t := range cc.Threads {
-		now := FormatTime(time.Now())
-		createdAt := FormatTime(t.CreatedAt)
-		if t.CreatedAt.IsZero() {
-			createdAt = now
-		}
-		var pausedAt, completedAt *string
-		if t.PausedAt != nil {
-			s := FormatTime(*t.PausedAt)
-			pausedAt = &s
-		}
-		if t.CompletedAt != nil {
-			s := FormatTime(*t.CompletedAt)
-			completedAt = &s
-		}
-		_, err := tx.Exec(`INSERT OR IGNORE INTO cc_threads
-			(id, type, title, url, repo, project_dir, status, summary,
-			created_at, paused_at, completed_at, updated_at)
-			VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''),
-			?, ?, ?, ?)`,
-			t.ID, t.Type, t.Title, t.URL, t.Repo, t.ProjectDir, t.Status, t.Summary,
-			createdAt, pausedAt, completedAt, now)
-		if err != nil {
-			return fmt.Errorf("thread %s: %w", t.ID, err)
-		}
-	}
-
 	// Migrate calendar cache
 	for _, ev := range cc.Calendar.Today {
 		if err := migrateCachedEvent(tx, "today", ev); err != nil {

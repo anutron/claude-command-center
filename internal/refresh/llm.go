@@ -16,14 +16,12 @@ func generateSuggestions(ctx context.Context, l llm.LLM, cc *db.CommandCenter) (
 	state, _ := json.Marshal(struct {
 		Calendar db.CalendarData `json:"calendar"`
 		Todos    []db.Todo       `json:"todos"`
-		Threads  []db.Thread     `json:"threads"`
 	}{
 		Calendar: cc.Calendar,
 		Todos:    activeTodos(cc.Todos),
-		Threads:  activeThreads(cc.Threads),
 	})
 
-	prompt := fmt.Sprintf(`Given this current state of my calendar, todos, and active threads, provide:
+	prompt := fmt.Sprintf(`Given this current state of my calendar and todos, provide:
 
 1. A 1-2 sentence "focus" recommendation of what I should work on next and why. Consider: deadlines, who's waiting, available time gaps in my calendar, effort required.
 2. A ranked list of todo IDs by suggested priority.
@@ -227,12 +225,3 @@ func activeTodos(todos []db.Todo) []db.Todo {
 	return out
 }
 
-func activeThreads(threads []db.Thread) []db.Thread {
-	var out []db.Thread
-	for _, t := range threads {
-		if t.Status == "active" {
-			out = append(out, t)
-		}
-	}
-	return out
-}

@@ -23,7 +23,6 @@ type Config struct {
 	Calendar        CalendarConfig         `yaml:"calendar"`
 	GitHub          GitHubConfig           `yaml:"github"`
 	Todos           TodosConfig            `yaml:"todos"`
-	Threads         ThreadsConfig          `yaml:"threads"`
 	Granola         GranolaConfig          `yaml:"granola"`
 	Slack           SlackConfig            `yaml:"slack"`
 	Gmail           GmailConfig            `yaml:"gmail"`
@@ -152,10 +151,6 @@ type TodosConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
-type ThreadsConfig struct {
-	Enabled bool `yaml:"enabled"`
-}
-
 type GranolaConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
@@ -239,7 +234,6 @@ func DefaultConfig() *Config {
 		Name:    "Claude Command",
 		Palette: "aurora",
 		Todos:   TodosConfig{Enabled: true},
-		Threads: ThreadsConfig{Enabled: true},
 		Agent: AgentConfig{
 			DefaultBudget:     5.00,
 			DefaultPermission: "default",

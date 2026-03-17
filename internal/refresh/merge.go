@@ -12,7 +12,6 @@ import (
 //   - Todos: merge by source_ref; dismissed = tombstone (never recreate);
 //     update existing (preserve ID/status/created_at, update detail);
 //     add new with generated UUID; preserve source:"manual" untouched
-//   - Threads: same logic; preserve pause/complete states
 func Merge(existing *db.CommandCenter, fresh *FreshData) *db.CommandCenter {
 	if existing == nil {
 		existing = &db.CommandCenter{}
@@ -26,7 +25,6 @@ func Merge(existing *db.CommandCenter, fresh *FreshData) *db.CommandCenter {
 	}
 
 	cc.Todos = mergeTodos(existing.Todos, fresh.Todos)
-	cc.Threads = mergeThreads(existing.Threads, fresh.Threads)
 
 	return cc
 }
@@ -110,60 +108,3 @@ func mergeTodos(existing, fresh []db.Todo) []db.Todo {
 	return merged
 }
 
-func mergeThreads(existing, fresh []db.Thread) []db.Thread {
-	byRef := make(map[string]int)
-	for i, t := range existing {
-		if t.URL != "" {
-			byRef[t.URL] = i
-		}
-	}
-
-	matched := make(map[int]bool)
-	var merged []db.Thread
-
-	for _, ft := range fresh {
-		if ft.URL == "" {
-			if ft.ID == "" {
-				ft.ID = db.GenID()
-			}
-			if ft.CreatedAt.IsZero() {
-				ft.CreatedAt = time.Now()
-			}
-			merged = append(merged, ft)
-			continue
-		}
-
-		if idx, ok := byRef[ft.URL]; ok {
-			et := existing[idx]
-			matched[idx] = true
-
-			if et.Status == "completed" || et.Status == "dismissed" {
-				continue
-			}
-
-			et.Title = ft.Title
-			et.Summary = ft.Summary
-			et.Repo = ft.Repo
-			merged = append(merged, et)
-		} else {
-			if ft.ID == "" {
-				ft.ID = db.GenID()
-			}
-			if ft.CreatedAt.IsZero() {
-				ft.CreatedAt = time.Now()
-			}
-			if ft.Status == "" {
-				ft.Status = "active"
-			}
-			merged = append(merged, ft)
-		}
-	}
-
-	for i, t := range existing {
-		if !matched[i] {
-			merged = append(merged, t)
-		}
-	}
-
-	return merged
-}

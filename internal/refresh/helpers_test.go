@@ -42,21 +42,6 @@ func TestActiveTodos(t *testing.T) {
 	}
 }
 
-func TestActiveThreads(t *testing.T) {
-	threads := []db.Thread{
-		{ID: "1", Title: "Active", Status: "active"},
-		{ID: "2", Title: "Paused", Status: "paused"},
-		{ID: "3", Title: "Done", Status: "done"},
-	}
-	result := activeThreads(threads)
-	if len(result) != 1 {
-		t.Fatalf("expected 1 active thread, got %d", len(result))
-	}
-	if result[0].ID != "1" {
-		t.Errorf("expected thread ID 1, got %s", result[0].ID)
-	}
-}
-
 func TestCombineResults(t *testing.T) {
 	cal := &db.CalendarData{
 		Today: []db.CalendarEvent{{Title: "Meeting", Start: time.Now()}},
@@ -66,8 +51,7 @@ func TestCombineResults(t *testing.T) {
 		Todos:    []db.Todo{{ID: "t1", Title: "Todo from source 1"}},
 	}
 	r2 := &SourceResult{
-		Threads: []db.Thread{{ID: "th1", Title: "Thread from source 2"}},
-		Todos:   []db.Todo{{ID: "t2", Title: "Todo from source 2"}},
+		Todos: []db.Todo{{ID: "t2", Title: "Todo from source 2"}},
 	}
 
 	result := combineResults([]*SourceResult{r1, nil, r2})
@@ -78,9 +62,6 @@ func TestCombineResults(t *testing.T) {
 	if len(result.Todos) != 2 {
 		t.Errorf("expected 2 todos, got %d", len(result.Todos))
 	}
-	if len(result.Threads) != 1 {
-		t.Errorf("expected 1 thread, got %d", len(result.Threads))
-	}
 }
 
 func TestCombineResults_StripsANSI(t *testing.T) {
@@ -90,7 +71,6 @@ func TestCombineResults_StripsANSI(t *testing.T) {
 			Tomorrow: []db.CalendarEvent{{Title: "\x1b]0;evil\x07Normal"}},
 		},
 		Todos: []db.Todo{{Title: "\x1b[1mBold Todo\x1b[0m", Context: "\x1b[32mgreen\x1b[0m", Detail: "\x1b[4munderline\x1b[0m"}},
-		Threads: []db.Thread{{Title: "\x1b[31m#42 PR\x1b[0m", Summary: "\x1b[1mOpen\x1b[0m"}},
 	}
 
 	result := combineResults([]*SourceResult{r})
@@ -109,12 +89,6 @@ func TestCombineResults_StripsANSI(t *testing.T) {
 	}
 	if result.Todos[0].Detail != "underline" {
 		t.Errorf("todo detail not stripped: %q", result.Todos[0].Detail)
-	}
-	if result.Threads[0].Title != "#42 PR" {
-		t.Errorf("thread title not stripped: %q", result.Threads[0].Title)
-	}
-	if result.Threads[0].Summary != "Open" {
-		t.Errorf("thread summary not stripped: %q", result.Threads[0].Summary)
 	}
 }
 

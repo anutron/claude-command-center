@@ -74,11 +74,7 @@ type Plugin struct {
 	ccExpandedCols   int // 0 = use default (2), 1 = single column, 2 = two columns
 	ccExpandedOffset int
 
-	// Threads state
-	threadCursor int
-
 	// Input modes
-	addingThread  bool
 	bookingMode   bool
 	bookingCursor int
 	textInput     textinput.Model
@@ -176,7 +172,7 @@ type Plugin struct {
 	// Key chord state: "g" prefix for Gmail-style shortcuts (e.g., "gi" = go inbox)
 	gPending bool
 
-	// Sub-view: "command" or "threads"
+	// Sub-view identifier (currently only "command")
 	subView string
 
 	// Dimensions
@@ -215,31 +211,21 @@ func (p *Plugin) Migrations() []plugin.Migration {
 	return []plugin.Migration{
 		{
 			Version: 1,
-			SQL: `CREATE INDEX IF NOT EXISTS idx_cc_todos_status_sort ON cc_todos(status, sort_order);
-CREATE INDEX IF NOT EXISTS idx_cc_threads_status_created ON cc_threads(status, created_at);`,
+			SQL: `CREATE INDEX IF NOT EXISTS idx_cc_todos_status_sort ON cc_todos(status, sort_order);`,
 		},
 	}
 }
 
 // Routes returns the sub-routes for this plugin.
 func (p *Plugin) Routes() []plugin.Route {
-	routes := []plugin.Route{
+	return []plugin.Route{
 		{Slug: "commandcenter", Description: "Command Center (calendar + todos)"},
 	}
-	if p.cfg != nil && p.cfg.Threads.Enabled {
-		routes = append(routes, plugin.Route{Slug: "commandcenter/threads", Description: "Threads view"})
-	}
-	return routes
 }
 
 // NavigateTo switches to the given sub-route.
 func (p *Plugin) NavigateTo(route string, args map[string]string) {
-	switch route {
-	case "commandcenter/threads":
-		p.subView = "threads"
-	default:
-		p.subView = "command"
-	}
+	p.subView = "command"
 }
 
 // RefreshInterval returns the configured interval between background refreshes.
@@ -262,17 +248,6 @@ func (p *Plugin) Refresh() tea.Cmd {
 
 // KeyBindings returns the key bindings for the current sub-view.
 func (p *Plugin) KeyBindings() []plugin.KeyBinding {
-	if p.subView == "threads" {
-		return []plugin.KeyBinding{
-			{Key: "up/k", Description: "Navigate threads", Promoted: true},
-			{Key: "down/j", Description: "Navigate threads", Promoted: true},
-			{Key: "enter", Description: "Launch Claude session", Promoted: true},
-			{Key: "a", Description: "Add new thread", Promoted: true},
-			{Key: "p", Description: "Pause active thread", Promoted: true},
-			{Key: "s", Description: "Start paused thread", Promoted: true},
-			{Key: "x", Description: "Close thread", Promoted: true},
-		}
-	}
 	return []plugin.KeyBinding{
 		{Key: "up/k", Description: "Navigate todos", Promoted: true},
 		{Key: "down/j", Description: "Navigate todos", Promoted: true},
@@ -658,17 +633,6 @@ func (p *Plugin) triggerFocusRefresh() tea.Cmd {
 	return claudeFocusCmd(p.llm, buildFocusPrompt(p.cc))
 }
 
-func (p *Plugin) threadAtCursor(active, paused []db.Thread) *db.Thread {
-	if p.threadCursor < len(active) {
-		return &active[p.threadCursor]
-	}
-	pausedIdx := p.threadCursor - len(active)
-	if pausedIdx < len(paused) {
-		return &paused[pausedIdx]
-	}
-	return nil
-}
-
 // PendingLaunchTodo returns and clears the pending launch todo, if any.
 func (p *Plugin) PendingLaunchTodo() *db.Todo {
 	t := p.pendingLaunchTodo
@@ -691,12 +655,7 @@ func (p *Plugin) View(width, height, frame int) string {
 		return renderHelpOverlay(&p.styles, p.subView, width, height)
 	}
 
-	switch p.subView {
-	case "threads":
-		return p.viewThreadsTab(width, height)
-	default:
-		return p.viewCommandTab(width, height)
-	}
+	return p.viewCommandTab(width, height)
 }
 
 func (p *Plugin) viewCommandTab(width, height int) string {
@@ -830,26 +789,6 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		filterLabel := lipgloss.NewStyle().Foreground(p.styles.ColorCyan).Bold(true).Render("filter: " + p.searchInput.Value())
 		filterHint := p.styles.Hint.Render("  / to edit \u00b7 esc to clear")
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", "  "+filterLabel+filterHint)
-	}
-
-	return view
-}
-
-func (p *Plugin) viewThreadsTab(width, height int) string {
-	viewWidth := ui.ContentMaxWidth
-	if width > 0 && width < viewWidth {
-		viewWidth = width
-	}
-	viewHeight := height - 14
-	if viewHeight < 10 {
-		viewHeight = 10
-	}
-
-	view := renderThreadsView(&p.styles, &p.grad, p.cc, viewWidth, viewHeight, p.threadCursor, p.frame)
-
-	if p.addingThread {
-		inputLine := p.styles.SectionHeader.Render("Add thread: ") + p.textInput.View()
-		view = lipgloss.JoinVertical(lipgloss.Left, view, "", inputLine)
 	}
 
 	return view

@@ -201,18 +201,15 @@ func TestNavSystemItems(t *testing.T) {
 
 func TestNavPluginsCategory(t *testing.T) {
 	p, _ := testSetup(t)
-	// With only settings registered (excluded) + threads + 1 external plugin, PLUGINS should have 2 items
+	// With only settings registered (excluded) + 1 external plugin, PLUGINS should have 1 item
 	for _, cat := range p.navCategories {
 		if cat.Label == "PLUGINS" {
-			if len(cat.Items) != 2 {
-				t.Errorf("expected 2 PLUGINS items (Threads + external Pomodoro), got %d", len(cat.Items))
+			if len(cat.Items) != 1 {
+				t.Errorf("expected 1 PLUGINS item (external Pomodoro), got %d", len(cat.Items))
 			}
 			slugs := map[string]bool{}
 			for _, item := range cat.Items {
 				slugs[item.Slug] = true
-			}
-			if !slugs["threads"] {
-				t.Error("expected threads in PLUGINS")
 			}
 			if !slugs["external-0"] {
 				t.Error("expected external-0 in PLUGINS")
@@ -221,13 +218,6 @@ func TestNavPluginsCategory(t *testing.T) {
 		}
 	}
 	t.Error("PLUGINS category not found")
-}
-
-func TestNavThreadsInPlugins(t *testing.T) {
-	p, _ := testSetup(t)
-	if !findNavItemInCategory(p, "PLUGINS", "threads") {
-		t.Error("expected Threads in PLUGINS category")
-	}
 }
 
 func TestNavHasExpectedItems(t *testing.T) {
@@ -263,8 +253,8 @@ func TestNavHasExpectedItems(t *testing.T) {
 
 func TestNavItemCount(t *testing.T) {
 	p, _ := testSetup(t)
-	// APPEARANCE(2) + PLUGINS(2: threads + external) + DATA SOURCES(5) + SYSTEM(5) = 14
-	expected := 14
+	// APPEARANCE(2) + PLUGINS(1: external) + DATA SOURCES(5) + SYSTEM(5) = 13
+	expected := 13
 	if got := p.navItemCount(); got != expected {
 		t.Errorf("expected %d nav items, got %d", expected, got)
 	}
@@ -377,9 +367,9 @@ func TestNavSkipsCategoryHeaders(t *testing.T) {
 	if item == nil {
 		t.Fatal("expected non-nil item at cursor 2")
 	}
-	// Item at index 2 should be the first plugin (threads)
-	if item.Slug != "threads" {
-		t.Errorf("expected threads at cursor 2, got %q", item.Slug)
+	// Item at index 2 should be the first plugin (external-0)
+	if item.Slug != "external-0" {
+		t.Errorf("expected external-0 at cursor 2, got %q", item.Slug)
 	}
 }
 
@@ -2216,12 +2206,12 @@ func TestDatasourceFormCompletionAuthChainsToSlackTokenForm(t *testing.T) {
 func TestBuildPluginFormSetsValues(t *testing.T) {
 	p, _ := testSetup(t)
 
-	threadsItem := p.findNavItem("threads")
-	if threadsItem == nil {
-		t.Fatal("threads nav item not found")
+	extItem := p.findNavItem("external-0")
+	if extItem == nil {
+		t.Fatal("external-0 nav item not found")
 	}
 
-	form := p.buildPluginForm(threadsItem)
+	form := p.buildPluginForm(extItem)
 	if form == nil {
 		t.Fatal("expected non-nil form")
 	}
@@ -2233,19 +2223,19 @@ func TestBuildPluginFormSetsValues(t *testing.T) {
 func TestPluginFormCompletionRebuildsForm(t *testing.T) {
 	p, _ := testSetup(t)
 
-	threadsItem := p.findNavItem("threads")
-	if threadsItem == nil {
-		t.Fatal("threads nav item not found")
+	extItem := p.findNavItem("external-0")
+	if extItem == nil {
+		t.Fatal("external-0 nav item not found")
 	}
 
 	p.pluginValues = &pluginFormValues{}
-	p.handlePluginFormCompletion("threads")
+	p.handlePluginFormCompletion("external-0")
 
 	if p.activeForm == nil {
 		t.Error("expected activeForm to be rebuilt after plugin form completion")
 	}
-	if p.activeFormSlug != "threads" {
-		t.Errorf("expected activeFormSlug 'threads', got %q", p.activeFormSlug)
+	if p.activeFormSlug != "external-0" {
+		t.Errorf("expected activeFormSlug 'external-0', got %q", p.activeFormSlug)
 	}
 }
 
@@ -2283,7 +2273,7 @@ func TestIsFormOnlySlugReturnsTrueForSystemSlugs(t *testing.T) {
 }
 
 func TestIsFormOnlySlugReturnsFalseForDatasourcesAndPlugins(t *testing.T) {
-	for _, slug := range []string{"calendar", "gmail", "slack", "github", "threads", "system-logs"} {
+	for _, slug := range []string{"calendar", "gmail", "slack", "github", "system-logs"} {
 		if isFormOnlySlug(slug) {
 			t.Errorf("expected %s to NOT be a form-only slug", slug)
 		}
@@ -2385,14 +2375,14 @@ func TestBuildFormForSlugDatasource(t *testing.T) {
 func TestBuildFormForSlugPlugin(t *testing.T) {
 	p, _ := testSetup(t)
 
-	threadsItem := p.findNavItem("threads")
-	if threadsItem == nil {
-		t.Fatal("threads not found")
+	extItem := p.findNavItem("external-0")
+	if extItem == nil {
+		t.Fatal("external-0 not found")
 	}
 
-	form, _ := p.buildFormForSlug(threadsItem)
+	form, _ := p.buildFormForSlug(extItem)
 	if form == nil {
-		t.Error("expected form for plugin threads")
+		t.Error("expected form for plugin external-0")
 	}
 }
 

@@ -69,11 +69,6 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleAddingTodoRich(msg)
 	}
 
-	// Adding thread text input
-	if p.addingThread {
-		return p.handleTextInput(msg)
-	}
-
 	// Booking mode
 	if p.bookingMode {
 		return p.handleBooking(msg)
@@ -112,13 +107,7 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return plugin.Action{Type: plugin.ActionUnhandled}
 	}
 
-	// Dispatch to sub-view
-	switch p.subView {
-	case "threads":
-		return p.handleThreadsTab(msg)
-	default:
-		return p.handleCommandTab(msg)
-	}
+	return p.handleCommandTab(msg)
 }
 
 func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
@@ -680,32 +669,6 @@ func (p *Plugin) handleAddingTodoQuick(msg tea.KeyMsg) plugin.Action {
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
-func (p *Plugin) handleTextInput(msg tea.KeyMsg) plugin.Action {
-	switch msg.String() {
-	case "enter":
-		title := strings.TrimSpace(p.textInput.Value())
-		var cmd tea.Cmd
-		if title != "" && p.addingThread {
-			ensureCC(&p.cc)
-			thread := p.cc.AddThread(title, "manual")
-			threadCopy := *thread
-			cmd = p.dbWriteCmd(func(database *sql.DB) error { return db.DBInsertThread(database, threadCopy) })
-		}
-		p.addingThread = false
-		p.textInput.Blur()
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-
-	case "esc":
-		p.addingThread = false
-		p.textInput.Blur()
-		return plugin.NoopAction()
-	}
-
-	var cmd tea.Cmd
-	p.textInput, cmd = p.textInput.Update(msg)
-	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-}
-
 func (p *Plugin) handleBooking(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
 	case "left", "h":
@@ -788,89 +751,6 @@ func (p *Plugin) handleSearchInput(msg tea.KeyMsg) plugin.Action {
 	}
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
-
-func (p *Plugin) handleThreadsTab(msg tea.KeyMsg) plugin.Action {
-	if p.cc == nil {
-		return plugin.NoopAction()
-	}
-	active := p.cc.ActiveThreads()
-	paused := p.cc.PausedThreads()
-	total := len(active) + len(paused)
-	maxCursor := total - 1
-	if maxCursor < 0 {
-		maxCursor = 0
-	}
-
-	switch msg.String() {
-	case "up", "k":
-		if p.threadCursor > 0 {
-			p.threadCursor--
-		}
-		return plugin.NoopAction()
-
-	case "down", "j":
-		if p.threadCursor < maxCursor {
-			p.threadCursor++
-		}
-		return plugin.NoopAction()
-
-	case "p":
-		thread := p.threadAtCursor(active, paused)
-		if thread != nil && thread.Status == "active" {
-			threadID := thread.ID
-			p.cc.PauseThread(threadID)
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error { return db.DBPauseThread(database, threadID) })}
-		}
-		return plugin.NoopAction()
-
-	case "s":
-		thread := p.threadAtCursor(active, paused)
-		if thread != nil && thread.Status == "paused" {
-			threadID := thread.ID
-			p.cc.StartThread(threadID)
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error { return db.DBStartThread(database, threadID) })}
-		}
-		return plugin.NoopAction()
-
-	case "x":
-		thread := p.threadAtCursor(active, paused)
-		if thread != nil {
-			threadID := thread.ID
-			p.cc.CloseThread(threadID)
-			if p.threadCursor > 0 {
-				newTotal := len(p.cc.ActiveThreads()) + len(p.cc.PausedThreads())
-				if p.threadCursor >= newTotal {
-					p.threadCursor = newTotal - 1
-				}
-				if p.threadCursor < 0 {
-					p.threadCursor = 0
-				}
-			}
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error { return db.DBCloseThread(database, threadID) })}
-		}
-		return plugin.NoopAction()
-
-	case "a":
-		p.addingThread = true
-		p.textInput.Reset()
-		p.textInput.Placeholder = "New thread..."
-		p.textInput.Focus()
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: textinput.Blink}
-
-	case "enter":
-		thread := p.threadAtCursor(active, paused)
-		if thread != nil && thread.ProjectDir != "" {
-			return plugin.Action{
-				Type: "launch",
-				Args: map[string]string{"dir": thread.ProjectDir},
-			}
-		}
-		return plugin.NoopAction()
-	}
-
-	return plugin.NoopAction()
-}
-
 
 // parseDueDate attempts to parse common date input formats.
 // Returns (YYYY-MM-DD, true) if recognized, or ("", false) if LLM fallback is needed.

@@ -119,7 +119,7 @@ func Run(opts Options) error {
 	}
 
 	// Generate suggestions if LLM is available
-	if opts.LLM != nil && (len(merged.Todos) > 0 || len(merged.Threads) > 0) {
+	if opts.LLM != nil && len(merged.Todos) > 0 {
 		suggestions, err := generateSuggestions(ctx, opts.LLM, merged)
 		if err != nil {
 			log.Printf("suggestion generation: %v", err)
@@ -159,8 +159,8 @@ func Run(opts Options) error {
 	}
 
 	if opts.Verbose {
-		log.Printf("saved to db (todos=%d, threads=%d, warnings=%d)",
-			len(merged.Todos), len(merged.Threads), len(warnings))
+		log.Printf("saved to db (todos=%d, warnings=%d)",
+			len(merged.Todos), len(warnings))
 	}
 
 	return nil
@@ -172,8 +172,5 @@ func logSourceResult(name string, r *SourceResult) {
 	}
 	if len(r.Todos) > 0 {
 		log.Printf("%s: %d todos", name, len(r.Todos))
-	}
-	if len(r.Threads) > 0 {
-		log.Printf("%s: %d threads", name, len(r.Threads))
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 )
@@ -15,7 +14,6 @@ type CommandCenter struct {
 	GeneratedAt    time.Time       `json:"generated_at"`
 	Calendar       CalendarData    `json:"calendar"`
 	Todos          []Todo          `json:"todos"`
-	Threads        []Thread        `json:"threads"`
 	Suggestions    Suggestions     `json:"suggestions"`
 	PendingActions []PendingAction `json:"pending_actions"`
 	Warnings       []Warning       `json:"warnings,omitempty"`
@@ -116,20 +114,6 @@ type Todo struct {
 	TriageStatus   string     `json:"triage_status,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	CompletedAt    *time.Time `json:"completed_at"`
-}
-
-type Thread struct {
-	ID          string     `json:"id"`
-	Type        string     `json:"type"`
-	Title       string     `json:"title"`
-	URL         string     `json:"url"`
-	Repo        string     `json:"repo"`
-	ProjectDir  string     `json:"project_dir"`
-	Status      string     `json:"status"`
-	Summary     string     `json:"summary"`
-	CreatedAt   time.Time  `json:"created_at"`
-	PausedAt    *time.Time `json:"paused_at"`
-	CompletedAt *time.Time `json:"completed_at"`
 }
 
 type Suggestions struct {
@@ -342,50 +326,6 @@ func (cc *CommandCenter) SwapTodos(i, j int) {
 	cc.Todos[i], cc.Todos[j] = cc.Todos[j], cc.Todos[i]
 }
 
-func (cc *CommandCenter) PauseThread(id string) {
-	now := time.Now()
-	for i := range cc.Threads {
-		if cc.Threads[i].ID == id {
-			cc.Threads[i].Status = "paused"
-			cc.Threads[i].PausedAt = &now
-			return
-		}
-	}
-}
-
-func (cc *CommandCenter) StartThread(id string) {
-	for i := range cc.Threads {
-		if cc.Threads[i].ID == id {
-			cc.Threads[i].Status = "active"
-			cc.Threads[i].PausedAt = nil
-			return
-		}
-	}
-}
-
-func (cc *CommandCenter) CloseThread(id string) {
-	now := time.Now()
-	for i := range cc.Threads {
-		if cc.Threads[i].ID == id {
-			cc.Threads[i].Status = "completed"
-			cc.Threads[i].CompletedAt = &now
-			return
-		}
-	}
-}
-
-func (cc *CommandCenter) AddThread(title, threadType string) *Thread {
-	t := Thread{
-		ID:        GenID(),
-		Type:      threadType,
-		Title:     title,
-		Status:    "active",
-		CreatedAt: time.Now(),
-	}
-	cc.Threads = append(cc.Threads, t)
-	return &cc.Threads[len(cc.Threads)-1]
-}
-
 func (cc *CommandCenter) ActiveTodos() []Todo {
 	var out []Todo
 	for _, t := range cc.Todos {
@@ -403,35 +343,6 @@ func (cc *CommandCenter) CompletedTodos() []Todo {
 			out = append(out, t)
 		}
 	}
-	return out
-}
-
-func (cc *CommandCenter) ActiveThreads() []Thread {
-	var out []Thread
-	for _, t := range cc.Threads {
-		if t.Status == "active" {
-			out = append(out, t)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreatedAt.Before(out[j].CreatedAt)
-	})
-	return out
-}
-
-func (cc *CommandCenter) PausedThreads() []Thread {
-	var out []Thread
-	for _, t := range cc.Threads {
-		if t.Status == "paused" {
-			out = append(out, t)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].PausedAt == nil || out[j].PausedAt == nil {
-			return false
-		}
-		return out[i].PausedAt.Before(*out[j].PausedAt)
-	})
 	return out
 }
 

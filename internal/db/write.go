@@ -258,58 +258,6 @@ func DBSaveFocus(db *sql.DB, focus string) error {
 }
 
 // ---------------------------------------------------------------------------
-// Write methods -- Threads
-// ---------------------------------------------------------------------------
-
-func DBPauseThread(db *sql.DB, id string) error {
-	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_threads SET status = 'paused', paused_at = ?, updated_at = ? WHERE id = ?`,
-		now, now, id)
-	if err != nil {
-		return fmt.Errorf("pause thread %s: %w", id, err)
-	}
-	return nil
-}
-
-func DBStartThread(db *sql.DB, id string) error {
-	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_threads SET status = 'active', paused_at = NULL, updated_at = ? WHERE id = ?`,
-		now, id)
-	if err != nil {
-		return fmt.Errorf("start thread %s: %w", id, err)
-	}
-	return nil
-}
-
-func DBCloseThread(db *sql.DB, id string) error {
-	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_threads SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?`,
-		now, now, id)
-	if err != nil {
-		return fmt.Errorf("close thread %s: %w", id, err)
-	}
-	return nil
-}
-
-func DBInsertThread(db *sql.DB, t Thread) error {
-	now := FormatTime(time.Now())
-	createdAt := FormatTime(t.CreatedAt)
-	if t.CreatedAt.IsZero() {
-		createdAt = now
-	}
-	_, err := db.Exec(`INSERT INTO cc_threads (id, type, title, url, repo, project_dir, status, summary,
-		source_ref, created_at, paused_at, completed_at, updated_at)
-		VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''),
-		NULLIF(?, ''), ?, NULL, NULL, ?)`,
-		t.ID, t.Type, t.Title, t.URL, t.Repo, t.ProjectDir, t.Status, t.Summary,
-		"", createdAt, now)
-	if err != nil {
-		return fmt.Errorf("insert thread %s: %w", t.ID, err)
-	}
-	return nil
-}
-
-// ---------------------------------------------------------------------------
 // Write methods -- Pending Actions
 // ---------------------------------------------------------------------------
 
@@ -439,7 +387,7 @@ func DBSwapTodoOrder(database *sql.DB, idA, idB string) error {
 // ---------------------------------------------------------------------------
 
 // DBSaveRefreshResult atomically replaces all refresh-managed data (todos,
-// threads, calendar, suggestions, pending actions, generated_at) in a single
+// calendar, suggestions, pending actions, generated_at) in a single
 // transaction. This is the write path used by ccc-refresh.
 func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 	tx, err := d.Begin()
@@ -494,35 +442,6 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			triageStatus, displayID, i, createdAt, completedAt, now)
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)
-		}
-	}
-
-	// --- Threads: delete all, re-insert ---
-	if _, err := tx.Exec(`DELETE FROM cc_threads`); err != nil {
-		return fmt.Errorf("clear threads: %w", err)
-	}
-	for _, t := range cc.Threads {
-		createdAt := FormatTime(t.CreatedAt)
-		if t.CreatedAt.IsZero() {
-			createdAt = now
-		}
-		var pausedAt, completedAt *string
-		if t.PausedAt != nil {
-			s := FormatTime(*t.PausedAt)
-			pausedAt = &s
-		}
-		if t.CompletedAt != nil {
-			s := FormatTime(*t.CompletedAt)
-			completedAt = &s
-		}
-		_, err := tx.Exec(`INSERT INTO cc_threads (id, type, title, url, repo, project_dir, status, summary,
-			source_ref, created_at, paused_at, completed_at, updated_at)
-			VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, NULLIF(?, ''),
-			NULLIF(?, ''), ?, ?, ?, ?)`,
-			t.ID, t.Type, t.Title, t.URL, t.Repo, t.ProjectDir, t.Status, t.Summary,
-			"", createdAt, pausedAt, completedAt, now)
-		if err != nil {
-			return fmt.Errorf("insert thread %s: %w", t.ID, err)
 		}
 	}
 

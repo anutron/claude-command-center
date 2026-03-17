@@ -34,7 +34,6 @@ const (
 	tabNew tab = iota
 	tabResume
 	tabCommand
-	tabThreads
 )
 
 type tabEntry struct {
@@ -126,7 +125,6 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		tabEntry{label: "New Session", plugin: sessPlug, route: "new", ownerSlug: "sessions"},
 		tabEntry{label: "Resume", plugin: sessPlug, route: "resume", ownerSlug: "sessions"},
 		tabEntry{label: "Command Center", plugin: ccPlug, route: "commandcenter", ownerSlug: "commandcenter"},
-		tabEntry{label: "Threads", plugin: ccPlug, route: "commandcenter/threads", ownerSlug: "commandcenter"},
 	)
 	// Track which external plugins were loaded (started at boot).
 	loadedExtSlugs := map[string]bool{}
@@ -180,9 +178,6 @@ func (m *Model) rebuildTabs() {
 	var filtered []tabEntry
 	for _, t := range m.allTabs {
 		if !m.cfg.PluginEnabled(t.ownerSlug) {
-			continue
-		}
-		if t.route == "commandcenter/threads" && !m.cfg.Threads.Enabled {
 			continue
 		}
 		filtered = append(filtered, t)

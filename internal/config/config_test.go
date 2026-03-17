@@ -210,8 +210,6 @@ github:
     username: myuser
 todos:
     enabled: true
-threads:
-    enabled: false
 granola:
     enabled: false
 slack:
@@ -324,8 +322,6 @@ github:
     username: ""
 todos:
     enabled: true
-threads:
-    enabled: false
 granola:
     enabled: false
 slack:
@@ -357,9 +353,6 @@ external_plugins:
 	}
 	if cfg2.Name != "Test Center" {
 		t.Errorf("Name: got %q, want %q", cfg2.Name, "Test Center")
-	}
-	if cfg2.Threads.Enabled != false {
-		t.Error("Threads.Enabled should still be false")
 	}
 	if len(cfg2.ExternalPlugins) != 1 {
 		t.Errorf("ExternalPlugins: got %d, want 1", len(cfg2.ExternalPlugins))

@@ -62,24 +62,6 @@ func migrateSchema(db *sql.DB) error {
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_todos_source_ref
 			ON cc_todos(source_ref) WHERE source_ref IS NOT NULL AND source_ref != '';
 
-		CREATE TABLE IF NOT EXISTS cc_threads (
-			id TEXT PRIMARY KEY,
-			type TEXT NOT NULL DEFAULT 'manual',
-			title TEXT NOT NULL,
-			url TEXT,
-			repo TEXT,
-			project_dir TEXT,
-			status TEXT NOT NULL DEFAULT 'active',
-			summary TEXT,
-			source_ref TEXT,
-			created_at TEXT NOT NULL,
-			paused_at TEXT,
-			completed_at TEXT,
-			updated_at TEXT NOT NULL
-		);
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_threads_source_ref
-			ON cc_threads(source_ref) WHERE source_ref IS NOT NULL AND source_ref != '';
-
 		CREATE TABLE IF NOT EXISTS cc_calendar_cache (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			day TEXT NOT NULL,

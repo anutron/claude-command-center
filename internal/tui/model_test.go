@@ -18,7 +18,6 @@ func testSetup(t *testing.T) *config.Config {
 		Name:    "Test Center",
 		Palette: "aurora",
 		Todos:   config.TodosConfig{Enabled: true},
-		Threads: config.ThreadsConfig{Enabled: true},
 	}
 }
 
@@ -41,8 +40,8 @@ func TestNewModel(t *testing.T) {
 	if m.Launch != nil {
 		t.Error("expected Launch to be nil initially")
 	}
-	if len(m.tabs) != 5 {
-		t.Errorf("expected 5 tabs, got %d", len(m.tabs))
+	if len(m.tabs) != 4 {
+		t.Errorf("expected 4 tabs, got %d", len(m.tabs))
 	}
 }
 
@@ -69,24 +68,18 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 		t.Errorf("expected tabCommand after two tabs, got %d", m.activeTab)
 	}
 
+	// Settings tab (index 3)
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
-	if m.activeTab != tabThreads {
-		t.Errorf("expected tabThreads after three tabs, got %d", m.activeTab)
-	}
-
-	// Settings tab (index 4)
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	m = result.(Model)
-	if m.activeTab != 4 {
-		t.Errorf("expected tab 4 (Settings) after four tabs, got %d", m.activeTab)
+	if m.activeTab != 3 {
+		t.Errorf("expected tab 3 (Settings) after three tabs, got %d", m.activeTab)
 	}
 
 	// Wrap back to tabNew
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
 	if m.activeTab != tabNew {
-		t.Errorf("expected tabNew after five tabs (wrap), got %d", m.activeTab)
+		t.Errorf("expected tabNew after four tabs (wrap), got %d", m.activeTab)
 	}
 }
 
@@ -134,14 +127,6 @@ func TestViewDoesNotPanic(t *testing.T) {
 		t.Error("expected non-empty view for command tab")
 	}
 
-	// Threads tab
-	prev = m.activeTab
-	m.activeTab = tabThreads
-	m.activateTab(prev)
-	v = m.View()
-	if v == "" {
-		t.Error("expected non-empty view for threads tab")
-	}
 }
 
 func TestStylesFromPalette(t *testing.T) {
@@ -213,15 +198,12 @@ func TestPluginTabMapping(t *testing.T) {
 	if m.tabs[1].plugin.Slug() != "sessions" {
 		t.Errorf("expected tab 1 to be sessions, got %s", m.tabs[1].plugin.Slug())
 	}
-	// Next two should be commandcenter
+	// Next should be commandcenter
 	if m.tabs[2].plugin.Slug() != "commandcenter" {
 		t.Errorf("expected tab 2 to be commandcenter, got %s", m.tabs[2].plugin.Slug())
 	}
-	if m.tabs[3].plugin.Slug() != "commandcenter" {
-		t.Errorf("expected tab 3 to be commandcenter, got %s", m.tabs[3].plugin.Slug())
-	}
 	// Last tab should be settings
-	if m.tabs[4].plugin.Slug() != "settings" {
-		t.Errorf("expected tab 4 to be settings, got %s", m.tabs[4].plugin.Slug())
+	if m.tabs[3].plugin.Slug() != "settings" {
+		t.Errorf("expected tab 3 to be settings, got %s", m.tabs[3].plugin.Slug())
 	}
 }

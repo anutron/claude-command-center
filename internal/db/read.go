@@ -22,12 +22,6 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 	}
 	cc.Todos = todos
 
-	threads, err := dbLoadThreads(db)
-	if err != nil {
-		return nil, fmt.Errorf("load threads: %w", err)
-	}
-	cc.Threads = threads
-
 	cal, err := dbLoadCalendar(db)
 	if err != nil {
 		return nil, fmt.Errorf("load calendar: %w", err)
@@ -104,46 +98,6 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		todos = append(todos, t)
 	}
 	return todos, rows.Err()
-}
-
-func dbLoadThreads(db *sql.DB) ([]Thread, error) {
-	rows, err := db.Query(`SELECT id, type, title, url, repo, project_dir, status, summary,
-		created_at, paused_at, completed_at
-		FROM cc_threads ORDER BY created_at ASC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var threads []Thread
-	for rows.Next() {
-		var t Thread
-		var createdStr string
-		var url, repo, projDir, summary sql.NullString
-		var pausedStr, completedStr sql.NullString
-
-		err := rows.Scan(&t.ID, &t.Type, &t.Title, &url, &repo, &projDir,
-			&t.Status, &summary, &createdStr, &pausedStr, &completedStr)
-		if err != nil {
-			return nil, err
-		}
-
-		t.URL = url.String
-		t.Repo = repo.String
-		t.ProjectDir = projDir.String
-		t.Summary = summary.String
-		t.CreatedAt = ParseTime(createdStr)
-		if pausedStr.Valid {
-			pt := ParseTime(pausedStr.String)
-			t.PausedAt = &pt
-		}
-		if completedStr.Valid {
-			ct := ParseTime(completedStr.String)
-			t.CompletedAt = &ct
-		}
-		threads = append(threads, t)
-	}
-	return threads, rows.Err()
 }
 
 func dbLoadCalendar(db *sql.DB) (CalendarData, error) {
