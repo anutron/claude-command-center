@@ -50,7 +50,7 @@ func (p *Plugin) renderDetailViewScrollable(width, height int) string {
 		"  " + hints,
 	}
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
-	return s.PanelBorder.Width(innerWidth).Render(content)
+	return s.PanelBorder.Width(innerWidth).Height(height - 2).Render(content)
 }
 
 // buildDetailBody renders the full detail content for the viewport (no truncation).

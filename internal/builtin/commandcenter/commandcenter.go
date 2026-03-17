@@ -713,7 +713,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 
 	if p.detailView && p.cc != nil {
 		if todo := p.detailTodo(); todo != nil {
-			return p.renderDetailViewScrollable(viewWidth, viewHeight)
+			return p.renderDetailViewScrollable(viewWidth, height)
 		}
 		// Notice showing but no more active todos — render just the notice
 		if p.detailNotice != "" {
