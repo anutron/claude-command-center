@@ -54,6 +54,26 @@ func CleanJSON(s string) string {
 	s = strings.TrimPrefix(s, "```json")
 	s = strings.TrimPrefix(s, "```")
 	s = strings.TrimSuffix(s, "```")
+	s = strings.TrimSpace(s)
+	// Extract the first JSON value if the LLM appended explanatory text.
+	// Look for array [...] or object {...} boundaries.
+	if i := strings.IndexAny(s, "[{"); i >= 0 {
+		open, close := s[i], byte(']')
+		if open == '{' {
+			close = '}'
+		}
+		depth := 0
+		for j := i; j < len(s); j++ {
+			if s[j] == open {
+				depth++
+			} else if s[j] == close {
+				depth--
+				if depth == 0 {
+					return s[i : j+1]
+				}
+			}
+		}
+	}
 	return strings.TrimSpace(s)
 }
 
