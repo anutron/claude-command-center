@@ -174,6 +174,9 @@ func migrateSchema(db *sql.DB) error {
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN source_context TEXT`)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN source_context_at TEXT`)
 
+	// Drop the threads table (feature removed, preserved on threads-feature branch)
+	_, _ = db.Exec(`DROP TABLE IF EXISTS cc_threads`)
+
 	// BUG-101: Backfill display_id for existing rows that have display_id=0.
 	// The original backfill only handled NULL, but rows may have ended up with 0
 	// (e.g. explicit default or COALESCE in reads masking NULL). This assigns
