@@ -52,7 +52,7 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 	// cycle (lastSuccess is recorded at sync completion, not fetch start).
 	var lastSuccess time.Time
 	if s.DB != nil {
-		if ss, err := db.DBLoadSourceSync(s.DB, "slack"); err == nil && ss.LastSuccess != nil {
+		if ss, err := db.DBLoadSourceSync(s.DB, "slack"); err == nil && ss != nil && ss.LastSuccess != nil {
 			lastSuccess = ss.LastSuccess.Add(-2 * time.Minute)
 			log.Printf("slack: last successful sync: %s (with 2min overlap: %s)",
 				ss.LastSuccess.Format(time.RFC3339), lastSuccess.Format(time.RFC3339))
@@ -277,16 +277,16 @@ func slackAPIGet(ctx context.Context, token, endpoint string, params url.Values,
 	return fmt.Errorf("%s: rate limited after retries", endpoint)
 }
 
-// fetchChannels retrieves channels the user is a member of (public + private only).
-// DMs and group DMs are handled by the search.messages fallback to avoid fetching
-// history from thousands of conversations.
+// fetchChannels retrieves channels the user is a member of, including DMs and group DMs.
+// The activity filter in fetchSlackCandidates ensures only recently-active conversations
+// have their history fetched.
 func fetchChannels(ctx context.Context, token string) ([]slackChannel, error) {
 	var allChannels []slackChannel
 	cursor := ""
 
 	for {
 		params := url.Values{
-			"types":            {"public_channel,private_channel"},
+			"types":            {"public_channel,private_channel,im,mpim"},
 			"exclude_archived": {"true"},
 			"limit":            {"999"},
 		}
@@ -397,20 +397,24 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 	log.Printf("slack: %d channels found (public/private=%d, im=%d, mpim=%d, other=%d)",
 		len(channels), nPublic, nIM, nMpim, nPrivate)
 
-	// Look back 2 days for recent activity
-	cutoff := time.Now().Add(-2 * 24 * time.Hour)
+	// Look back 15 hours for recent activity
+	cutoff := time.Now().Add(-15 * time.Hour)
 	oldest := strconv.FormatInt(cutoff.Unix(), 10)
 
 	// Filter to channels with recent activity to avoid hammering the API.
 	// Slack's updated field is in milliseconds, not seconds.
+	// Filter to channels with recent activity. Slack doesn't reliably populate
+	// the updated field for IM channels — it often reflects when the channel was
+	// created rather than last message time. Always include all IMs; the oldest
+	// parameter on history calls ensures we only get recent messages back.
 	cutoffMs := float64(cutoff.UnixMilli())
 	var recentChannels []slackChannel
 	for _, ch := range channels {
-		if ch.Updated >= cutoffMs {
+		if ch.IsIM || ch.Updated >= cutoffMs {
 			recentChannels = append(recentChannels, ch)
 		}
 	}
-	log.Printf("slack: %d/%d channels have recent activity (last 2 days)", len(recentChannels), len(channels))
+	log.Printf("slack: %d/%d channels pass activity filter (last 15h + all %d IMs)", len(recentChannels), len(channels), nIM)
 
 	var candidates []slackCandidate
 	for _, ch := range recentChannels {
