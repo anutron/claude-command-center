@@ -17,7 +17,7 @@ func (p *Plugin) renderSessionViewer(width, height int) string {
 	if width > 0 && width < viewWidth {
 		viewWidth = width
 	}
-	viewHeight := height - 14
+	viewHeight := height
 	if viewHeight < 10 {
 		viewHeight = 10
 	}
@@ -179,9 +179,10 @@ func (p *Plugin) buildSessionViewerContent(s *ccStyles) string {
 		return s.DescMuted.Render("Waiting for events...")
 	}
 
+	wrapWidth := p.sessionViewerVP.Width
 	var lines []string
 	for _, ev := range events {
-		line := renderEventLine(ev, s)
+		line := renderEventLine(ev, s, wrapWidth)
 		if line != "" {
 			lines = append(lines, line)
 		}

@@ -36,7 +36,7 @@ Events are parsed from the Claude CLI `--output-format stream-json` stdout into 
 
 | Type | Icon | Color | Description |
 |------|------|-------|-------------|
-| `assistant_text` | `◆` | Cyan | Assistant response text (truncated to 200 chars for display) |
+| `assistant_text` | `◆` | Cyan | Assistant response text (word-wrapped to viewport width) |
 | `tool_use` | `▸` | Yellow | Tool invocation with tool name |
 | `tool_result` | `◂` | Green/Red | Tool result (green for success, red for error) |
 | `error` | `⚠` | Red | Error or blocked state, labeled "BLOCKED:" |
@@ -47,11 +47,11 @@ Events are parsed from the Claude CLI `--output-format stream-json` stdout into 
 
 Raw stream-JSON events are mapped to `sessionEvent` based on the `type` field:
 
-- `"assistant"` — iterates `content` array for `text` blocks (becomes `assistant_text`) or `tool_use` blocks
+- `"assistant"` — looks in `message.content` (stream-json nests under `message`), falls back to top-level `content`; iterates array for `text` blocks (becomes `assistant_text`) or `tool_use` blocks
 - `"tool_result"` — extracts `tool_use_id`, content (string or array), and `is_error` flag
 - `"result"` — maps to `assistant_text` (final output from the agent)
 - `"error"` — extracts error message from `error.message` or top-level `message`
-- `"user"` — extracts text from `message.content`
+- `"user"` — `message.content` can be a string (plain text) or array of content blocks; text blocks become `user` events, `tool_result` blocks become `tool_result` events; pure tool-result-only user messages are shown as tool results (not empty "You" lines)
 - `"system"` — extracts text from `message`, falls back to `subtype`, then truncated `session_id`; skipped if no displayable content
 
 ## Key Bindings
@@ -90,13 +90,15 @@ The agent process emits one JSON object per line on stdout. A background gorouti
 
 ### Input: `--input-format stream-json`
 
-Messages are sent to the agent via `sendUserMessage`, which writes NDJSON to the process's stdin pipe:
+The initial prompt and follow-up messages are both sent via stdin as NDJSON:
 
 ```json
 {"type": "user", "message": {"role": "user", "content": "<text>"}}
 ```
 
-After sending, `sendUserMessage` clears the blocked status (if `sess.Status == "blocked"`, resets to `"active"`). A local `sessionEvent{Type: "user"}` is appended to `sess.Events` for display in the viewer.
+**Initial prompt delivery:** The prompt is NOT passed as a CLI positional argument (`-- prompt`). With `--input-format stream-json`, the CLI expects the initial prompt via stdin. `launchAgent` sends the enhanced prompt as the first stdin message immediately after `cmd.Start()`.
+
+**Follow-up messages:** `sendUserMessage` writes the same NDJSON format to stdin and clears the blocked status (if `sess.Status == "blocked"`, resets to `"active"`). A local `sessionEvent{Type: "user"}` is appended to `sess.Events` for display in the viewer.
 
 ### Event Channel Pattern
 
@@ -141,8 +143,10 @@ Shows three parts joined by `|`:
 
 - Chrome overhead: header(1) + blank(1) + statusLine(1) + divider(1) + blank(1) + viewport + blank(1) + hints(1) + border(2) = 8 lines
 - When inputting, add 4 lines for label(1) + textarea(2) + blank(1)
+- `viewHeight` = full content height from the host (no additional subtraction — the host already accounts for tabs/header)
 - Viewport height = `viewHeight - 8 - inputChrome`, minimum 3
 - Content max width from `ui.ContentMaxWidth`, inner width = maxWidth - 4
+- Event text wraps at `viewportWidth - 14` chars (14 = icon + label prefix width)
 
 ## Auto-Scroll Behavior
 

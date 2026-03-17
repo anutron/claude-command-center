@@ -338,7 +338,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 	// Set up quick todo textarea
 	qta := textarea.New()
-	qta.Placeholder = "One todo per line (ctrl+d submit, esc cancel)"
+	qta.Placeholder = "What do you need to do? (ctrl+d submit, esc cancel)"
 	qta.CharLimit = 0
 	qta.SetWidth(80)
 	qta.SetHeight(5)
@@ -743,7 +743,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", flash)
 		}
 		if p.addingTodoQuick {
-			inputLine := p.styles.SectionHeader.Render("QUICK TODO (one per line, ctrl+d submit, esc cancel):") + "\n" + p.quickTodoTextArea.View()
+			inputLine := p.styles.SectionHeader.Render("QUICK TODO (ctrl+d submit, esc cancel):") + "\n" + p.quickTodoTextArea.View()
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", inputLine)
 		}
 		if p.addingTodoRich {
@@ -772,7 +772,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", flash)
 	}
 	if p.addingTodoQuick {
-		inputLine := p.styles.SectionHeader.Render("QUICK TODO (one per line, ctrl+d submit, esc cancel):") + "\n" + p.quickTodoTextArea.View()
+		inputLine := p.styles.SectionHeader.Render("QUICK TODO (ctrl+d submit, esc cancel):") + "\n" + p.quickTodoTextArea.View()
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", inputLine)
 	}
 	if p.addingTodoRich {

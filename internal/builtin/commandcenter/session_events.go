@@ -38,8 +38,9 @@ func parseSessionEvent(raw map[string]interface{}) []sessionEvent {
 
 	switch eventType {
 	case "assistant":
-		content, ok := raw["content"].([]interface{})
-		if !ok {
+		// Stream-json nests content under "message.content", not top-level "content".
+		content := extractContentArray(raw)
+		if content == nil {
 			return nil
 		}
 		var events []sessionEvent
@@ -114,13 +115,53 @@ func parseSessionEvent(raw map[string]interface{}) []sessionEvent {
 		return []sessionEvent{ev}
 
 	case "user":
-		ev := sessionEvent{Type: "user"}
+		// User events in stream-json: message.content can be a string or an array
+		// of content blocks (tool_result, text, etc.).
 		if msg, ok := raw["message"].(map[string]interface{}); ok {
-			if content, ok := msg["content"].(string); ok {
-				ev.Text = content
+			switch c := msg["content"].(type) {
+			case string:
+				if c != "" {
+					return []sessionEvent{{Type: "user", Text: c}}
+				}
+			case []interface{}:
+				var events []sessionEvent
+				for _, block := range c {
+					bm, ok := block.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					switch bm["type"] {
+					case "text":
+						if t, ok := bm["text"].(string); ok && t != "" {
+							events = append(events, sessionEvent{Type: "user", Text: t})
+						}
+					case "tool_result":
+						ev := sessionEvent{Type: "tool_result"}
+						ev.ResultToolID, _ = bm["tool_use_id"].(string)
+						// tool_result content can be string or nested
+						switch rc := bm["content"].(type) {
+						case string:
+							ev.ResultText = rc
+						case []interface{}:
+							for _, rb := range rc {
+								if rbm, ok := rb.(map[string]interface{}); ok {
+									if t, ok := rbm["text"].(string); ok {
+										ev.ResultText = t
+										break
+									}
+								}
+							}
+						}
+						events = append(events, ev)
+					}
+				}
+				if len(events) > 0 {
+					return events
+				}
 			}
 		}
-		return []sessionEvent{ev}
+		// No displayable content — skip.
+		return nil
 
 	case "system":
 		ev := sessionEvent{Type: "system"}
@@ -143,6 +184,20 @@ func parseSessionEvent(raw map[string]interface{}) []sessionEvent {
 	return nil
 }
 
+// extractContentArray gets the content array from a stream-json event.
+// Stream-json nests content under "message.content"; falls back to top-level "content".
+func extractContentArray(raw map[string]interface{}) []interface{} {
+	if msg, ok := raw["message"].(map[string]interface{}); ok {
+		if content, ok := msg["content"].([]interface{}); ok {
+			return content
+		}
+	}
+	if content, ok := raw["content"].([]interface{}); ok {
+		return content
+	}
+	return nil
+}
+
 // truncateToolInput returns a short string representation of tool input for display.
 func truncateToolInput(input map[string]interface{}) string {
 	// Show the first key=value pair or a short summary
@@ -155,12 +210,20 @@ func truncateToolInput(input map[string]interface{}) string {
 }
 
 // renderEventLine renders a single session event as a styled line for the viewer.
-func renderEventLine(ev sessionEvent, styles *ccStyles) string {
+// wrapWidth is the available character width for text wrapping (0 = no wrap).
+func renderEventLine(ev sessionEvent, styles *ccStyles, wrapWidth int) string {
+	// labelWidth accounts for "icon label  " prefix (~14 chars).
+	const labelWidth = 14
+	textWidth := wrapWidth - labelWidth
+	if textWidth < 20 {
+		textWidth = 20
+	}
+
 	switch ev.Type {
 	case "assistant_text":
 		icon := lipgloss.NewStyle().Foreground(styles.ColorCyan).Bold(true).Render("◆")
 		label := lipgloss.NewStyle().Foreground(styles.ColorCyan).Bold(true).Render("Assistant")
-		text := truncateForViewer(ev.Text, 200)
+		text := wrapText(ev.Text, textWidth)
 		return fmt.Sprintf("%s %s  %s", icon, label, text)
 
 	case "tool_use":
@@ -182,41 +245,24 @@ func renderEventLine(ev sessionEvent, styles *ccStyles) string {
 	case "error":
 		icon := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true).Render("⚠")
 		label := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true).Render("BLOCKED:")
-		text := truncateForViewer(ev.Text, 200)
+		text := wrapText(ev.Text, textWidth)
 		return fmt.Sprintf("%s %s %s", icon, label, text)
 
 	case "user":
 		icon := lipgloss.NewStyle().Foreground(styles.ColorPurple).Render("▷")
 		label := lipgloss.NewStyle().Foreground(styles.ColorPurple).Bold(true).Render("You")
-		text := truncateForViewer(ev.Text, 200)
+		text := wrapText(ev.Text, textWidth)
 		return fmt.Sprintf("%s %s  %s", icon, label, text)
 
 	case "system":
 		icon := lipgloss.NewStyle().Foreground(styles.ColorMuted).Render("●")
 		label := lipgloss.NewStyle().Foreground(styles.ColorMuted).Render("System")
-		text := truncateForViewer(ev.Text, 200)
+		text := wrapText(ev.Text, textWidth)
 		return fmt.Sprintf("%s %s  %s", icon, label, text)
 
 	default:
 		return ""
 	}
-}
-
-// truncateForViewer truncates text to maxLen for display, replacing newlines with spaces.
-func truncateForViewer(s string, maxLen int) string {
-	// Replace newlines with spaces for single-line display
-	cleaned := ""
-	for _, r := range s {
-		if r == '\n' || r == '\r' {
-			cleaned += " "
-		} else {
-			cleaned += string(r)
-		}
-	}
-	if len(cleaned) > maxLen {
-		return cleaned[:maxLen] + "..."
-	}
-	return cleaned
 }
 
 // listenForAgentEvent returns a tea.Cmd that blocks on the event channel and

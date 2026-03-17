@@ -948,7 +948,7 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 			{"d", "Defer todo to bottom of list"},
 			{"p", "Promote todo to top of list"},
 			{"c", "Command — tell Claude what to do"},
-			{"t", "Quick add todos (one per line)"},
+			{"t", "Quick add todo"},
 			{"s", "Schedule time block for todo"},
 			{"/", "Search/filter todos"},
 			{"y", "Accept todo (triage)"},

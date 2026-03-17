@@ -126,8 +126,8 @@ ccc update-todo --id %s --session-summary "$(cat <<'SUMMARY'
 SUMMARY
 )"`, qs.Prompt, qs.TodoID)
 
-		args = append(args, "--", enhancedPrompt)
-
+		// Don't pass prompt as positional arg — with --input-format stream-json,
+		// the CLI expects the initial prompt via stdin, not as a CLI argument.
 		cmd := exec.Command("claude", args...)
 		if qs.ProjectDir != "" {
 			cmd.Dir = qs.ProjectDir
@@ -148,6 +148,19 @@ SUMMARY
 		if err := cmd.Start(); err != nil {
 			logSessionError(qs.TodoID, "start: %v", err)
 			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
+		}
+
+		// Send the initial prompt via stdin as a stream-json user message.
+		initMsg := map[string]interface{}{
+			"type": "user",
+			"message": map[string]interface{}{
+				"role":    "user",
+				"content": enhancedPrompt,
+			},
+		}
+		if initData, err := json.Marshal(initMsg); err == nil {
+			initData = append(initData, '\n')
+			stdin.Write(initData)
 		}
 
 		sess := &agentSession{

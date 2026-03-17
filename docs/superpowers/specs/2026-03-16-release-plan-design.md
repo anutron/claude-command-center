@@ -24,7 +24,12 @@ Prepare CCC for distribution to coworkers as both a usable terminal dashboard an
 Human-facing pitch document. Not a setup guide.
 
 - What CCC is and why it exists (terminal dashboard aggregating calendar, GitHub, todos, meetings, Slack, Gmail)
-- Feature highlights (text descriptions; screenshots optional — capture if convenient, skip if not)
+- Big selling points to hit:
+  - Fast access to Claude where you work
+  - Bookmark and resume sessions
+  - Automated todo list management
+  - Agentic todo list resolution
+- Feature highlights with screenshots (user will provide screenshots; leave placeholders in the README for each feature)
 - Architecture at a glance: TUI binary (`ccc`) + data fetcher (`ccc-refresh`) + plugin system
 - Quick pointer to AGENTS.md for setup
 - No installation details — AGENTS.md owns that
@@ -41,6 +46,8 @@ The entry point for any Claude agent cloning the repo. Must be followable end-to
 - Links to per-source setup docs and plugin developer guide
 
 ### docs/sources/{calendar,github,gmail,slack,granola}.md
+
+Listed and linked in the README as built-in connectors.
 
 One file per data source. Each follows the same structure:
 
@@ -91,16 +98,16 @@ For each: verify current state, fix or document with rationale.
 
 ## Phase 3: Clean Environment QA
 
-Test the full experience a coworker's Claude would have:
+Claude guides the user through this QA process step-by-step (Claude does not perform it autonomously):
 
 - **Prerequisite:** Threads removal must be merged before QA begins
 - **"Clean environment"** = a directory that has never contained CCC, on a machine with Go 1.25+ and Node 18+ installed. Do not reuse existing `~/.config/ccc/`
-- Fresh `git clone` → `make install` → `ccc setup`
-- Verify system requirement error messages are clear (missing Go, Node, etc.)
-- Walk through adding one data source (GitHub via `gh auth login` is simplest)
-- Launch TUI, confirm it works with zero sources and with one source configured
-- Load the pomodoro example plugin, confirm external plugin flow works
-- Follow AGENTS.md end-to-end as an LLM would — verify every step is unambiguous
+- Guide user through: fresh `git clone` → `make install` → `ccc setup`
+- Ask user to verify system requirement error messages are clear (missing Go, Node, etc.)
+- Walk user through adding one data source (GitHub via `gh auth login` is simplest)
+- Ask user to launch TUI, confirm it works with zero sources and with one source configured
+- Guide user through loading the pomodoro example plugin, confirm external plugin flow works
+- Ask user to follow AGENTS.md end-to-end as an LLM would — verify every step is unambiguous
 - Issues found feed back into docs or get fixed directly
 
 ## Phase 4: Release
