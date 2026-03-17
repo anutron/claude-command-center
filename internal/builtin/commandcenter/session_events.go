@@ -124,7 +124,19 @@ func parseSessionEvent(raw map[string]interface{}) []sessionEvent {
 
 	case "system":
 		ev := sessionEvent{Type: "system"}
+		// Try "message" first, then fall back to describing the event from other fields.
 		ev.Text, _ = raw["message"].(string)
+		if ev.Text == "" {
+			if subtype, ok := raw["subtype"].(string); ok && subtype != "" {
+				ev.Text = subtype
+			} else if sid, ok := raw["session_id"].(string); ok && sid != "" {
+				ev.Text = "session " + sid[:min(8, len(sid))]
+			}
+		}
+		// Skip system events with no displayable content.
+		if ev.Text == "" {
+			return nil
+		}
 		return []sessionEvent{ev}
 	}
 

@@ -242,7 +242,7 @@ func TestParseSessionEvent_User(t *testing.T) {
 	}
 }
 
-func TestParseSessionEvent_System(t *testing.T) {
+func TestParseSessionEvent_SystemWithMessage(t *testing.T) {
 	raw := map[string]interface{}{
 		"type":    "system",
 		"message": "session started",
@@ -258,6 +258,38 @@ func TestParseSessionEvent_System(t *testing.T) {
 	}
 	if ev.Text != "session started" {
 		t.Errorf("unexpected text: %q", ev.Text)
+	}
+}
+
+func TestParseSessionEvent_SystemWithSessionID(t *testing.T) {
+	// Real Claude CLI format — system events carry session_id, not message
+	raw := map[string]interface{}{
+		"type":       "system",
+		"session_id": "8fa60ce5-1234-5678-abcd-ef0123456789",
+	}
+
+	events := parseSessionEvent(raw)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	ev := events[0]
+	if ev.Type != "system" {
+		t.Errorf("expected type system, got %q", ev.Type)
+	}
+	if ev.Text != "session 8fa60ce5" {
+		t.Errorf("unexpected text: %q", ev.Text)
+	}
+}
+
+func TestParseSessionEvent_SystemEmpty(t *testing.T) {
+	// System event with no message or session_id should be skipped
+	raw := map[string]interface{}{
+		"type": "system",
+	}
+
+	events := parseSessionEvent(raw)
+	if len(events) != 0 {
+		t.Errorf("expected 0 events for empty system event, got %d", len(events))
 	}
 }
 

@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -132,15 +135,18 @@ SUMMARY
 
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
+			logSessionError(qs.TodoID, "stdout pipe: %v", err)
 			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
 		}
 
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
+			logSessionError(qs.TodoID, "stdin pipe: %v", err)
 			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
 		}
 
 		if err := cmd.Start(); err != nil {
+			logSessionError(qs.TodoID, "start: %v", err)
 			return agentFinishedMsg{todoID: qs.TodoID, exitCode: -1}
 		}
 
@@ -157,6 +163,12 @@ SUMMARY
 		// Background goroutine: read stream-JSON stdout, detect blocking events,
 		// parse events for the live viewer, and signal completion via done channel.
 		go func() {
+			// Open a log file for forensic replay of this session.
+			logFile := openSessionLog(qs.TodoID)
+			if logFile != nil {
+				defer logFile.Close()
+			}
+
 			defer func() {
 				// Close the events channel before waiting so listeners know
 				// no more events will arrive.
@@ -174,6 +186,12 @@ SUMMARY
 				sess.mu.Lock()
 				sess.exitCode = exitCode
 				sess.mu.Unlock()
+
+				// Log the exit code.
+				if logFile != nil {
+					fmt.Fprintf(logFile, "\n--- session exited with code %d at %s ---\n", exitCode, time.Now().Format(time.RFC3339))
+				}
+
 				close(sess.done)
 			}()
 
@@ -184,6 +202,12 @@ SUMMARY
 			sessionIDCaptured := false
 			for scanner.Scan() {
 				line := scanner.Text()
+
+				// Write raw line to log file.
+				if logFile != nil {
+					fmt.Fprintln(logFile, line)
+				}
+
 				// Capture output for summary extraction.
 				sess.mu.Lock()
 				sess.Output.WriteString(line)
@@ -694,4 +718,41 @@ func (p *Plugin) checkAgentProcesses() tea.Cmd {
 		return tea.Batch(cmds...)
 	}
 	return nil
+}
+
+// sessionLogDir returns the directory for session log files.
+func sessionLogDir() string {
+	return filepath.Join(config.DataDir(), "session-logs")
+}
+
+// logSessionError writes a one-line error to the session log directory for
+// launch failures that happen before the goroutine starts.
+func logSessionError(todoID string, format string, args ...interface{}) {
+	dir := sessionLogDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	name := fmt.Sprintf("%s_%s.jsonl", time.Now().Format("2006-01-02T15-04-05"), todoID)
+	f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "--- LAUNCH ERROR at %s: %s ---\n", time.Now().Format(time.RFC3339), fmt.Sprintf(format, args...))
+}
+
+// openSessionLog creates a log file for a headless session's raw stream-json output.
+// Returns nil if the file cannot be created (non-fatal — logging is best-effort).
+func openSessionLog(todoID string) *os.File {
+	dir := sessionLogDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil
+	}
+	name := fmt.Sprintf("%s_%s.jsonl", time.Now().Format("2006-01-02T15-04-05"), todoID)
+	f, err := os.Create(filepath.Join(dir, name))
+	if err != nil {
+		return nil
+	}
+	fmt.Fprintf(f, "--- session started at %s for todo %s ---\n", time.Now().Format(time.RFC3339), todoID)
+	return f
 }

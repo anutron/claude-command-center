@@ -52,7 +52,7 @@ Raw stream-JSON events are mapped to `sessionEvent` based on the `type` field:
 - `"result"` — maps to `assistant_text` (final output from the agent)
 - `"error"` — extracts error message from `error.message` or top-level `message`
 - `"user"` — extracts text from `message.content`
-- `"system"` — extracts text from `message`
+- `"system"` — extracts text from `message`, falls back to `subtype`, then truncated `session_id`; skipped if no displayable content
 
 ## Key Bindings
 
@@ -86,7 +86,7 @@ Raw stream-JSON events are mapped to `sessionEvent` based on the `type` field:
 
 ### Output: `--output-format stream-json`
 
-The agent process emits one JSON object per line on stdout. A background goroutine in `launchAgent` reads these lines, parses them via `parseSessionEvent`, appends to `sess.Events` (mutex-protected), and sends to `sess.EventsCh` (buffered channel, cap 64, non-blocking send).
+The agent process emits one JSON object per line on stdout. A background goroutine in `launchAgent` reads these lines, parses them via `parseSessionEvent`, appends to `sess.Events` (mutex-protected), and sends to `sess.EventsCh` (buffered channel, cap 64, non-blocking send). Every raw line is also teed to a log file for forensic replay (see **Session Logging** below).
 
 ### Input: `--input-format stream-json`
 
@@ -161,6 +161,33 @@ When a todo has a `SessionID` but no active agent session, pressing `r`:
 4. Exits detail view and shows flash message ("Agent resumed for: ..." or "Agent queued for: ...")
 5. Uses default permission and budget from `cfg.Agent`
 
+## Session Logging
+
+Headless sessions write raw stream-json output to disk for forensic replay when the in-memory session is lost (TUI restart, process crash, etc.).
+
+### Log Location
+
+`~/.config/ccc/data/session-logs/{timestamp}_{todoID}.jsonl`
+
+- Timestamp format: `2006-01-02T15-04-05` (filesystem-safe)
+- Directory created on demand via `os.MkdirAll`
+
+### Log Contents
+
+1. **Header line**: `--- session started at {RFC3339} for todo {todoID} ---`
+2. **Raw stdout lines**: every line from the Claude CLI stdout, written verbatim (JSON and non-JSON)
+3. **Footer line**: `--- session exited with code {N} at {RFC3339} ---`
+
+### Launch Failure Logging
+
+If the agent fails before the goroutine starts (stdout pipe, stdin pipe, or `cmd.Start()` errors), a log file is created with a single `--- LAUNCH ERROR ---` line describing the failure.
+
+### Design Decisions
+
+- **Best-effort**: if the log file cannot be created, the session proceeds without logging (non-fatal)
+- **Raw, not parsed**: logs contain the exact stream-json output, not the parsed `sessionEvent` structs, so nothing is lost in translation
+- **No automatic cleanup**: logs accumulate until manually deleted (future: age-based rotation)
+
 ## Test Cases
 
 - `w` on a todo with active session opens session viewer (`sessionViewerActive = true`)
@@ -178,6 +205,8 @@ When a todo has a `SessionID` but no active agent session, pressing `r`:
 - `sendUserMessage` writes NDJSON to stdin pipe and clears blocked status
 - `sendUserMessage` appends a user event to `sess.Events` for display
 - `parseSessionEvent` correctly maps assistant, tool_use, tool_result, result, error, user, system types
+- System events with `session_id` (no `message`) display truncated session ID
+- System events with no displayable content are skipped (return nil)
 - `renderEventLine` renders correct icons and colors for each event type
 - Auto-scroll follows bottom on new events when enabled
 - Auto-scroll does not follow when disabled (user scrolled up)
