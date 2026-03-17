@@ -24,7 +24,7 @@ Prepare CCC for distribution to coworkers as both a usable terminal dashboard an
 Human-facing pitch document. Not a setup guide.
 
 - What CCC is and why it exists (terminal dashboard aggregating calendar, GitHub, todos, meetings, Slack, Gmail)
-- Feature highlights with screenshots
+- Feature highlights (text descriptions; screenshots optional — capture if convenient, skip if not)
 - Architecture at a glance: TUI binary (`ccc`) + data fetcher (`ccc-refresh`) + plugin system
 - Quick pointer to AGENTS.md for setup
 - No installation details — AGENTS.md owns that
@@ -36,7 +36,8 @@ The entry point for any Claude agent cloning the repo. Must be followable end-to
 - System requirements: Go 1.25+, Node.js 18+, npm, macOS (darwin), git
 - Step-by-step: `git clone` → `make install` → `ccc setup`
 - What to expect on first launch (empty data sources, how to add them)
-- Troubleshooting common failures (missing dependencies, build errors, permission issues)
+- Minimal `config.yaml` example showing structure with zero sources (fallback if `ccc setup` fails)
+- Troubleshooting common failures (missing dependencies, build errors, `go mod download` network issues, permission issues)
 - Links to per-source setup docs and plugin developer guide
 
 ### docs/sources/{calendar,github,gmail,slack,granola}.md
@@ -64,7 +65,7 @@ Plugin developer guide for coworkers who want to extend CCC.
 - Protocol reference: every message type in both directions (host→plugin, plugin→host)
 - Two-phase init: init without config → plugin declares config_scopes → host sends scoped config
 - "Build your first plugin" tutorial based on the pomodoro example
-- Python SDK reference (bundled in repo)
+- Python helper module reference (`examples/pomodoro/ccc_plugin.py` — minimal wrapper, not a full SDK)
 - Testing and debugging tips
 - How to register plugins in config.yaml `externalPlugins` section
 
@@ -78,16 +79,23 @@ Re-check the 5 HIGH-severity findings from the March 14 security audit against c
 4. Missing OAuth state validation
 5. OAuth server binding to all interfaces
 
-For each:
-- Verify whether the issue is still present in current code
-- Fix if quick and straightforward
-- Document with rationale if deferring (trusted coworker audience)
+Expected disposition (verify against current code, adjust if needed):
+
+1. **Config file permissions** — likely **defer** (coworkers own their machines)
+2. **Arbitrary SQL via plugin migrations** — likely **defer** (only trusted plugins from coworkers)
+3. **Unconstrained plugin launch paths** — likely **defer** (same trust model)
+4. **Missing OAuth state validation** — likely **fix** (low effort, real attack surface even among coworkers)
+5. **OAuth binding to all interfaces** — likely **fix** (low effort, real attack surface)
+
+For each: verify current state, fix or document with rationale.
 
 ## Phase 3: Clean Environment QA
 
 Test the full experience a coworker's Claude would have:
 
-- Fresh `git clone` → `make install` → `ccc setup` on a clean-ish environment
+- **Prerequisite:** Threads removal must be merged before QA begins
+- **"Clean environment"** = a directory that has never contained CCC, on a machine with Go 1.25+ and Node 18+ installed. Do not reuse existing `~/.config/ccc/`
+- Fresh `git clone` → `make install` → `ccc setup`
 - Verify system requirement error messages are clear (missing Go, Node, etc.)
 - Walk through adding one data source (GitHub via `gh auth login` is simplest)
 - Launch TUI, confirm it works with zero sources and with one source configured
