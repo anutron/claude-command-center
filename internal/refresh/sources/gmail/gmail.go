@@ -58,6 +58,7 @@ func (s *GmailSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 		if err != nil {
 			log.Printf("gmail: label todos: %v", err)
 		} else {
+			log.Printf("gmail: %d labeled todos found", len(todos))
 			result.Todos = todos
 			s.freshLabeledIDs = labeledIDs
 		}
@@ -68,11 +69,18 @@ func (s *GmailSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 			if err != nil {
 				log.Printf("gmail: resolve label ID: %v", err)
 			} else {
+				log.Printf("gmail: scanning sent mail for commitments (label ID: %s)", labelID)
 				if err := detectAndLabelCommitments(ctx, s.llm, client, labelID); err != nil {
 					log.Printf("gmail: commitment detection: %v", err)
+				} else {
+					log.Printf("gmail: commitment detection complete")
 				}
 			}
+		} else if s.cfg.Advanced && s.llm == nil {
+			log.Printf("gmail: advanced mode enabled but LLM is nil — skipping commitment detection")
 		}
+	} else {
+		log.Printf("gmail: no todo_label configured — skipping label sync")
 	}
 
 	return result, nil
