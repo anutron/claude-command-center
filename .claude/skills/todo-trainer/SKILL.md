@@ -86,6 +86,7 @@ Description: {description}
 Project skills: {skill names and descriptions, comma-separated}
 Routing preferences — use for: {use_for rules, semicolon-separated}
 Routing preferences — not for: {not_for rules, semicolon-separated}
+Prompt generation hint: {prompt_hint, if set}
 {end for each}
 
 ## Global Skills (available in ALL projects)
@@ -110,6 +111,7 @@ Note: Do not prefer a project just because it has skills that are also available
    - Include relevant context from the todo detail
    - Mention who is waiting (for attribution)
    - Suggest what "done" looks like
+   - **Follow the project's prompt_hint if one is set** — this takes priority over generic prompt style
 
 Return ONLY JSON. If rejecting:
 {"project_dir": "REJECT", "proposed_prompt": "", "reasoning": "This is [name]'s commitment, not Aaron's — [evidence]"}
@@ -155,9 +157,10 @@ Then ask:
 
 ### Step 7: Handle Corrections
 
-Corrections fall into two categories:
+Corrections fall into three categories:
 - **Routing corrections** — wrong project was chosen → apply routing rules via `ccc paths --add-rule`
-- **Prompt/behavior corrections** — right project but the prompt content needs improvement → update `todo_instructions.md`
+- **Prompt hint corrections** — right project but the prompt style/approach is wrong for this type of task → set a `prompt_hint` via `ccc paths --add-rule --prompt-hint`
+- **General behavior corrections** — broad prompt behavior changes not tied to a specific project → update `todo_instructions.md`
 
 **If the user says it's correct:** Say "Great, no changes needed." and stop.
 
@@ -187,7 +190,39 @@ Corrections fall into two categories:
 
 5. **On edit:** Let the user modify the rule text, then apply.
 
-**If the user gives prompt/behavior feedback (right project, but prompt needs work):**
+**If the user gives prompt style/approach feedback (right project, but prompt should be written differently):**
+
+This is the most common correction. The user is saying "for tasks that go to this project, the prompt should always do X" — e.g., "always use the /help-doc skill", "always include the source URL", etc.
+
+1. Read the current routing rules to check for an existing `prompt_hint`:
+   ```bash
+   ccc paths --json | jq '.paths[] | select(.path == "/path/to/project") | .routing_rules.prompt_hint'
+   ```
+
+2. Compose a new `prompt_hint` that:
+   - Is concise and durable (not specific to this one todo)
+   - Describes HOW prompts should be generated for this project
+   - Incorporates any existing hint content (merge, don't replace blindly)
+
+3. Show the proposed hint:
+   ```
+   Proposed prompt_hint for /path/to/project:
+   """
+   Always invoke /help-doc <url> where <url> is the source URL from the task.
+   When prompted to publish, say yes.
+   """
+   ```
+
+4. Ask: "Set this prompt hint? (yes/no/edit)"
+
+5. **On confirm:** Run:
+   ```bash
+   ccc paths --add-rule "/path/to/project" --prompt-hint "the hint text"
+   ```
+
+6. **On edit:** Let the user modify the hint text, then apply.
+
+**If the user gives general behavior feedback (not project-specific):**
 
 1. Read the current `todo_instructions.md` file in the project root
 2. Propose an addition or edit to the instructions based on the user's feedback

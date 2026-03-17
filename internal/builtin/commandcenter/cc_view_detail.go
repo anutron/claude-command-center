@@ -231,11 +231,15 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 	// we build the section content later after the height budget is computed.
 	var summarySection string
 
-	// Command input section (when in commandInput mode)
+	// Command input section (when in commandInput or trainingInput mode)
 	var commandSection string
-	if detailMode == "commandInput" {
+	if detailMode == "commandInput" || detailMode == "trainingInput" {
 		divider := s.DescMuted.Render(strings.Repeat("\u2500", innerWidth-2))
-		inputLabel := s.DescMuted.Render("Tell me what changed:")
+		label := "Tell me what changed:"
+		if detailMode == "trainingInput" {
+			label = "Train routing & prompt rules (applies to all future todos):"
+		}
+		inputLabel := s.DescMuted.Render(label)
 		// Use PaddingLeft to indent all textarea lines consistently (not just the first).
 		// String concatenation ("  " + multiLineStr) only indents the first line.
 		indentedInput := lipgloss.NewStyle().PaddingLeft(2).Render(commandInputView)
@@ -386,7 +390,7 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		if hasActiveSession {
 			baseHints += " \u00b7 w watch"
 		}
-		baseHints += " \u00b7 c command \u00b7 esc back"
+		baseHints += " \u00b7 c command \u00b7 T train \u00b7 esc back"
 		hints = s.Hint.Render(baseHints)
 	case "editingField":
 		hints = s.Hint.Render("enter confirm \u00b7 esc cancel")
@@ -396,6 +400,8 @@ func renderDetailView(s *ccStyles, todo db.Todo, detailMode string, selectedFiel
 		hints = s.Hint.Render("j/k navigate \u00b7 type to filter \u00b7 enter select \u00b7 esc cancel")
 	case "commandInput":
 		hints = s.Hint.Render("enter submit to AI \u00b7 esc cancel")
+	case "trainingInput":
+		hints = s.Hint.Render("enter submit training \u00b7 esc cancel")
 	}
 
 	parts := []string{

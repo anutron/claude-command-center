@@ -24,6 +24,8 @@ func (p *Plugin) handleDetailView(msg tea.KeyMsg) plugin.Action {
 		return p.handleDetailPathSelect(msg)
 	case "commandInput":
 		return p.handleDetailCommandInput(msg)
+	case "trainingInput":
+		return p.handleDetailTrainingInput(msg)
 	default:
 		return p.handleDetailViewing(msg)
 	}
@@ -197,6 +199,17 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		p.commandTextArea.SetWidth(inputWidth)
 		cmd := p.commandTextArea.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	case "T":
+		// Train routing and prompt generation rules
+		if todo := p.detailTodo(); todo != nil {
+			p.detailMode = "trainingInput"
+			p.commandTextArea.Reset()
+			inputWidth := p.textareaWidth()
+			p.commandTextArea.SetWidth(inputWidth)
+			cmd := p.commandTextArea.Focus()
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
+		return plugin.ConsumedAction()
 	case "g":
 		p.gPending = true
 		return plugin.NoopAction()
@@ -526,6 +539,40 @@ func (p *Plugin) handleDetailCommandInput(msg tea.KeyMsg) plugin.Action {
 		p.claudeLoadingMsg = "Updating todo..."
 		p.claudeLoadingTodo = todo.ID
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeEditCmd(p.llm, prompt, todo.ID)}
+	case "esc":
+		p.detailMode = "viewing"
+		p.commandTextArea.Blur()
+		p.commandTextArea.Reset()
+		return plugin.NoopAction()
+	}
+
+	var cmd tea.Cmd
+	p.commandTextArea, cmd = p.commandTextArea.Update(msg)
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+func (p *Plugin) handleDetailTrainingInput(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "enter":
+		instruction := strings.TrimSpace(p.commandTextArea.Value())
+		if instruction == "" {
+			return plugin.NoopAction()
+		}
+		todoPtr := p.detailTodo()
+		if todoPtr == nil {
+			p.detailMode = "viewing"
+			p.commandTextArea.Blur()
+			return plugin.NoopAction()
+		}
+		todo := *todoPtr
+		p.detailView = false
+		p.detailMode = "viewing"
+		p.commandTextArea.Blur()
+		p.commandTextArea.Reset()
+		p.claudeLoading = true
+		p.claudeLoadingMsg = "Training prompt rules..."
+		p.claudeLoadingTodo = todo.ID
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeTrainCmd(p.llm, todo, instruction)}
 	case "esc":
 		p.detailMode = "viewing"
 		p.commandTextArea.Blur()

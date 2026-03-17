@@ -47,6 +47,12 @@ type claudeRefinePromptMsg struct {
 	err    error
 }
 
+type claudeTrainFinishedMsg struct {
+	todoID string
+	output string
+	err    error
+}
+
 func claudeEditCmd(l llm.LLM, prompt, todoID string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
@@ -174,6 +180,69 @@ Rewrite the prompt according to the user's instructions. Output ONLY the rewritt
 			err:    err,
 		}
 	}
+}
+
+func claudeTrainCmd(l llm.LLM, todo db.Todo, instruction string) tea.Cmd {
+	prompt := buildTrainPrompt(todo, instruction)
+	return func() tea.Msg {
+		out, err := l.Complete(context.Background(), prompt)
+		return claudeTrainFinishedMsg{
+			todoID: todo.ID,
+			output: out,
+			err:    err,
+		}
+	}
+}
+
+func buildTrainPrompt(todo db.Todo, instruction string) string {
+	rules, _ := db.LoadRoutingRules()
+
+	var projectsSection strings.Builder
+	projectsSection.WriteString("\n## Available Projects & Current Rules\n")
+	for path, rule := range rules {
+		fmt.Fprintf(&projectsSection, "\n### %s\n", path)
+		if len(rule.UseFor) > 0 {
+			fmt.Fprintf(&projectsSection, "Use for: %s\n", strings.Join(rule.UseFor, "; "))
+		}
+		if len(rule.NotFor) > 0 {
+			fmt.Fprintf(&projectsSection, "Not for: %s\n", strings.Join(rule.NotFor, "; "))
+		}
+		if rule.PromptHint != "" {
+			fmt.Fprintf(&projectsSection, "Prompt hint: %s\n", rule.PromptHint)
+		}
+	}
+
+	return fmt.Sprintf(`You are updating routing rules and prompt generation rules based on the user's feedback about a todo.
+
+## Current Todo
+Title: %s
+Current project: %s
+Current prompt:
+"""
+%s
+"""
+%s
+## User's Training Feedback
+"""
+%s
+"""
+
+## Instructions
+The user's feedback may be about:
+1. **Routing** — the todo is assigned to the wrong project (or no project)
+2. **Prompt style** — the project is right but the prompt should be written differently
+3. **Both** — wrong project AND the target project needs prompt generation guidance
+
+Analyze the feedback and return a JSON object with these fields:
+
+- "project_dir": The correct project path. Use the current value if the user isn't changing it. Use a path from the available projects list.
+- "use_for_rules": Array of {"path": "...", "rule": "..."} — new use_for rules to add. Empty array if none needed.
+- "not_for_rules": Array of {"path": "...", "rule": "..."} — new not_for rules to add. Empty array if none needed.
+- "prompt_hint": Updated prompt_hint for the target project. Empty string if no change needed. If the project already has a hint, merge the new guidance with the existing hint.
+- "prompt_hint_project": Which project path the prompt_hint applies to (may differ from project_dir if user is training a different project).
+- "regenerated_prompt": The todo's prompt rewritten according to any new rules/hints.
+
+Return ONLY the JSON object, no markdown fences, no explanation.`, todo.Title, todo.ProjectDir, todo.ProposedPrompt, projectsSection.String(), instruction)
 }
 
 func claudeFocusCmd(l llm.LLM, prompt string) tea.Cmd {
@@ -370,21 +439,45 @@ Output ONLY the JSON object, no markdown code fences, no explanation, no other t
 }
 
 func buildEnrichPrompt(rawText string) string {
-	return fmt.Sprintf(`Extract a todo item from the following text. Return a JSON object with these fields:
+	var projectSection string
+	if rules, err := db.LoadRoutingRules(); err == nil && len(rules) > 0 {
+		var sb strings.Builder
+		sb.WriteString("\n## Available Projects\n")
+		sb.WriteString("Choose the best project_dir for this task. If none match, leave project_dir empty.\n\n")
+		for path, rule := range rules {
+			fmt.Fprintf(&sb, "### %s\n", path)
+			if len(rule.UseFor) > 0 {
+				fmt.Fprintf(&sb, "Use for: %s\n", strings.Join(rule.UseFor, "; "))
+			}
+			if len(rule.NotFor) > 0 {
+				fmt.Fprintf(&sb, "Not for: %s\n", strings.Join(rule.NotFor, "; "))
+			}
+			if rule.PromptHint != "" {
+				fmt.Fprintf(&sb, "Prompt hint: %s\n", rule.PromptHint)
+			}
+			sb.WriteString("\n")
+		}
+		projectSection = sb.String()
+	}
+
+	return fmt.Sprintf(`Extract a todo item from the following text and generate an actionable prompt for it.
+
+Return a JSON object with these fields:
 - title: concise action item (string, max ~80 chars)
 - due: date in YYYY-MM-DD format if mentioned, otherwise empty string
 - who_waiting: person name if someone is waiting on this, otherwise empty string
 - effort: estimated effort like "30m", "2h", "1d" if you can infer it, otherwise empty string
 - context: short categorization/label (string, max ~30 chars)
 - detail: comprehensive background
-- project_dir: relevant project directory path if mentioned, otherwise empty string
-
+- project_dir: best matching project directory from the list below, or empty string
+- proposed_prompt: actionable prompt for a Claude Code agent to execute this task. State the objective clearly in imperative mood. If the matched project has a prompt hint, follow it. If no match, write a general-purpose prompt.
+%s
 Text:
 """
 %s
 """
 
-Output ONLY the JSON object, no markdown code fences, no explanation, no other text. Just raw JSON.`, rawText)
+Output ONLY the JSON object, no markdown code fences, no explanation, no other text. Just raw JSON.`, projectSection, rawText)
 }
 
 // extractJSON finds JSON object in a string, stripping markdown fences if present.

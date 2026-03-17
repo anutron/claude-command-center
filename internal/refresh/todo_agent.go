@@ -117,6 +117,9 @@ and generating a prompt to execute it there.
 			if len(p.RoutingRules.NotFor) > 0 {
 				fmt.Fprintf(&b, "Routing preferences — not for: %s\n", strings.Join(p.RoutingRules.NotFor, "; "))
 			}
+			if p.RoutingRules.PromptHint != "" {
+				fmt.Fprintf(&b, "Prompt generation hint: %s\n", p.RoutingRules.PromptHint)
+			}
 		}
 	}
 

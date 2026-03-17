@@ -37,6 +37,7 @@ func runPaths(args []string) error {
 	addRule := fs.String("add-rule", "", "Path to add a routing rule for")
 	useFor := fs.String("use-for", "", "Add a use_for routing rule (requires --add-rule)")
 	notFor := fs.String("not-for", "", "Add a not_for routing rule (requires --add-rule)")
+	promptHint := fs.String("prompt-hint", "", "Set prompt generation hint (requires --add-rule)")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -44,7 +45,7 @@ func runPaths(args []string) error {
 
 	// Handle --add-rule mode
 	if *addRule != "" {
-		return runAddRule(*addRule, *useFor, *notFor)
+		return runAddRule(*addRule, *useFor, *notFor, *promptHint)
 	}
 
 	database, err := db.OpenDB(config.DBPath())
@@ -128,9 +129,9 @@ func runPathsJSON(entries []db.PathEntry, refreshSkills bool) error {
 	return enc.Encode(output)
 }
 
-func runAddRule(path, useFor, notFor string) error {
-	if useFor == "" && notFor == "" {
-		return fmt.Errorf("--add-rule requires --use-for or --not-for")
+func runAddRule(path, useFor, notFor, promptHint string) error {
+	if useFor == "" && notFor == "" && promptHint == "" {
+		return fmt.Errorf("--add-rule requires --use-for, --not-for, or --prompt-hint")
 	}
 	if useFor != "" {
 		if err := db.AddRoutingRule(path, "use_for", useFor); err != nil {
@@ -143,6 +144,12 @@ func runAddRule(path, useFor, notFor string) error {
 			return fmt.Errorf("add not_for rule: %w", err)
 		}
 		fmt.Printf("Added not_for rule for %s: %s\n", path, notFor)
+	}
+	if promptHint != "" {
+		if err := db.SetPromptHint(path, promptHint); err != nil {
+			return fmt.Errorf("set prompt hint: %w", err)
+		}
+		fmt.Printf("Set prompt_hint for %s: %s\n", path, promptHint)
 	}
 	return nil
 }

@@ -47,6 +47,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case claudeDateParseFinishedMsg:
 		return p.handleClaudeDateParseFinished(msg)
 
+	case claudeTrainFinishedMsg:
+		return p.handleClaudeTrainFinished(msg)
+
 	case plannotatorFinishedMsg:
 		return p.handlePlannotatorFinished(msg)
 
@@ -265,13 +268,14 @@ func (p *Plugin) handleClaudeEnrichFinished(msg claudeEnrichFinishedMsg) (bool, 
 	if msg.err == nil && msg.output != "" {
 		jsonStr := extractJSON(msg.output)
 		var enriched struct {
-			Title      string `json:"title"`
-			Due        string `json:"due"`
-			WhoWaiting string `json:"who_waiting"`
-			Effort     string `json:"effort"`
-			Context    string `json:"context"`
-			Detail     string `json:"detail"`
-			ProjectDir string `json:"project_dir"`
+			Title          string `json:"title"`
+			Due            string `json:"due"`
+			WhoWaiting     string `json:"who_waiting"`
+			Effort         string `json:"effort"`
+			Context        string `json:"context"`
+			Detail         string `json:"detail"`
+			ProjectDir     string `json:"project_dir"`
+			ProposedPrompt string `json:"proposed_prompt"`
 		}
 		if err := json.Unmarshal([]byte(jsonStr), &enriched); err == nil && enriched.Title != "" {
 			ensureCC(&p.cc)
@@ -282,6 +286,7 @@ func (p *Plugin) handleClaudeEnrichFinished(msg claudeEnrichFinishedMsg) (bool, 
 			todo.Context = enriched.Context
 			todo.Detail = enriched.Detail
 			todo.ProjectDir = enriched.ProjectDir
+			todo.ProposedPrompt = enriched.ProposedPrompt
 			todoCopy := *todo
 			p.publishEvent("todo.created", map[string]interface{}{"id": todoCopy.ID, "title": todoCopy.Title, "source": "enrich"})
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
@@ -290,6 +295,105 @@ func (p *Plugin) handleClaudeEnrichFinished(msg claudeEnrichFinishedMsg) (bool, 
 		}
 	}
 	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleClaudeTrainFinished(msg claudeTrainFinishedMsg) (bool, plugin.Action) {
+	p.claudeLoading = false
+	if msg.err != nil {
+		p.flashMessage = "Training failed: " + msg.err.Error()
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+
+	jsonStr := extractJSON(msg.output)
+	var result struct {
+		ProjectDir        string `json:"project_dir"`
+		UseForRules       []struct {
+			Path string `json:"path"`
+			Rule string `json:"rule"`
+		} `json:"use_for_rules"`
+		NotForRules []struct {
+			Path string `json:"path"`
+			Rule string `json:"rule"`
+		} `json:"not_for_rules"`
+		PromptHint        string `json:"prompt_hint"`
+		PromptHintProject string `json:"prompt_hint_project"`
+		RegeneratedPrompt string `json:"regenerated_prompt"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		p.flashMessage = "Training returned invalid result"
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+
+	// Apply routing rule changes
+	var changes []string
+	for _, r := range result.UseForRules {
+		if r.Path != "" && r.Rule != "" {
+			if err := db.AddRoutingRule(r.Path, "use_for", r.Rule); err == nil {
+				changes = append(changes, fmt.Sprintf("+use_for on %s", lastPathSegment(r.Path)))
+			}
+		}
+	}
+	for _, r := range result.NotForRules {
+		if r.Path != "" && r.Rule != "" {
+			if err := db.AddRoutingRule(r.Path, "not_for", r.Rule); err == nil {
+				changes = append(changes, fmt.Sprintf("+not_for on %s", lastPathSegment(r.Path)))
+			}
+		}
+	}
+
+	// Apply prompt hint
+	hintProject := result.PromptHintProject
+	if hintProject == "" {
+		hintProject = result.ProjectDir
+	}
+	if result.PromptHint != "" && hintProject != "" {
+		if err := db.SetPromptHint(hintProject, result.PromptHint); err == nil {
+			changes = append(changes, fmt.Sprintf("hint on %s", lastPathSegment(hintProject)))
+		}
+	}
+
+	// Update todo's project and prompt
+	var dbCmds []tea.Cmd
+	if p.cc != nil {
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == msg.todoID {
+				if result.ProjectDir != "" {
+					p.cc.Todos[i].ProjectDir = result.ProjectDir
+				}
+				if result.RegeneratedPrompt != "" {
+					p.cc.Todos[i].ProposedPrompt = result.RegeneratedPrompt
+				}
+				updated := p.cc.Todos[i]
+				dbCmds = append(dbCmds, p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBUpdateTodo(database, updated.ID, updated)
+				}))
+				break
+			}
+		}
+	}
+
+	if len(changes) > 0 {
+		p.flashMessage = fmt.Sprintf("Trained: %s", strings.Join(changes, ", "))
+	} else {
+		p.flashMessage = "Trained: prompt updated"
+	}
+	p.flashMessageAt = time.Now()
+
+	if len(dbCmds) > 0 {
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmds...)}
+	}
+	return true, plugin.NoopAction()
+}
+
+// lastPathSegment returns the last non-empty segment of a file path for display.
+func lastPathSegment(path string) string {
+	path = strings.TrimRight(path, "/")
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[i+1:]
+	}
+	return path
 }
 
 func (p *Plugin) handleClaudeRefinePromptFinished(msg claudeRefinePromptMsg) (bool, plugin.Action) {

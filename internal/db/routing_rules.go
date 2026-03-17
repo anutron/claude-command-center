@@ -10,10 +10,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// RoutingRule describes which tasks a path is or isn't relevant for.
+// RoutingRule describes which tasks a path is or isn't relevant for,
+// and how prompts should be written when routing to this project.
 type RoutingRule struct {
-	UseFor []string `yaml:"use_for,omitempty"`
-	NotFor []string `yaml:"not_for,omitempty"`
+	UseFor     []string `yaml:"use_for,omitempty"`
+	NotFor     []string `yaml:"not_for,omitempty"`
+	PromptHint string   `yaml:"prompt_hint,omitempty"`
 }
 
 // routingRulesPath returns the path to the routing rules YAML file.
@@ -76,6 +78,18 @@ func AddRoutingRule(path, ruleType, text string) error {
 	case "not_for":
 		rule.NotFor = append(rule.NotFor, text)
 	}
+	rules[path] = rule
+
+	return SaveRoutingRules(rules)
+}
+
+// SetPromptHint sets (or replaces) the prompt_hint for a given path.
+// Creates the file if it doesn't exist.
+func SetPromptHint(path, hint string) error {
+	rules, _ := LoadRoutingRules()
+
+	rule := rules[path]
+	rule.PromptHint = hint
 	rules[path] = rule
 
 	return SaveRoutingRules(rules)

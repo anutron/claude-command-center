@@ -632,31 +632,12 @@ func (p *Plugin) handleAddingTodoQuick(msg tea.KeyMsg) plugin.Action {
 			p.quickTodoTextArea.Blur()
 			return plugin.NoopAction()
 		}
-		ensureCC(&p.cc)
-		var dbCmds []tea.Cmd
-		var count int
-		for _, line := range strings.Split(text, "\n") {
-			title := strings.TrimSpace(line)
-			if title == "" {
-				continue
-			}
-			todo := p.cc.AddTodo(title)
-			t := *todo
-			count++
-			p.publishEvent("todo.created", map[string]interface{}{"id": t.ID, "title": t.Title, "source": "quick"})
-			dbCmds = append(dbCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBInsertTodo(database, t) }))
-		}
 		p.addingTodoQuick = false
 		p.quickTodoTextArea.Blur()
-		if count > 0 {
-			p.flashMessage = fmt.Sprintf("Added %d todo(s)", count)
-			p.flashMessageAt = time.Now()
-			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
-				dbCmds = append(dbCmds, focusCmd)
-			}
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmds...)}
-		}
-		return plugin.NoopAction()
+		p.claudeLoading = true
+		p.claudeLoadingMsg = "Creating todo..."
+		prompt := buildEnrichPrompt(text)
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeEnrichCmd(p.llm, prompt)}
 
 	case "esc":
 		p.addingTodoQuick = false
