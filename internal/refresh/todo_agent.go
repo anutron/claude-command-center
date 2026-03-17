@@ -141,10 +141,13 @@ and generating a prompt to execute it there.
 
 	b.WriteString(`
 ## Instructions
-1. First, verify this is actually Aaron's task. If the source context (transcript/thread) shows
-   this commitment was made by someone else — not Aaron — then reject it.
-   A task is Aaron's ONLY if Aaron stated he would do it or explicitly agreed to do it.
-   Statements like "I will" or "I'll" in [Other] blocks are OTHER people's commitments, not Aaron's.
+1. First, verify this is actually Aaron's task. A task is Aaron's if ANY of these are true:
+   a) Aaron stated he would do it or explicitly agreed to do it
+   b) Someone else assigned the work to Aaron by name (e.g., "Aaron will...", "Darren and Aaron will follow-up on...",
+      "Aaron is going to...", "Aaron to handle..."). These are commitments made ON BEHALF of Aaron.
+   REJECT only if:
+   - The commitment was made by someone else about THEMSELVES (not Aaron) — e.g., "I will" in [Other] blocks
+   - Aaron is not mentioned or involved in the commitment
 2. If this is Aaron's task, choose the best project directory and generate an actionable prompt
    for a Claude Code agent working in that directory. The prompt should:
    - State the objective clearly in imperative mood

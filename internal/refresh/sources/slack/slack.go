@@ -106,6 +106,7 @@ type slackCandidate struct {
 }
 
 var commitmentPhrases = []string{
+	// First-person commitments (Aaron's own messages)
 	"i'll", "i will", "i need to", "let me", "i'm going to",
 	"action item", "i committed", "i promise", "follow up",
 	"send you", "set up", "schedule", "i can do", "i'll take",
@@ -113,6 +114,11 @@ var commitmentPhrases = []string{
 	"i'll check", "i'll follow", "i'll set", "i'll make",
 	"i'll write", "i'll review", "i'll update", "i'll fix",
 	"i'll create", "i'll put", "i'll share", "i'll reach out",
+	// Third-person assignments (others assigning work to Aaron)
+	"aaron will", "aaron is going to", "aaron to follow",
+	"aaron to handle", "aaron can", "aaron should",
+	"and aaron will", "aaron needs to", "aaron to send",
+	"aaron to review", "aaron to set up", "aaron to schedule",
 }
 
 // API response types for bot-compatible endpoints.
@@ -532,6 +538,10 @@ func fetchSlackCandidatesViaSearch(ctx context.Context, token string) ([]slackCa
 		"action item",
 		"follow up",
 		"let me",
+		// Third-person assignments to Aaron
+		"aaron will",
+		"aaron is going to",
+		"aaron to follow",
 	}
 
 	seen := make(map[string]bool)

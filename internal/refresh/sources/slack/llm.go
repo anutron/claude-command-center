@@ -28,18 +28,24 @@ func extractSlackCommitments(ctx context.Context, l llm.LLM, candidates []slackC
 		sb.WriteString("\n---\n\n")
 	}
 
-	prompt := fmt.Sprintf(`You are filtering Slack messages for real commitments the user made. The bar is VERY high.
+	prompt := fmt.Sprintf(`You are filtering Slack messages for real commitments involving the user (Aaron). The bar is VERY high.
 
-A message is ONLY a todo if:
-1. The user explicitly committed to a specific deliverable (not just participating in conversation)
-2. There is a concrete next action with a clear outcome
-3. You can write an actionable title starting with a verb (Send, Review, Schedule, Build, Write, Follow up, etc.)
+A message is a todo if EITHER:
+A) The user explicitly committed to a specific deliverable (not just participating in conversation)
+B) Someone else assigned work to the user — e.g., "Aaron will...", "Darren and Aaron will follow-up on...",
+   "Aaron is going to...", "Aaron to handle...", "[Name] and Aaron will..."
+   These are commitments made ON BEHALF of the user that he needs to be aware of.
+
+In both cases:
+1. There must be a concrete next action with a clear outcome
+2. You can write an actionable title starting with a verb (Send, Review, Schedule, Build, Write, Follow up, etc.)
 
 REJECT messages that are:
 - Conversational responses ("done", "good process!", "sounds good")
 - Observations, tips, shared links, compliments
 - Descriptions of past actions ("I just...", "I found that...")
 - Vague intentions without a specific deliverable
+- Assignments to OTHER people that don't include Aaron
 
 Use the thread context to understand WHAT was committed to. Build the todo title from the full context, not just the short message.
 

@@ -42,14 +42,17 @@ func extractCommitments(ctx context.Context, l llm.LLM, meetings []RawMeeting) (
 - [Aaron] = the user (this is whose todo list we are building)
 - [Other] = other meeting participants
 
-Extract ONLY action items and commitments where Aaron is the one who will do the work. A commitment is Aaron's if:
+Extract action items and commitments where Aaron will do the work. A commitment is Aaron's if:
 - Aaron states he will do something in an [Aaron] block (e.g., "I'll handle that")
 - Aaron agrees/affirms in an [Aaron] block when asked by [Other] (e.g., [Other]: "Can you do X?" [Aaron]: "Yes")
+- Someone in an [Other] block assigns work to Aaron by name (e.g., "Aaron will follow up on...",
+  "Darren and Aaron will handle...", "Aaron is going to..."). These are commitments made ON BEHALF
+  of Aaron that he needs to be aware of, even if Aaron didn't explicitly agree in the transcript.
 
 Do NOT extract:
-- Commitments made by others in [Other] blocks, even if they sound like action items — [Other] is never Aaron
-- General discussion points or ideas without a clear commitment from Aaron
-- Action items where someone in an [Other] block says "I will" or "I'll" — that is always someone else
+- Commitments made by others about THEMSELVES in [Other] blocks (e.g., [Other]: "I will handle that")
+- General discussion points or ideas without a clear commitment involving Aaron
+- Action items assigned to other people that don't mention Aaron by name
 
 For each of Aaron's commitments, provide:
 - title: Brief actionable title (imperative mood)
