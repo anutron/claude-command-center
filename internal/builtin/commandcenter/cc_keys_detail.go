@@ -224,6 +224,9 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
 		return plugin.ConsumedAction()
+	case "?":
+		p.showHelp = !p.showHelp
+		return plugin.NoopAction()
 	case "g":
 		p.gPending = true
 		return plugin.NoopAction()
