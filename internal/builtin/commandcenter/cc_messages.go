@@ -11,11 +11,31 @@ import (
 	"database/sql"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// parseUserError extracts a short, user-facing message from an LLM error.
+func parseUserError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	// Check if it looks like claude stderr output
+	if strings.Contains(msg, "claude exited") {
+		// Extract the stderr portion after the exit code prefix
+		if idx := strings.Index(msg, ": "); idx >= 0 {
+			return llm.ParseClaudeError(msg[idx+2:])
+		}
+	}
+	if len(msg) > 80 {
+		return msg[:77] + "..."
+	}
+	return msg
+}
 
 // HandleMessage handles non-key messages and returns whether it was handled.
 func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
@@ -270,41 +290,54 @@ func (p *Plugin) handleDBWriteResult(msg dbWriteResult) (bool, plugin.Action) {
 func (p *Plugin) handleClaudeEditFinished(msg claudeEditFinishedMsg) (bool, plugin.Action) {
 	p.claudeLoading = false
 	p.claudeLoadingTodo = ""
-	if msg.err == nil && msg.output != "" && p.cc != nil {
+	if msg.err != nil {
+		p.flashMessage = "Edit failed: " + parseUserError(msg.err)
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+	if msg.output != "" && p.cc != nil {
 		jsonStr := extractJSON(msg.output)
 		var updated db.Todo
-		if err := json.Unmarshal([]byte(jsonStr), &updated); err == nil {
-			todoID := msg.todoID
-			for i := range p.cc.Todos {
-				if p.cc.Todos[i].ID == todoID {
-					// Preserve system-managed fields that the LLM shouldn't overwrite.
-					existing := p.cc.Todos[i]
-					updated.ID = existing.ID
-					if updated.CreatedAt.IsZero() {
-						updated.CreatedAt = existing.CreatedAt
-					}
-					updated.CompletedAt = existing.CompletedAt
-					updated.SessionID = existing.SessionID
-					updated.SessionStatus = existing.SessionStatus
-					updated.SessionSummary = existing.SessionSummary
-					updated.TriageStatus = existing.TriageStatus
-					updated.DisplayID = existing.DisplayID
-					p.cc.Todos[i] = updated
-					break
-				}
-			}
-			p.publishEvent("todo.edited", map[string]interface{}{"id": todoID, "title": updated.Title})
-			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
-				return db.DBUpdateTodo(database, todoID, updated)
-			})}
+		if err := json.Unmarshal([]byte(jsonStr), &updated); err != nil {
+			p.flashMessage = "Edit returned invalid JSON"
+			p.flashMessageAt = time.Now()
+			return true, plugin.NoopAction()
 		}
+		todoID := msg.todoID
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == todoID {
+				// Preserve system-managed fields that the LLM shouldn't overwrite.
+				existing := p.cc.Todos[i]
+				updated.ID = existing.ID
+				if updated.CreatedAt.IsZero() {
+					updated.CreatedAt = existing.CreatedAt
+				}
+				updated.CompletedAt = existing.CompletedAt
+				updated.SessionID = existing.SessionID
+				updated.SessionStatus = existing.SessionStatus
+				updated.SessionSummary = existing.SessionSummary
+				updated.TriageStatus = existing.TriageStatus
+				updated.DisplayID = existing.DisplayID
+				p.cc.Todos[i] = updated
+				break
+			}
+		}
+		p.publishEvent("todo.edited", map[string]interface{}{"id": todoID, "title": updated.Title})
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
+			return db.DBUpdateTodo(database, todoID, updated)
+		})}
 	}
 	return true, plugin.NoopAction()
 }
 
 func (p *Plugin) handleClaudeEnrichFinished(msg claudeEnrichFinishedMsg) (bool, plugin.Action) {
 	p.claudeLoading = false
-	if msg.err == nil && msg.output != "" {
+	if msg.err != nil {
+		p.flashMessage = "Enrich failed: " + parseUserError(msg.err)
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+	if msg.output != "" {
 		jsonStr := extractJSON(msg.output)
 		var enriched struct {
 			Title          string `json:"title"`
@@ -551,7 +584,12 @@ func (p *Plugin) handleClaudeCommandFinished(msg claudeCommandFinishedMsg) (bool
 
 func (p *Plugin) handleClaudeFocusFinished(msg claudeFocusFinishedMsg) (bool, plugin.Action) {
 	p.claudeLoading = false
-	if msg.err == nil && msg.output != "" {
+	if msg.err != nil {
+		p.flashMessage = "Focus failed: " + parseUserError(msg.err)
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+	if msg.output != "" {
 		focus := strings.TrimSpace(msg.output)
 		focus = strings.Trim(focus, "\"")
 		if focus != "" && p.cc != nil {

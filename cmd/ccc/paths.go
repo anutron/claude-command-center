@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/builtin/sessions"
 	"github.com/anutron/claude-command-center/internal/config"
@@ -158,7 +159,12 @@ func runAutoDescribe(database *sql.DB, entries []db.PathEntry) error {
 	// Determine LLM availability
 	var l llm.LLM
 	if llm.Available() {
-		l = llm.ClaudeCLI{}
+		noTools := ""
+		l = llm.ClaudeCLI{
+			Timeout:              90 * time.Second,
+			DisableSlashCommands: true,
+			Tools:                &noTools,
+		}
 		fmt.Println("Using LLM for descriptions...")
 	} else {
 		fmt.Println("claude CLI not found — using heuristic descriptions only")

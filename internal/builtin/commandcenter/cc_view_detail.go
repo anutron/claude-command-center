@@ -3,6 +3,7 @@ package commandcenter
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/charmbracelet/lipgloss"
@@ -109,6 +110,20 @@ func (p *Plugin) buildDetailBody(s *ccStyles, todo db.Todo, innerWidth int, hasA
 		sessionSection = "\n  " + sessionIndicator
 	}
 
+	// Training indicator
+	var trainingSection string
+	if p.claudeLoading && p.claudeLoadingTodo == todo.ID {
+		spinnerChar := refreshSpinner(p.frame)
+		label := p.claudeLoadingMsg
+		if label == "" {
+			label = "Working..."
+		}
+		elapsed := time.Since(p.claudeLoadingAt).Truncate(time.Second)
+		label = fmt.Sprintf("%s (%s)", label, elapsed)
+		trainingIndicator := spinnerChar + " " + lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(label)
+		trainingSection = "\n  " + trainingIndicator
+	}
+
 	// Session summary — full, no truncation
 	var summarySection string
 	if todo.SessionSummary != "" {
@@ -185,6 +200,9 @@ func (p *Plugin) buildDetailBody(s *ccStyles, todo db.Todo, innerWidth int, hasA
 	}
 	if sessionSection != "" {
 		parts = append(parts, sessionSection)
+	}
+	if trainingSection != "" {
+		parts = append(parts, trainingSection)
 	}
 	if summarySection != "" {
 		parts = append(parts, summarySection)

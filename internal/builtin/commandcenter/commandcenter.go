@@ -2,6 +2,7 @@ package commandcenter
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"syscall"
 	"time"
@@ -133,6 +134,7 @@ type Plugin struct {
 	claudeLoading     bool
 	claudeLoadingMsg  string
 	claudeLoadingTodo string
+	claudeLoadingAt   time.Time
 
 	// Background CC refresh
 	ccRefreshing           bool
@@ -627,6 +629,7 @@ func (p *Plugin) triggerFocusRefresh() tea.Cmd {
 		return nil
 	}
 	p.claudeLoading = true
+	p.claudeLoadingAt = time.Now()
 	if len(p.cc.ActiveTodos()) == 0 {
 		p.claudeLoadingMsg = "Admiring the empty list..."
 		return claudeFocusCmd(p.llm, buildEmptyFocusPrompt(p.cc))
@@ -740,7 +743,8 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		counts := p.triageCounts()
 		view := renderExpandedTodoView(&p.styles, &p.grad, filtered, p.ccCursor, p.ccExpandedOffset, p.expandedRowsPerCol(), p.expandedNumCols(), viewWidth, viewHeight, p.frame, p.claudeLoadingTodo, p.ccRefreshing, p.triageFilter, counts)
 		if p.claudeLoading {
-			loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg
+			elapsed := time.Since(p.claudeLoadingAt).Truncate(time.Second)
+		loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg + fmt.Sprintf(" (%s)", elapsed)
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", loadingLine)
 		}
 		if p.flashMessage != "" {
@@ -769,7 +773,8 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.filteredTodos(), p.triageCounts(), p.cfg.Agent.MaxConcurrent)
 
 	if p.claudeLoading {
-		loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg
+		elapsed := time.Since(p.claudeLoadingAt).Truncate(time.Second)
+		loadingLine := "  " + p.spinner.View() + " " + p.claudeLoadingMsg + fmt.Sprintf(" (%s)", elapsed)
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", loadingLine)
 	}
 	if p.flashMessage != "" {

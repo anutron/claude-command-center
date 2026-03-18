@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -159,10 +160,15 @@ func main() {
 	}
 	defer logger.Close()
 
-	// Construct LLM implementation
+	// Construct LLM implementation — sandboxed for TUI inline calls
 	var l llm.LLM
 	if llm.Available() {
-		l = llm.ClaudeCLI{}
+		noTools := ""
+		l = llm.ClaudeCLI{
+			Timeout:              90 * time.Second,
+			DisableSlashCommands: true,
+			Tools:                &noTools,
+		}
 	} else {
 		l = llm.NoopLLM{}
 	}

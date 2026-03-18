@@ -4,13 +4,29 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func failureLogPath() string {
+	return filepath.Join(config.DataDir(), "llm-failures.jsonl")
+}
+
+func logLLMFailure(operation, prompt string, err error, todoID string) {
+	llm.LogFailure(failureLogPath(), llm.FailureEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Operation: operation,
+		Prompt:    prompt,
+		Error:     err.Error(),
+		TodoID:    todoID,
+	})
+}
 
 // Message types for Claude AI results.
 
@@ -56,6 +72,9 @@ type claudeTrainFinishedMsg struct {
 func claudeEditCmd(l llm.LLM, prompt, todoID string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
+		if err != nil {
+			logLLMFailure("edit", prompt, err, todoID)
+		}
 		return claudeEditFinishedMsg{
 			todoID: todoID,
 			output: out,
@@ -67,6 +86,9 @@ func claudeEditCmd(l llm.LLM, prompt, todoID string) tea.Cmd {
 func claudeEnrichCmd(l llm.LLM, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
+		if err != nil {
+			logLLMFailure("enrich", prompt, err, "")
+		}
 		return claudeEnrichFinishedMsg{
 			output: out,
 			err:    err,
@@ -77,6 +99,9 @@ func claudeEnrichCmd(l llm.LLM, prompt string) tea.Cmd {
 func claudeCommandCmd(l llm.LLM, prompt, projectDir string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
+		if err != nil {
+			logLLMFailure("command", prompt, err, "")
+		}
 		return claudeCommandFinishedMsg{
 			output: out,
 			err:    err,
@@ -89,6 +114,9 @@ func claudeDateParseCmd(l llm.LLM, input string, todoID string) tea.Cmd {
 		time.Now().Format("2006-01-02"), input)
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
+		if err != nil {
+			logLLMFailure("date-parse", prompt, err, todoID)
+		}
 		return claudeDateParseFinishedMsg{
 			todoID: todoID,
 			output: out,
@@ -122,6 +150,9 @@ Annotated prompt (with the user's changes/comments):
 Output ONLY the updated prompt text. No explanation, no quotes, no markdown fences wrapping the whole thing.`, original, annotated)
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
+		if err != nil {
+			logLLMFailure("review-address", prompt, err, todoID)
+		}
 		return claudeReviewAddressedMsg{
 			todoID: todoID,
 			output: out,
@@ -150,6 +181,9 @@ Original prompt:
 Output ONLY the refined prompt text. No explanation, no quotes, no markdown fences wrapping the whole thing.`, currentPrompt)
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
+		if err != nil {
+			logLLMFailure("refine", prompt, err, todoID)
+		}
 		return claudeRefinePromptMsg{
 			todoID: todoID,
 			output: out,
@@ -174,6 +208,9 @@ Current prompt:
 Rewrite the prompt according to the user's instructions. Output ONLY the rewritten prompt text. No explanation, no quotes, no markdown fences wrapping the whole thing.`, instruction, currentPrompt)
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
+		if err != nil {
+			logLLMFailure("refine", prompt, err, todoID)
+		}
 		return claudeRefinePromptMsg{
 			todoID: todoID,
 			output: out,
@@ -186,6 +223,9 @@ func claudeTrainCmd(l llm.LLM, todo db.Todo, instruction string) tea.Cmd {
 	prompt := buildTrainPrompt(todo, instruction)
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
+		if err != nil {
+			logLLMFailure("train", prompt, err, todo.ID)
+		}
 		return claudeTrainFinishedMsg{
 			todoID: todo.ID,
 			output: out,
@@ -248,6 +288,9 @@ Return ONLY the JSON object, no markdown fences, no explanation.`, todo.Title, t
 func claudeFocusCmd(l llm.LLM, prompt string) tea.Cmd {
 	return func() tea.Msg {
 		out, err := l.Complete(context.Background(), prompt)
+		if err != nil {
+			logLLMFailure("focus", prompt, err, "")
+		}
 		return claudeFocusFinishedMsg{
 			output: out,
 			err:    err,

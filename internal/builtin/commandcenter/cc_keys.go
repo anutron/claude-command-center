@@ -618,6 +618,7 @@ func (p *Plugin) handleAddingTodoRich(msg tea.KeyMsg) plugin.Action {
 		p.addingTodoRich = false
 		p.todoTextArea.Blur()
 		p.claudeLoading = true
+		p.claudeLoadingAt = time.Now()
 		p.claudeLoadingMsg = "Processing..."
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeCommandCmd(p.llm, prompt, "")}
 
@@ -645,6 +646,7 @@ func (p *Plugin) handleAddingTodoQuick(msg tea.KeyMsg) plugin.Action {
 		p.addingTodoQuick = false
 		p.quickTodoTextArea.Blur()
 		p.claudeLoading = true
+		p.claudeLoadingAt = time.Now()
 		p.claudeLoadingMsg = "Creating todo..."
 		prompt := buildEnrichPrompt(text)
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeEnrichCmd(p.llm, prompt)}

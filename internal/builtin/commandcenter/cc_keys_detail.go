@@ -531,6 +531,7 @@ func (p *Plugin) handleDetailEditingField(msg tea.KeyMsg) plugin.Action {
 			}
 			// Not a recognized format — use LLM to parse natural language
 			p.claudeLoading = true
+			p.claudeLoadingAt = time.Now()
 			p.claudeLoadingMsg = "Parsing date..."
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeDateParseCmd(p.llm, value, todo.ID)}
 		case 2: // ProjectDir
@@ -569,6 +570,7 @@ func (p *Plugin) handleDetailCommandInput(msg tea.KeyMsg) plugin.Action {
 		p.commandTextArea.Blur()
 		p.commandTextArea.Reset()
 		p.claudeLoading = true
+		p.claudeLoadingAt = time.Now()
 		p.claudeLoadingMsg = "Updating todo..."
 		p.claudeLoadingTodo = todo.ID
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeEditCmd(p.llm, prompt, todo.ID)}
@@ -598,11 +600,11 @@ func (p *Plugin) handleDetailTrainingInput(msg tea.KeyMsg) plugin.Action {
 			return plugin.NoopAction()
 		}
 		todo := *todoPtr
-		p.detailView = false
 		p.detailMode = "viewing"
 		p.commandTextArea.Blur()
 		p.commandTextArea.Reset()
 		p.claudeLoading = true
+		p.claudeLoadingAt = time.Now()
 		p.claudeLoadingMsg = "Training prompt rules..."
 		p.claudeLoadingTodo = todo.ID
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeTrainCmd(p.llm, todo, instruction)}
