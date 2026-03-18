@@ -26,12 +26,12 @@ See `specs/core/datasource.md` for full details. Each source implements `Name()`
 1. Load env vars from `~/.config/ccc/.env` (for cron/non-interactive environments)
 2. Load existing state from SQLite via `db.LoadCommandCenterFromDB(opts.DB)`
 3. Migrate calendar credentials if needed (one-time)
-4. **Parallel data fetch**: Iterate `opts.Sources`; for each enabled source, spawn a goroutine calling `Fetch(ctx)`. Each source loads its own auth; auth failures produce warnings, not fatal errors. LLM extraction for Slack/Granola happens inside `Fetch()`.
+4. **Parallel data fetch**: Iterate `opts.Sources`; for each enabled source, spawn a goroutine calling `Fetch(ctx)`. Each source loads its own auth; auth failures produce warnings, not fatal errors. LLM extraction for Slack/Granola happens inside `Fetch()`. See `specs/core/todo-extraction.md` for extraction rules.
 5. **Combine results**: Merge all `SourceResult` values into a single `FreshData` (calendar from first non-nil, todos/threads concatenated)
 6. **Merge**: Combine fresh data with existing state preserving IDs, statuses, dismissed items, manual items, and pause states
 7. **Execute pending actions**: Process booking requests by creating calendar events in free slots (loads calendar auth independently)
 8. **Generate suggestions**: LLM-based priority ranking of todos (if `opts.LLM` is non-nil)
-9. **Generate proposed prompts**: Route eligible todos (active, has source, no prompt yet) using `RoutingLLM` (sonnet). The routing step validates ownership — for Granola-sourced todos, it checks speaker labels to confirm Aaron committed to the task. If the LLM returns `project_dir: "REJECT"`, the todo is auto-dismissed. Otherwise, it assigns a project directory and generates an actionable prompt.
+9. **Generate proposed prompts**: Route eligible todos (active, has source, no prompt yet) using `RoutingLLM` (sonnet). The routing step validates ownership — a task is Aaron's if he committed to it OR if someone else assigned it to him by name (see `specs/core/todo-extraction.md`). If the LLM returns `project_dir: "REJECT"`, the todo is auto-dismissed. Otherwise, it assigns a project directory and generates an actionable prompt.
 10. **Fetch source context**: For todos with a `source_ref`, fetch raw source content (transcripts, threads, PR comments) via `ContextRegistry` and cache in `source_context`/`source_context_at` columns.
 11. Save merged state to SQLite via `db.DBSaveRefreshResult(opts.DB, merged)` (or print to stdout if DryRun)
 
