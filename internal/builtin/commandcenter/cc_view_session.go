@@ -1,7 +1,9 @@
 package commandcenter
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -170,6 +172,8 @@ func (p *Plugin) buildSessionViewerContent(s *ccStyles) string {
 		events = make([]sessionEvent, len(sess.Events))
 		copy(events, sess.Events)
 		sess.mu.Unlock()
+	} else if len(p.sessionViewerReplayEvents) > 0 {
+		events = p.sessionViewerReplayEvents
 	}
 
 	if len(events) == 0 {
@@ -220,6 +224,42 @@ func (p *Plugin) initSessionViewer(todoID string) {
 	p.sessionViewerVP.SetContent(p.buildSessionViewerContent(&p.styles))
 	// Jump to bottom
 	p.sessionViewerVP.GotoBottom()
+}
+
+// initSessionViewerFromLog sets up the session viewer from a saved JSONL log file on disk.
+func (p *Plugin) initSessionViewerFromLog(todoID, logPath string) error {
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return fmt.Errorf("cannot read session log: %w", err)
+	}
+
+	var events []sessionEvent
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			continue // skip malformed lines
+		}
+		parsed := parseSessionEvent(raw)
+		events = append(events, parsed...)
+	}
+
+	p.sessionViewerReplayEvents = events
+	p.sessionViewerActive = true
+	p.sessionViewerTodoID = todoID
+	p.sessionViewerDone = true
+	p.sessionViewerAutoScroll = false
+	p.sessionViewerListening = false
+	p.sessionViewerInputting = false
+
+	p.sessionViewerVP = viewport.New(80, 20) // will be resized on render
+	p.sessionViewerVP.SetContent(p.buildSessionViewerContent(&p.styles))
+	p.sessionViewerVP.GotoTop()
+
+	return nil
 }
 
 // updateSessionViewerContent refreshes the viewport content and optionally auto-scrolls.

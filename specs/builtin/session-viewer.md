@@ -13,6 +13,7 @@ The session viewer is a sub-view of the command center plugin, accessed from the
 | Key | Context | Description |
 |-----|---------|-------------|
 | `w` | Detail view, todo has active agent session | Open live session viewer |
+| `w` | Detail view, todo has `SessionLogPath` (no active session) | Open replay viewer from saved JSONL log |
 | `c` | Session viewer (not inputting) | Open message textarea to send input to agent |
 | `o` | Session viewer | Join session interactively (launches Claude TUI with `--resume`) |
 | `r` | Detail view, todo has SessionID, no active session | Resume agent headless with `--resume` flag |
@@ -32,6 +33,7 @@ The session viewer is a sub-view of the command center plugin, accessed from the
 | `sessionViewerInput` | `textarea.Model` | Text input for sending messages to the agent |
 | `sessionViewerVP` | `viewport.Model` | Scrollable viewport for event content |
 | `sessionViewerListening` | `bool` | Whether the event channel listener cmd is active |
+| `sessionViewerReplayEvents` | `[]sessionEvent` | Parsed events loaded from a JSONL log file for post-session replay |
 
 ## Event Types
 
@@ -84,6 +86,8 @@ Raw stream-JSON events are mapped to `sessionEvent` based on the `type` field:
 - **Normal (session active):** `j/k scroll · G bottom · g top · c message · o join · esc back`
 - **Normal (session ended):** `j/k scroll · G bottom · g top · o join · esc back · session ended`
 - **Input mode:** `enter send · esc cancel`
+- **Detail view hint (active session):** `w watch`
+- **Detail view hint (completed session with log):** `w log`
 
 ## Bidirectional Communication
 
@@ -189,11 +193,28 @@ Headless sessions write raw stream-json output to disk for forensic replay when 
 
 If the agent fails before the goroutine starts (stdout pipe, stdin pipe, or `cmd.Start()` errors), a log file is created with a single `--- LAUNCH ERROR ---` line describing the failure.
 
+### Log Path Persistence
+
+The log file path is stored on the todo in the `session_log_path` DB column (`Todo.SessionLogPath` field). The path is computed deterministically from the todo ID and current timestamp **before** the background goroutine starts, stored on `agentSession.LogPath`, and persisted to the DB when `agentStartedInternalMsg` is handled.
+
+This enables the session viewer to replay logs from disk after the agent finishes and the in-memory session is cleaned up.
+
+### Replay from Disk (`initSessionViewerFromLog`)
+
+When `w` is pressed on a todo with `SessionLogPath` but no active session:
+
+1. The JSONL file is read line by line
+2. Each line is JSON-unmarshaled and passed to `parseSessionEvent()`
+3. Parsed events are stored in `p.sessionViewerReplayEvents`
+4. The viewer opens in done/read-only mode (starts at top, not bottom)
+5. `buildSessionViewerContent` falls back to `sessionViewerReplayEvents` when no active session exists
+
 ### Design Decisions
 
 - **Best-effort**: if the log file cannot be created, the session proceeds without logging (non-fatal)
 - **Raw, not parsed**: logs contain the exact stream-json output, not the parsed `sessionEvent` structs, so nothing is lost in translation
 - **No automatic cleanup**: logs accumulate until manually deleted (future: age-based rotation)
+- **Path on todo, not file scan**: the log path is stored on the todo rather than derived by scanning the log directory, ensuring fast lookup and no ambiguity with multiple runs
 
 ## Detail View: Scrollable Viewport
 
@@ -268,3 +289,12 @@ The `?` key toggles a help overlay. When in detail view, it shows detail-specifi
 - `?` in detail view shows detail-specific keybindings
 - `?` in list view shows list-specific keybindings
 - Status bar shows elapsed time in seconds or minutes+seconds format
+- `w` on a todo with `SessionLogPath` but no active session opens replay viewer from disk
+- `w` on a todo with missing/unreadable `SessionLogPath` shows error flash
+- `w` on a todo with no active session and no `SessionLogPath` shows "No active session" flash
+- Replay viewer opens in done mode (read-only, `sessionViewerDone = true`)
+- Replay viewer starts at top of content (not bottom)
+- `buildSessionViewerContent` uses `sessionViewerReplayEvents` when no active session
+- Detail hints show "w log" for todos with `SessionLogPath` and no active session
+- Agent launch persists `session_log_path` to DB via `agentStartedInternalMsg` handler
+- Old todos without `session_log_path` do not show "w" hint (no crash)

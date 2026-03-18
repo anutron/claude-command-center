@@ -27,6 +27,7 @@ type agentSession struct {
 	Question  string // populated when blocked
 	StartedAt time.Time
 	Output    strings.Builder // captures output
+	LogPath   string          // full path to the session log file
 
 	// Stdin pipe for sending messages to the agent (stream-json input).
 	Stdin io.WriteCloser
@@ -163,12 +164,17 @@ SUMMARY
 			stdin.Write(initData)
 		}
 
+		// Compute the log path deterministically before the goroutine starts
+		// so it can be persisted to DB when the session is registered.
+		logPath := sessionLogPath(qs.TodoID)
+
 		sess := &agentSession{
 			TodoID:    qs.TodoID,
 			Cmd:       cmd,
 			Status:    "active",
 			StartedAt: time.Now(),
 			Stdin:     stdin,
+			LogPath:   logPath,
 			EventsCh:  make(chan sessionEvent, 64),
 			done:      make(chan struct{}),
 		}
@@ -177,7 +183,7 @@ SUMMARY
 		// parse events for the live viewer, and signal completion via done channel.
 		go func() {
 			// Open a log file for forensic replay of this session.
-			logFile := openSessionLog(qs.TodoID)
+			logFile := openSessionLog(logPath)
 			if logFile != nil {
 				defer logFile.Close()
 			}
@@ -532,6 +538,28 @@ func (p *Plugin) persistLaunchMode(todoID, launchMode string) tea.Cmd {
 	})
 }
 
+// setTodoSessionLogPath updates the session log path of a todo in-memory.
+func (p *Plugin) setTodoSessionLogPath(todoID, path string) {
+	if p.cc == nil {
+		return
+	}
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == todoID {
+			p.cc.Todos[i].SessionLogPath = path
+			return
+		}
+	}
+}
+
+// persistSessionLogPath returns a tea.Cmd that writes the session log path to the DB.
+func (p *Plugin) persistSessionLogPath(todoID, path string) tea.Cmd {
+	return p.dbWriteCmd(func(database *sql.DB) error {
+		now := db.FormatTime(time.Now())
+		_, err := database.Exec(`UPDATE cc_todos SET session_log_path = NULLIF(?, ''), updated_at = ? WHERE id = ?`, path, now, todoID)
+		return err
+	})
+}
+
 // setTodoSessionSummary updates the session summary of a todo in-memory.
 func (p *Plugin) setTodoSessionSummary(todoID, summary string) {
 	if p.cc == nil {
@@ -787,18 +815,26 @@ func logSessionError(todoID string, format string, args ...interface{}) {
 	fmt.Fprintf(f, "--- LAUNCH ERROR at %s: %s ---\n", time.Now().Format(time.RFC3339), fmt.Sprintf(format, args...))
 }
 
-// openSessionLog creates a log file for a headless session's raw stream-json output.
-// Returns nil if the file cannot be created (non-fatal — logging is best-effort).
-func openSessionLog(todoID string) *os.File {
+// sessionLogPath returns the deterministic full path for a session log file.
+// This is computed before the goroutine starts so the path can be persisted to DB.
+func sessionLogPath(todoID string) string {
 	dir := sessionLogDir()
+	name := fmt.Sprintf("%s_%s.jsonl", time.Now().Format("2006-01-02T15-04-05"), todoID)
+	return filepath.Join(dir, name)
+}
+
+// openSessionLog creates a log file at the given path for a headless session's
+// raw stream-json output.
+// Returns nil if the file cannot be created (non-fatal — logging is best-effort).
+func openSessionLog(path string) *os.File {
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil
 	}
-	name := fmt.Sprintf("%s_%s.jsonl", time.Now().Format("2006-01-02T15-04-05"), todoID)
-	f, err := os.Create(filepath.Join(dir, name))
+	f, err := os.Create(path)
 	if err != nil {
 		return nil
 	}
-	fmt.Fprintf(f, "--- session started at %s for todo %s ---\n", time.Now().Format(time.RFC3339), todoID)
+	fmt.Fprintf(f, "--- session started at %s ---\n", time.Now().Format(time.RFC3339))
 	return f
 }

@@ -154,14 +154,15 @@ type Plugin struct {
 	sessionQueue   []queuedSession
 
 	// Session viewer
-	sessionViewerActive     bool
-	sessionViewerTodoID     string
-	sessionViewerVP         viewport.Model
-	sessionViewerAutoScroll bool
-	sessionViewerDone       bool           // true when session has ended
-	sessionViewerListening  bool           // true when listenForAgentEvent cmd is active
-	sessionViewerInputting  bool           // true when textarea input is active
-	sessionViewerInput      textarea.Model // textarea for sending messages to agent
+	sessionViewerActive       bool
+	sessionViewerTodoID       string
+	sessionViewerVP           viewport.Model
+	sessionViewerAutoScroll   bool
+	sessionViewerDone         bool           // true when session has ended
+	sessionViewerListening    bool           // true when listenForAgentEvent cmd is active
+	sessionViewerInputting    bool           // true when textarea input is active
+	sessionViewerInput        textarea.Model // textarea for sending messages to agent
+	sessionViewerReplayEvents []sessionEvent // events loaded from disk for post-session replay
 
 	// Wizard selections per-todo (persisted across open/close cycles)
 	wizardSelections map[string]wizardSelection
@@ -216,6 +217,10 @@ func (p *Plugin) Migrations() []plugin.Migration {
 		{
 			Version: 1,
 			SQL: `CREATE INDEX IF NOT EXISTS idx_cc_todos_status_sort ON cc_todos(status, sort_order);`,
+		},
+		{
+			Version: 2,
+			SQL:     `ALTER TABLE cc_todos ADD COLUMN session_log_path TEXT;`,
 		},
 	}
 }

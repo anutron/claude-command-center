@@ -174,6 +174,9 @@ func migrateSchema(db *sql.DB) error {
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN source_context TEXT`)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN source_context_at TEXT`)
 
+	// Add session_log_path column to todos if missing (for session log replay)
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN session_log_path TEXT`)
+
 	// Drop the threads table (feature removed, preserved on threads-feature branch)
 	_, _ = db.Exec(`DROP TABLE IF EXISTS cc_threads`)
 

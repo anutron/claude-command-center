@@ -109,6 +109,7 @@ type Todo struct {
 	ProposedPrompt string     `json:"proposed_prompt,omitempty"`
 	SessionStatus  string     `json:"session_status,omitempty"`
 	SessionSummary string     `json:"session_summary,omitempty"`
+	SessionLogPath string     `json:"session_log_path,omitempty"`
 	SourceContext    string     `json:"source_context,omitempty"`
 	SourceContextAt  string     `json:"source_context_at,omitempty"`
 	TriageStatus   string     `json:"triage_status,omitempty"`

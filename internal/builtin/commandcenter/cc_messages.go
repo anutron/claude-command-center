@@ -768,6 +768,12 @@ func (p *Plugin) handleAgentStartedInternal(msg agentStartedInternalMsg) (bool, 
 	var cmds []tea.Cmd
 	cmds = append(cmds, p.persistSessionStatus(msg.todoID, "active"))
 
+	// Persist the session log path so it can be replayed later.
+	if msg.session.LogPath != "" {
+		p.setTodoSessionLogPath(msg.todoID, msg.session.LogPath)
+		cmds = append(cmds, p.persistSessionLogPath(msg.todoID, msg.session.LogPath))
+	}
+
 	// If session viewer is open for this todo, start listening for events.
 	if p.sessionViewerActive && p.sessionViewerTodoID == msg.todoID && !p.sessionViewerListening {
 		p.sessionViewerListening = true

@@ -116,9 +116,10 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "w":
-		// Open session viewer for todos with active agent sessions
+		// Open session viewer for todos with active agent sessions or saved logs
 		if todo := p.detailTodo(); todo != nil {
 			if _, hasSession := p.activeSessions[todo.ID]; hasSession {
+				// Live session — watch in real time
 				p.initSessionViewer(todo.ID)
 				// Start listening for events if not already
 				if !p.sessionViewerListening {
@@ -128,8 +129,16 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 					}
 				}
 				return plugin.ConsumedAction()
+			} else if todo.SessionLogPath != "" {
+				// No active session but we have a saved log — replay from disk
+				if err := p.initSessionViewerFromLog(todo.ID, todo.SessionLogPath); err != nil {
+					p.flashMessage = fmt.Sprintf("Cannot open session log: %v", err)
+					p.flashMessageAt = time.Now()
+					return plugin.ConsumedAction()
+				}
+				return plugin.ConsumedAction()
 			}
-			// No active session
+			// No active session and no log
 			p.flashMessage = "No active session for this todo"
 			p.flashMessageAt = time.Now()
 		}
