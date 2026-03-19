@@ -91,6 +91,60 @@ type CalendarEvent struct {
 	CalendarID string    `json:"calendar_id,omitempty"`
 }
 
+// ---------------------------------------------------------------------------
+// Todo status constants
+// ---------------------------------------------------------------------------
+
+const (
+	StatusNew       = "new"
+	StatusBacklog   = "backlog"
+	StatusEnqueued  = "enqueued"
+	StatusRunning   = "running"
+	StatusBlocked   = "blocked"
+	StatusReview    = "review"
+	StatusFailed    = "failed"
+	StatusCompleted = "completed"
+	StatusDismissed = "dismissed"
+)
+
+// validTransitions maps each status to the set of non-universal transitions
+// it supports. Universal exits (completed, dismissed) are always valid from
+// any state and are handled separately in ValidTransition.
+var validTransitions = map[string]map[string]bool{
+	StatusNew:       {StatusBacklog: true},
+	StatusBacklog:   {StatusEnqueued: true, StatusRunning: true},
+	StatusEnqueued:  {StatusRunning: true, StatusBacklog: true},
+	StatusRunning:   {StatusBlocked: true, StatusReview: true, StatusFailed: true, StatusBacklog: true},
+	StatusBlocked:   {StatusRunning: true, StatusBacklog: true},
+	StatusReview:    {StatusBacklog: true, StatusEnqueued: true, StatusRunning: true},
+	StatusFailed:    {StatusBacklog: true, StatusEnqueued: true, StatusRunning: true},
+	StatusCompleted: {StatusBacklog: true},
+	StatusDismissed: {StatusBacklog: true},
+}
+
+// ValidTransition returns true if the state machine allows moving from → to.
+func ValidTransition(from, to string) bool {
+	// Universal exits: any state → completed or dismissed.
+	if to == StatusCompleted || to == StatusDismissed {
+		return true
+	}
+	if allowed, ok := validTransitions[from]; ok {
+		return allowed[to]
+	}
+	return false
+}
+
+// IsTerminalStatus returns true for completed and dismissed.
+func IsTerminalStatus(status string) bool {
+	return status == StatusCompleted || status == StatusDismissed
+}
+
+// IsAgentStatus returns true for statuses where an agent is involved
+// (enqueued, running, blocked).
+func IsAgentStatus(status string) bool {
+	return status == StatusEnqueued || status == StatusRunning || status == StatusBlocked
+}
+
 type Todo struct {
 	ID          string     `json:"id"`
 	DisplayID   int        `json:"display_id"`
@@ -107,12 +161,10 @@ type Todo struct {
 	Due            string     `json:"due"`
 	Effort         string     `json:"effort"`
 	ProposedPrompt string     `json:"proposed_prompt,omitempty"`
-	SessionStatus  string     `json:"session_status,omitempty"`
 	SessionSummary string     `json:"session_summary,omitempty"`
 	SessionLogPath string     `json:"session_log_path,omitempty"`
 	SourceContext    string     `json:"source_context,omitempty"`
 	SourceContextAt  string     `json:"source_context_at,omitempty"`
-	TriageStatus   string     `json:"triage_status,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	CompletedAt    *time.Time `json:"completed_at"`
 }
@@ -239,7 +291,7 @@ func (cc *CommandCenter) RestoreTodo(id, status string, completedAt *time.Time) 
 func (cc *CommandCenter) AcceptTodo(id string) {
 	for i := range cc.Todos {
 		if cc.Todos[i].ID == id {
-			cc.Todos[i].TriageStatus = "accepted"
+			cc.Todos[i].Status = StatusBacklog
 			return
 		}
 	}
@@ -255,13 +307,12 @@ func (cc *CommandCenter) AddTodo(title string) *Todo {
 		}
 	}
 	t := Todo{
-		ID:           GenID(),
-		DisplayID:    maxDisplayID + 1,
-		Title:        title,
-		Status:       "active",
-		Source:       "manual",
-		TriageStatus: "accepted",
-		CreatedAt:    time.Now(),
+		ID:        GenID(),
+		DisplayID: maxDisplayID + 1,
+		Title:     title,
+		Status:    StatusBacklog,
+		Source:    "manual",
+		CreatedAt: time.Now(),
 	}
 	cc.Todos = append(cc.Todos, t)
 	return &cc.Todos[len(cc.Todos)-1]
@@ -293,7 +344,7 @@ func (cc *CommandCenter) DeferTodo(id string) {
 
 	insertAt := len(cc.Todos)
 	for i := range cc.Todos {
-		if cc.Todos[i].Status != "active" {
+		if IsTerminalStatus(cc.Todos[i].Status) {
 			insertAt = i
 			break
 		}
@@ -330,7 +381,7 @@ func (cc *CommandCenter) SwapTodos(i, j int) {
 func (cc *CommandCenter) ActiveTodos() []Todo {
 	var out []Todo
 	for _, t := range cc.Todos {
-		if t.Status == "active" {
+		if !IsTerminalStatus(t.Status) {
 			out = append(out, t)
 		}
 	}
@@ -340,7 +391,7 @@ func (cc *CommandCenter) ActiveTodos() []Todo {
 func (cc *CommandCenter) CompletedTodos() []Todo {
 	var out []Todo
 	for _, t := range cc.Todos {
-		if t.Status == "completed" {
+		if IsTerminalStatus(t.Status) {
 			out = append(out, t)
 		}
 	}

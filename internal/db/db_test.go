@@ -40,7 +40,7 @@ func TestTodoRoundTrip(t *testing.T) {
 	todo := Todo{
 		ID:        "abcd1234",
 		Title:     "Test todo",
-		Status:    "active",
+		Status:    StatusBacklog,
 		Source:    "manual",
 		CreatedAt: time.Now(),
 	}
@@ -72,7 +72,7 @@ func TestDBCompleteTodo(t *testing.T) {
 	defer db.Close()
 
 	todo := Todo{
-		ID: "abcd1234", Title: "Test", Status: "active", Source: "manual",
+		ID: "abcd1234", Title: "Test", Status: StatusBacklog, Source: "manual",
 		CreatedAt: time.Now(),
 	}
 	DBInsertTodo(db, todo)
@@ -96,7 +96,7 @@ func TestDBDismissTodo(t *testing.T) {
 	defer db.Close()
 
 	todo := Todo{
-		ID: "abcd1234", Title: "Test", Status: "active", Source: "manual",
+		ID: "abcd1234", Title: "Test", Status: StatusBacklog, Source: "manual",
 		CreatedAt: time.Now(),
 	}
 	DBInsertTodo(db, todo)
@@ -116,8 +116,8 @@ func TestDBDeferTodo(t *testing.T) {
 	}
 	defer db.Close()
 
-	DBInsertTodo(db, Todo{ID: "aaa", Title: "First", Status: "active", Source: "manual", CreatedAt: time.Now()})
-	DBInsertTodo(db, Todo{ID: "bbb", Title: "Second", Status: "active", Source: "manual", CreatedAt: time.Now()})
+	DBInsertTodo(db, Todo{ID: "aaa", Title: "First", Status: StatusBacklog, Source: "manual", CreatedAt: time.Now()})
+	DBInsertTodo(db, Todo{ID: "bbb", Title: "Second", Status: StatusBacklog, Source: "manual", CreatedAt: time.Now()})
 
 	DBDeferTodo(db, "aaa")
 
@@ -335,7 +335,7 @@ func TestDBSaveRefreshResult(t *testing.T) {
 			},
 		},
 		Todos: []Todo{
-			{ID: "t1", Title: "Fix bug", Status: "active", Source: "github", CreatedAt: now},
+			{ID: "t1", Title: "Fix bug", Status: StatusBacklog, Source: "github", CreatedAt: now},
 			{ID: "t2", Title: "Done task", Status: "completed", Source: "manual", CreatedAt: now, CompletedAt: &now},
 		},
 		Suggestions: Suggestions{
@@ -390,7 +390,7 @@ func TestDBSaveRefreshResult(t *testing.T) {
 	}
 
 	// Overwrite with new data — verify replace-all behavior
-	cc.Todos = []Todo{{ID: "t3", Title: "New only", Status: "active", Source: "manual", CreatedAt: now}}
+	cc.Todos = []Todo{{ID: "t3", Title: "New only", Status: StatusBacklog, Source: "manual", CreatedAt: now}}
 	cc.PendingActions = nil
 	if err := DBSaveRefreshResult(db, cc); err != nil {
 		t.Fatalf("second save: %v", err)
@@ -404,7 +404,7 @@ func TestDBSaveRefreshResult(t *testing.T) {
 	}
 }
 
-func TestDBLoadTodoByDisplayIDIncludesTriageStatus(t *testing.T) {
+func TestDBLoadTodoByDisplayIDIncludesStatus(t *testing.T) {
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))
 	if err != nil {
@@ -413,12 +413,11 @@ func TestDBLoadTodoByDisplayIDIncludesTriageStatus(t *testing.T) {
 	defer db.Close()
 
 	todo := Todo{
-		ID:           "triage-test",
-		Title:        "Test triage status",
-		Status:       "active",
-		Source:       "manual",
-		TriageStatus: "new",
-		CreatedAt:    time.Now(),
+		ID:        "status-test",
+		Title:     "Test status",
+		Status:    StatusNew,
+		Source:    "slack",
+		CreatedAt: time.Now(),
 	}
 	if err := DBInsertTodo(db, todo); err != nil {
 		t.Fatalf("insert: %v", err)
@@ -432,16 +431,15 @@ func TestDBLoadTodoByDisplayIDIncludesTriageStatus(t *testing.T) {
 	if loaded == nil {
 		t.Fatal("expected non-nil todo")
 	}
-	if loaded.TriageStatus != "new" {
-		t.Errorf("expected TriageStatus 'new', got %q", loaded.TriageStatus)
+	if loaded.Status != StatusNew {
+		t.Errorf("expected Status %q, got %q", StatusNew, loaded.Status)
 	}
 
-	// Also test the COALESCE default: insert a todo with empty triage_status
-	// which should default to "accepted"
+	// Insert a backlog todo
 	todo2 := Todo{
-		ID:        "triage-default",
-		Title:     "Default triage",
-		Status:    "active",
+		ID:        "backlog-test",
+		Title:     "Backlog todo",
+		Status:    StatusBacklog,
 		Source:    "manual",
 		CreatedAt: time.Now(),
 	}
@@ -455,8 +453,8 @@ func TestDBLoadTodoByDisplayIDIncludesTriageStatus(t *testing.T) {
 	if loaded2 == nil {
 		t.Fatal("expected non-nil todo")
 	}
-	if loaded2.TriageStatus != "accepted" {
-		t.Errorf("expected default TriageStatus 'accepted', got %q", loaded2.TriageStatus)
+	if loaded2.Status != StatusBacklog {
+		t.Errorf("expected Status %q, got %q", StatusBacklog, loaded2.Status)
 	}
 }
 
@@ -472,8 +470,8 @@ func TestDBSaveRefreshResultPreservesLaunchMode(t *testing.T) {
 	cc := &CommandCenter{
 		GeneratedAt: now,
 		Todos: []Todo{
-			{ID: "t1", Title: "Todo with launch mode", Status: "active", Source: "manual", LaunchMode: "worktree", CreatedAt: now},
-			{ID: "t2", Title: "Todo without launch mode", Status: "active", Source: "manual", CreatedAt: now},
+			{ID: "t1", Title: "Todo with launch mode", Status: StatusBacklog, Source: "manual", LaunchMode: "worktree", CreatedAt: now},
+			{ID: "t2", Title: "Todo without launch mode", Status: StatusBacklog, Source: "manual", CreatedAt: now},
 		},
 	}
 
@@ -588,7 +586,7 @@ func TestDBIsEmpty(t *testing.T) {
 		t.Fatal("expected empty DB")
 	}
 
-	DBInsertTodo(db, Todo{ID: "x", Title: "test", Status: "active", Source: "manual", CreatedAt: time.Now()})
+	DBInsertTodo(db, Todo{ID: "x", Title: "test", Status: StatusBacklog, Source: "manual", CreatedAt: time.Now()})
 	if DBIsEmpty(db) {
 		t.Fatal("expected non-empty DB")
 	}
@@ -601,8 +599,8 @@ func TestDBIsEmpty(t *testing.T) {
 func TestCompleteTodo(t *testing.T) {
 	cc := &CommandCenter{
 		Todos: []Todo{
-			{ID: "1", Title: "First", Status: "active"},
-			{ID: "2", Title: "Second", Status: "active"},
+			{ID: "1", Title: "First", Status: StatusBacklog},
+			{ID: "2", Title: "Second", Status: StatusBacklog},
 		},
 	}
 
@@ -614,17 +612,17 @@ func TestCompleteTodo(t *testing.T) {
 	if cc.Todos[0].CompletedAt == nil {
 		t.Error("expected CompletedAt to be set")
 	}
-	if cc.Todos[1].Status != "active" {
-		t.Error("second todo should still be active")
+	if cc.Todos[1].Status != StatusBacklog {
+		t.Error("second todo should still be backlog")
 	}
 }
 
 func TestRemoveTodo(t *testing.T) {
 	cc := &CommandCenter{
 		Todos: []Todo{
-			{ID: "1", Title: "First", Status: "active"},
-			{ID: "2", Title: "Second", Status: "active"},
-			{ID: "3", Title: "Third", Status: "active"},
+			{ID: "1", Title: "First", Status: StatusBacklog},
+			{ID: "2", Title: "Second", Status: StatusBacklog},
+			{ID: "3", Title: "Third", Status: StatusBacklog},
 		},
 	}
 
@@ -658,8 +656,8 @@ func TestAddTodo(t *testing.T) {
 	if todo.Source != "manual" {
 		t.Errorf("expected source 'manual', got %q", todo.Source)
 	}
-	if todo.Status != "active" {
-		t.Errorf("expected status 'active', got %q", todo.Status)
+	if todo.Status != StatusBacklog {
+		t.Errorf("expected status %q, got %q", StatusBacklog, todo.Status)
 	}
 	if todo.ID == "" {
 		t.Error("expected non-empty ID")
@@ -669,10 +667,10 @@ func TestAddTodo(t *testing.T) {
 func TestDeferTodo(t *testing.T) {
 	cc := &CommandCenter{
 		Todos: []Todo{
-			{ID: "1", Title: "First", Status: "active"},
-			{ID: "2", Title: "Second", Status: "active"},
-			{ID: "3", Title: "Third", Status: "active"},
-			{ID: "done", Title: "Done", Status: "completed"},
+			{ID: "1", Title: "First", Status: StatusBacklog},
+			{ID: "2", Title: "Second", Status: StatusBacklog},
+			{ID: "3", Title: "Third", Status: StatusBacklog},
+			{ID: "done", Title: "Done", Status: StatusCompleted},
 		},
 	}
 
@@ -690,12 +688,12 @@ func TestDeferTodo(t *testing.T) {
 	}
 }
 
-func TestActiveTodos(t *testing.T) {
+func TestActiveTodosLegacy(t *testing.T) {
 	cc := &CommandCenter{
 		Todos: []Todo{
-			{ID: "1", Status: "active"},
-			{ID: "2", Status: "completed"},
-			{ID: "3", Status: "active"},
+			{ID: "1", Status: StatusBacklog},
+			{ID: "2", Status: StatusCompleted},
+			{ID: "3", Status: StatusNew},
 		},
 	}
 	active := cc.ActiveTodos()
@@ -1035,9 +1033,9 @@ func TestSwapTodoOrder(t *testing.T) {
 	}
 	defer database.Close()
 
-	DBInsertTodo(database, Todo{ID: "a", Title: "First", Status: "active", Source: "manual", CreatedAt: time.Now()})
-	DBInsertTodo(database, Todo{ID: "b", Title: "Second", Status: "active", Source: "manual", CreatedAt: time.Now()})
-	DBInsertTodo(database, Todo{ID: "c", Title: "Third", Status: "active", Source: "manual", CreatedAt: time.Now()})
+	DBInsertTodo(database, Todo{ID: "a", Title: "First", Status: StatusBacklog, Source: "manual", CreatedAt: time.Now()})
+	DBInsertTodo(database, Todo{ID: "b", Title: "Second", Status: StatusBacklog, Source: "manual", CreatedAt: time.Now()})
+	DBInsertTodo(database, Todo{ID: "c", Title: "Third", Status: StatusBacklog, Source: "manual", CreatedAt: time.Now()})
 
 	// Verify initial order: a, b, c
 	cc, _ := LoadCommandCenterFromDB(database)

@@ -47,7 +47,7 @@ func DBRestoreTodo(db *sql.DB, id, status string, completedAt *time.Time) error 
 
 func DBDeferTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status = 'active'), updated_at = ? WHERE id = ?`,
+	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed')), updated_at = ? WHERE id = ?`,
 		now, id)
 	if err != nil {
 		return fmt.Errorf("defer todo %s: %w", id, err)
@@ -57,7 +57,7 @@ func DBDeferTodo(db *sql.DB, id string) error {
 
 func DBPromoteTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM cc_todos WHERE status = 'active'), updated_at = ? WHERE id = ?`,
+	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed')), updated_at = ? WHERE id = ?`,
 		now, id)
 	if err != nil {
 		return fmt.Errorf("promote todo %s: %w", id, err)
@@ -76,24 +76,20 @@ func DBInsertTodo(db *sql.DB, t Todo) error {
 		s := FormatTime(*t.CompletedAt)
 		completedAt = &s
 	}
-	triageStatus := t.TriageStatus
-	if triageStatus == "" {
-		triageStatus = "accepted"
-	}
 	_, err := db.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status, session_summary,
 		session_log_path, source_context, source_context_at,
 		triage_status, display_id, sort_order, created_at, completed_at, updated_at)
 		VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?,
+		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULL, NULLIF(?, ''),
+		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), 'accepted',
 		(SELECT COALESCE(MAX(display_id), 0) + 1 FROM cc_todos),
-		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status = 'active'),
+		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed')),
 		?, ?, ?)`,
 		t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
-		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionStatus, t.SessionSummary,
+		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionSummary,
 		t.SessionLogPath, t.SourceContext, t.SourceContextAt,
-		triageStatus, createdAt, completedAt, now)
+		createdAt, completedAt, now)
 	if err != nil {
 		return fmt.Errorf("insert todo %s: %w", t.ID, err)
 	}
@@ -107,48 +103,44 @@ func DBUpdateTodo(db *sql.DB, id string, t Todo) error {
 		s := FormatTime(*t.CompletedAt)
 		completedAt = &s
 	}
-	triageStatus := t.TriageStatus
-	if triageStatus == "" {
-		triageStatus = "accepted"
-	}
 	_, err := db.Exec(`UPDATE cc_todos SET title = ?, status = ?, source = ?,
 		source_ref = NULLIF(?, ''), context = NULLIF(?, ''), detail = NULLIF(?, ''),
 		who_waiting = NULLIF(?, ''), project_dir = NULLIF(?, ''), due = NULLIF(?, ''),
 		effort = NULLIF(?, ''), session_id = NULLIF(?, ''),
-		proposed_prompt = NULLIF(?, ''), session_status = NULLIF(?, ''),
+		proposed_prompt = NULLIF(?, ''),
 		session_summary = NULLIF(?, ''), session_log_path = NULLIF(?, ''),
 		source_context = NULLIF(?, ''),
-		source_context_at = NULLIF(?, ''), triage_status = ?,
+		source_context_at = NULLIF(?, ''),
 		completed_at = ?, updated_at = ?
 		WHERE id = ?`,
 		t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
 		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID,
-		t.ProposedPrompt, t.SessionStatus, t.SessionSummary, t.SessionLogPath,
-		t.SourceContext, t.SourceContextAt, triageStatus, completedAt, now, id)
+		t.ProposedPrompt, t.SessionSummary, t.SessionLogPath,
+		t.SourceContext, t.SourceContextAt, completedAt, now, id)
 	if err != nil {
 		return fmt.Errorf("update todo %s: %w", id, err)
 	}
 	return nil
 }
 
-// DBAcceptTodo sets the triage_status to "accepted" for a todo.
+// DBAcceptTodo transitions a todo from "new" to "backlog".
 func DBAcceptTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_todos SET triage_status = 'accepted', updated_at = ? WHERE id = ?`,
-		now, id)
+	_, err := db.Exec(`UPDATE cc_todos SET status = ?, updated_at = ? WHERE id = ?`,
+		StatusBacklog, now, id)
 	if err != nil {
 		return fmt.Errorf("accept todo %s: %w", id, err)
 	}
 	return nil
 }
 
-// DBUpdateTodoSessionStatus updates only the session_status column for a todo.
-func DBUpdateTodoSessionStatus(db *sql.DB, id string, status string) error {
+// DBUpdateTodoStatus updates the status column for a todo.
+func DBUpdateTodoStatus(db *sql.DB, id string, status string) error {
 	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_todos SET session_status = NULLIF(?, ''), updated_at = ? WHERE id = ?`,
+	_, err := db.Exec(`UPDATE cc_todos SET status = ?, updated_at = ? WHERE id = ?`,
 		status, now, id)
 	if err != nil {
-		return fmt.Errorf("update todo session status %s: %w", id, err)
+		return fmt.Errorf("update todo status %s: %w", id, err)
 	}
 	return nil
 }
@@ -420,10 +412,6 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			s := FormatTime(*t.CompletedAt)
 			completedAt = &s
 		}
-		triageStatus := t.TriageStatus
-		if triageStatus == "" {
-			triageStatus = "accepted"
-		}
 		// Assign a display_id to new todos that don't have one yet.
 		displayID := t.DisplayID
 		if displayID == 0 {
@@ -434,13 +422,20 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status, session_summary,
 			session_log_path, source_context, source_context_at,
 			triage_status, display_id, sort_order, created_at, completed_at, updated_at)
-			VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?)`,
-			t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
-			t.WhoWaiting, t.ProjectDir, t.LaunchMode, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionStatus, t.SessionSummary,
+			VALUES (?, ?, ?, ?,
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+			NULLIF(?, ''), NULL, NULLIF(?, ''),
+			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+			'accepted', ?, ?, ?, ?, ?)`,
+			t.ID, t.Title, t.Status, t.Source,
+			t.SourceRef, t.Context, t.Detail,
+			t.WhoWaiting, t.ProjectDir, t.LaunchMode,
+			t.Due, t.Effort, t.SessionID,
+			t.ProposedPrompt, t.SessionSummary,
 			t.SessionLogPath, t.SourceContext, t.SourceContextAt,
-			triageStatus, displayID, i, createdAt, completedAt, now)
+			displayID, i, createdAt, completedAt, now)
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)
 		}

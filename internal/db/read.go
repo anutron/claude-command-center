@@ -85,12 +85,14 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		t.Effort = effort.String
 		t.SessionID = sessionID.String
 		t.ProposedPrompt = proposedPrompt.String
-		t.SessionStatus = sessionStatus.String
+		// sessionStatus and triageStatus are scanned from DB but no longer stored
+		// on the struct — they'll be dropped in the schema migration.
+		_ = sessionStatus
+		_ = triageStatus
 		t.SessionSummary = sessionSummary.String
 		t.SessionLogPath = sessionLogPath.String
 		t.SourceContext = sourceContext.String
 		t.SourceContextAt = sourceContextAt.String
-		t.TriageStatus = triageStatus
 		t.CreatedAt = ParseTime(createdStr)
 		if completedStr.Valid {
 			ct := ParseTime(completedStr.String)
@@ -407,12 +409,12 @@ func DBLoadTodoByID(db *sql.DB, id string) (*Todo, error) {
 	t.Effort = effort.String
 	t.SessionID = sessionID.String
 	t.ProposedPrompt = proposedPrompt.String
-	t.SessionStatus = sessionStatus.String
+	_ = sessionStatus
+	_ = triageStatus
 	t.SessionSummary = sessionSummary.String
 	t.SessionLogPath = sessionLogPath.String
 	t.SourceContext = sourceContext.String
 	t.SourceContextAt = sourceContextAt.String
-	t.TriageStatus = triageStatus
 	t.CreatedAt = ParseTime(createdStr)
 	if completedStr.Valid {
 		ct := ParseTime(completedStr.String)
@@ -454,12 +456,12 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	t.Effort = effort.String
 	t.SessionID = sessionID.String
 	t.ProposedPrompt = proposedPrompt.String
-	t.SessionStatus = sessionStatus.String
+	_ = sessionStatus
+	_ = triageStatus
 	t.SessionSummary = sessionSummary.String
 	t.SessionLogPath = sessionLogPath.String
 	t.SourceContext = sourceContext.String
 	t.SourceContextAt = sourceContextAt.String
-	t.TriageStatus = triageStatus
 	t.CreatedAt = ParseTime(createdStr)
 	if completedStr.Valid {
 		ct := ParseTime(completedStr.String)
