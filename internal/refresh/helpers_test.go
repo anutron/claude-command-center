@@ -28,10 +28,10 @@ func TestCleanJSON(t *testing.T) {
 
 func TestActiveTodos(t *testing.T) {
 	todos := []db.Todo{
-		{ID: "1", Title: "Active", Status: "active"},
-		{ID: "2", Title: "Done", Status: "done"},
-		{ID: "3", Title: "Dismissed", Status: "dismissed"},
-		{ID: "4", Title: "Also Active", Status: "active"},
+		{ID: "1", Title: "Backlog", Status: db.StatusBacklog},
+		{ID: "2", Title: "Completed", Status: db.StatusCompleted},
+		{ID: "3", Title: "Dismissed", Status: db.StatusDismissed},
+		{ID: "4", Title: "Running", Status: db.StatusRunning},
 	}
 	result := activeTodos(todos)
 	if len(result) != 2 {

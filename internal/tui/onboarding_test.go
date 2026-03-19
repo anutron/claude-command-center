@@ -46,7 +46,7 @@ func TestSetOnboarding_NotTriggeredWithData(t *testing.T) {
 
 	// Insert data — simulates a non-first-run scenario
 	db.DBInsertTodo(database, db.Todo{
-		ID: "existing", Title: "Existing task", Status: "active", Source: "manual",
+		ID: "existing", Title: "Existing task", Status: db.StatusBacklog, Source: "manual",
 	})
 
 	if db.DBIsEmpty(database) {

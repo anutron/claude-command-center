@@ -103,7 +103,7 @@ Messages:
 			Detail:     item.Detail,
 			WhoWaiting: item.WhoWaiting,
 			Due:        item.Due,
-			Status:     "active",
+			Status:     "",
 		})
 	}
 

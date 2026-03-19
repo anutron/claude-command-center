@@ -207,7 +207,7 @@ func fetchLabeledTodos(ctx context.Context, client *SafeGmailClient, labelName s
 			Source:    "gmail",
 			SourceRef: msg.Id,
 			Context:   fmt.Sprintf("From: %s", senderName),
-			Status:    "active",
+			Status:    "",
 		})
 	}
 

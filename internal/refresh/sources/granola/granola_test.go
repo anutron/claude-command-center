@@ -159,8 +159,8 @@ func TestExtractCommitments(t *testing.T) {
 		if todo.Due != "2026-03-15" {
 			t.Errorf("Due = %q, want %q", todo.Due, "2026-03-15")
 		}
-		if todo.Status != "active" {
-			t.Errorf("Status = %q, want %q", todo.Status, "active")
+		if todo.Status != "" {
+			t.Errorf("Status = %q, want %q", todo.Status, "")
 		}
 	})
 

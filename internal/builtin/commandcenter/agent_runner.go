@@ -358,7 +358,7 @@ func (p *Plugin) killAgent(todoID string) tea.Cmd {
 	}
 	delete(p.activeSessions, todoID)
 
-	p.setTodoStatus(todoID, db.StatusFailed)
+	p.setTodoStatus(todoID, db.StatusBacklog)
 	p.publishEvent("agent.killed", map[string]interface{}{
 		"todo_id": todoID,
 	})
@@ -370,7 +370,7 @@ func (p *Plugin) killAgent(todoID string) tea.Cmd {
 		p.updateSessionViewerContent()
 	}
 
-	return p.persistTodoStatus(todoID, db.StatusFailed)
+	return p.persistTodoStatus(todoID, db.StatusBacklog)
 }
 
 // Concurrency manager methods on Plugin.

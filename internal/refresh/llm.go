@@ -84,7 +84,7 @@ func CleanJSON(s string) string {
 func generateProposedPrompts(ctx context.Context, l llm.LLM, database *sql.DB, todos []db.Todo) []db.Todo {
 	var eligible []int
 	for i, t := range todos {
-		if t.Status == "active" && t.Source != "" && t.Source != "manual" && t.ProposedPrompt == "" {
+		if !db.IsTerminalStatus(t.Status) && t.Source != "" && t.Source != "manual" && t.ProposedPrompt == "" {
 			eligible = append(eligible, i)
 		}
 	}
@@ -238,7 +238,7 @@ Todos:
 func activeTodos(todos []db.Todo) []db.Todo {
 	var out []db.Todo
 	for _, t := range todos {
-		if t.Status == "active" {
+		if !db.IsTerminalStatus(t.Status) {
 			out = append(out, t)
 		}
 	}
