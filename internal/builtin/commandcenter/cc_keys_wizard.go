@@ -376,7 +376,7 @@ func (p *Plugin) taskRunnerFilteredPaths() []string {
 
 // taskRunnerLaunchInteractive launches an interactive Claude session with the
 // todo's prompt as context. The user works on the todo themselves in Claude.
-// Sets session_status to "active" so the todo shows as in-progress.
+// Sets status to "running" so the todo shows as in-progress.
 func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 	if todoPtr := p.detailTodo(); todoPtr != nil {
 		todo := *todoPtr
@@ -393,8 +393,8 @@ func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 			projectDir = home
 		}
 
-		// Mark todo as active and persist project dir + launch mode so resume uses the right settings
-		p.setTodoSessionStatus(todo.ID, "active")
+		// Mark todo as running and persist project dir + launch mode so resume uses the right settings
+		p.setTodoSessionStatus(todo.ID, db.StatusRunning)
 		p.setTodoProjectDir(todo.ID, projectDir)
 		p.setTodoLaunchMode(todo.ID, p.taskRunnerMode)
 		p.cc.AcceptTodo(todo.ID)
@@ -412,7 +412,7 @@ func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 		}
 
 		var cmds []tea.Cmd
-		cmds = append(cmds, p.persistSessionStatus(todo.ID, "active"))
+		cmds = append(cmds, p.persistSessionStatus(todo.ID, db.StatusRunning))
 		cmds = append(cmds, p.persistProjectDir(todo.ID, projectDir))
 		cmds = append(cmds, p.persistLaunchMode(todo.ID, p.taskRunnerMode))
 		cmds = append(cmds, p.dbWriteCmd(func(database *sql.DB) error {

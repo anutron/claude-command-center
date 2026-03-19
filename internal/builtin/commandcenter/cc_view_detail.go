@@ -99,10 +99,10 @@ func (p *Plugin) buildDetailBody(s *ccStyles, todo db.Todo, innerWidth int, hasA
 		spinnerChar := refreshSpinner(p.frame)
 		sessionIndicator := spinnerChar + " " + lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("Agent running")
 		sessionSection = "\n  " + sessionIndicator
-	} else if todo.SessionStatus == "review" || todo.SessionStatus == "failed" {
+	} else if todo.Status == db.StatusReview || todo.Status == db.StatusFailed {
 		statusLabel := "completed"
 		statusColor := s.ColorGreen
-		if todo.SessionStatus == "failed" {
+		if todo.Status == db.StatusFailed {
 			statusLabel = "failed"
 			statusColor = s.ColorYellow
 		}
@@ -386,7 +386,7 @@ func (p *Plugin) buildDetailHints(s *ccStyles, todo db.Todo, hasActiveSession bo
 	switch p.detailMode {
 	case "viewing":
 		baseHints := "j/k prev/next \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch"
-		if todo.SessionID != "" && todo.SessionStatus != "active" && todo.SessionStatus != "queued" {
+		if todo.SessionID != "" && todo.Status != db.StatusRunning && todo.Status != db.StatusEnqueued {
 			baseHints += " \u00b7 r resume"
 		}
 		if hasActiveSession {

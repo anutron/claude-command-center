@@ -48,9 +48,9 @@ func testPluginWithCC(t *testing.T) *Plugin {
 	p.cc = &db.CommandCenter{
 		GeneratedAt: time.Now(),
 		Todos: []db.Todo{
-			{ID: "t1", Title: "First todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now()},
-			{ID: "t2", Title: "Second todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now()},
-			{ID: "t3", Title: "Third todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now()},
+			{ID: "t1", Title: "First todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+			{ID: "t2", Title: "Second todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+			{ID: "t3", Title: "Third todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
 		},
 	}
 	p.width = 120
@@ -423,7 +423,7 @@ func TestHandleMessageCCLoaded(t *testing.T) {
 	newCC := &db.CommandCenter{
 		GeneratedAt: time.Now(),
 		Todos: []db.Todo{
-			{ID: "new1", Title: "New todo", Status: "active"},
+			{ID: "new1", Title: "New todo", Status: db.StatusBacklog},
 		},
 	}
 
@@ -1153,9 +1153,9 @@ func TestYKeyInTriageFilterDoesNotPanic(t *testing.T) {
 	p := testPluginWithCC(t)
 	// Set up todos with different triage statuses
 	p.cc.Todos = []db.Todo{
-		{ID: "t-new-1", Title: "New todo 1", Status: "active", Source: "manual", TriageStatus: "new", CreatedAt: time.Now(), ProjectDir: "/tmp/proj1"},
-		{ID: "t-acc-1", Title: "Accepted todo", Status: "active", Source: "manual", TriageStatus: "accepted", CreatedAt: time.Now(), ProjectDir: "/tmp/proj2"},
-		{ID: "t-new-2", Title: "New todo 2", Status: "active", Source: "manual", TriageStatus: "new", CreatedAt: time.Now(), ProjectDir: "/tmp/proj3"},
+		{ID: "t-new-1", Title: "New todo 1", Status: db.StatusNew, Source: "manual", CreatedAt: time.Now(), ProjectDir: "/tmp/proj1"},
+		{ID: "t-acc-1", Title: "Accepted todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), ProjectDir: "/tmp/proj2"},
+		{ID: "t-new-2", Title: "New todo 2", Status: db.StatusNew, Source: "manual", CreatedAt: time.Now(), ProjectDir: "/tmp/proj3"},
 	}
 	insertTestPaths(t, p.database, []string{"/tmp/proj1", "/tmp/proj2", "/tmp/proj3"})
 

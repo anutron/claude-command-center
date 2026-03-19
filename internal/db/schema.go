@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -180,6 +181,16 @@ func migrateSchema(db *sql.DB) error {
 	// Drop the threads table (feature removed, preserved on threads-feature branch)
 	_, _ = db.Exec(`DROP TABLE IF EXISTS cc_threads`)
 
+	// --- Todo status redesign migration ---
+	// Collapse three status fields (status, triage_status, session_status) into
+	// a single status FSM. We detect whether the migration is needed by checking
+	// if the triage_status column still exists.
+	if columnExists(db, "cc_todos", "triage_status") {
+		if err := migrateTodoStatusFSM(db); err != nil {
+			return fmt.Errorf("todo status FSM migration: %w", err)
+		}
+	}
+
 	// BUG-101: Backfill display_id for existing rows that have display_id=0.
 	// The original backfill only handled NULL, but rows may have ended up with 0
 	// (e.g. explicit default or COALESCE in reads masking NULL). This assigns
@@ -201,6 +212,106 @@ func migrateSchema(db *sql.DB) error {
 
 func FormatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
+}
+
+// columnExists checks whether a column exists on a table via pragma.
+func columnExists(db *sql.DB, table, column string) bool {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dfltValue, &pk); err != nil {
+			return false
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
+}
+
+// migrateTodoStatusFSM remaps the three-field status model to a single status
+// column and then drops triage_status and session_status via table recreation.
+func migrateTodoStatusFSM(db *sql.DB) error {
+	// Step 1: Remap status values while old columns still exist.
+	// Order matters: session_status mappings first (more specific), then
+	// triage_status mappings for rows with no session_status.
+	remaps := []string{
+		// session_status-based mappings (status='active')
+		`UPDATE cc_todos SET status = 'enqueued'  WHERE status = 'active' AND COALESCE(session_status, '') = 'queued'`,
+		`UPDATE cc_todos SET status = 'running'   WHERE status = 'active' AND COALESCE(session_status, '') = 'active'`,
+		`UPDATE cc_todos SET status = 'review'    WHERE status = 'active' AND COALESCE(session_status, '') = 'review'`,
+		`UPDATE cc_todos SET status = 'failed'    WHERE status = 'active' AND COALESCE(session_status, '') = 'failed'`,
+		`UPDATE cc_todos SET status = 'review'    WHERE status = 'active' AND COALESCE(session_status, '') = 'completed'`,
+		`UPDATE cc_todos SET status = 'blocked'   WHERE status = 'active' AND COALESCE(session_status, '') = 'blocked'`,
+		// triage_status-based mappings (remaining active rows with no session_status)
+		`UPDATE cc_todos SET status = 'new'       WHERE status = 'active' AND COALESCE(triage_status, 'accepted') = 'new' AND COALESCE(session_status, '') = ''`,
+		`UPDATE cc_todos SET status = 'backlog'   WHERE status = 'active' AND COALESCE(triage_status, 'accepted') = 'accepted' AND COALESCE(session_status, '') = ''`,
+		// completed and dismissed stay as-is (no UPDATE needed)
+	}
+	for _, q := range remaps {
+		if _, err := db.Exec(q); err != nil {
+			return fmt.Errorf("remap: %w", err)
+		}
+	}
+
+	// Step 2: Recreate the table without triage_status and session_status.
+	// SQLite doesn't reliably support DROP COLUMN in all builds, so we use
+	// the standard create-copy-drop-rename pattern.
+	stmts := []string{
+		`CREATE TABLE cc_todos_new (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'backlog',
+			source TEXT NOT NULL DEFAULT 'manual',
+			source_ref TEXT,
+			context TEXT,
+			detail TEXT,
+			who_waiting TEXT,
+			project_dir TEXT,
+			launch_mode TEXT,
+			due TEXT,
+			effort TEXT,
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			session_id TEXT,
+			proposed_prompt TEXT,
+			session_summary TEXT,
+			session_log_path TEXT,
+			source_context TEXT,
+			source_context_at TEXT,
+			display_id INTEGER,
+			created_at TEXT NOT NULL,
+			completed_at TEXT,
+			updated_at TEXT NOT NULL
+		)`,
+		`INSERT INTO cc_todos_new (id, title, status, source, source_ref, context, detail,
+			who_waiting, project_dir, launch_mode, due, effort, sort_order, session_id, proposed_prompt,
+			session_summary, session_log_path, source_context, source_context_at, display_id,
+			created_at, completed_at, updated_at)
+		SELECT id, title, status, source, source_ref, context, detail,
+			who_waiting, project_dir, launch_mode, due, effort, sort_order, session_id, proposed_prompt,
+			session_summary, session_log_path, source_context, source_context_at, display_id,
+			created_at, completed_at, updated_at
+		FROM cc_todos`,
+		`DROP TABLE cc_todos`,
+		`ALTER TABLE cc_todos_new RENAME TO cc_todos`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_todos_source_ref
+			ON cc_todos(source_ref) WHERE source_ref IS NOT NULL AND source_ref != ''`,
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			return fmt.Errorf("recreate table: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func ParseTime(s string) time.Time {

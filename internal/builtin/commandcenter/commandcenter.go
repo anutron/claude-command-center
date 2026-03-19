@@ -536,9 +536,9 @@ func (p *Plugin) filteredTodos() []db.Todo {
 
 	var result []db.Todo
 	if !p.ccExpanded {
-		// Normal view: accepted todos with no session_status
+		// Normal view: backlog todos only
 		for _, t := range allActive {
-			if t.TriageStatus == "accepted" && t.SessionStatus == "" {
+			if t.Status == db.StatusBacklog {
 				result = append(result, t)
 			}
 		}
@@ -547,31 +547,31 @@ func (p *Plugin) filteredTodos() []db.Todo {
 		switch p.triageFilter {
 		case "accepted":
 			for _, t := range allActive {
-				if t.TriageStatus == "accepted" && t.SessionStatus == "" {
+				if t.Status == db.StatusBacklog {
 					result = append(result, t)
 				}
 			}
 		case "new":
 			for _, t := range allActive {
-				if t.TriageStatus == "new" {
+				if t.Status == db.StatusNew {
 					result = append(result, t)
 				}
 			}
 		case "review":
 			for _, t := range allActive {
-				if t.SessionStatus == "review" {
+				if t.Status == db.StatusReview || t.Status == db.StatusFailed {
 					result = append(result, t)
 				}
 			}
 		case "blocked":
 			for _, t := range allActive {
-				if t.SessionStatus == "blocked" {
+				if t.Status == db.StatusBlocked {
 					result = append(result, t)
 				}
 			}
 		case "active":
 			for _, t := range allActive {
-				if t.SessionStatus == "active" {
+				if t.Status == db.StatusRunning || t.Status == db.StatusEnqueued {
 					result = append(result, t)
 				}
 			}
@@ -610,19 +610,16 @@ func (p *Plugin) triageCounts() map[string]int {
 	}
 	for _, t := range p.cc.ActiveTodos() {
 		counts["all"]++
-		if t.TriageStatus == "accepted" && t.SessionStatus == "" {
+		switch t.Status {
+		case db.StatusBacklog:
 			counts["accepted"]++
-		}
-		if t.TriageStatus == "new" {
+		case db.StatusNew:
 			counts["new"]++
-		}
-		if t.SessionStatus == "review" {
+		case db.StatusReview, db.StatusFailed:
 			counts["review"]++
-		}
-		if t.SessionStatus == "blocked" {
+		case db.StatusBlocked:
 			counts["blocked"]++
-		}
-		if t.SessionStatus == "active" {
+		case db.StatusRunning, db.StatusEnqueued:
 			counts["active"]++
 		}
 	}

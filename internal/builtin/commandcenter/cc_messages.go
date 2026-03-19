@@ -158,12 +158,12 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			// - Interactive sessions launched via "Run Claude" → "completed"
 			//   (only if not tracked as a headless agent, which has its own completion path)
 			if msg.WasResumeJoin {
-				p.setTodoSessionStatus(msg.TodoID, "review")
-				cmds = append(cmds, p.persistSessionStatus(msg.TodoID, "review"))
+				p.setTodoSessionStatus(msg.TodoID, db.StatusReview)
+				cmds = append(cmds, p.persistSessionStatus(msg.TodoID, db.StatusReview))
 			} else if _, isHeadless := p.activeSessions[msg.TodoID]; !isHeadless {
 				// Interactive session returned — detect completion.
-				p.setTodoSessionStatus(msg.TodoID, "completed")
-				cmds = append(cmds, p.persistSessionStatus(msg.TodoID, "completed"))
+				p.setTodoSessionStatus(msg.TodoID, db.StatusReview)
+				cmds = append(cmds, p.persistSessionStatus(msg.TodoID, db.StatusReview))
 			}
 		}
 
@@ -314,9 +314,7 @@ func (p *Plugin) handleClaudeEditFinished(msg claudeEditFinishedMsg) (bool, plug
 				}
 				updated.CompletedAt = existing.CompletedAt
 				updated.SessionID = existing.SessionID
-				updated.SessionStatus = existing.SessionStatus
 				updated.SessionSummary = existing.SessionSummary
-				updated.TriageStatus = existing.TriageStatus
 				updated.DisplayID = existing.DisplayID
 				p.cc.Todos[i] = updated
 				break
@@ -763,10 +761,10 @@ func (p *Plugin) handleAgentStartedInternal(msg agentStartedInternalMsg) (bool, 
 	p.activeSessions[msg.todoID] = msg.session
 
 	// Update the todo session status in-memory and persist.
-	p.setTodoSessionStatus(msg.todoID, "active")
+	p.setTodoSessionStatus(msg.todoID, db.StatusRunning)
 
 	var cmds []tea.Cmd
-	cmds = append(cmds, p.persistSessionStatus(msg.todoID, "active"))
+	cmds = append(cmds, p.persistSessionStatus(msg.todoID, db.StatusRunning))
 
 	// Persist the session log path so it can be replayed later.
 	if msg.session.LogPath != "" {
@@ -784,8 +782,8 @@ func (p *Plugin) handleAgentStartedInternal(msg agentStartedInternalMsg) (bool, 
 }
 
 func (p *Plugin) handleAgentStarted(msg agentStartedMsg) (bool, plugin.Action) {
-	p.setTodoSessionStatus(msg.todoID, "active")
-	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionStatus(msg.todoID, "active")}
+	p.setTodoSessionStatus(msg.todoID, db.StatusRunning)
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionStatus(msg.todoID, db.StatusRunning)}
 }
 
 func (p *Plugin) handleAgentStatus(msg agentStatusMsg) (bool, plugin.Action) {

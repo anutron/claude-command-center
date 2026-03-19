@@ -50,10 +50,10 @@ func runUpdateTodo(args []string) error {
 	}
 
 	if *sessionStatus != "" {
-		if err := db.DBUpdateTodoSessionStatus(database, *id, *sessionStatus); err != nil {
-			return fmt.Errorf("update session status: %w", err)
+		if err := db.DBUpdateTodoStatus(database, *id, *sessionStatus); err != nil {
+			return fmt.Errorf("update status: %w", err)
 		}
-		fmt.Printf("Updated session_status for todo %s\n", *id)
+		fmt.Printf("Updated status for todo %s\n", *id)
 	}
 
 	_ = tui.SendNotify("reload")

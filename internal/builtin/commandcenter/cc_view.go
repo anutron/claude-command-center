@@ -486,7 +486,7 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 		lines = append(lines, line1)
 
 		var details []string
-		if indicator := agentStatusIndicator(s, todo.SessionStatus); indicator != "" {
+		if indicator := agentStatusIndicator(s, todo.Status); indicator != "" {
 			details = append(details, indicator)
 		}
 		if todo.Due != "" {
@@ -535,13 +535,15 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 // agentStatusIndicator returns a styled indicator string for a given session status.
 func agentStatusIndicator(s *ccStyles, status string) string {
 	switch status {
-	case "active":
+	case db.StatusRunning:
 		return lipgloss.NewStyle().Foreground(s.ColorCyan).Render("● agent working")
-	case "blocked":
+	case db.StatusBlocked:
 		return lipgloss.NewStyle().Foreground(s.ColorYellow).Render("● needs input")
-	case "review":
+	case db.StatusReview:
 		return lipgloss.NewStyle().Foreground(s.ColorGreen).Render("● ready for review")
-	case "queued":
+	case db.StatusFailed:
+		return lipgloss.NewStyle().Foreground(s.ColorYellow).Render("● failed")
+	case db.StatusEnqueued:
 		return lipgloss.NewStyle().Foreground(s.ColorMuted).Render("⏳ queued")
 	default:
 		return ""
@@ -555,10 +557,10 @@ func renderAgentStatusHeader(s *ccStyles, todos []db.Todo, maxConcurrent int) st
 	}
 	var active, queued int
 	for _, t := range todos {
-		switch t.SessionStatus {
-		case "active":
+		switch t.Status {
+		case db.StatusRunning:
 			active++
-		case "queued":
+		case db.StatusEnqueued:
 			queued++
 		}
 	}

@@ -77,12 +77,12 @@ func DBInsertTodo(db *sql.DB, t Todo) error {
 		completedAt = &s
 	}
 	_, err := db.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
-		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_status, session_summary,
+		who_waiting, project_dir, due, effort, session_id, proposed_prompt, session_summary,
 		session_log_path, source_context, source_context_at,
-		triage_status, display_id, sort_order, created_at, completed_at, updated_at)
+		display_id, sort_order, created_at, completed_at, updated_at)
 		VALUES (?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULL, NULLIF(?, ''),
-		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), 'accepted',
+		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		(SELECT COALESCE(MAX(display_id), 0) + 1 FROM cc_todos),
 		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed')),
 		?, ?, ?)`,
@@ -419,16 +419,16 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			displayID = maxDisplayID
 		}
 		_, err := tx.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
-			who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status, session_summary,
+			who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_summary,
 			session_log_path, source_context, source_context_at,
-			triage_status, display_id, sort_order, created_at, completed_at, updated_at)
+			display_id, sort_order, created_at, completed_at, updated_at)
 			VALUES (?, ?, ?, ?,
 			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			NULLIF(?, ''), NULL, NULLIF(?, ''),
+			NULLIF(?, ''), NULLIF(?, ''),
 			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
-			'accepted', ?, ?, ?, ?, ?)`,
+			?, ?, ?, ?, ?)`,
 			t.ID, t.Title, t.Status, t.Source,
 			t.SourceRef, t.Context, t.Detail,
 			t.WhoWaiting, t.ProjectDir, t.LaunchMode,

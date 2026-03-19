@@ -50,8 +50,8 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 
 func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 	rows, err := db.Query(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
-		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status,
-		session_summary, session_log_path, source_context, source_context_at, COALESCE(triage_status, 'accepted'), created_at, completed_at
+		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
+		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
 		FROM cc_todos ORDER BY sort_order ASC`)
 	if err != nil {
 		return nil, err
@@ -63,13 +63,12 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		var t Todo
 		var createdStr string
 		var completedStr sql.NullString
-		var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionStatus, sessionSummary, sessionLogPath sql.NullString
+		var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionSummary, sessionLogPath sql.NullString
 		var sourceContext, sourceContextAt sql.NullString
-		var triageStatus string
 
 		err := rows.Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
-			&proposedPrompt, &sessionStatus, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt, &triageStatus,
+			&proposedPrompt, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt,
 			&createdStr, &completedStr)
 		if err != nil {
 			return nil, err
@@ -85,10 +84,6 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		t.Effort = effort.String
 		t.SessionID = sessionID.String
 		t.ProposedPrompt = proposedPrompt.String
-		// sessionStatus and triageStatus are scanned from DB but no longer stored
-		// on the struct — they'll be dropped in the schema migration.
-		_ = sessionStatus
-		_ = triageStatus
 		t.SessionSummary = sessionSummary.String
 		t.SessionLogPath = sessionLogPath.String
 		t.SourceContext = sourceContext.String
@@ -380,17 +375,16 @@ func DBLoadTodoByID(db *sql.DB, id string) (*Todo, error) {
 	var t Todo
 	var createdStr string
 	var completedStr sql.NullString
-	var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionStatus, sessionSummary, sessionLogPath sql.NullString
-
+	var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionSummary, sessionLogPath sql.NullString
 	var sourceContext, sourceContextAt sql.NullString
-	var triageStatus string
+
 	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
-		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status,
-		session_summary, session_log_path, source_context, source_context_at, COALESCE(triage_status, 'accepted'), created_at, completed_at
+		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
+		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
 		FROM cc_todos WHERE id = ?`, id).
 		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
-			&proposedPrompt, &sessionStatus, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt, &triageStatus,
+			&proposedPrompt, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt,
 			&createdStr, &completedStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -409,8 +403,6 @@ func DBLoadTodoByID(db *sql.DB, id string) (*Todo, error) {
 	t.Effort = effort.String
 	t.SessionID = sessionID.String
 	t.ProposedPrompt = proposedPrompt.String
-	_ = sessionStatus
-	_ = triageStatus
 	t.SessionSummary = sessionSummary.String
 	t.SessionLogPath = sessionLogPath.String
 	t.SourceContext = sourceContext.String
@@ -427,17 +419,16 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	var t Todo
 	var createdStr string
 	var completedStr sql.NullString
-	var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionStatus, sessionSummary, sessionLogPath sql.NullString
-
+	var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionSummary, sessionLogPath sql.NullString
 	var sourceContext, sourceContextAt sql.NullString
-	var triageStatus string
+
 	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
-		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_status,
-		session_summary, session_log_path, source_context, source_context_at, COALESCE(triage_status, 'accepted'), created_at, completed_at
+		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
+		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
 		FROM cc_todos WHERE display_id = ?`, displayID).
 		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
-			&proposedPrompt, &sessionStatus, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt, &triageStatus,
+			&proposedPrompt, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt,
 			&createdStr, &completedStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -456,8 +447,6 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	t.Effort = effort.String
 	t.SessionID = sessionID.String
 	t.ProposedPrompt = proposedPrompt.String
-	_ = sessionStatus
-	_ = triageStatus
 	t.SessionSummary = sessionSummary.String
 	t.SessionLogPath = sessionLogPath.String
 	t.SourceContext = sourceContext.String
