@@ -97,12 +97,13 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 
 // slackCandidate is a Slack message that may contain a commitment.
 type slackCandidate struct {
-	Message       string
-	Permalink     string
-	Channel       string
-	ChannelID     string
-	Timestamp     string
-	ThreadContext string
+	Message             string
+	Permalink           string
+	Channel             string
+	ChannelID           string
+	Timestamp           string
+	ThreadContext       string
+	ConversationContext string // preceding messages in the same channel for pronoun resolution
 }
 
 var commitmentPhrases = []string{
@@ -365,6 +366,37 @@ func isMissingScopeError(err error) bool {
 	return strings.Contains(err.Error(), "missing_scope") || strings.Contains(err.Error(), "not_allowed_token_type")
 }
 
+// userNameResolver caches user ID → display name lookups to avoid repeated API calls.
+type userNameResolver struct {
+	cache map[string]string
+	token string
+	ctx   context.Context
+}
+
+func newUserNameResolver(ctx context.Context, token, selfUserID, selfUserName string) *userNameResolver {
+	r := &userNameResolver{
+		cache: make(map[string]string),
+		token: token,
+		ctx:   ctx,
+	}
+	if selfUserID != "" && selfUserName != "" {
+		r.cache[selfUserID] = selfUserName
+	}
+	return r
+}
+
+func (r *userNameResolver) resolve(userID string) string {
+	if name, ok := r.cache[userID]; ok {
+		return name
+	}
+	name := fetchUserName(r.ctx, r.token, userID)
+	if name == "" {
+		name = userID
+	}
+	r.cache[userID] = name
+	return name
+}
+
 func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, error) {
 	// Get the authenticated user's identity for labeling self-DMs
 	selfUserID, selfUserName, authErr := fetchAuthIdentity(ctx, token)
@@ -373,6 +405,8 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 	} else {
 		log.Printf("slack: authenticated as %s (ID: %s)", selfUserName, selfUserID)
 	}
+
+	names := newUserNameResolver(ctx, token, selfUserID, selfUserName)
 
 	// Try conversations-based approach first (requires channels:read scope).
 	// If it fails due to missing scope, fall back to search.messages (requires search:read only).
@@ -439,7 +473,7 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 		}
 
 		var commitmentCount int
-		for _, msg := range messages {
+		for i, msg := range messages {
 			if msg.Type != "message" || msg.Text == "" {
 				continue
 			}
@@ -456,13 +490,16 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 				Timestamp: msg.TS,
 			}
 
+			// Include preceding messages for context (helps LLM resolve "this", "it", etc.).
+			// Messages are newest-first, so indices > i are older/preceding.
+			c.ConversationContext = buildConversationContext(messages, i, 15, names)
+
 			// Fetch thread context if this message is part of a thread — non-fatal if scope missing
 			thread, threadErr := fetchThreadContext(ctx, token, ch.ID, msg.TS)
 			if threadErr == nil && len(thread) > 1 {
 				var sb strings.Builder
 				for _, reply := range thread {
-					sb.WriteString(reply.Text)
-					sb.WriteString("\n")
+					sb.WriteString(fmt.Sprintf("[%s]: %s\n", names.resolve(reply.User), reply.Text))
 				}
 				c.ThreadContext = sb.String()
 			}
@@ -619,6 +656,61 @@ func fetchThreadContext(ctx context.Context, token, channelID, ts string) ([]sla
 	}
 
 	return result.Messages, nil
+}
+
+// buildConversationContext extracts up to n preceding messages from the same
+// calendar day as the candidate. Messages are newest-first in the slice, so
+// preceding messages are at higher indices. Returns them in chronological order
+// (oldest first) with speaker labels.
+//
+// names may be nil (e.g. in tests or the search fallback), in which case
+// messages are emitted without speaker labels.
+func buildConversationContext(messages []slackHistoryEntry, candidateIdx, n int, names *userNameResolver) string {
+	if candidateIdx+1 >= len(messages) {
+		return ""
+	}
+
+	// Determine the candidate's calendar day.
+	candidateDay := slackTSDay(messages[candidateIdx].TS)
+
+	// Collect up to n preceding messages that fall on the same day.
+	var preceding []slackHistoryEntry
+	for i := candidateIdx + 1; i < len(messages) && len(preceding) < n; i++ {
+		msg := messages[i]
+		if msg.Type != "message" || msg.Text == "" {
+			continue
+		}
+		if !candidateDay.IsZero() && !slackTSDay(msg.TS).IsZero() {
+			if !slackTSDay(msg.TS).Equal(candidateDay) {
+				break // crossed into previous day
+			}
+		}
+		preceding = append(preceding, msg)
+	}
+
+	// Reverse so output is chronological (oldest first).
+	var sb strings.Builder
+	for i := len(preceding) - 1; i >= 0; i-- {
+		msg := preceding[i]
+		if names != nil && msg.User != "" {
+			sb.WriteString(fmt.Sprintf("[%s]: %s\n", names.resolve(msg.User), msg.Text))
+		} else {
+			sb.WriteString(msg.Text)
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+// slackTSDay parses a Slack timestamp and returns the calendar day (midnight UTC-7/Pacific).
+// Returns zero time on parse failure.
+func slackTSDay(ts string) time.Time {
+	f, err := strconv.ParseFloat(ts, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	t := time.Unix(int64(f), 0).In(time.FixedZone("Pacific", -7*3600))
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
 func hasCommitmentLanguage(text string) bool {

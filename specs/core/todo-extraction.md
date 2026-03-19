@@ -40,6 +40,16 @@ When the conversations API is unavailable, `search.messages` runs these queries:
 - Self: "i'll", "i will", "i promise", "action item", "follow up", "let me"
 - Assignment: "aaron will", "aaron is going to", "aaron to follow"
 
+### Stage 1b: Conversation Context
+
+Before LLM extraction, each candidate is enriched with surrounding conversation context to help resolve pronouns and understand what was committed to.
+
+- **Channel history path**: Up to 15 preceding same-day messages from the same channel are included as `ConversationContext`. Messages are presented in chronological order (oldest first). Stops at the calendar day boundary (Pacific time) to avoid pulling in stale context from previous days.
+- **Thread replies**: If the candidate is part of a thread, replies are fetched and included as `ThreadContext`.
+- **Search fallback path**: No conversation context available (search API returns individual matches). Thread context is also unavailable.
+
+This context is critical for DM conversations where commitments often use pronouns ("I'll get this to you", "I'll handle it") that refer to earlier messages.
+
 ### Stage 2: LLM Extraction (Haiku)
 
 Candidates that pass the pre-filter are sent to haiku for extraction.
@@ -124,6 +134,11 @@ If rejected, `project_dir` is set to `"REJECT"` and the todo is auto-dismissed.
 - Todo from Granola where `[Other]` said "I will handle that" → rejected (other's commitment)
 - Todo from Granola where `[Other]` said "Aaron, can you follow up on X?" and `[Aaron]` said "Yes" → accepted (category a)
 - Todo from Granola where `[Other]` said "Aaron will take care of the integration" → accepted (category b)
+
+### Conversation Context Resolution
+
+- Preceding DM: "Can you send me the mockup?" → Aaron: "I'll get this to you by EOD" → extracted with title referencing the mockup, not just "this"
+- Preceding channel message about a PR → Aaron: "I'll handle it" → extracted with title referencing the PR
 
 ### Edge Cases
 

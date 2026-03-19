@@ -21,6 +21,9 @@ func extractSlackCommitments(ctx context.Context, l llm.LLM, candidates []slackC
 	for i, c := range candidates {
 		sb.WriteString(fmt.Sprintf("## Message %d (from #%s)\n", i+1, c.Channel))
 		sb.WriteString(fmt.Sprintf("Permalink: %s\n", c.Permalink))
+		if c.ConversationContext != "" {
+			sb.WriteString(fmt.Sprintf("Preceding conversation:\n%s\n", c.ConversationContext))
+		}
 		sb.WriteString(fmt.Sprintf("Message: %s\n", c.Message))
 		if c.ThreadContext != "" {
 			sb.WriteString(fmt.Sprintf("Thread context:\n%s\n", c.ThreadContext))
@@ -47,7 +50,7 @@ REJECT messages that are:
 - Vague intentions without a specific deliverable
 - Assignments to OTHER people that don't include Aaron
 
-Use the thread context to understand WHAT was committed to. Build the todo title from the full context, not just the short message.
+Use the preceding conversation and thread context to understand WHAT was committed to. Messages often use pronouns like "this", "it", "that" — resolve them using the surrounding conversation. Build the todo title from the full context, not just the short message.
 
 For each real commitment, return:
 - title: Actionable title starting with a verb (20+ chars)

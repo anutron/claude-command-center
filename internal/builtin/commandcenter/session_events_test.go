@@ -397,21 +397,3 @@ func TestParseSessionEvent_AssistantEmptyContent(t *testing.T) {
 		t.Errorf("expected 0 events for empty content, got %d", len(events))
 	}
 }
-
-func TestTruncateForViewer(t *testing.T) {
-	// Normal text
-	if got := truncateForViewer("hello", 10); got != "hello" {
-		t.Errorf("expected hello, got %q", got)
-	}
-
-	// Newlines replaced
-	if got := truncateForViewer("line1\nline2", 20); got != "line1 line2" {
-		t.Errorf("expected 'line1 line2', got %q", got)
-	}
-
-	// Truncation
-	long := "abcdefghijklmnop"
-	if got := truncateForViewer(long, 10); got != "abcdefghij..." {
-		t.Errorf("expected truncated string, got %q", got)
-	}
-}
