@@ -1164,8 +1164,8 @@ func TestYKeyInTriageFilterDoesNotPanic(t *testing.T) {
 	if !p.ccExpanded {
 		t.Fatal("expected expanded view")
 	}
-	// Set filter to "new" — only t-new-1 and t-new-2 should be visible
-	p.triageFilter = "new"
+	// Set filter to "inbox" — only t-new-1 and t-new-2 should be visible
+	p.triageFilter = "inbox"
 	p.ccCursor = 0
 
 	filtered := p.filteredTodos()

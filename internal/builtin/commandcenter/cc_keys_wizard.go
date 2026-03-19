@@ -394,7 +394,7 @@ func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 		}
 
 		// Mark todo as running and persist project dir + launch mode so resume uses the right settings
-		p.setTodoSessionStatus(todo.ID, db.StatusRunning)
+		p.setTodoStatus(todo.ID, db.StatusRunning)
 		p.setTodoProjectDir(todo.ID, projectDir)
 		p.setTodoLaunchMode(todo.ID, p.taskRunnerMode)
 		p.cc.AcceptTodo(todo.ID)
@@ -412,7 +412,7 @@ func (p *Plugin) taskRunnerLaunchInteractive() plugin.Action {
 		}
 
 		var cmds []tea.Cmd
-		cmds = append(cmds, p.persistSessionStatus(todo.ID, db.StatusRunning))
+		cmds = append(cmds, p.persistTodoStatus(todo.ID, db.StatusRunning))
 		cmds = append(cmds, p.persistProjectDir(todo.ID, projectDir))
 		cmds = append(cmds, p.persistLaunchMode(todo.ID, p.taskRunnerMode))
 		cmds = append(cmds, p.dbWriteCmd(func(database *sql.DB) error {

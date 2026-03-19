@@ -192,7 +192,7 @@ type Plugin struct {
 func New() *Plugin {
 	return &Plugin{
 		subView:          "command",
-		triageFilter:     "accepted",
+		triageFilter:     "todo",
 		wizardSelections: make(map[string]wizardSelection),
 	}
 }
@@ -545,33 +545,27 @@ func (p *Plugin) filteredTodos() []db.Todo {
 	} else {
 		// Expanded view: filter based on triageFilter
 		switch p.triageFilter {
-		case "accepted":
+		case "todo":
 			for _, t := range allActive {
 				if t.Status == db.StatusBacklog {
 					result = append(result, t)
 				}
 			}
-		case "new":
+		case "inbox":
 			for _, t := range allActive {
 				if t.Status == db.StatusNew {
+					result = append(result, t)
+				}
+			}
+		case "agents":
+			for _, t := range allActive {
+				if t.Status == db.StatusEnqueued || t.Status == db.StatusRunning || t.Status == db.StatusBlocked {
 					result = append(result, t)
 				}
 			}
 		case "review":
 			for _, t := range allActive {
 				if t.Status == db.StatusReview || t.Status == db.StatusFailed {
-					result = append(result, t)
-				}
-			}
-		case "blocked":
-			for _, t := range allActive {
-				if t.Status == db.StatusBlocked {
-					result = append(result, t)
-				}
-			}
-		case "active":
-			for _, t := range allActive {
-				if t.Status == db.StatusRunning || t.Status == db.StatusEnqueued {
 					result = append(result, t)
 				}
 			}
@@ -598,12 +592,11 @@ func (p *Plugin) filteredTodos() []db.Todo {
 // triageCounts returns the count of todos matching each filter category.
 func (p *Plugin) triageCounts() map[string]int {
 	counts := map[string]int{
-		"accepted": 0,
-		"new":      0,
-		"review":   0,
-		"blocked":  0,
-		"active":   0,
-		"all":      0,
+		"todo":   0,
+		"inbox":  0,
+		"agents": 0,
+		"review": 0,
+		"all":    0,
 	}
 	if p.cc == nil {
 		return counts
@@ -612,15 +605,13 @@ func (p *Plugin) triageCounts() map[string]int {
 		counts["all"]++
 		switch t.Status {
 		case db.StatusBacklog:
-			counts["accepted"]++
+			counts["todo"]++
 		case db.StatusNew:
-			counts["new"]++
+			counts["inbox"]++
+		case db.StatusEnqueued, db.StatusRunning, db.StatusBlocked:
+			counts["agents"]++
 		case db.StatusReview, db.StatusFailed:
 			counts["review"]++
-		case db.StatusBlocked:
-			counts["blocked"]++
-		case db.StatusRunning, db.StatusEnqueued:
-			counts["active"]++
 		}
 	}
 	return counts

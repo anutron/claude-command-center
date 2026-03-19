@@ -523,7 +523,7 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 
 	// Triage status bar
 	if triageCounts != nil {
-		statusBar := renderTriageStatusBar(s, triageCounts, width)
+		statusBar := renderStatusBar(s, triageCounts, width)
 		if statusBar != "" {
 			lines = append(lines, "", statusBar)
 		}
@@ -777,7 +777,7 @@ func renderExpandedTodoItem(s *ccStyles, g *gradientColors, todo db.Todo, num in
 }
 
 func renderExpandedTodoView(s *ccStyles, g *gradientColors, todos []db.Todo, cursor, offset, rowsPerCol, numCols, width, height int, frame int, loadingTodoID string, refreshing bool, activeFilter string, counts map[string]int) string {
-	tabBar := renderTriageTabBar(s, activeFilter, counts, width)
+	tabBar := renderTabBar(s, activeFilter, counts, width)
 
 	pageSize := rowsPerCol * numCols
 	totalPages := (len(todos) + pageSize - 1) / pageSize
@@ -843,18 +843,17 @@ func renderExpandedTodoView(s *ccStyles, g *gradientColors, todos []db.Todo, cur
 	return lipgloss.JoinVertical(lipgloss.Left, header, tabBar, "", joined, "", hints, footer)
 }
 
-// renderTriageTabBar renders the filter tab bar for the expanded todo view.
-func renderTriageTabBar(s *ccStyles, activeFilter string, counts map[string]int, width int) string {
+// renderTabBar renders the filter tab bar for the expanded todo view.
+func renderTabBar(s *ccStyles, activeFilter string, counts map[string]int, width int) string {
 	type tabDef struct {
 		key   string
 		label string
 	}
 	tabs := []tabDef{
-		{"accepted", "Accepted"},
-		{"new", "New"},
+		{"todo", "ToDo"},
+		{"inbox", "Inbox"},
+		{"agents", "Agents"},
 		{"review", "Review"},
-		{"blocked", "Blocked"},
-		{"active", "Active"},
 		{"all", "All"},
 	}
 
@@ -877,18 +876,17 @@ func renderTriageTabBar(s *ccStyles, activeFilter string, counts map[string]int,
 	return "  " + strings.Join(parts, "  ")
 }
 
-// renderTriageStatusBar renders a compact status bar for the normal (collapsed) todo view.
-func renderTriageStatusBar(s *ccStyles, counts map[string]int, width int) string {
+// renderStatusBar renders a compact status bar for the normal (collapsed) todo view.
+func renderStatusBar(s *ccStyles, counts map[string]int, width int) string {
 	type item struct {
 		key        string
 		label      string
 		shortLabel string
 	}
 	items := []item{
-		{"new", "New", "N"},
+		{"inbox", "Inbox", "I"},
+		{"agents", "Agents", "A"},
 		{"review", "Review", "R"},
-		{"blocked", "Blocked", "B"},
-		{"active", "Active", "A"},
 	}
 
 	// Show the bar whenever there are active todos (any triage state).

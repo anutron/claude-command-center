@@ -32,7 +32,7 @@ func (p *Plugin) handleDetailView(msg tea.KeyMsg) plugin.Action {
 }
 
 // statusOptions are the available status values for inline selection.
-var statusOptions = []string{"active", "waiting", "completed"}
+var statusOptions = []string{"backlog", "completed", "dismissed"}
 
 // detailFieldCount is the number of cyclable fields in the detail view.
 const detailFieldCount = 3 // 0=Status, 1=Due, 2=ProjectDir

@@ -358,7 +358,7 @@ func (p *Plugin) killAgent(todoID string) tea.Cmd {
 	}
 	delete(p.activeSessions, todoID)
 
-	p.setTodoSessionStatus(todoID, db.StatusFailed)
+	p.setTodoStatus(todoID, db.StatusFailed)
 	p.publishEvent("agent.killed", map[string]interface{}{
 		"todo_id": todoID,
 	})
@@ -370,7 +370,7 @@ func (p *Plugin) killAgent(todoID string) tea.Cmd {
 		p.updateSessionViewerContent()
 	}
 
-	return p.persistSessionStatus(todoID, db.StatusFailed)
+	return p.persistTodoStatus(todoID, db.StatusFailed)
 }
 
 // Concurrency manager methods on Plugin.
@@ -404,7 +404,7 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 	})
 
 	if p.canLaunchAgent() {
-		p.setTodoSessionStatus(qs.TodoID, db.StatusRunning)
+		p.setTodoStatus(qs.TodoID, db.StatusRunning)
 		p.publishEvent("agent.started", map[string]interface{}{
 			"todo_id": qs.TodoID,
 		})
@@ -413,11 +413,11 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 
 	// Queue it.
 	p.sessionQueue = append(p.sessionQueue, qs)
-	p.setTodoSessionStatus(qs.TodoID, db.StatusEnqueued)
+	p.setTodoStatus(qs.TodoID, db.StatusEnqueued)
 	p.publishEvent("agent.queued", map[string]interface{}{
 		"todo_id": qs.TodoID,
 	})
-	return tea.Batch(acceptCmd, p.persistSessionStatus(qs.TodoID, db.StatusEnqueued))
+	return tea.Batch(acceptCmd, p.persistTodoStatus(qs.TodoID, db.StatusEnqueued))
 }
 
 // onAgentFinished cleans up after an agent finishes and launches the next queued item.
@@ -448,7 +448,7 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 	if exitCode != 0 {
 		status = db.StatusFailed
 	}
-	p.setTodoSessionStatus(todoID, status)
+	p.setTodoStatus(todoID, status)
 	p.setTodoSessionSummary(todoID, summary)
 	p.publishEvent("agent.completed", map[string]interface{}{
 		"todo_id":   todoID,
@@ -457,14 +457,14 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 	})
 
 	var cmds []tea.Cmd
-	cmds = append(cmds, p.persistSessionStatusAndSummary(todoID, status, summary))
+	cmds = append(cmds, p.persistTodoStatusAndSummary(todoID, status, summary))
 
 	// Check queue for next auto-start item.
 	if len(p.sessionQueue) > 0 && p.canLaunchAgent() {
 		next := p.sessionQueue[0]
 		p.sessionQueue = p.sessionQueue[1:]
 		if next.AutoStart {
-			p.setTodoSessionStatus(next.TodoID, db.StatusRunning)
+			p.setTodoStatus(next.TodoID, db.StatusRunning)
 			p.publishEvent("agent.started", map[string]interface{}{
 				"todo_id": next.TodoID,
 			})
@@ -478,8 +478,8 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// setTodoSessionStatus updates the status of a todo in-memory.
-func (p *Plugin) setTodoSessionStatus(todoID, status string) {
+// setTodoStatus updates the status of a todo in-memory.
+func (p *Plugin) setTodoStatus(todoID, status string) {
 	if p.cc == nil {
 		return
 	}
@@ -491,8 +491,8 @@ func (p *Plugin) setTodoSessionStatus(todoID, status string) {
 	}
 }
 
-// persistSessionStatus returns a tea.Cmd that writes the status to the DB.
-func (p *Plugin) persistSessionStatus(todoID, status string) tea.Cmd {
+// persistTodoStatus returns a tea.Cmd that writes the status to the DB.
+func (p *Plugin) persistTodoStatus(todoID, status string) tea.Cmd {
 	return p.dbWriteCmd(func(database *sql.DB) error {
 		return db.DBUpdateTodoStatus(database, todoID, status)
 	})
@@ -573,8 +573,8 @@ func (p *Plugin) setTodoSessionSummary(todoID, summary string) {
 	}
 }
 
-// persistSessionStatusAndSummary returns a tea.Cmd that writes both status and summary to the DB.
-func (p *Plugin) persistSessionStatusAndSummary(todoID, status, summary string) tea.Cmd {
+// persistTodoStatusAndSummary returns a tea.Cmd that writes both status and summary to the DB.
+func (p *Plugin) persistTodoStatusAndSummary(todoID, status, summary string) tea.Cmd {
 	return p.dbWriteCmd(func(database *sql.DB) error {
 		now := db.FormatTime(time.Now())
 		_, err := database.Exec(`UPDATE cc_todos SET status = ?, session_summary = NULLIF(?, ''), updated_at = ? WHERE id = ?`,
