@@ -18,7 +18,7 @@ This creates impossible combinations (e.g., `new` + `running`) and orphaned stat
 
 ### Single Status Field
 
-One `status` column with eight valid states:
+One `status` column with nine valid states:
 
 | State | Meaning | Set by |
 |-------|---------|--------|
@@ -26,6 +26,7 @@ One `status` column with eight valid states:
 | `backlog` | Accepted, not being worked on | User (triage accept, manual create, reopen) |
 | `enqueued` | Waiting for an agent slot | System (agent queue) |
 | `running` | Agent actively working | System (agent runner) |
+| `blocked` | Agent paused, waiting for user input | System (agent asks question) |
 | `review` | Agent finished successfully, needs human review | System (agent exit 0) |
 | `failed` | Agent finished with error, needs human review | System (agent exit != 0) |
 | `completed` | Done | User |
@@ -37,8 +38,8 @@ Manual todos created via `t` enter as `backlog` directly (skip `new`).
 
 **Universal transitions (from any state):**
 
-- → `dismissed` — User dismisses (`X`). If `running` or `enqueued`, agent is killed/dequeued as side effect.
-- → `completed` — User marks done (`x`). If `running` or `enqueued`, agent is killed/dequeued as side effect.
+- → `dismissed` — User dismisses (`X`). If `running`, `blocked`, or `enqueued`, agent is killed/dequeued as side effect.
+- → `completed` — User marks done (`x`). If `running`, `blocked`, or `enqueued`, agent is killed/dequeued as side effect.
 
 **State-specific transitions:**
 
@@ -49,9 +50,12 @@ Manual todos created via `t` enter as `backlog` directly (skip `new`).
 | `backlog` | `running` | User launches agent (slot available) |
 | `enqueued` | `running` | System (slot opens) |
 | `enqueued` | `backlog` | User cancels from queue |
+| `running` | `blocked` | System (agent asks user a question) |
 | `running` | `review` | System (agent exits 0) |
 | `running` | `failed` | System (agent exits != 0) |
 | `running` | `backlog` | User cancels agent |
+| `blocked` | `running` | System (user answers question) |
+| `blocked` | `backlog` | User cancels agent |
 | `review` | `backlog` | User pushes back |
 | `review` | `enqueued` | User retries (queue full) |
 | `review` | `running` | User retries (slot available) |
@@ -70,15 +74,19 @@ Manual todos created via `t` enter as `backlog` directly (skip `new`).
               └──────────────────────────────────────────────────┘
 
                   new ──→ backlog ──→ enqueued ──→ running
-                             ↑  ↑       │            │
-                             │  │       │            │
-                             │  └───────┘            ▼
-                             │  (cancel)          review
+                             ↑  ↑       │            │  ↑
+                             │  │       │            │  │
+                             │  └───────┘            ▼  │
+                             │  (cancel)         blocked
                              │                      │
-                             │                      ▼
-                             │                   failed
-                             │                      │
-                             ├──────────────────────┘
+                             │    running ←─────────┘
+                             │       │    (user answers)
+                             │       │
+                             │       ├──→ review
+                             │       │
+                             │       └──→ failed
+                             │               │
+                             ├───────────────┘
                              │  (push back from review/failed)
                              │
                              │     ┌─────────┐
@@ -101,7 +109,7 @@ Tabs are a view-layer concept — groups of states for filtering:
 |-----|-------|---------------|
 | ToDo | ToDo | `backlog` |
 | Inbox | Inbox | `new` |
-| Agents | Agents | `enqueued`, `running` |
+| Agents | Agents | `enqueued`, `running`, `blocked` |
 | Review | Review | `review`, `failed` (with visual distinction: green for review, red for failed) |
 | All | All | Everything except `completed`, `dismissed` |
 
@@ -111,12 +119,18 @@ The `completed` and `dismissed` todos are accessible via the backlog toggle (`b`
 
 The header count shows the count for the currently selected tab.
 
-### Visual Treatment in Review Tab
+### Visual Treatment Within Tabs
 
-Both `review` and `failed` appear in the same Review tab but with different visual indicators:
+**Review tab:** Both `review` and `failed` appear together with different visual indicators:
 
 - `review` — success styling (agent completed its work, ready for human approval)
 - `failed` — error styling (agent encountered an error, needs human decision to retry or take over)
+
+**Agents tab:** `enqueued`, `running`, and `blocked` appear together with different visual indicators:
+
+- `enqueued` — queued/waiting styling
+- `running` — active/in-progress styling
+- `blocked` — warning styling (agent is paused, waiting for user input)
 
 ## Data Migration
 
@@ -137,8 +151,8 @@ Both `review` and `failed` appear in the same Review tab but with different visu
 | `Status=active`, `SessionStatus="active"` | `running` |
 | `Status=active`, `SessionStatus="review"` | `review` |
 | `Status=active`, `SessionStatus="failed"` | `failed` |
-| `Status=active`, `SessionStatus="completed"` | `review` |
-| `Status=active`, `SessionStatus="blocked"` | `backlog` |
+| `Status=active`, `SessionStatus="completed"` | `review` (agent said done but user hasn't approved — treat as needing review) |
+| `Status=active`, `SessionStatus="blocked"` | `blocked` |
 | `Status=completed` | `completed` |
 | `Status=dismissed` | `dismissed` |
 
@@ -146,7 +160,7 @@ Both `review` and `failed` appear in the same Review tab but with different visu
 
 ### Files affected
 
-- `internal/db/types.go` — Remove `TriageStatus`, `SessionStatus` fields from `Todo` struct; update `ActiveTodos()`, `CompletedTodos()`, mutation methods
+- `internal/db/types.go` — Remove `TriageStatus`, `SessionStatus` fields from `Todo` struct; update `ActiveTodos()` to return all non-terminal states (everything except `completed`, `dismissed`); update `CompletedTodos()`; update `DeferTodo`/`PromoteTodo` ordering boundary from `Status == "active"` to non-terminal check; update `AddTodo` to set `Status: "backlog"` instead of `"active"` + `TriageStatus: "accepted"`
 - `internal/db/read.go` — Update queries to stop reading `triage_status`, `session_status`
 - `internal/db/write.go` — Update queries to stop writing `triage_status`, `session_status`
 - `internal/db/schema.go` — Migration to drop columns and remap status values
@@ -155,9 +169,9 @@ Both `review` and `failed` appear in the same Review tab but with different visu
 - `internal/builtin/commandcenter/cc_keys.go` — Update key handlers for new status values
 - `internal/builtin/commandcenter/cc_keys_detail.go` — Update detail view status display
 - `internal/builtin/commandcenter/cc_messages.go` — Update message handlers
-- `internal/builtin/commandcenter/agent_runner.go` — Replace `setTodoSessionStatus` with direct status updates
-- `internal/refresh/merge.go` — Update merge logic for new status values
-- `internal/refresh/llm.go` — Update LLM-related status checks
+- `internal/builtin/commandcenter/agent_runner.go` — Replace `setTodoSessionStatus` with direct status updates; change `killAgent` to set status to `backlog` (currently sets `failed`)
+- `internal/refresh/merge.go` — Set `Status = "new"` for fresh external todos (replaces `TriageStatus = "new"`); preserve existing `Status` on merge when todo already exists
+- `internal/refresh/llm.go` — Update LLM-related status checks (replace `Status == "active"` with non-terminal check)
 
 ### Transition Validation
 
@@ -180,6 +194,15 @@ Transitions should be validated — a helper function `ValidTransition(from, to 
 - Reopen `dismissed` → status becomes `backlog`
 - Cancel `enqueued` → status becomes `backlog`
 - Cancel `running` → status becomes `backlog`, agent killed
+- Agent asks question while `running` → status becomes `blocked`
+- User answers question while `blocked` → status becomes `running`
+- Cancel `blocked` → status becomes `backlog`, agent killed
+- Push back `review` → status becomes `backlog`
+- Push back `failed` → status becomes `backlog`
+- Retry `review` with slot available → status becomes `running`
+- Retry `review` with queue full → status becomes `enqueued`
+- Retry `failed` with slot available → status becomes `running`
+- Retry `failed` with queue full → status becomes `enqueued`
 
 ### Tab Filtering
 
@@ -187,6 +210,7 @@ Transitions should be validated — a helper function `ValidTransition(from, to 
 - `new` todo appears in Inbox tab and All tab
 - `enqueued` todo appears in Agents tab and All tab
 - `running` todo appears in Agents tab and All tab
+- `blocked` todo appears in Agents tab and All tab
 - `review` todo appears in Review tab and All tab
 - `failed` todo appears in Review tab and All tab
 - `completed` todo appears in none of the tabs (backlog toggle only)
@@ -204,7 +228,10 @@ Transitions should be validated — a helper function `ValidTransition(from, to 
 - Existing `active`/`accepted`/`""` todos become `backlog`
 - Existing `active`/`new`/`""` todos become `new`
 - Existing `active`/`accepted`/`"failed"` todos become `failed` (the original bug)
+- Existing `active`/`*`/`"blocked"` todos become `blocked`
+- Existing `active`/`*`/`"completed"` todos become `review` (agent done, needs human eyes)
 - Existing `completed` todos become `completed`
+- Existing `dismissed` todos become `dismissed`
 
 ### Invalid Transitions
 
