@@ -242,6 +242,20 @@ Automations run **after** the main refresh data has been saved to the database. 
 - If the subprocess exits with a non-zero code before sending `result`, record status `"error"` with the stderr output (truncated to 500 bytes).
 - Errors in one automation do not affect other automations.
 
+## Settings Page
+
+The Settings plugin includes an **Automations** item under the SYSTEM category. It displays a read-only table of all registered automations with:
+
+| Column | Source |
+|--------|--------|
+| Name | `config.yaml` automations list |
+| Schedule | `config.yaml` schedule field |
+| Status | Most recent `cc_automation_runs` row (color-coded: green=success, red=error, dim=skipped/disabled) |
+| Last Run | Most recent `started_at` from `cc_automation_runs`, shown as relative time ("2m ago") |
+| Message | Most recent `message` from `cc_automation_runs`, truncated to fit |
+
+Disabled automations show "disabled" in dim text. Automations that have never run show dashes.
+
 ## Test Cases
 
 - **Happy path**: Automation receives init, responds ready, receives run, sends result with success — run recorded in `cc_automation_runs` with correct timestamps and status
