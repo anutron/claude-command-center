@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 
+	"github.com/anutron/claude-command-center/internal/automation"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/lockfile"
+	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/refresh"
 	calendarsrc "github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
 	githubsrc "github.com/anutron/claude-command-center/internal/refresh/sources/github"
@@ -97,5 +102,31 @@ func main() {
 	if err := refresh.Run(opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Run automations after successful refresh.
+	if len(cfg.Automations) > 0 {
+		logPath := filepath.Join(config.DataDir(), "automation.log")
+		logger, err := plugin.NewFileLogger(logPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not create automation logger: %v\n", err)
+		} else {
+			defer logger.Close()
+
+			autoRunner := automation.Runner{
+				Automations: cfg.Automations,
+				Config:      cfg,
+				DBPath:      dbPath,
+				Logger:      logger,
+				Verbose:     *verbose,
+				LogPath:     logPath,
+			}
+			results := autoRunner.RunAll(context.Background(), "refresh")
+			for _, r := range results {
+				if r.Status == "error" || *verbose {
+					log.Printf("automation %s: %s (%s)", r.Name, r.Message, r.Elapsed)
+				}
+			}
+		}
 	}
 }
