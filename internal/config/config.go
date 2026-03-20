@@ -28,6 +28,7 @@ type Config struct {
 	Gmail           GmailConfig            `yaml:"gmail"`
 	ExternalPlugins []ExternalPluginConfig `yaml:"external_plugins"`
 	Agent           AgentConfig            `yaml:"agent"`
+	Automations     []AutomationConfig     `yaml:"automations,omitempty"`
 	Refresh         RefreshConfig          `yaml:"refresh"`
 
 	// DisabledPlugins lists slugs of built-in plugins the user has turned off.
@@ -181,6 +182,15 @@ type ExternalPluginConfig struct {
 	Command     string `yaml:"command"`
 	Description string `yaml:"description,omitempty"`
 	Enabled     bool   `yaml:"enabled"`
+}
+
+type AutomationConfig struct {
+	Name         string                 `yaml:"name"`
+	Command      string                 `yaml:"command"`
+	Enabled      bool                   `yaml:"enabled"`
+	Schedule     string                 `yaml:"schedule"`
+	ConfigScopes []string               `yaml:"config_scopes"`
+	Settings     map[string]interface{} `yaml:"settings,omitempty"`
 }
 
 type AgentConfig struct {
@@ -401,6 +411,12 @@ func detectRegression(existingData, newData []byte) error {
 	// would be disabled without the user intending it.
 	if existing.Calendar.Enabled && !proposed.Calendar.Enabled && len(existing.Calendar.Calendars) > 0 {
 		return fmt.Errorf("would disable calendar with %d configured calendars", len(existing.Calendar.Calendars))
+	}
+
+	// Check 4: automations lost — if existing has automations and proposed
+	// has none.
+	if len(existing.Automations) > 0 && len(proposed.Automations) == 0 {
+		return fmt.Errorf("would lose %d automation(s)", len(existing.Automations))
 	}
 
 	return nil

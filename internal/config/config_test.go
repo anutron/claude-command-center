@@ -362,6 +362,135 @@ external_plugins:
 	}
 }
 
+func TestAutomationConfigRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", dir)
+
+	original := &Config{
+		Name:    "Test Dashboard",
+		Palette: "aurora",
+		Todos:   TodosConfig{Enabled: true},
+		Automations: []AutomationConfig{
+			{
+				Name:         "daily-review",
+				Command:      "claude -p 'review todos'",
+				Enabled:      true,
+				Schedule:     "0 9 * * *",
+				ConfigScopes: []string{"todos", "calendar"},
+				Settings:     map[string]interface{}{"verbose": true},
+			},
+			{
+				Name:         "weekly-report",
+				Command:      "claude -p 'generate report'",
+				Enabled:      false,
+				Schedule:     "0 17 * * 5",
+				ConfigScopes: []string{"github"},
+			},
+		},
+	}
+
+	if err := Save(original); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(loaded.Automations) != 2 {
+		t.Fatalf("expected 2 automations, got %d", len(loaded.Automations))
+	}
+
+	a := loaded.Automations[0]
+	if a.Name != "daily-review" {
+		t.Errorf("Name: got %q, want %q", a.Name, "daily-review")
+	}
+	if a.Command != "claude -p 'review todos'" {
+		t.Errorf("Command: got %q", a.Command)
+	}
+	if !a.Enabled {
+		t.Error("expected Enabled=true")
+	}
+	if a.Schedule != "0 9 * * *" {
+		t.Errorf("Schedule: got %q", a.Schedule)
+	}
+	if len(a.ConfigScopes) != 2 || a.ConfigScopes[0] != "todos" {
+		t.Errorf("ConfigScopes: got %v", a.ConfigScopes)
+	}
+	if a.Settings["verbose"] != true {
+		t.Errorf("Settings[verbose]: got %v", a.Settings["verbose"])
+	}
+
+	b := loaded.Automations[1]
+	if b.Enabled {
+		t.Error("expected second automation Enabled=false")
+	}
+	if b.Settings != nil && len(b.Settings) > 0 {
+		t.Errorf("expected nil/empty Settings for second automation, got %v", b.Settings)
+	}
+}
+
+func TestRegressionDetectsDroppedAutomations(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", dir)
+
+	// Write a config with automations
+	configWithAutomations := `name: My Dashboard
+palette: aurora
+todos:
+    enabled: true
+automations:
+    - name: daily-review
+      command: "claude -p 'review'"
+      enabled: true
+      schedule: "0 9 * * *"
+      config_scopes:
+          - todos
+`
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(configWithAutomations), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Try to save a config without automations — should be rejected
+	noAuto := &Config{
+		Name:           "My Dashboard",
+		Palette:        "aurora",
+		Todos:          TodosConfig{Enabled: true},
+		loadedFromFile: true,
+	}
+	err := Save(noAuto)
+	if err == nil {
+		t.Fatal("Save should have refused to drop automations")
+	}
+	if !contains(err.Error(), "automation") {
+		t.Errorf("error should mention automations: %v", err)
+	}
+
+	// Verify original file is intact
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Automations) != 1 {
+		t.Errorf("automations should be preserved: got %d, want 1", len(loaded.Automations))
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
+
 func TestParseRefreshInterval(t *testing.T) {
 	tests := []struct {
 		name     string
