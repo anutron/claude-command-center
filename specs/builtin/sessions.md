@@ -53,6 +53,7 @@ Manage "New Session", "Resume Session", and "Worktrees" functionality as a plugi
 | Key | Description | Promoted |
 |-----|-------------|----------|
 | enter | Resume selected session | yes |
+| 1-9 | Resume bookmarked session at that position (when not filtering) | yes |
 | del/backspace | Remove saved session (with confirmation) | yes |
 | up/down | Navigate list | yes |
 | / | Filter list | yes |
@@ -96,7 +97,7 @@ Manage "New Session", "Resume Session", and "Worktrees" functionality as a plugi
 Each sub-tab displays a hint bar at the bottom:
 
 - **New:** `enter launch   w worktree   n new   r resume   t worktrees   shift+up/down reorder   del remove   / filter   esc quit`
-- **Resume:** `enter resume   n new   r resume   t worktrees   del remove   / filter   esc quit`
+- **Resume:** `enter resume   1-9 quick launch   n new   r resume   t worktrees   del remove   / filter   esc quit`
 - **Worktrees:** `enter launch   d delete   p prune   n new   r resume   esc back`
 - **Worktree warning:** `⚠ Not a git repository — worktrees require git.` + `[enter] Launch directly in this directory   [esc] Cancel`
 - **Delete confirmation:** `Delete worktree <label>?` + `[y] Yes, delete   [n] Cancel`
@@ -186,3 +187,6 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 - HandleKey "p" in worktrees shows prune confirmation
 - Worktree confirm "y" executes action, "n"/esc cancels
 - Esc from worktrees sub-tab returns to new sub-tab
+- Number keys 1-9 on resume tab launch the corresponding bookmarked session (when not filtering)
+- Number key beyond the list length is a no-op
+- Number keys are treated as filter characters when a filter is active
