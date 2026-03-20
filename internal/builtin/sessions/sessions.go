@@ -281,6 +281,10 @@ type Plugin struct {
 	worktreeConfirmTarget string        // display label for confirmation
 
 	pendingLaunchTodo *db.Todo
+
+	// Type-to-filter: characters typed on new/resume tabs are collected here
+	// and applied as a substring filter without requiring a '/' prefix.
+	filterText string
 }
 
 // Slug returns the plugin identifier.
@@ -412,11 +416,14 @@ func (p *Plugin) Routes() []plugin.Route {
 
 // NavigateTo switches to the requested sub-route.
 func (p *Plugin) NavigateTo(route string, args map[string]string) {
+	p.filterText = ""
 	switch route {
 	case "new":
 		p.subTab = "new"
+		p.applyFilter()
 	case "resume":
 		p.subTab = "resume"
+		p.applyFilter()
 	case "worktrees":
 		p.subTab = "worktrees"
 		p.refreshWorktreeList()
@@ -444,25 +451,13 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "enter", Description: "Launch session", Promoted: true},
 		{Key: "shift+up/down", Description: "Reorder paths", Promoted: true},
 		{Key: "delete", Description: "Remove saved path/session", Promoted: true},
-		{Key: "/", Description: "Filter list"},
+		{Key: "type", Description: "Filter list"},
 		{Key: "esc", Description: "Quit or cancel"},
 	}
 }
 
 // HandleKey processes key input and returns an action for the host.
 func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
-	// Delegate to list when filtering
-	if p.subTab == "new" && p.newList.FilterState() == list.Filtering {
-		var cmd tea.Cmd
-		p.newList, cmd = p.newList.Update(msg)
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-	}
-	if p.subTab == "resume" && p.resumeList.FilterState() == list.Filtering {
-		var cmd tea.Cmd
-		p.resumeList, cmd = p.resumeList.Update(msg)
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-	}
-
 	// Handle worktree warning overlay (not a git repo)
 	if p.worktreeWarning != "" {
 		return p.handleWorktreeWarning(msg)
@@ -477,18 +472,37 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleConfirming(msg)
 	}
 
+	// When a filter is active on new/resume tabs, only allow navigation keys
+	// and filter-editing keys — don't match single-char shortcuts (n/r/t).
+	filtering := p.filterText != "" && (p.subTab == "new" || p.subTab == "resume")
+
 	switch msg.String() {
 	case "n":
-		p.subTab = "new"
-		return plugin.NoopAction()
+		if !filtering {
+			p.subTab = "new"
+			p.filterText = ""
+			return plugin.NoopAction()
+		}
 	case "r":
-		p.subTab = "resume"
-		return plugin.NoopAction()
+		if !filtering {
+			p.subTab = "resume"
+			p.filterText = ""
+			return plugin.NoopAction()
+		}
 	case "t":
-		p.subTab = "worktrees"
-		p.refreshWorktreeList()
-		return plugin.NoopAction()
+		if !filtering {
+			p.subTab = "worktrees"
+			p.filterText = ""
+			p.refreshWorktreeList()
+			return plugin.NoopAction()
+		}
 	case "esc":
+		// If filter is active, clear it first
+		if filtering {
+			p.filterText = ""
+			p.applyFilter()
+			return plugin.NoopAction()
+		}
 		if p.subTab == "worktrees" {
 			p.subTab = "new"
 			return plugin.NoopAction()
@@ -516,6 +530,16 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleWorktreesTab(msg)
 	}
 	return plugin.NoopAction()
+}
+
+// applyFilter sets the filter text on the active list for the current sub-tab.
+func (p *Plugin) applyFilter() {
+	switch p.subTab {
+	case "new":
+		p.newList.SetFilterText(p.filterText)
+	case "resume":
+		p.resumeList.SetFilterText(p.filterText)
+	}
 }
 
 // HandleMessage processes non-key messages.
@@ -617,8 +641,8 @@ func (p *Plugin) View(width, height, frame int) string {
 
 func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
-	case "up", "k":
-		total := len(p.newList.Items())
+	case "up":
+		total := len(p.newList.VisibleItems())
 		if total > 0 && p.newList.Index() == 0 {
 			p.newList.Select(total - 1)
 			return plugin.NoopAction()
@@ -626,8 +650,32 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 		var cmd tea.Cmd
 		p.newList, cmd = p.newList.Update(msg)
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-	case "down", "j":
-		total := len(p.newList.Items())
+	case "k":
+		if p.filterText != "" {
+			break // treat as filter char when filtering
+		}
+		total := len(p.newList.VisibleItems())
+		if total > 0 && p.newList.Index() == 0 {
+			p.newList.Select(total - 1)
+			return plugin.NoopAction()
+		}
+		var cmd tea.Cmd
+		p.newList, cmd = p.newList.Update(msg)
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	case "down":
+		total := len(p.newList.VisibleItems())
+		if total > 0 && p.newList.Index() == total-1 {
+			p.newList.Select(0)
+			return plugin.NoopAction()
+		}
+		var cmd tea.Cmd
+		p.newList, cmd = p.newList.Update(msg)
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	case "j":
+		if p.filterText != "" {
+			break // treat as filter char when filtering
+		}
+		total := len(p.newList.VisibleItems())
 		if total > 0 && p.newList.Index() == total-1 {
 			p.newList.Select(0)
 			return plugin.NoopAction()
@@ -652,9 +700,15 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 			args["initial_prompt"] = formatTodoContext(*p.pendingLaunchTodo)
 			p.pendingLaunchTodo = nil
 		}
+		p.filterText = ""
+		p.applyFilter()
 		return plugin.Action{Type: plugin.ActionLaunch, Args: args}
 
 	case "w":
+		if p.filterText != "" {
+			// When filtering, treat 'w' as a filter character
+			break
+		}
 		item, ok := p.newList.SelectedItem().(newItem)
 		if !ok || item.isBrowse {
 			return plugin.NoopAction()
@@ -674,7 +728,25 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 	case "shift+down":
 		return p.movePathDown()
 
-	case "delete", "backspace":
+	case "delete":
+		item, ok := p.newList.SelectedItem().(newItem)
+		if !ok || item.isBrowse {
+			return plugin.NoopAction()
+		}
+		p.confirming = true
+		p.confirmYes = false
+		p.confirmItem = item
+		p.confirmResume = nil
+		return plugin.NoopAction()
+
+	case "backspace":
+		if p.filterText != "" {
+			// Edit filter text
+			p.filterText = p.filterText[:len(p.filterText)-1]
+			p.applyFilter()
+			return plugin.NoopAction()
+		}
+		// When filter is empty, backspace triggers delete confirmation
 		item, ok := p.newList.SelectedItem().(newItem)
 		if !ok || item.isBrowse {
 			return plugin.NoopAction()
@@ -686,6 +758,15 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 
+	// Type-to-filter: any printable rune appends to the filter
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+		for _, r := range msg.Runes {
+			p.filterText += string(r)
+		}
+		p.applyFilter()
+		return plugin.NoopAction()
+	}
+
 	var cmd tea.Cmd
 	p.newList, cmd = p.newList.Update(msg)
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
@@ -693,8 +774,8 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 
 func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
-	case "up", "k":
-		total := len(p.resumeList.Items())
+	case "up":
+		total := len(p.resumeList.VisibleItems())
 		if total > 0 && p.resumeList.Index() == 0 {
 			p.resumeList.Select(total - 1)
 			return plugin.NoopAction()
@@ -702,8 +783,32 @@ func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
 		var cmd tea.Cmd
 		p.resumeList, cmd = p.resumeList.Update(msg)
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-	case "down", "j":
-		total := len(p.resumeList.Items())
+	case "k":
+		if p.filterText != "" {
+			break // treat as filter char when filtering
+		}
+		total := len(p.resumeList.VisibleItems())
+		if total > 0 && p.resumeList.Index() == 0 {
+			p.resumeList.Select(total - 1)
+			return plugin.NoopAction()
+		}
+		var cmd tea.Cmd
+		p.resumeList, cmd = p.resumeList.Update(msg)
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	case "down":
+		total := len(p.resumeList.VisibleItems())
+		if total > 0 && p.resumeList.Index() == total-1 {
+			p.resumeList.Select(0)
+			return plugin.NoopAction()
+		}
+		var cmd tea.Cmd
+		p.resumeList, cmd = p.resumeList.Update(msg)
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	case "j":
+		if p.filterText != "" {
+			break // treat as filter char when filtering
+		}
+		total := len(p.resumeList.VisibleItems())
 		if total > 0 && p.resumeList.Index() == total-1 {
 			p.resumeList.Select(0)
 			return plugin.NoopAction()
@@ -722,6 +827,8 @@ func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
 		if item.session.WorktreePath != "" {
 			dir = item.session.WorktreePath
 		}
+		p.filterText = ""
+		p.applyFilter()
 		return plugin.Action{
 			Type: plugin.ActionLaunch,
 			Args: map[string]string{
@@ -730,7 +837,7 @@ func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
 			},
 		}
 
-	case "delete", "backspace":
+	case "delete":
 		item, ok := p.resumeList.SelectedItem().(sessionItem)
 		if !ok {
 			return plugin.NoopAction()
@@ -739,6 +846,33 @@ func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
 		p.confirmYes = false
 		p.confirmItem = newItem{}
 		p.confirmResume = &item
+		return plugin.NoopAction()
+
+	case "backspace":
+		if p.filterText != "" {
+			// Edit filter text
+			p.filterText = p.filterText[:len(p.filterText)-1]
+			p.applyFilter()
+			return plugin.NoopAction()
+		}
+		// When filter is empty, backspace triggers delete confirmation
+		item, ok := p.resumeList.SelectedItem().(sessionItem)
+		if !ok {
+			return plugin.NoopAction()
+		}
+		p.confirming = true
+		p.confirmYes = false
+		p.confirmItem = newItem{}
+		p.confirmResume = &item
+		return plugin.NoopAction()
+	}
+
+	// Type-to-filter: any printable rune appends to the filter
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
+		for _, r := range msg.Runes {
+			p.filterText += string(r)
+		}
+		p.applyFilter()
 		return plugin.NoopAction()
 	}
 
@@ -1071,9 +1205,17 @@ func (p *Plugin) renderHints() string {
 	} else {
 		switch p.subTab {
 		case "new":
-			hints = p.styles.hint.Render("enter launch   w worktree   n new   r resume   t worktrees   shift+up/down reorder   del remove   / filter   esc quit")
+			if p.filterText != "" {
+				hints = p.styles.hint.Render(fmt.Sprintf("filter: %s   enter launch   esc clear   backspace edit", p.filterText))
+			} else {
+				hints = p.styles.hint.Render("type to filter   enter launch   w worktree   n new   r resume   t worktrees   shift+up/down reorder   del remove   esc quit")
+			}
 		case "resume":
-			hints = p.styles.hint.Render("enter resume   n new   r resume   t worktrees   del remove   / filter   esc quit")
+			if p.filterText != "" {
+				hints = p.styles.hint.Render(fmt.Sprintf("filter: %s   enter resume   esc clear   backspace edit", p.filterText))
+			} else {
+				hints = p.styles.hint.Render("type to filter   enter resume   n new   r resume   t worktrees   del remove   esc quit")
+			}
 		case "worktrees":
 			hints = p.styles.hint.Render("enter launch   d delete   p prune   n new   r resume   esc back")
 		default:
