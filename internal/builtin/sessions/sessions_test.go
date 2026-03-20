@@ -382,6 +382,91 @@ func TestFilterFromFirstCharacter(t *testing.T) {
 	}
 }
 
+func TestTypeToFilterNewTab(t *testing.T) {
+	p := setupPlugin(t)
+
+	// Add paths so we have items to filter
+	_ = db.DBAddPath(p.db, "/tmp/alpha-project")
+	_ = db.DBAddPath(p.db, "/tmp/beta-project")
+	p.paths = append(p.paths, "/tmp/alpha-project", "/tmp/beta-project")
+	p.newList.SetItems(p.buildNewItems())
+
+	// Typing a character should immediately start filtering (no '/' needed)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if p.filterText != "a" {
+		t.Fatalf("expected filterText 'a', got %q", p.filterText)
+	}
+
+	// Type more chars
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if p.filterText != "alp" {
+		t.Fatalf("expected filterText 'alp', got %q", p.filterText)
+	}
+
+	// Visible items should be filtered
+	visible := p.newList.VisibleItems()
+	if len(visible) != 1 {
+		t.Fatalf("expected 1 visible item after filtering 'alp', got %d", len(visible))
+	}
+
+	// Backspace should edit the filter
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if p.filterText != "al" {
+		t.Fatalf("expected filterText 'al', got %q after backspace", p.filterText)
+	}
+
+	// Escape should clear the filter
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyEscape})
+	if p.filterText != "" {
+		t.Fatalf("expected empty filterText after escape, got %q", p.filterText)
+	}
+}
+
+func TestTypeToFilterShortcutsDisabledWhileFiltering(t *testing.T) {
+	p := setupPlugin(t)
+
+	// Start filtering
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if p.filterText != "c" {
+		t.Fatalf("expected filterText 'c', got %q", p.filterText)
+	}
+
+	// Pressing 'r' while filtering should append to filter, not switch to resume tab
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if p.subTab != "new" {
+		t.Fatalf("expected subTab 'new' while filtering, got %s", p.subTab)
+	}
+	if p.filterText != "cr" {
+		t.Fatalf("expected filterText 'cr', got %q", p.filterText)
+	}
+
+	// Same for 'n' and 't'
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if p.filterText != "crn" {
+		t.Fatalf("expected filterText 'crn', got %q", p.filterText)
+	}
+}
+
+func TestEnterDirectlyLaunchesOnNewTab(t *testing.T) {
+	p := setupPlugin(t)
+
+	// Add a path
+	_ = db.DBAddPath(p.db, "/tmp/myproject")
+	p.paths = append(p.paths, "/tmp/myproject")
+	p.newList.SetItems(p.buildNewItems())
+	p.newList.Select(0)
+
+	// Single Enter should launch directly
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if action.Type != "launch" {
+		t.Fatalf("expected launch action from single Enter, got %s", action.Type)
+	}
+	if action.Args["dir"] != "/tmp/myproject" {
+		t.Fatalf("expected dir /tmp/myproject, got %s", action.Args["dir"])
+	}
+}
+
 func TestSubstringFilter(t *testing.T) {
 	targets := []string{
 		"claude-command-center main Working on CCC",
