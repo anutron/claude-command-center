@@ -42,6 +42,7 @@ Manage "New Session", "Resume Session", and "Worktrees" functionality as a plugi
 | Key | Description | Promoted |
 |-----|-------------|----------|
 | enter | Launch session in selected path | yes |
+| b | Switch to Browse mode (open file picker) | yes |
 | w | Launch in a new worktree (git repos only) | yes |
 | shift+up/down | Reorder paths | yes |
 | del/backspace | Remove from saved list (with confirmation) | yes |
@@ -95,7 +96,7 @@ Manage "New Session", "Resume Session", and "Worktrees" functionality as a plugi
 
 Each sub-tab displays a hint bar at the bottom:
 
-- **New:** `enter launch   w worktree   n new   r resume   t worktrees   shift+up/down reorder   del remove   / filter   esc quit`
+- **New:** `enter launch   b browse   w worktree   n new   r resume   t worktrees   shift+up/down reorder   del remove   / filter   esc quit`
 - **Resume:** `enter resume   n new   r resume   t worktrees   del remove   / filter   esc quit`
 - **Worktrees:** `enter launch   d delete   p prune   n new   r resume   esc back`
 - **Worktree warning:** `⚠ Not a git repository — worktrees require git.` + `[enter] Launch directly in this directory   [esc] Cancel`
@@ -178,6 +179,8 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 - Sub-tab switching works (n, r, t)
 - Delete on first path enters confirming mode (all paths deletable)
 - Shift+up/down reorders paths in-memory and persists via DB
+- HandleKey "b" on new sub-tab launches Browse mode (fzf file picker)
+- HandleKey "b" while filtering treats "b" as a filter character (no Browse)
 - HandleKey "w" on a git repo path sets Launch with worktree=true
 - HandleKey "w" on a non-git path shows worktree warning
 - Worktree warning: enter launches directly, esc cancels

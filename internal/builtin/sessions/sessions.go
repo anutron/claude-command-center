@@ -704,6 +704,18 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 		p.applyFilter()
 		return plugin.Action{Type: plugin.ActionLaunch, Args: args}
 
+	case "b":
+		if p.filterText != "" {
+			// When filtering, treat 'b' as a filter character
+			break
+		}
+		// Launch Browse mode (fzf file picker)
+		proc := &fzfProcess{}
+		cmd := tea.Exec(proc, func(err error) tea.Msg {
+			return fzfFinishedMsg{path: proc.output, err: err}
+		})
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+
 	case "w":
 		if p.filterText != "" {
 			// When filtering, treat 'w' as a filter character
@@ -1208,7 +1220,7 @@ func (p *Plugin) renderHints() string {
 			if p.filterText != "" {
 				hints = p.styles.hint.Render(fmt.Sprintf("filter: %s   enter launch   esc clear   backspace edit", p.filterText))
 			} else {
-				hints = p.styles.hint.Render("type to filter   enter launch   w worktree   n new   r resume   t worktrees   shift+up/down reorder   del remove   esc quit")
+				hints = p.styles.hint.Render("type to filter   enter launch   b browse   w worktree   n new   r resume   t worktrees   shift+up/down reorder   del remove   esc quit")
 			}
 		case "resume":
 			if p.filterText != "" {

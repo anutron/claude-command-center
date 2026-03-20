@@ -467,6 +467,50 @@ func TestEnterDirectlyLaunchesOnNewTab(t *testing.T) {
 	}
 }
 
+func TestHandleKeyBLaunchesBrowseMode(t *testing.T) {
+	p := setupPlugin(t)
+
+	// Add a path so the list is non-empty
+	_ = db.DBAddPath(p.db, "/tmp/myproject")
+	p.paths = append(p.paths, "/tmp/myproject")
+	p.newList.SetItems(p.buildNewItems())
+	p.newList.Select(0)
+
+	// Press "b" on the new tab — should return a noop with a TeaCmd (fzf exec)
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if action.Type != plugin.ActionNoop {
+		t.Fatalf("expected noop action (with TeaCmd for fzf), got %s", action.Type)
+	}
+	if action.TeaCmd == nil {
+		t.Fatal("expected TeaCmd to be set (fzf exec), but it was nil")
+	}
+}
+
+func TestHandleKeyBWhileFilteringAddsToFilter(t *testing.T) {
+	p := setupPlugin(t)
+
+	// Add a path so the list is non-empty
+	_ = db.DBAddPath(p.db, "/tmp/myproject")
+	p.paths = append(p.paths, "/tmp/myproject")
+	p.newList.SetItems(p.buildNewItems())
+	p.newList.Select(0)
+
+	// Start a filter by typing "a"
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if p.filterText != "a" {
+		t.Fatalf("expected filterText 'a', got %q", p.filterText)
+	}
+
+	// Now press "b" — should append to filter, not launch Browse
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if action.TeaCmd != nil {
+		t.Fatal("expected no TeaCmd when filtering, but got one")
+	}
+	if p.filterText != "ab" {
+		t.Fatalf("expected filterText 'ab', got %q", p.filterText)
+	}
+}
+
 func TestSubstringFilter(t *testing.T) {
 	targets := []string{
 		"claude-command-center main Working on CCC",
