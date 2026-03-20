@@ -20,6 +20,7 @@ func Merge(existing *db.CommandCenter, fresh *FreshData) *db.CommandCenter {
 	cc := &db.CommandCenter{
 		GeneratedAt:    time.Now(),
 		Calendar:       fresh.Calendar,
+		PullRequests:   fresh.PullRequests,
 		PendingActions: existing.PendingActions,
 		Suggestions:    existing.Suggestions,
 	}

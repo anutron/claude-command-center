@@ -6,6 +6,7 @@ import (
 
 // FreshData holds newly fetched data from all sources.
 type FreshData struct {
-	Calendar db.CalendarData
-	Todos    []db.Todo
+	Calendar     db.CalendarData
+	Todos        []db.Todo
+	PullRequests []db.PullRequest
 }

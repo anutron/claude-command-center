@@ -200,6 +200,29 @@ func migrateSchema(db *sql.DB) error {
 		}
 	}
 
+	// Pull requests table for PR tracking plugin
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_pull_requests (
+		id TEXT PRIMARY KEY,
+		repo TEXT NOT NULL,
+		number INTEGER NOT NULL,
+		title TEXT NOT NULL,
+		url TEXT NOT NULL,
+		author TEXT NOT NULL,
+		draft INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL,
+		review_decision TEXT,
+		my_role TEXT,
+		reviewer_logins TEXT DEFAULT '[]',
+		pending_reviewer_logins TEXT DEFAULT '[]',
+		comment_count INTEGER NOT NULL DEFAULT 0,
+		unresolved_thread_count INTEGER NOT NULL DEFAULT 0,
+		last_activity_at TEXT NOT NULL,
+		ci_status TEXT,
+		category TEXT,
+		fetched_at TEXT NOT NULL
+	)`)
+
 	// BUG-101: Backfill display_id for existing rows that have display_id=0.
 	// The original backfill only handled NULL, but rows may have ended up with 0
 	// (e.g. explicit default or COALESCE in reads masking NULL). This assigns

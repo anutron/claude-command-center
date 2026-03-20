@@ -66,6 +66,7 @@ func (p *Plugin) rebuildNav() {
 	pluginDescriptions := map[string]string{
 		"sessions":         "Start new Claude sessions and resume previous ones",
 		"commandcenter":    "AI-powered todo management, calendar view, and quick commands",
+		"prs":              "Track open pull requests across GitHub",
 		"pomodoro":         "Sample external plugin for demonstration purposes",
 	}
 

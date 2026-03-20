@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/builtin/commandcenter"
+	"github.com/anutron/claude-command-center/internal/builtin/prs"
 	"github.com/anutron/claude-command-center/internal/builtin/sessions"
 	"github.com/anutron/claude-command-center/internal/builtin/settings"
 	"github.com/anutron/claude-command-center/internal/config"
@@ -92,11 +93,13 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 
 	sessPlug := &sessions.Plugin{}
 	ccPlug := commandcenter.New()
+	prsPlug := &prs.Plugin{}
 
 	// Build registry with all plugins.
 	registry := plugin.NewRegistry()
 	registry.Register(sessPlug)
 	registry.Register(ccPlug)
+	registry.Register(prsPlug)
 	for _, ep := range extPlugins {
 		registry.Register(ep)
 	}
@@ -117,6 +120,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 
 	_ = sessPlug.Init(ctx)
 	_ = ccPlug.Init(ctx)
+	_ = prsPlug.Init(ctx)
 	_ = settingsPlug.Init(ctx)
 
 	// Build the full tab list (allTabs); rebuildTabs filters to visible.
@@ -125,6 +129,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		tabEntry{label: "New Session", plugin: sessPlug, route: "new", ownerSlug: "sessions"},
 		tabEntry{label: "Resume", plugin: sessPlug, route: "resume", ownerSlug: "sessions"},
 		tabEntry{label: "Command Center", plugin: ccPlug, route: "commandcenter", ownerSlug: "commandcenter"},
+		tabEntry{label: "PRs", plugin: prsPlug, route: "waiting", ownerSlug: "prs"},
 	)
 	// Track which external plugins were loaded (started at boot).
 	loadedExtSlugs := map[string]bool{}
@@ -152,7 +157,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	allTabs = append(allTabs, tabEntry{label: "Settings", plugin: settingsPlug, route: "settings", ownerSlug: "settings"})
 
 	// Collect all unique plugins for shutdown.
-	allPlugins := []plugin.Plugin{sessPlug, ccPlug, settingsPlug}
+	allPlugins := []plugin.Plugin{sessPlug, ccPlug, prsPlug, settingsPlug}
 	allPlugins = append(allPlugins, extPlugins...)
 
 	m := Model{

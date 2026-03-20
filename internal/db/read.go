@@ -34,6 +34,12 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 	}
 	cc.Suggestions = sug
 
+	prs, err := DBLoadPullRequests(db)
+	if err != nil {
+		return nil, fmt.Errorf("load pull requests: %w", err)
+	}
+	cc.PullRequests = prs
+
 	actions, err := dbLoadPendingActions(db)
 	if err != nil {
 		return nil, fmt.Errorf("load pending actions: %w", err)
@@ -238,6 +244,60 @@ func dbLoadPendingActions(db *sql.DB) ([]PendingAction, error) {
 		actions = append(actions, a)
 	}
 	return actions, rows.Err()
+}
+
+// DBLoadPullRequests loads all pull requests from the database.
+func DBLoadPullRequests(d *sql.DB) ([]PullRequest, error) {
+	rows, err := d.Query(`SELECT id, repo, number, title, url, author, draft,
+		created_at, updated_at, review_decision, my_role,
+		reviewer_logins, pending_reviewer_logins,
+		comment_count, unresolved_thread_count, last_activity_at,
+		ci_status, category, fetched_at
+		FROM cc_pull_requests ORDER BY last_activity_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var prs []PullRequest
+	for rows.Next() {
+		var pr PullRequest
+		var createdStr, updatedStr, lastActivityStr, fetchedStr string
+		var reviewDecision, myRole, ciStatus, category sql.NullString
+		var reviewersJSON, pendingReviewersJSON sql.NullString
+
+		err := rows.Scan(&pr.ID, &pr.Repo, &pr.Number, &pr.Title, &pr.URL, &pr.Author, &pr.Draft,
+			&createdStr, &updatedStr, &reviewDecision, &myRole,
+			&reviewersJSON, &pendingReviewersJSON,
+			&pr.CommentCount, &pr.UnresolvedThreadCount, &lastActivityStr,
+			&ciStatus, &category, &fetchedStr)
+		if err != nil {
+			return nil, err
+		}
+
+		pr.CreatedAt = ParseTime(createdStr)
+		pr.UpdatedAt = ParseTime(updatedStr)
+		pr.LastActivityAt = ParseTime(lastActivityStr)
+		pr.FetchedAt = ParseTime(fetchedStr)
+		pr.ReviewDecision = reviewDecision.String
+		pr.MyRole = myRole.String
+		pr.CIStatus = ciStatus.String
+		pr.Category = category.String
+
+		if reviewersJSON.Valid {
+			if err := json.Unmarshal([]byte(reviewersJSON.String), &pr.ReviewerLogins); err != nil {
+				log.Printf("WARNING: corrupt reviewer_logins JSON for PR %s: %v", pr.ID, err)
+			}
+		}
+		if pendingReviewersJSON.Valid {
+			if err := json.Unmarshal([]byte(pendingReviewersJSON.String), &pr.PendingReviewerLogins); err != nil {
+				log.Printf("WARNING: corrupt pending_reviewer_logins JSON for PR %s: %v", pr.ID, err)
+			}
+		}
+
+		prs = append(prs, pr)
+	}
+	return prs, rows.Err()
 }
 
 func dbLoadGeneratedAt(db *sql.DB) (time.Time, error) {

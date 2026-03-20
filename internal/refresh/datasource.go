@@ -28,9 +28,10 @@ type PostMerger interface {
 // SourceResult holds data returned by a single DataSource.
 // Each source populates only the fields it produces; nil/empty fields are ignored.
 type SourceResult struct {
-	Calendar *db.CalendarData
-	Todos    []db.Todo
-	Warnings []db.Warning
+	Calendar     *db.CalendarData
+	Todos        []db.Todo
+	PullRequests []db.PullRequest
+	Warnings     []db.Warning
 }
 
 // combineResults merges all SourceResults into a single FreshData.
@@ -48,8 +49,10 @@ func combineResults(results []*SourceResult) *FreshData {
 			fresh.Calendar = cal
 		}
 		fresh.Todos = append(fresh.Todos, r.Todos...)
+		fresh.PullRequests = append(fresh.PullRequests, r.PullRequests...)
 	}
 	sanitizeTodos(fresh.Todos)
+	sanitizePullRequests(fresh.PullRequests)
 	return fresh
 }
 
@@ -69,6 +72,13 @@ func sanitizeTodos(todos []db.Todo) {
 		todos[i].Title = sanitize.StripANSI(todos[i].Title)
 		todos[i].Context = sanitize.StripANSI(todos[i].Context)
 		todos[i].Detail = sanitize.StripANSI(todos[i].Detail)
+	}
+}
+
+// sanitizePullRequests strips ANSI escapes from PR display fields.
+func sanitizePullRequests(prs []db.PullRequest) {
+	for i := range prs {
+		prs[i].Title = sanitize.StripANSI(prs[i].Title)
 	}
 }
 

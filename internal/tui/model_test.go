@@ -40,8 +40,8 @@ func TestNewModel(t *testing.T) {
 	if m.Launch != nil {
 		t.Error("expected Launch to be nil initially")
 	}
-	if len(m.tabs) != 4 {
-		t.Errorf("expected 4 tabs, got %d", len(m.tabs))
+	if len(m.tabs) != 5 {
+		t.Errorf("expected 5 tabs, got %d", len(m.tabs))
 	}
 }
 
@@ -68,18 +68,25 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 		t.Errorf("expected tabCommand after two tabs, got %d", m.activeTab)
 	}
 
-	// Settings tab (index 3)
+	// PRs tab (index 3)
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
 	if m.activeTab != 3 {
-		t.Errorf("expected tab 3 (Settings) after three tabs, got %d", m.activeTab)
+		t.Errorf("expected tab 3 (PRs) after three tabs, got %d", m.activeTab)
+	}
+
+	// Settings tab (index 4)
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = result.(Model)
+	if m.activeTab != 4 {
+		t.Errorf("expected tab 4 (Settings) after four tabs, got %d", m.activeTab)
 	}
 
 	// Wrap back to tabNew
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
 	if m.activeTab != tabNew {
-		t.Errorf("expected tabNew after four tabs (wrap), got %d", m.activeTab)
+		t.Errorf("expected tabNew after five tabs (wrap), got %d", m.activeTab)
 	}
 }
 
@@ -202,8 +209,12 @@ func TestPluginTabMapping(t *testing.T) {
 	if m.tabs[2].plugin.Slug() != "commandcenter" {
 		t.Errorf("expected tab 2 to be commandcenter, got %s", m.tabs[2].plugin.Slug())
 	}
+	// Next should be prs
+	if m.tabs[3].plugin.Slug() != "prs" {
+		t.Errorf("expected tab 3 to be prs, got %s", m.tabs[3].plugin.Slug())
+	}
 	// Last tab should be settings
-	if m.tabs[3].plugin.Slug() != "settings" {
-		t.Errorf("expected tab 3 to be settings, got %s", m.tabs[3].plugin.Slug())
+	if m.tabs[4].plugin.Slug() != "settings" {
+		t.Errorf("expected tab 4 to be settings, got %s", m.tabs[4].plugin.Slug())
 	}
 }

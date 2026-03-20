@@ -1121,6 +1121,193 @@ func TestSwapPathOrder(t *testing.T) {
 	}
 }
 
+func TestPullRequestRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	database, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	now := time.Now().Truncate(time.Second)
+	prs := []PullRequest{
+		{
+			ID:                    "owner/repo#42",
+			Repo:                  "owner/repo",
+			Number:                42,
+			Title:                 "Add feature X",
+			URL:                   "https://github.com/owner/repo/pull/42",
+			Author:                "alice",
+			Draft:                 false,
+			CreatedAt:             now.Add(-48 * time.Hour),
+			UpdatedAt:             now.Add(-1 * time.Hour),
+			ReviewDecision:        "APPROVED",
+			MyRole:                "author",
+			ReviewerLogins:        []string{"bob", "carol"},
+			PendingReviewerLogins: []string{"carol"},
+			CommentCount:          5,
+			UnresolvedThreadCount: 1,
+			LastActivityAt:        now.Add(-30 * time.Minute),
+			CIStatus:              "success",
+			Category:              "waiting",
+			FetchedAt:             now,
+		},
+		{
+			ID:                    "owner/repo#43",
+			Repo:                  "owner/repo",
+			Number:                43,
+			Title:                 "Fix bug Y",
+			URL:                   "https://github.com/owner/repo/pull/43",
+			Author:                "bob",
+			Draft:                 true,
+			CreatedAt:             now.Add(-24 * time.Hour),
+			UpdatedAt:             now,
+			ReviewDecision:        "",
+			MyRole:                "reviewer",
+			ReviewerLogins:        nil,
+			PendingReviewerLogins: nil,
+			CommentCount:          0,
+			UnresolvedThreadCount: 0,
+			LastActivityAt:        now,
+			CIStatus:              "pending",
+			Category:              "review",
+			FetchedAt:             now,
+		},
+	}
+
+	// Save via DBSaveRefreshResult
+	cc := &CommandCenter{
+		GeneratedAt:  now,
+		PullRequests: prs,
+	}
+	if err := DBSaveRefreshResult(database, cc); err != nil {
+		t.Fatalf("DBSaveRefreshResult: %v", err)
+	}
+
+	// Load back
+	loaded, err := LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("LoadCommandCenterFromDB: %v", err)
+	}
+
+	if len(loaded.PullRequests) != 2 {
+		t.Fatalf("expected 2 PRs, got %d", len(loaded.PullRequests))
+	}
+
+	// PRs are ordered by last_activity_at DESC, so PR#43 (now) comes first
+	pr43 := loaded.PullRequests[0]
+	pr42 := loaded.PullRequests[1]
+
+	if pr42.ID != "owner/repo#42" {
+		t.Errorf("expected PR ID owner/repo#42, got %s", pr42.ID)
+	}
+	if pr42.Number != 42 {
+		t.Errorf("expected number 42, got %d", pr42.Number)
+	}
+	if pr42.Author != "alice" {
+		t.Errorf("expected author alice, got %s", pr42.Author)
+	}
+	if pr42.Draft {
+		t.Error("expected draft=false for PR#42")
+	}
+	if pr42.ReviewDecision != "APPROVED" {
+		t.Errorf("expected APPROVED, got %s", pr42.ReviewDecision)
+	}
+	if pr42.MyRole != "author" {
+		t.Errorf("expected author role, got %s", pr42.MyRole)
+	}
+	if pr42.CIStatus != "success" {
+		t.Errorf("expected success CI, got %s", pr42.CIStatus)
+	}
+	if pr42.Category != "waiting" {
+		t.Errorf("expected waiting category, got %s", pr42.Category)
+	}
+
+	// Verify JSON slice fields round-trip
+	if len(pr42.ReviewerLogins) != 2 || pr42.ReviewerLogins[0] != "bob" || pr42.ReviewerLogins[1] != "carol" {
+		t.Errorf("reviewer_logins mismatch: %v", pr42.ReviewerLogins)
+	}
+	if len(pr42.PendingReviewerLogins) != 1 || pr42.PendingReviewerLogins[0] != "carol" {
+		t.Errorf("pending_reviewer_logins mismatch: %v", pr42.PendingReviewerLogins)
+	}
+
+	// Verify nil slices become nil (not populated)
+	if pr43.ReviewerLogins != nil {
+		t.Errorf("expected nil reviewer_logins for PR#43, got %v", pr43.ReviewerLogins)
+	}
+	if pr43.PendingReviewerLogins != nil {
+		t.Errorf("expected nil pending_reviewer_logins for PR#43, got %v", pr43.PendingReviewerLogins)
+	}
+
+	if !pr43.Draft {
+		t.Error("expected draft=true for PR#43")
+	}
+	if pr43.CommentCount != 0 {
+		t.Errorf("expected 0 comments, got %d", pr43.CommentCount)
+	}
+
+	// Verify overwrite behavior — save empty list
+	cc.PullRequests = nil
+	if err := DBSaveRefreshResult(database, cc); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+	loaded, _ = LoadCommandCenterFromDB(database)
+	if len(loaded.PullRequests) != 0 {
+		t.Fatalf("expected 0 PRs after overwrite, got %d", len(loaded.PullRequests))
+	}
+}
+
+func TestPullRequestJSONSliceMarshaling(t *testing.T) {
+	dir := t.TempDir()
+	database, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	now := time.Now().Truncate(time.Second)
+
+	// Test with empty slices vs nil slices
+	prs := []PullRequest{
+		{
+			ID:                    "test/repo#1",
+			Repo:                  "test/repo",
+			Number:                1,
+			Title:                 "Empty slices",
+			URL:                   "https://github.com/test/repo/pull/1",
+			Author:                "dev",
+			CreatedAt:             now,
+			UpdatedAt:             now,
+			ReviewerLogins:        []string{},
+			PendingReviewerLogins: []string{},
+			LastActivityAt:        now,
+			FetchedAt:             now,
+		},
+	}
+
+	cc := &CommandCenter{GeneratedAt: now, PullRequests: prs}
+	if err := DBSaveRefreshResult(database, cc); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	loaded, err := LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	if len(loaded.PullRequests) != 1 {
+		t.Fatalf("expected 1 PR, got %d", len(loaded.PullRequests))
+	}
+	pr := loaded.PullRequests[0]
+
+	// Empty slices marshal to "[]" and unmarshal to empty slice
+	if pr.ReviewerLogins == nil || len(pr.ReviewerLogins) != 0 {
+		t.Errorf("expected empty slice for reviewer_logins, got %v", pr.ReviewerLogins)
+	}
+	if pr.PendingReviewerLogins == nil || len(pr.PendingReviewerLogins) != 0 {
+		t.Errorf("expected empty slice for pending_reviewer_logins, got %v", pr.PendingReviewerLogins)
+	}
+}
 
 func TestParseSessionFile_Valid(t *testing.T) {
 	dir := t.TempDir()

@@ -15,9 +15,32 @@ type CommandCenter struct {
 	Calendar       CalendarData    `json:"calendar"`
 	Todos          []Todo          `json:"todos"`
 	Merges         []TodoMerge     `json:"merges,omitempty"`
+	PullRequests   []PullRequest   `json:"pull_requests,omitempty"`
 	Suggestions    Suggestions     `json:"suggestions"`
 	PendingActions []PendingAction `json:"pending_actions"`
 	Warnings       []Warning       `json:"warnings,omitempty"`
+}
+
+type PullRequest struct {
+	ID                    string    `json:"id"`                      // "owner/repo#number"
+	Repo                  string    `json:"repo"`                    // "owner/repo"
+	Number                int       `json:"number"`
+	Title                 string    `json:"title"`
+	URL                   string    `json:"url"`
+	Author                string    `json:"author"`
+	Draft                 bool      `json:"draft"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+	ReviewDecision        string    `json:"review_decision"`         // "APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"
+	MyRole                string    `json:"my_role"`                 // "author", "reviewer", "both"
+	ReviewerLogins        []string  `json:"reviewer_logins"`         // JSON-serialized in DB
+	PendingReviewerLogins []string  `json:"pending_reviewer_logins"` // JSON-serialized in DB
+	CommentCount          int       `json:"comment_count"`
+	UnresolvedThreadCount int       `json:"unresolved_thread_count"`
+	LastActivityAt        time.Time `json:"last_activity_at"`
+	CIStatus              string    `json:"ci_status"`               // "success", "failure", "pending"
+	Category              string    `json:"category"`                // computed: "waiting", "respond", "review", "stale"
+	FetchedAt             time.Time `json:"fetched_at"`
 }
 
 type Warning struct {

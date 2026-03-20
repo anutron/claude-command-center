@@ -376,6 +376,44 @@ func DBSwapTodoOrder(database *sql.DB, idA, idB string) error {
 }
 
 // ---------------------------------------------------------------------------
+// Write methods -- Pull Requests
+// ---------------------------------------------------------------------------
+
+// DBSavePullRequests replaces all pull requests in the database within the
+// given transaction. Slice fields (ReviewerLogins, PendingReviewerLogins)
+// are JSON-serialized.
+func DBSavePullRequests(tx *sql.Tx, prs []PullRequest) error {
+	if _, err := tx.Exec(`DELETE FROM cc_pull_requests`); err != nil {
+		return fmt.Errorf("clear pull requests: %w", err)
+	}
+
+	for _, pr := range prs {
+		reviewersJSON, _ := json.Marshal(pr.ReviewerLogins)
+		pendingReviewersJSON, _ := json.Marshal(pr.PendingReviewerLogins)
+
+		_, err := tx.Exec(`INSERT INTO cc_pull_requests (id, repo, number, title, url, author, draft,
+			created_at, updated_at, review_decision, my_role,
+			reviewer_logins, pending_reviewer_logins,
+			comment_count, unresolved_thread_count, last_activity_at,
+			ci_status, category, fetched_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?,
+			?, ?, NULLIF(?, ''), NULLIF(?, ''),
+			?, ?,
+			?, ?, ?,
+			NULLIF(?, ''), NULLIF(?, ''), ?)`,
+			pr.ID, pr.Repo, pr.Number, pr.Title, pr.URL, pr.Author, pr.Draft,
+			FormatTime(pr.CreatedAt), FormatTime(pr.UpdatedAt), pr.ReviewDecision, pr.MyRole,
+			string(reviewersJSON), string(pendingReviewersJSON),
+			pr.CommentCount, pr.UnresolvedThreadCount, FormatTime(pr.LastActivityAt),
+			pr.CIStatus, pr.Category, FormatTime(pr.FetchedAt))
+		if err != nil {
+			return fmt.Errorf("insert pull request %s: %w", pr.ID, err)
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // Write methods -- Bulk refresh result
 // ---------------------------------------------------------------------------
 
@@ -439,6 +477,11 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)
 		}
+	}
+
+	// --- Pull requests: replace ---
+	if err := DBSavePullRequests(tx, cc.PullRequests); err != nil {
+		return err
 	}
 
 	// --- Calendar: replace ---
