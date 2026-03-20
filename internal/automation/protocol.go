@@ -14,7 +14,7 @@ type HostMsg struct {
 type ResultMsg struct {
 	Type    string `json:"type"`              // "ready", "result", "log"
 	Slug    string `json:"slug,omitempty"`
-	Status  string `json:"status,omitempty"`  // "ok", "error", "skipped"
+	Status  string `json:"status,omitempty"`  // "success", "error", "skipped"
 	Message string `json:"message,omitempty"`
 	Level   string `json:"level,omitempty"`   // "info", "warn", "error"
 }

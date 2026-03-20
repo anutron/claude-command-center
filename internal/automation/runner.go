@@ -28,7 +28,7 @@ type Runner struct {
 // RunResult captures the outcome of a single automation execution.
 type RunResult struct {
 	Name    string
-	Status  string // "ok", "error", "skipped"
+	Status  string // "success", "error", "skipped"
 	Message string
 	Elapsed time.Duration
 }

@@ -32,7 +32,7 @@ func TestRunAll_HappyPath(t *testing.T) {
 read line
 echo '{"type":"ready"}'
 read line
-echo '{"type":"result","status":"ok","message":"all good"}'
+echo '{"type":"result","status":"success","message":"all good"}'
 read line
 `)
 
@@ -60,8 +60,8 @@ read line
 	if r.Name != "test-auto" {
 		t.Errorf("name = %q, want test-auto", r.Name)
 	}
-	if r.Status != "ok" {
-		t.Errorf("status = %q, want ok", r.Status)
+	if r.Status != "success" {
+		t.Errorf("status = %q, want success", r.Status)
 	}
 	if r.Message != "all good" {
 		t.Errorf("message = %q, want 'all good'", r.Message)
@@ -108,7 +108,7 @@ func TestRunAll_NotDue(t *testing.T) {
 read line
 echo '{"type":"ready"}'
 read line
-echo '{"type":"result","status":"ok","message":"ran"}'
+echo '{"type":"result","status":"success","message":"ran"}'
 read line
 `)
 
@@ -241,7 +241,7 @@ func TestRunAll_ScopedConfig(t *testing.T) {
 read line
 echo '{"type":"ready"}'
 read line
-echo '{"type":"result","status":"ok","message":"scoped"}'
+echo '{"type":"result","status":"success","message":"scoped"}'
 read line
 `)
 
@@ -270,8 +270,8 @@ read line
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	if results[0].Status != "ok" {
-		t.Errorf("status = %q, want ok", results[0].Status)
+	if results[0].Status != "success" {
+		t.Errorf("status = %q, want success", results[0].Status)
 	}
 }
 
@@ -285,7 +285,7 @@ echo '{"type":"ready"}'
 read line
 echo '{"type":"log","level":"info","message":"step 1"}'
 echo '{"type":"log","level":"warn","message":"step 2 warning"}'
-echo '{"type":"result","status":"ok","message":"done with logs"}'
+echo '{"type":"result","status":"success","message":"done with logs"}'
 read line
 `)
 
@@ -310,8 +310,8 @@ read line
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
-	if results[0].Status != "ok" {
-		t.Errorf("status = %q, want ok", results[0].Status)
+	if results[0].Status != "success" {
+		t.Errorf("status = %q, want success", results[0].Status)
 	}
 
 	entries := logger.Recent(10)
@@ -341,7 +341,7 @@ func TestRunAll_RecordsToDatabase(t *testing.T) {
 read line
 echo '{"type":"ready"}'
 read line
-echo '{"type":"result","status":"ok","message":"recorded"}'
+echo '{"type":"result","status":"success","message":"recorded"}'
 read line
 `)
 
@@ -387,7 +387,7 @@ func TestRunAll_DailySkipsAfterFirstRun(t *testing.T) {
 read line
 echo '{"type":"ready"}'
 read line
-echo '{"type":"result","status":"ok","message":"daily done"}'
+echo '{"type":"result","status":"success","message":"daily done"}'
 read line
 `)
 
@@ -411,7 +411,7 @@ read line
 
 	// First run should execute.
 	results := runner.RunAll(context.Background(), "refresh")
-	if len(results) != 1 || results[0].Status != "ok" {
+	if len(results) != 1 || results[0].Status != "success" {
 		t.Fatalf("first run: expected ok, got %v", results)
 	}
 
@@ -514,7 +514,7 @@ func TestRunAll_MultipleSequential(t *testing.T) {
 read line
 echo '{"type":"ready"}'
 read line
-echo '{"type":"result","status":"ok","message":"first"}'
+echo '{"type":"result","status":"success","message":"first"}'
 read line
 `)
 
@@ -522,7 +522,7 @@ read line
 read line
 echo '{"type":"ready"}'
 read line
-echo '{"type":"result","status":"ok","message":"second"}'
+echo '{"type":"result","status":"success","message":"second"}'
 read line
 `)
 
@@ -542,10 +542,10 @@ read line
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
-	if results[0].Name != "auto-1" || results[0].Status != "ok" {
+	if results[0].Name != "auto-1" || results[0].Status != "success" {
 		t.Errorf("result[0] = %+v, want auto-1/ok", results[0])
 	}
-	if results[1].Name != "auto-2" || results[1].Status != "ok" {
+	if results[1].Name != "auto-2" || results[1].Status != "success" {
 		t.Errorf("result[1] = %+v, want auto-2/ok", results[1])
 	}
 }

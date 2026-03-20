@@ -183,7 +183,7 @@ The runner evaluates whether an automation is due by checking the `cc_automation
 - `weekly_monday` — due if no run this calendar week AND today is Monday
 - `weekly_friday` — due if no run this calendar week AND today is Friday
 
-An unknown schedule value is treated as `every_refresh` with a warning logged.
+An unknown schedule value is skipped with a warning logged (forward-compatible — new schedule types can be added without breaking older runners).
 
 ### Tracking Table
 
@@ -248,7 +248,7 @@ Automations run **after** the main refresh data has been saved to the database. 
 - **Init timeout**: Automation never sends `ready` — killed after 5s, recorded as error
 - **Disabled**: Automation with `enabled: false` — skipped entirely, no run recorded
 - **Schedule not due**: Daily automation already ran today — skipped, no run recorded
-- **Unknown schedule**: Automation with `schedule: "banana"` — treated as `every_refresh` with a warning logged
+- **Unknown schedule**: Automation with `schedule: "banana"` — skipped with a warning logged
 - **Command not found**: `command` points to nonexistent file — recorded as error, next automation still runs
 - **Scoped config**: Automation with `config_scopes: ["slack"]` — receives only Slack config, not calendar or GitHub
 - **Empty automations list**: No automations configured — runner completes immediately with no errors
