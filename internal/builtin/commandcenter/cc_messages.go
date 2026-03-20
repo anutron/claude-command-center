@@ -236,12 +236,35 @@ func (p *Plugin) handleCCLoaded(msg ccLoadedMsg) (bool, plugin.Action) {
 	var cmds []tea.Cmd
 
 	// When an agent submits a session summary (via ccc update-todo), the DB
-	// reload picks it up here. Kill the agent since it has declared its work done.
+	// reload picks it up here. Terminate the agent process since it has
+	// declared its work done, and transition the todo to "review" status.
+	// We don't use killAgent here because that resets status to "backlog",
+	// which is wrong — the agent completed successfully.
 	if p.cc != nil {
 		for _, todo := range p.cc.Todos {
 			if todo.SessionSummary != "" {
-				if killCmd := p.killAgent(todo.ID); killCmd != nil {
-					cmds = append(cmds, killCmd)
+				if sess, ok := p.activeSessions[todo.ID]; ok {
+					if sess.Stdin != nil {
+						sess.Stdin.Close()
+					}
+					if sess.Cmd != nil && sess.Cmd.Process != nil {
+						sess.Cmd.Process.Kill()
+					}
+					delete(p.activeSessions, todo.ID)
+
+					p.setTodoStatus(todo.ID, db.StatusReview)
+					p.publishEvent("agent.completed", map[string]interface{}{
+						"todo_id": todo.ID,
+					})
+
+					// If the session viewer is watching this session, mark it done.
+					if p.sessionViewerActive && p.sessionViewerTodoID == todo.ID {
+						p.sessionViewerDone = true
+						p.sessionViewerListening = false
+						p.updateSessionViewerContent()
+					}
+
+					cmds = append(cmds, p.persistTodoStatus(todo.ID, db.StatusReview))
 				}
 			}
 		}
