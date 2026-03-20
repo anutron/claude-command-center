@@ -210,6 +210,52 @@ func TestIsDue_WeeklyMonday(t *testing.T) {
 	}
 }
 
+func TestIsDue_Hourly(t *testing.T) {
+	loc := time.Local
+	now := time.Date(2026, 3, 19, 14, 30, 0, 0, loc)
+
+	tests := []struct {
+		name    string
+		lastRun time.Time
+		want    bool
+	}{
+		{
+			name:    "never run (zero time)",
+			lastRun: time.Time{},
+			want:    true,
+		},
+		{
+			name:    "ran 2 hours ago",
+			lastRun: time.Date(2026, 3, 19, 12, 30, 0, 0, loc),
+			want:    true,
+		},
+		{
+			name:    "ran exactly 1 hour ago",
+			lastRun: time.Date(2026, 3, 19, 13, 30, 0, 0, loc),
+			want:    true,
+		},
+		{
+			name:    "ran 59 minutes ago",
+			lastRun: time.Date(2026, 3, 19, 13, 31, 0, 0, loc),
+			want:    false,
+		},
+		{
+			name:    "ran 5 minutes ago",
+			lastRun: time.Date(2026, 3, 19, 14, 25, 0, 0, loc),
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isDue("hourly", tt.lastRun, now)
+			if got != tt.want {
+				t.Errorf("isDue(hourly, %v, %v) = %v, want %v", tt.lastRun, now, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsDue_UnknownSchedule(t *testing.T) {
 	now := time.Date(2026, 3, 19, 10, 0, 0, 0, time.Local)
 	if isDue("banana", time.Time{}, now) {

@@ -168,6 +168,7 @@ Each automation runs through a fixed sequence per invocation:
 | Value | Description |
 |-------|-------------|
 | `every_refresh` | Run on every `ccc-refresh` cycle |
+| `hourly` | Run at most once per hour |
 | `daily` | Run once per calendar day (first refresh of the day) |
 | `daily_9am` | Run once per day, only if current time is 9:00 AM or later |
 | `weekly_monday` | Run once per week, only on Monday |
@@ -178,6 +179,7 @@ Each automation runs through a fixed sequence per invocation:
 The runner evaluates whether an automation is due by checking the `cc_automation_runs` table for the most recent successful or skipped run:
 
 - `every_refresh` — always due
+- `hourly` — due if last run was more than 1 hour ago
 - `daily` — due if no run today (comparing dates in local time)
 - `daily_9am` — due if no run today AND current local time >= 09:00
 - `weekly_monday` — due if no run this calendar week AND today is Monday

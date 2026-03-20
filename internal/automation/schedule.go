@@ -19,6 +19,10 @@ func isDue(schedule string, lastRun time.Time, now time.Time) bool {
 		today9am := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, now.Location())
 		return lastRun.Before(today9am) && !now.Before(today9am)
 
+	case "hourly":
+		// Due if lastRun is more than 1 hour ago.
+		return now.Sub(lastRun) >= time.Hour
+
 	case "weekly_monday":
 		return weeklyDue(lastRun, now, time.Monday)
 
