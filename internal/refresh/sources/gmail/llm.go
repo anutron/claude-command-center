@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/anutron/claude-command-center/internal/llm"
@@ -126,4 +127,77 @@ Emails:
 	}
 
 	return nil
+}
+
+// emailForTitleGen holds the data needed to generate an actionable title for a labeled email.
+type emailForTitleGen struct {
+	ID      string
+	Subject string
+	From    string
+	To      string
+	Body    string
+}
+
+// generateTodoTitles uses the LLM to generate actionable, verb-first titles for labeled emails.
+// Returns a map of message ID → generated title. Missing entries should fall back to the subject.
+func generateTodoTitles(ctx context.Context, l llm.LLM, emails []emailForTitleGen) (map[string]string, error) {
+	if len(emails) == 0 {
+		return nil, nil
+	}
+
+	var sb strings.Builder
+	for i, e := range emails {
+		sb.WriteString(fmt.Sprintf("## Email %d\n", i+1))
+		sb.WriteString(fmt.Sprintf("ID: %s\n", e.ID))
+		sb.WriteString(fmt.Sprintf("Subject: %s\n", e.Subject))
+		sb.WriteString(fmt.Sprintf("From: %s\n", e.From))
+		sb.WriteString(fmt.Sprintf("To: %s\n", e.To))
+		sb.WriteString(fmt.Sprintf("Body:\n%s\n", e.Body))
+		sb.WriteString("\n---\n\n")
+	}
+
+	prompt := fmt.Sprintf(`You are generating actionable todo titles from emails. Each email has been labeled as a todo — your job is to write a title that captures the job to be done.
+
+Rules:
+- Imperative mood, verb-first (Send, Review, Follow up, Schedule, Prepare, etc.)
+- 20+ characters — specific enough to be actionable
+- For received emails (From is someone else): "What is this email asking me to do?"
+- For sent emails (From is the user): "What did I commit to doing?"
+- Resolve pronouns and vague references using the email body
+- Do NOT use the email subject as the title — subjects like "Re: Q2 Planning" or "Quick question" are useless
+- Focus on the concrete action, not the topic of the thread
+
+For each email, return its ID and your generated title.
+
+Return ONLY a JSON array of objects: [{"id": "message_id", "title": "generated title"}, ...]
+
+Emails:
+%s`, sb.String())
+
+	log.Printf("gmail: generating titles for %d labeled emails", len(emails))
+
+	text, err := l.Complete(ctx, prompt)
+	if err != nil {
+		return nil, fmt.Errorf("gmail title generation: %w", err)
+	}
+
+	text = refresh.CleanJSON(text)
+
+	var items []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(text), &items); err != nil {
+		return nil, fmt.Errorf("parsing title generation response: %w (raw: %s)", err, text[:min(200, len(text))])
+	}
+
+	titles := make(map[string]string, len(items))
+	for _, item := range items {
+		if item.Title != "" {
+			titles[item.ID] = item.Title
+		}
+	}
+
+	log.Printf("gmail: generated %d titles from %d emails", len(titles), len(emails))
+	return titles, nil
 }

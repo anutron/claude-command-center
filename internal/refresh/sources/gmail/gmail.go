@@ -54,7 +54,7 @@ func (s *GmailSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 
 	// Fetch label-based todos if configured
 	if s.cfg.TodoLabel != "" {
-		todos, labeledIDs, err := fetchLabeledTodos(ctx, client, s.cfg.TodoLabel)
+		todos, labeledIDs, err := fetchLabeledTodos(ctx, client, s.cfg.TodoLabel, s.llm)
 		if err != nil {
 			log.Printf("gmail: label todos: %v", err)
 		} else {
@@ -165,7 +165,8 @@ func loadGmailAuth(advanced bool) (oauth2.TokenSource, error) {
 }
 
 // fetchLabeledTodos queries emails with the given label and returns todos + the set of message IDs found.
-func fetchLabeledTodos(ctx context.Context, client *SafeGmailClient, labelName string) ([]db.Todo, map[string]bool, error) {
+// If an LLM is provided, it generates actionable titles from the email body instead of using the subject line.
+func fetchLabeledTodos(ctx context.Context, client *SafeGmailClient, labelName string, l llm.LLM) ([]db.Todo, map[string]bool, error) {
 	query := fmt.Sprintf("label:%s", labelName)
 	msgs, err := client.ListMessages(ctx, query, 50)
 	if err != nil {
@@ -173,23 +174,32 @@ func fetchLabeledTodos(ctx context.Context, client *SafeGmailClient, labelName s
 	}
 
 	labeledIDs := make(map[string]bool, len(msgs))
-	var todos []db.Todo
 
+	type emailMeta struct {
+		ID      string
+		Subject string
+		From    string
+		To      string
+	}
+
+	var metas []emailMeta
 	for _, msg := range msgs {
 		labeledIDs[msg.Id] = true
 
-		detail, err := client.GetMessage(ctx, msg.Id, "metadata", "Subject", "From")
+		detail, err := client.GetMessage(ctx, msg.Id, "metadata", "Subject", "From", "To")
 		if err != nil {
 			continue
 		}
 
-		var subject, from string
+		var subject, from, to string
 		for _, h := range detail.Payload.Headers {
 			switch h.Name {
 			case "Subject":
 				subject = h.Value
 			case "From":
 				from = h.Value
+			case "To":
+				to = h.Value
 			}
 		}
 
@@ -197,15 +207,54 @@ func fetchLabeledTodos(ctx context.Context, client *SafeGmailClient, labelName s
 			continue
 		}
 
-		senderName := from
-		if idx := strings.Index(from, "<"); idx > 0 {
-			senderName = strings.TrimSpace(from[:idx])
+		metas = append(metas, emailMeta{ID: msg.Id, Subject: subject, From: from, To: to})
+	}
+
+	// Generate titles via LLM if available
+	titles := map[string]string{}
+	if l != nil && len(metas) > 0 {
+		var emails []emailForTitleGen
+		for _, m := range metas {
+			body, err := client.GetMessageBody(ctx, m.ID)
+			if err != nil {
+				log.Printf("gmail: failed to fetch body for %s: %v", m.ID, err)
+				continue
+			}
+			if len(body) > 2000 {
+				body = body[:2000] + "..."
+			}
+			emails = append(emails, emailForTitleGen{
+				ID:      m.ID,
+				Subject: m.Subject,
+				From:    m.From,
+				To:      m.To,
+				Body:    body,
+			})
+		}
+
+		if generated, err := generateTodoTitles(ctx, l, emails); err != nil {
+			log.Printf("gmail: title generation failed, falling back to subjects: %v", err)
+		} else {
+			titles = generated
+		}
+	}
+
+	var todos []db.Todo
+	for _, m := range metas {
+		title := m.Subject
+		if t, ok := titles[m.ID]; ok {
+			title = t
+		}
+
+		senderName := m.From
+		if idx := strings.Index(m.From, "<"); idx > 0 {
+			senderName = strings.TrimSpace(m.From[:idx])
 		}
 
 		todos = append(todos, db.Todo{
-			Title:     subject,
+			Title:     title,
 			Source:    "gmail",
-			SourceRef: msg.Id,
+			SourceRef: m.ID,
 			Context:   fmt.Sprintf("From: %s", senderName),
 			Status:    "",
 		})

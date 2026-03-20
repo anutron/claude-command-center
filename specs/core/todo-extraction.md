@@ -2,15 +2,54 @@
 
 ## Purpose
 
-Defines what qualifies as an extractable todo from external sources (Slack, Granola), how candidates are filtered before reaching the LLM, and how the LLM determines ownership. This spec governs the extraction and routing stages of the refresh pipeline.
+Defines what qualifies as an extractable todo from external sources (Gmail, Slack, Granola), how candidates are filtered before reaching the LLM, and how the LLM determines ownership. This spec governs the extraction and routing stages of the refresh pipeline.
 
 ## Interface
 
-- **Inputs**: Raw messages from Slack channels/DMs, Granola meeting transcripts
+- **Inputs**: Gmail labeled emails, raw messages from Slack channels/DMs, Granola meeting transcripts
 - **Outputs**: `[]db.Todo` with title, source, source_ref, context, detail, who_waiting, due, status
-- **Dependencies**: Haiku LLM (extraction), Sonnet LLM (routing/validation)
+- **Dependencies**: Haiku LLM (extraction + Gmail title generation), Sonnet LLM (routing/validation)
 
 ## Behavior
+
+### Gmail: Label-Based Title Generation (Haiku)
+
+When emails are labeled for todo tracking, the email subject is a poor proxy for the action item. Instead, `fetchLabeledTodos` uses the LLM to generate actionable titles from the full email body.
+
+#### Flow
+
+1. Fetch metadata (Subject, From, To) for each labeled email — same as before
+2. Fetch body via `GetMessageBody` for each labeled email
+3. Batch all emails into a single LLM prompt
+4. LLM returns a JSON map of `{message_id: generated_title}` for each email
+5. If LLM is unavailable (nil), fall back to email subject (current behavior)
+
+#### LLM Prompt Inputs
+
+For each email, the prompt receives:
+- Message ID
+- Subject line
+- Sender name
+- Recipient (To header) — used to determine direction
+- Email body (truncated to 2000 chars)
+
+#### Title Generation Rules
+
+The LLM generates a title that captures the job to be done:
+- **Imperative mood, verb-first** (Send, Review, Follow up, Schedule, etc.)
+- **20+ characters** — specific enough to be actionable
+- **Received emails**: "What is this email asking me to do?"
+- **Sent emails**: "What did I commit to doing?"
+- Resolve pronouns and vague references using the email body
+- Strip "Re:", "Fwd:", and other prefixes — the title should describe the action, not the email thread
+
+#### Batching
+
+All labeled emails are sent in a single LLM call to minimize API usage. The response is a JSON array of `{id, title}` objects.
+
+#### Fallback
+
+When `llm.LLM` is nil (no LLM configured), the email subject is used as the title — preserving current behavior.
 
 ### Stage 1: Pre-Filter (Keyword Match)
 
@@ -107,6 +146,15 @@ REJECT only if:
 If rejected, `project_dir` is set to `"REJECT"` and the todo is auto-dismissed.
 
 ## Test Cases
+
+### Gmail Title Generation
+
+- Subject "Re: Q2 Planning", body asks Aaron to prepare a slide deck → title: "Prepare slide deck for Q2 planning"
+- Subject "Quick question", body asks Aaron to review a contract → title: "Review contract" (not "Quick question")
+- Sent email where Aaron says "I'll have the migration script ready by Friday" → title: "Complete migration script by Friday"
+- No LLM available → title falls back to email subject
+- Body is empty or fetch fails → title falls back to email subject
+- LLM returns no title for a given message ID → title falls back to email subject
 
 ### Pre-Filter
 
