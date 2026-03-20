@@ -238,6 +238,25 @@ external_plugins:
     enabled: true
 ```
 
+## Automations
+
+Automations are headless scripts that run during `ccc-refresh` cycles. Unlike plugins (which have a TUI tab), automations operate in the background with no UI footprint. A Python SDK is included for writing automations.
+
+To register an automation, add it to `config.yaml`:
+
+```yaml
+automations:
+  - name: calendar-accept
+    schedule: "*/5 * * * *"          # cron expression
+    command: python3
+    args: ["/path/to/calendar_accept.py"]
+    enabled: true
+    env:
+      ACCEPT_DOMAINS: "mycompany.com,partner.com"
+```
+
+For full details — SDK usage, scheduling, environment variables, and the included `calendar-accept` example — see [docs/automations.md](docs/automations.md).
+
 ## Key Paths Reference
 
 | Path | Purpose |

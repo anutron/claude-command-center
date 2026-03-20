@@ -3,7 +3,7 @@
 ## What It Provides
 
 - **Sessions tab:** Today's and tomorrow's calendar events with start/end times, titles, and declined status
-- **Auto-accept:** Optionally auto-accepts pending invitations from specified email domains
+- **Auto-accept:** Available via the `calendar-accept` automation (a separate scheduled script, not a built-in calendar feature). See [docs/automations.md](../automations.md)
 - **Actions:** Supports pending calendar actions (e.g., booking time blocks) executed after data merge
 
 ## Prerequisites
