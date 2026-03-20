@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"reflect"
 	"strings"
 	"time"
 
-	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -97,7 +95,7 @@ func (ep *ExternalPlugin) startProcess() error {
 
 	// Send scoped config: only the top-level config sections the plugin declared.
 	// If no config_scopes declared, send no config (secure by default).
-	scopedCfg := scopeConfig(ep.ctx.Config, resp.ConfigScopes)
+	scopedCfg := plugin.ScopeConfig(ep.ctx.Config, resp.ConfigScopes)
 	cfgJSON, err := json.Marshal(scopedCfg)
 	if err != nil {
 		proc.Kill()
@@ -320,38 +318,6 @@ func (ep *ExternalPlugin) NavigateTo(route string, args map[string]string) {
 			Args:  args,
 		})
 	}
-}
-
-// scopeConfig returns a map containing only the top-level config fields
-// matching the requested scopes. Uses reflection to extract fields from the
-// Config struct by matching yaml tags to scope names. If scopes is empty,
-// returns an empty map (secure by default).
-func scopeConfig(cfg *config.Config, scopes []string) map[string]interface{} {
-	if len(scopes) == 0 || cfg == nil {
-		return map[string]interface{}{}
-	}
-
-	allowed := make(map[string]bool, len(scopes))
-	for _, s := range scopes {
-		allowed[strings.ToLower(s)] = true
-	}
-
-	result := make(map[string]interface{})
-	v := reflect.ValueOf(cfg).Elem()
-	t := v.Type()
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		tag := field.Tag.Get("yaml")
-		if tag == "" || tag == "-" {
-			continue
-		}
-		// Parse yaml tag to get the field name (before any comma options).
-		name := strings.Split(tag, ",")[0]
-		if allowed[name] {
-			result[name] = v.Field(i).Interface()
-		}
-	}
-	return result
 }
 
 func (ep *ExternalPlugin) errorView() string {

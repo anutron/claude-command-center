@@ -354,12 +354,12 @@ func TestConfigScopeEmpty(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Slack = config.SlackConfig{Enabled: true, Token: "xoxb-secret"}
 
-	result := scopeConfig(cfg, nil)
+	result := plugin.ScopeConfig(cfg, nil)
 	if len(result) != 0 {
 		t.Errorf("scopeConfig with nil scopes should return empty map, got %v", result)
 	}
 
-	result = scopeConfig(cfg, []string{})
+	result = plugin.ScopeConfig(cfg, []string{})
 	if len(result) != 0 {
 		t.Errorf("scopeConfig with empty scopes should return empty map, got %v", result)
 	}
@@ -372,7 +372,7 @@ func TestConfigScopeFiltering(t *testing.T) {
 	cfg.Calendar = config.CalendarConfig{Enabled: true}
 
 	// Request only slack and github
-	result := scopeConfig(cfg, []string{"slack", "github"})
+	result := plugin.ScopeConfig(cfg, []string{"slack", "github"})
 	if _, ok := result["slack"]; !ok {
 		t.Error("should include slack")
 	}
