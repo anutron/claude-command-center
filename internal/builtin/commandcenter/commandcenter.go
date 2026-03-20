@@ -536,9 +536,9 @@ func (p *Plugin) filteredTodos() []db.Todo {
 
 	var result []db.Todo
 	if !p.ccExpanded {
-		// Normal view: backlog todos only
+		// Normal view: all non-terminal todos except inbox ("new")
 		for _, t := range allActive {
-			if t.Status == db.StatusBacklog {
+			if t.Status != db.StatusNew {
 				result = append(result, t)
 			}
 		}
