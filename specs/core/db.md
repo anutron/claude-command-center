@@ -145,6 +145,7 @@ All types are exported for use by other packages:
 
 ### In-Memory Mutations (on CommandCenter)
 - `CompleteTodo`, `RestoreTodo`, `AddTodo`, `RemoveTodo`, `DeferTodo`, `PromoteTodo`
+- `DeferTodo` inserts after the last active (non-terminal) item in the slice — terminal items retain their original sort_order so they can appear anywhere in `cc.Todos`
 - `PauseThread`, `StartThread`, `CloseThread`, `AddThread`
 - `ActiveTodos`, `CompletedTodos`, `ActiveThreads`, `PausedThreads` -- filtered/sorted views
 - `AddPendingBooking` -- appends a booking action

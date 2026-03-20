@@ -688,6 +688,34 @@ func TestDeferTodo(t *testing.T) {
 	}
 }
 
+func TestDeferTodoWithInterleavedTerminal(t *testing.T) {
+	// Completed items retain their original sort_order, so they can
+	// appear before active items in cc.Todos. DeferTodo must place
+	// the item after the last active item, not before the first terminal.
+	cc := &CommandCenter{
+		Todos: []Todo{
+			{ID: "done1", Title: "Done Early", Status: StatusCompleted},
+			{ID: "1", Title: "First", Status: StatusBacklog},
+			{ID: "2", Title: "Second", Status: StatusBacklog},
+			{ID: "done2", Title: "Done Mid", Status: StatusCompleted},
+			{ID: "3", Title: "Third", Status: StatusBacklog},
+		},
+	}
+
+	cc.DeferTodo("1")
+
+	active := cc.ActiveTodos()
+	if len(active) != 3 {
+		t.Fatalf("expected 3 active, got %d", len(active))
+	}
+	if active[0].ID != "2" {
+		t.Errorf("expected '2' first, got %q", active[0].ID)
+	}
+	if active[2].ID != "1" {
+		t.Errorf("expected '1' last active, got %q", active[2].ID)
+	}
+}
+
 func TestActiveTodosLegacy(t *testing.T) {
 	cc := &CommandCenter{
 		Todos: []Todo{

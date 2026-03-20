@@ -404,11 +404,14 @@ func (cc *CommandCenter) DeferTodo(id string) {
 	todo := cc.Todos[idx]
 	cc.Todos = append(cc.Todos[:idx], cc.Todos[idx+1:]...)
 
-	insertAt := len(cc.Todos)
-	for i := range cc.Todos {
-		if IsTerminalStatus(cc.Todos[i].Status) {
-			insertAt = i
-			break
+	// Insert after the last active (non-terminal) todo.
+	// Terminal items can appear anywhere in sort order (they keep their
+	// original sort_order when completed), so we can't just look for the
+	// first terminal item.
+	insertAt := 0
+	for i, t := range cc.Todos {
+		if !IsTerminalStatus(t.Status) {
+			insertAt = i + 1
 		}
 	}
 
