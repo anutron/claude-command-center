@@ -23,7 +23,7 @@ type agentSession struct {
 	TodoID    string
 	SessionID string // Claude session UUID, captured from first stream-JSON event
 	Cmd       *exec.Cmd
-	Status    string // "active", "blocked", "review", "failed"
+	Status    string // "processing", "blocked", "review", "failed"
 	Question  string // populated when blocked
 	StartedAt time.Time
 	Output    strings.Builder // captures output
@@ -171,7 +171,7 @@ SUMMARY
 		sess := &agentSession{
 			TodoID:    qs.TodoID,
 			Cmd:       cmd,
-			Status:    "active",
+			Status:    "processing",
 			StartedAt: time.Now(),
 			Stdin:     stdin,
 			LogPath:   logPath,
@@ -727,7 +727,7 @@ func sendUserMessage(sess *agentSession, message string) error {
 	// Clear blocked status since we've responded.
 	sess.mu.Lock()
 	if sess.Status == "blocked" {
-		sess.Status = "active"
+		sess.Status = "processing"
 		sess.Question = ""
 	}
 	sess.mu.Unlock()
