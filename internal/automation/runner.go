@@ -155,17 +155,36 @@ func (r *Runner) runOne(ctx context.Context, auto config.AutomationConfig, trigg
 		return result
 	}
 
-	// Step 2: Wait for ready (5s timeout).
-	readyMsg, err := proc.receive(5 * time.Second)
-	if err != nil {
-		result.Status = "error"
-		result.Message = "init timeout"
-		return result
-	}
-	if readyMsg.Type != "ready" {
-		result.Status = "error"
-		result.Message = fmt.Sprintf("expected ready, got %s", readyMsg.Type)
-		return result
+	// Step 2: Wait for ready (5s timeout), consuming any log messages
+	// that the automation sends during on_init.
+	for {
+		readyMsg, err := proc.receive(5 * time.Second)
+		if err != nil {
+			result.Status = "error"
+			result.Message = "init timeout"
+			return result
+		}
+		if readyMsg.Type == "log" {
+			level := readyMsg.Level
+			if level == "" {
+				level = "info"
+			}
+			switch level {
+			case "error":
+				r.Logger.Error("automation:"+auto.Name, readyMsg.Message)
+			case "warn":
+				r.Logger.Warn("automation:"+auto.Name, readyMsg.Message)
+			default:
+				r.Logger.Info("automation:"+auto.Name, readyMsg.Message)
+			}
+			continue
+		}
+		if readyMsg.Type != "ready" {
+			result.Status = "error"
+			result.Message = fmt.Sprintf("expected ready, got %s", readyMsg.Type)
+			return result
+		}
+		break
 	}
 
 	// Step 3: Send run.
