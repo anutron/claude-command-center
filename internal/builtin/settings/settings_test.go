@@ -184,7 +184,7 @@ func TestNavSystemItems(t *testing.T) {
 	p, _ := testSetup(t)
 	for _, cat := range p.navCategories {
 		if cat.Label == "SYSTEM" {
-			expected := []string{"system-schedule", "system-mcp", "system-skills", "system-shell", "system-logs"}
+			expected := []string{"system-automations", "system-schedule", "system-mcp", "system-skills", "system-shell", "system-logs"}
 			if len(cat.Items) != len(expected) {
 				t.Errorf("expected %d SYSTEM items, got %d", len(expected), len(cat.Items))
 			}
@@ -257,8 +257,8 @@ func TestNavHasExpectedItems(t *testing.T) {
 
 func TestNavItemCount(t *testing.T) {
 	p, _ := testSetup(t)
-	// APPEARANCE(2) + PLUGINS(1: external) + DATA SOURCES(5) + SYSTEM(5) = 13
-	expected := 13
+	// APPEARANCE(2) + PLUGINS(1: external) + DATA SOURCES(5) + SYSTEM(6) = 14
+	expected := 14
 	if got := p.navItemCount(); got != expected {
 		t.Errorf("expected %d nav items, got %d", expected, got)
 	}
@@ -2277,7 +2277,7 @@ func TestIsFormOnlySlugReturnsTrueForSystemSlugs(t *testing.T) {
 }
 
 func TestIsFormOnlySlugReturnsFalseForDatasourcesAndPlugins(t *testing.T) {
-	for _, slug := range []string{"calendar", "gmail", "slack", "github", "system-logs"} {
+	for _, slug := range []string{"calendar", "gmail", "slack", "github", "system-logs", "system-automations"} {
 		if isFormOnlySlug(slug) {
 			t.Errorf("expected %s to NOT be a form-only slug", slug)
 		}
@@ -2347,7 +2347,8 @@ func TestBuildFormForSlugDispatchesCorrectly(t *testing.T) {
 		{"system-mcp", "system", true},
 		{"system-skills", "system", true},
 		{"system-shell", "system", true},
-		{"system-logs", "system", false}, // logs has no form
+		{"system-logs", "system", false},        // logs has no form
+		{"system-automations", "system", false}, // automations has no form
 	}
 
 	for _, tc := range tests {
@@ -2445,4 +2446,111 @@ func searchStr(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// --- Automations content tests ---
+
+func TestAutomationsContentEmpty(t *testing.T) {
+	p, _ := testSetup(t)
+	// No automations configured (default)
+	output := p.viewAutomationsContent(80, 24)
+	if !containsStr(output, "No automations configured") {
+		t.Errorf("expected empty state message, got: %s", output)
+	}
+}
+
+func TestAutomationsContentWithAutomations(t *testing.T) {
+	p, _ := testSetup(t)
+
+	// Add automations to config
+	p.cfg.Automations = []config.AutomationConfig{
+		{Name: "calendar-accept", Command: "test", Enabled: true, Schedule: "hourly"},
+		{Name: "weekly-report", Command: "test", Enabled: true, Schedule: "weekly_fri"},
+		{Name: "disabled-thing", Command: "test", Enabled: false, Schedule: "every_refresh"},
+	}
+
+	// Set up an in-memory database with the automation runs table
+	tmpDir := t.TempDir()
+	database, err := db.OpenDB(tmpDir + "/test.db")
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer database.Close()
+	// Insert a run record for calendar-accept
+	_, err = database.Exec(
+		`INSERT INTO cc_automation_runs (name, started_at, finished_at, status, message) VALUES (?, ?, ?, ?, ?)`,
+		"calendar-accept",
+		time.Now().Add(-2*time.Minute).UTC().Format(time.RFC3339),
+		time.Now().Add(-1*time.Minute).UTC().Format(time.RFC3339),
+		"success",
+		"Accepted 3 invites",
+	)
+	if err != nil {
+		t.Fatalf("failed to insert run: %v", err)
+	}
+
+	p.database = database
+
+	output := p.viewAutomationsContent(120, 24)
+
+	// Should show all three automations
+	if !containsStr(output, "calendar-accept") {
+		t.Error("expected calendar-accept in output")
+	}
+	if !containsStr(output, "weekly-report") {
+		t.Error("expected weekly-report in output")
+	}
+	if !containsStr(output, "disabled") {
+		t.Error("expected disabled status in output")
+	}
+	if !containsStr(output, "Accepted 3 invites") {
+		t.Error("expected run message in output")
+	}
+	if !containsStr(output, "never") {
+		t.Error("expected 'never' for weekly-report which has no runs")
+	}
+}
+
+func TestAutomationsContentShowsError(t *testing.T) {
+	p, _ := testSetup(t)
+
+	p.cfg.Automations = []config.AutomationConfig{
+		{Name: "failing-auto", Command: "test", Enabled: true, Schedule: "daily"},
+	}
+
+	tmpDir := t.TempDir()
+	database, err := db.OpenDB(tmpDir + "/test.db")
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer database.Close()
+	_, err = database.Exec(
+		`INSERT INTO cc_automation_runs (name, started_at, finished_at, status, message) VALUES (?, ?, ?, ?, ?)`,
+		"failing-auto",
+		time.Now().Add(-3*time.Hour).UTC().Format(time.RFC3339),
+		time.Now().Add(-3*time.Hour).UTC().Format(time.RFC3339),
+		"error",
+		"Credential expired",
+	)
+	if err != nil {
+		t.Fatalf("failed to insert run: %v", err)
+	}
+
+	p.database = database
+
+	output := p.viewAutomationsContent(120, 24)
+
+	if !containsStr(output, "error") {
+		t.Error("expected 'error' status in output")
+	}
+	if !containsStr(output, "Credential expired") {
+		t.Error("expected error message in output")
+	}
+}
+
+func TestAutomationsNavItemExists(t *testing.T) {
+	p, _ := testSetup(t)
+	if !findNavItemInCategory(p, "SYSTEM", "system-automations") {
+		t.Error("expected system-automations in SYSTEM category")
+	}
 }

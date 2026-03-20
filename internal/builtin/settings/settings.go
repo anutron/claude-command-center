@@ -957,6 +957,8 @@ func (p *Plugin) buildFormForSlug(item *NavItem) (*huh.Form, tea.Cmd) {
 		return form, form.Init()
 	case "system-logs":
 		return nil, nil
+	case "system-automations":
+		return nil, nil
 	default:
 		// Plugins and data sources
 		switch item.Kind {

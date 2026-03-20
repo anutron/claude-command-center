@@ -13,6 +13,7 @@ func (p *Plugin) viewContent(width, height int) string {
 	// Check if the selected nav item is the logs pane — render logs content
 	// even from FocusNav so scrolling via forwarded keys is visible.
 	isLogs := selected != nil && selected.Slug == "system-logs"
+	isAutomations := selected != nil && selected.Slug == "system-automations"
 
 	// Build header from the currently selected nav item.
 	var header string
@@ -25,6 +26,8 @@ func (p *Plugin) viewContent(width, height int) string {
 	switch {
 	case p.activeForm != nil && (selected == nil || p.activeFormSlug == selected.Slug):
 		body = p.viewActiveFormContent(width, height)
+	case isAutomations:
+		body = p.viewAutomationsContent(width, height)
 	case p.focusZone == FocusLogs || isLogs:
 		body = p.viewLogsContent(width, height)
 	default:

@@ -206,6 +206,7 @@ func (p *Plugin) rebuildNav() {
 	system := Category{
 		Label: "SYSTEM",
 		Items: []NavItem{
+			{Label: "Automations", Slug: "system-automations", Kind: "system", Description: "Registered automations and their run history"},
 			{Label: "Schedule", Slug: "system-schedule", Kind: "system", Description: "Configure auto-refresh interval for data sources"},
 			{Label: "MCP Servers", Slug: "system-mcp", Kind: "system", Description: "Model Context Protocol server connections"},
 			{Label: "Skills", Slug: "system-skills", Kind: "system", Description: "Installed Claude Code skills and shortcuts"},
