@@ -203,6 +203,18 @@ func migrateSchema(db *sql.DB) error {
 		AND t2.rowid <= cc_todos.rowid
 	) WHERE display_id IS NULL OR display_id = 0`)
 
+	// Automation runs tracking table (for the automation framework).
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_automation_runs (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		name        TEXT NOT NULL,
+		started_at  TEXT NOT NULL,
+		finished_at TEXT NOT NULL,
+		status      TEXT NOT NULL,
+		message     TEXT NOT NULL DEFAULT ''
+	)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_runs_name_started
+		ON cc_automation_runs(name, started_at)`)
+
 	return nil
 }
 
