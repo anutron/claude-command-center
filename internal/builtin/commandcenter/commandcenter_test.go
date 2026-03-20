@@ -2,6 +2,7 @@ package commandcenter
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1266,6 +1267,97 @@ func TestExtractSessionSummary(t *testing.T) {
 				t.Errorf("extractSessionSummary() = %q, should not contain %q", got, tt.wantNot)
 			}
 		})
+	}
+}
+
+func TestBuildEnrichPromptIncludesActiveTodos(t *testing.T) {
+	todos := []db.Todo{
+		{ID: "a", DisplayID: 12, Title: "Send report to Bob"},
+		{ID: "b", DisplayID: 13, Title: "Review PR"},
+	}
+	prompt := buildEnrichPrompt("do the report thing", todos)
+
+	if !strings.Contains(prompt, "#12") {
+		t.Error("prompt should contain display ID #12")
+	}
+	if !strings.Contains(prompt, "Send report to Bob") {
+		t.Error("prompt should contain existing todo title")
+	}
+	if !strings.Contains(prompt, "merge_into") {
+		t.Error("prompt should ask for merge_into field")
+	}
+}
+
+func TestBuildEnrichPromptNoTodosSection(t *testing.T) {
+	prompt := buildEnrichPrompt("do something", nil)
+	if strings.Contains(prompt, "Existing Todos") {
+		t.Error("prompt should not contain 'Existing Todos' section when there are no active todos")
+	}
+}
+
+func TestBuildEnrichPromptCapsAt50Todos(t *testing.T) {
+	todos := make([]db.Todo, 60)
+	for i := range todos {
+		todos[i] = db.Todo{ID: fmt.Sprintf("id-%d", i), DisplayID: i + 1, Title: fmt.Sprintf("Todo %d", i+1)}
+	}
+	prompt := buildEnrichPrompt("some task", todos)
+	// Only first 50 should appear; todo #51 (DisplayID 51) should not
+	if strings.Contains(prompt, "#51") {
+		t.Error("prompt should not include todo #51 — cap is 50")
+	}
+	if !strings.Contains(prompt, "#50") {
+		t.Error("prompt should include todo #50")
+	}
+}
+
+func TestSearchFilterMatchesDisplayID(t *testing.T) {
+	p := testPlugin(t)
+	p.cc = &db.CommandCenter{
+		GeneratedAt: time.Now(),
+		Todos: []db.Todo{
+			{ID: "t1", DisplayID: 183, Title: "Alpha task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+			{ID: "t2", DisplayID: 42, Title: "Beta task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+			{ID: "t3", DisplayID: 1830, Title: "Gamma task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		},
+	}
+	p.width = 120
+	p.height = 40
+
+	// Searching "183" should match display_id 183 exactly, not 1830
+	p.searchInput.SetValue("183")
+	filtered := p.filteredTodos()
+	if len(filtered) != 1 {
+		t.Fatalf("search '183': got %d results, want 1", len(filtered))
+	}
+	if filtered[0].DisplayID != 183 {
+		t.Errorf("search '183': got display_id %d, want 183", filtered[0].DisplayID)
+	}
+
+	// Searching "42" should match display_id 42
+	p.searchInput.SetValue("42")
+	filtered = p.filteredTodos()
+	if len(filtered) != 1 {
+		t.Fatalf("search '42': got %d results, want 1", len(filtered))
+	}
+	if filtered[0].DisplayID != 42 {
+		t.Errorf("search '42': got display_id %d, want 42", filtered[0].DisplayID)
+	}
+
+	// Searching "task" should match all three by title
+	p.searchInput.SetValue("task")
+	filtered = p.filteredTodos()
+	if len(filtered) != 3 {
+		t.Fatalf("search 'task': got %d results, want 3", len(filtered))
+	}
+
+	// Searching "alpha" should match only t1 by title
+	p.searchInput.SetValue("alpha")
+	filtered = p.filteredTodos()
+	if len(filtered) != 1 {
+		t.Fatalf("search 'alpha': got %d results, want 1", len(filtered))
+	}
+	if filtered[0].ID != "t1" {
+		t.Errorf("search 'alpha': got id %q, want t1", filtered[0].ID)
 	}
 }
 

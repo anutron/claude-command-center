@@ -75,6 +75,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case claudeEnrichFinishedMsg:
 		return p.handleClaudeEnrichFinished(msg)
 
+	case claudeSynthesizeFinishedMsg:
+		return p.handleSynthesizeFinished(msg)
+
 	case claudeCommandFinishedMsg:
 		return p.handleClaudeCommandFinished(msg)
 
@@ -369,6 +372,8 @@ func (p *Plugin) handleClaudeEnrichFinished(msg claudeEnrichFinishedMsg) (bool, 
 			Detail         string `json:"detail"`
 			ProjectDir     string `json:"project_dir"`
 			ProposedPrompt string `json:"proposed_prompt"`
+			MergeInto      string `json:"merge_into"`
+			MergeNote      string `json:"merge_note"`
 		}
 		if err := json.Unmarshal([]byte(jsonStr), &enriched); err == nil && enriched.Title != "" {
 			ensureCC(&p.cc)
@@ -382,12 +387,86 @@ func (p *Plugin) handleClaudeEnrichFinished(msg claudeEnrichFinishedMsg) (bool, 
 			todo.ProposedPrompt = enriched.ProposedPrompt
 			todoCopy := *todo
 			p.publishEvent("todo.created", map[string]interface{}{"id": todoCopy.ID, "title": todoCopy.Title, "source": "enrich"})
+
+			// Merge handling: if the LLM detected a duplicate, trigger synthesis
+			if enriched.MergeInto != "" {
+				target := p.cc.FindTodo(enriched.MergeInto)
+				if target != nil && enriched.MergeInto != todoCopy.ID {
+					// Gather originals
+					var originals []db.Todo
+					if target.Source == "merge" {
+						origIDs := db.DBGetOriginalIDs(p.cc.Merges, target.ID)
+						for _, oid := range origIDs {
+							if orig := p.cc.FindTodo(oid); orig != nil {
+								originals = append(originals, *orig)
+							}
+						}
+					} else {
+						originals = []db.Todo{*target}
+					}
+					originals = append(originals, todoCopy) // newest last
+
+					// Insert the original todo first, then trigger synthesis
+					return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(
+						p.dbWriteCmd(func(database *sql.DB) error {
+							return db.DBInsertTodo(database, todoCopy)
+						}),
+						claudeSynthesizeCmd(p.llm, originals, target),
+					)}
+				}
+			}
+
+			p.flashMessage = fmt.Sprintf("Added todo #%d", todoCopy.DisplayID)
+			p.flashMessageAt = time.Now()
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
 				return db.DBInsertTodo(database, todoCopy)
 			})}
 		}
 	}
 	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleSynthesizeFinished(msg claudeSynthesizeFinishedMsg) (bool, plugin.Action) {
+	if msg.err != nil {
+		p.flashMessage = "Merge failed: " + msg.err.Error()
+		p.flashMessageAt = time.Now()
+		return true, plugin.NoopAction()
+	}
+	synth := msg.synthesis
+	synthCopy := synth
+	p.cc.Todos = append(p.cc.Todos, synth)
+	// Add merge records to in-memory state
+	for _, orig := range msg.originals {
+		p.cc.Merges = append(p.cc.Merges, db.TodoMerge{
+			SynthesisID: synthCopy.ID,
+			OriginalID:  orig.ID,
+		})
+	}
+	p.flashMessage = fmt.Sprintf("Merged into #%d: %s", synthCopy.DisplayID, synthCopy.Title)
+	p.flashMessageAt = time.Now()
+
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
+		if msg.oldSynthID != "" {
+			_ = db.DBDeleteSynthesisMerges(database, msg.oldSynthID)
+			_ = db.DBDeleteTodo(database, msg.oldSynthID)
+			// Also remove old synthesis from in-memory list
+			for i, t := range p.cc.Todos {
+				if t.ID == msg.oldSynthID {
+					p.cc.Todos = append(p.cc.Todos[:i], p.cc.Todos[i+1:]...)
+					break
+				}
+			}
+		}
+		if err := db.DBInsertTodo(database, synthCopy); err != nil {
+			return err
+		}
+		for _, orig := range msg.originals {
+			if err := db.DBInsertMerge(database, synthCopy.ID, orig.ID, ""); err != nil {
+				return err
+			}
+		}
+		return nil
+	})}
 }
 
 func (p *Plugin) handleClaudeTrainFinished(msg claudeTrainFinishedMsg) (bool, plugin.Action) {

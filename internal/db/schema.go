@@ -181,6 +181,15 @@ func migrateSchema(db *sql.DB) error {
 	// Drop the threads table (feature removed, preserved on threads-feature branch)
 	_, _ = db.Exec(`DROP TABLE IF EXISTS cc_threads`)
 
+	// Add cc_todo_merges table for duplicate detection (tracks synthesis/original relationships)
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_todo_merges (
+		synthesis_id TEXT NOT NULL,
+		original_id TEXT NOT NULL,
+		vetoed INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL,
+		PRIMARY KEY (synthesis_id, original_id)
+	)`)
+
 	// --- Todo status redesign migration ---
 	// Collapse three status fields (status, triage_status, session_status) into
 	// a single status FSM. We detect whether the migration is needed by checking

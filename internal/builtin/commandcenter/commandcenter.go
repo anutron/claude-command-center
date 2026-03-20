@@ -177,6 +177,9 @@ type Plugin struct {
 	// Key chord state: "g" prefix for Gmail-style shortcuts (e.g., "gi" = go inbox)
 	gPending bool
 
+	// Merge source cursor for unmerge UX in detail view
+	mergeSourceCursor int
+
 	// Sub-view identifier (currently only "command")
 	subView string
 
@@ -582,7 +585,9 @@ func (p *Plugin) filteredTodos() []db.Todo {
 	lower := strings.ToLower(query)
 	var filtered []db.Todo
 	for _, t := range result {
-		if strings.Contains(strings.ToLower(flattenTitle(t.Title)), lower) {
+		titleMatch := strings.Contains(strings.ToLower(flattenTitle(t.Title)), lower)
+		idMatch := query == fmt.Sprintf("%d", t.DisplayID)
+		if titleMatch || idMatch {
 			filtered = append(filtered, t)
 		}
 	}

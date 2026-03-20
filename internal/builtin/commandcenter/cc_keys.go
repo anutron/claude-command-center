@@ -648,7 +648,7 @@ func (p *Plugin) handleAddingTodoQuick(msg tea.KeyMsg) plugin.Action {
 		p.claudeLoading = true
 		p.claudeLoadingAt = time.Now()
 		p.claudeLoadingMsg = "Creating todo..."
-		prompt := buildEnrichPrompt(text)
+		prompt := buildEnrichPrompt(text, p.cc.ActiveTodos())
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: claudeEnrichCmd(p.llm, prompt)}
 
 	case "esc":

@@ -98,6 +98,16 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "j":
+		// If viewing a synthesis todo, navigate within sources list; otherwise go to next todo
+		if todo := p.detailTodo(); todo != nil && todo.Source == "merge" && p.cc != nil {
+			origIDs := db.DBGetOriginalIDs(p.cc.Merges, todo.ID)
+			if len(origIDs) > 0 {
+				if p.mergeSourceCursor < len(origIDs)-1 {
+					p.mergeSourceCursor++
+				}
+				return plugin.ConsumedAction()
+			}
+		}
 		// Next todo
 		activeTodos := p.cc.ActiveTodos()
 		idx := p.detailTodoActiveIndex()
@@ -107,6 +117,16 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "k":
+		// If viewing a synthesis todo, navigate within sources list; otherwise go to prev todo
+		if todo := p.detailTodo(); todo != nil && todo.Source == "merge" && p.cc != nil {
+			origIDs := db.DBGetOriginalIDs(p.cc.Merges, todo.ID)
+			if len(origIDs) > 0 {
+				if p.mergeSourceCursor > 0 {
+					p.mergeSourceCursor--
+				}
+				return plugin.ConsumedAction()
+			}
+		}
 		// Previous todo
 		activeTodos := p.cc.ActiveTodos()
 		idx := p.detailTodoActiveIndex()
@@ -222,6 +242,33 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		p.commandTextArea.SetWidth(inputWidth)
 		cmd := p.commandTextArea.Focus()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	case "U":
+		// Unmerge selected source from synthesis todo
+		if todo := p.detailTodo(); todo != nil && todo.Source == "merge" && p.cc != nil {
+			origIDs := db.DBGetOriginalIDs(p.cc.Merges, todo.ID)
+			if len(origIDs) > 0 && p.mergeSourceCursor < len(origIDs) {
+				selectedOrigID := origIDs[p.mergeSourceCursor]
+				synthID := todo.ID
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
+					if err := db.DBSetMergeVetoed(database, synthID, selectedOrigID, true); err != nil {
+						return err
+					}
+					// Count remaining non-vetoed originals
+					merges, err := db.DBLoadMerges(database)
+					if err != nil {
+						return err
+					}
+					remaining := db.DBGetOriginalIDs(merges, synthID)
+					if len(remaining) <= 1 {
+						// Only one (or zero) left — delete synthesis and restore the last original
+						_ = db.DBDeleteSynthesisMerges(database, synthID)
+						_ = db.DBDeleteTodo(database, synthID)
+					}
+					return nil
+				})}
+			}
+		}
+		return plugin.ConsumedAction()
 	case "T":
 		// Train routing and prompt generation rules
 		if todo := p.detailTodo(); todo != nil {

@@ -539,6 +539,37 @@ func DBUpsertSourceSync(d *sql.DB, source string, syncErr error) error {
 	return nil
 }
 
+// ---------------------------------------------------------------------------
+// Write methods -- Merges
+// ---------------------------------------------------------------------------
+
+func DBInsertMerge(db *sql.DB, synthesisID, originalID, mergeNote string) error {
+	now := FormatTime(time.Now())
+	_, err := db.Exec(`INSERT OR REPLACE INTO cc_todo_merges (synthesis_id, original_id, vetoed, created_at)
+		VALUES (?, ?, 0, ?)`, synthesisID, originalID, now)
+	return err
+}
+
+func DBSetMergeVetoed(db *sql.DB, synthesisID, originalID string, vetoed bool) error {
+	v := 0
+	if vetoed {
+		v = 1
+	}
+	_, err := db.Exec(`UPDATE cc_todo_merges SET vetoed = ? WHERE synthesis_id = ? AND original_id = ?`,
+		v, synthesisID, originalID)
+	return err
+}
+
+func DBDeleteSynthesisMerges(db *sql.DB, synthesisID string) error {
+	_, err := db.Exec(`DELETE FROM cc_todo_merges WHERE synthesis_id = ?`, synthesisID)
+	return err
+}
+
+func DBDeleteTodo(db *sql.DB, id string) error {
+	_, err := db.Exec(`DELETE FROM cc_todos WHERE id = ?`, id)
+	return err
+}
+
 // DBClearPendingActions removes all pending actions.
 func DBClearPendingActions(d *sql.DB) error {
 	_, err := d.Exec(`DELETE FROM cc_pending_actions`)

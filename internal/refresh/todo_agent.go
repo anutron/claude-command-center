@@ -31,13 +31,15 @@ type TodoPromptResult struct {
 	ProjectDir     string `json:"project_dir"`
 	ProposedPrompt string `json:"proposed_prompt"`
 	Reasoning      string `json:"reasoning"`
+	MergeInto      string `json:"merge_into"`
+	MergeNote      string `json:"merge_note"`
 }
 
 // GenerateTodoPrompt takes a todo and project context, returns a project_dir
 // assignment and a proposed prompt. The LLM chooses which project best matches
 // the task based on descriptions, skills, and routing rules.
-func GenerateTodoPrompt(ctx context.Context, l llm.LLM, todo db.Todo, paths PathContext) (*TodoPromptResult, error) {
-	prompt := buildRoutingPrompt(todo, paths)
+func GenerateTodoPrompt(ctx context.Context, l llm.LLM, todo db.Todo, paths PathContext, activeTodos []db.Todo) (*TodoPromptResult, error) {
+	prompt := buildRoutingPrompt(todo, paths, activeTodos)
 
 	text, err := l.Complete(ctx, prompt)
 	if err != nil {
@@ -55,7 +57,7 @@ func GenerateTodoPrompt(ctx context.Context, l llm.LLM, todo db.Todo, paths Path
 }
 
 // buildRoutingPrompt constructs the full prompt for the LLM routing decision.
-func buildRoutingPrompt(todo db.Todo, paths PathContext) string {
+func buildRoutingPrompt(todo db.Todo, paths PathContext, activeTodos []db.Todo) string {
 	var b strings.Builder
 
 	b.WriteString(`You are choosing which project directory is most appropriate for a task,
@@ -135,6 +137,22 @@ and generating a prompt to execute it there.
 		b.WriteString("Note: Do not prefer a project just because it has skills that are also\navailable globally. Focus on whether the project's PURPOSE matches the task.\n")
 	}
 
+	if len(activeTodos) > 0 {
+		b.WriteString("\n## Existing Todos\n")
+		b.WriteString("If this task is semantically the same as an existing todo, return its ID in merge_into.\n\n")
+		limit := len(activeTodos)
+		if limit > 50 {
+			limit = 50
+		}
+		for _, t := range activeTodos[:limit] {
+			fmt.Fprintf(&b, "- [#%d] (id: %s) %s", t.DisplayID, t.ID, t.Title)
+			if t.Due != "" {
+				fmt.Fprintf(&b, " (due: %s)", t.Due)
+			}
+			b.WriteString("\n")
+		}
+	}
+
 	if instructions := loadTodoInstructions(); instructions != "" {
 		fmt.Fprintf(&b, "\n## User Instructions\n%s\n", instructions)
 	}
@@ -160,6 +178,9 @@ Return ONLY JSON. If rejecting:
 
 If accepting:
 {"project_dir": "/path/to/project", "proposed_prompt": "## Objective\n...", "reasoning": "One sentence explaining why this project"}
+
+If merging with an existing todo, also include:
+"merge_into": "existing-todo-id", "merge_note": "reason for merge"
 `)
 
 	return b.String()

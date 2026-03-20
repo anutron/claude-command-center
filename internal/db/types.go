@@ -14,6 +14,7 @@ type CommandCenter struct {
 	GeneratedAt    time.Time       `json:"generated_at"`
 	Calendar       CalendarData    `json:"calendar"`
 	Todos          []Todo          `json:"todos"`
+	Merges         []TodoMerge     `json:"merges,omitempty"`
 	Suggestions    Suggestions     `json:"suggestions"`
 	PendingActions []PendingAction `json:"pending_actions"`
 	Warnings       []Warning       `json:"warnings,omitempty"`
@@ -167,6 +168,67 @@ type Todo struct {
 	SourceContextAt  string     `json:"source_context_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	CompletedAt    *time.Time `json:"completed_at"`
+	MergeInto      string     `json:"-"` // transient — not persisted to DB
+}
+
+// TodoMerge tracks which original todos have been merged into a synthesis todo.
+type TodoMerge struct {
+	SynthesisID string `json:"synthesis_id"`
+	OriginalID  string `json:"original_id"`
+	Vetoed      bool   `json:"vetoed"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// DBGetOriginalIDs returns the non-vetoed original IDs for a synthesis.
+func DBGetOriginalIDs(merges []TodoMerge, synthesisID string) []string {
+	var ids []string
+	for _, m := range merges {
+		if m.SynthesisID == synthesisID && !m.Vetoed {
+			ids = append(ids, m.OriginalID)
+		}
+	}
+	return ids
+}
+
+// WerePreviouslyMergedAndVetoed checks if two IDs were ever in the same
+// synthesis and one of them was vetoed out. Prevents re-merging a
+// specific pair while allowing each ID to merge with unrelated todos.
+func WerePreviouslyMergedAndVetoed(merges []TodoMerge, idA, idB string) bool {
+	synthGroups := make(map[string][]TodoMerge)
+	for _, m := range merges {
+		synthGroups[m.SynthesisID] = append(synthGroups[m.SynthesisID], m)
+	}
+	for _, group := range synthGroups {
+		hasA, hasB, hasVeto := false, false, false
+		for _, m := range group {
+			if m.OriginalID == idA {
+				hasA = true
+				if m.Vetoed {
+					hasVeto = true
+				}
+			}
+			if m.OriginalID == idB {
+				hasB = true
+				if m.Vetoed {
+					hasVeto = true
+				}
+			}
+		}
+		if hasA && hasB && hasVeto {
+			return true
+		}
+	}
+	return false
+}
+
+// FindTodo returns a pointer to the todo with the given ID, or nil.
+func (cc *CommandCenter) FindTodo(id string) *Todo {
+	for i := range cc.Todos {
+		if cc.Todos[i].ID == id {
+			return &cc.Todos[i]
+		}
+	}
+	return nil
 }
 
 type Suggestions struct {
@@ -378,9 +440,26 @@ func (cc *CommandCenter) SwapTodos(i, j int) {
 	cc.Todos[i], cc.Todos[j] = cc.Todos[j], cc.Todos[i]
 }
 
-func (cc *CommandCenter) ActiveTodos() []Todo {
+// VisibleTodos returns todos not hidden by a non-vetoed merge.
+func (cc *CommandCenter) VisibleTodos() []Todo {
+	hidden := make(map[string]bool)
+	for _, m := range cc.Merges {
+		if !m.Vetoed {
+			hidden[m.OriginalID] = true
+		}
+	}
 	var out []Todo
 	for _, t := range cc.Todos {
+		if !hidden[t.ID] {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func (cc *CommandCenter) ActiveTodos() []Todo {
+	var out []Todo
+	for _, t := range cc.VisibleTodos() {
 		if !IsTerminalStatus(t.Status) {
 			out = append(out, t)
 		}

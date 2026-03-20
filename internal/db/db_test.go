@@ -1280,6 +1280,210 @@ func TestLoadAllSessions_MergedAndSorted(t *testing.T) {
 	}
 }
 
+func TestTodoMergesTableExists(t *testing.T) {
+	dir := t.TempDir()
+	database, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	_, err = database.Exec(`INSERT INTO cc_todo_merges (synthesis_id, original_id, vetoed, created_at)
+		VALUES ('s1', 'o1', 0, '2026-03-19T00:00:00Z')`)
+	if err != nil {
+		t.Fatalf("cc_todo_merges table should exist: %v", err)
+	}
+
+	// Verify primary key constraint
+	_, err = database.Exec(`INSERT INTO cc_todo_merges (synthesis_id, original_id, vetoed, created_at)
+		VALUES ('s1', 'o1', 0, '2026-03-19T00:00:00Z')`)
+	if err == nil {
+		t.Fatal("expected unique constraint violation on duplicate (synthesis_id, original_id)")
+	}
+}
+
+func TestMergeCRUD(t *testing.T) {
+	database, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	// Insert merges
+	if err := DBInsertMerge(database, "synth-1", "orig-a", "same task"); err != nil {
+		t.Fatalf("insert merge: %v", err)
+	}
+	if err := DBInsertMerge(database, "synth-1", "orig-b", "same task"); err != nil {
+		t.Fatalf("insert merge: %v", err)
+	}
+
+	// Load merges
+	merges, err := DBLoadMerges(database)
+	if err != nil {
+		t.Fatalf("load merges: %v", err)
+	}
+	if len(merges) != 2 {
+		t.Fatalf("expected 2 merges, got %d", len(merges))
+	}
+
+	// Get originals for synthesis
+	origIDs := DBGetOriginalIDs(merges, "synth-1")
+	if len(origIDs) != 2 {
+		t.Fatalf("expected 2 originals, got %d", len(origIDs))
+	}
+
+	// Veto one
+	if err := DBSetMergeVetoed(database, "synth-1", "orig-a", true); err != nil {
+		t.Fatalf("veto: %v", err)
+	}
+	merges, _ = DBLoadMerges(database)
+	origIDs = DBGetOriginalIDs(merges, "synth-1")
+	if len(origIDs) != 1 {
+		t.Fatalf("expected 1 non-vetoed original, got %d", len(origIDs))
+	}
+
+	// Delete synthesis merges
+	if err := DBDeleteSynthesisMerges(database, "synth-1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	merges, _ = DBLoadMerges(database)
+	if len(merges) != 0 {
+		t.Fatalf("expected 0 merges after delete, got %d", len(merges))
+	}
+}
+
+func TestWerePreviouslyMergedAndVetoed(t *testing.T) {
+	merges := []TodoMerge{
+		{SynthesisID: "s1", OriginalID: "a", Vetoed: true},
+		{SynthesisID: "s1", OriginalID: "b", Vetoed: false},
+	}
+	// a and b were in same synthesis and a was vetoed — should be vetoed
+	if !WerePreviouslyMergedAndVetoed(merges, "a", "b") {
+		t.Error("expected vetoed for pair that was split")
+	}
+	// c and d are unrelated
+	if WerePreviouslyMergedAndVetoed(merges, "c", "d") {
+		t.Error("expected not vetoed for unrelated IDs")
+	}
+	// a and c were never in the same synthesis
+	if WerePreviouslyMergedAndVetoed(merges, "a", "c") {
+		t.Error("a's veto from s1 should not block merging a with c")
+	}
+}
+
+func TestVisibleTodosHidesMergedOriginals(t *testing.T) {
+	cc := &CommandCenter{
+		Todos: []Todo{
+			{ID: "a", Title: "Do X", Status: StatusBacklog},
+			{ID: "b", Title: "Do X tomorrow", Status: StatusBacklog},
+			{ID: "synth-1", Title: "Do X by tomorrow", Status: StatusBacklog, Source: "merge"},
+			{ID: "c", Title: "Unrelated", Status: StatusBacklog},
+		},
+		Merges: []TodoMerge{
+			{SynthesisID: "synth-1", OriginalID: "a", Vetoed: false},
+			{SynthesisID: "synth-1", OriginalID: "b", Vetoed: false},
+		},
+	}
+
+	visible := cc.VisibleTodos()
+	if len(visible) != 2 {
+		t.Fatalf("expected 2 visible todos (synth-1 + c), got %d", len(visible))
+	}
+
+	// Veto one — now it should reappear
+	cc.Merges[0].Vetoed = true
+	visible = cc.VisibleTodos()
+	// a is vetoed (visible), b still merged (hidden), synth-1 visible, c visible
+	if len(visible) != 3 {
+		t.Fatalf("expected 3 visible todos after veto, got %d", len(visible))
+	}
+}
+
+func TestFullMergeCycle(t *testing.T) {
+	database, err := OpenDB(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	// Create two originals
+	a := Todo{ID: "a", DisplayID: 1, Title: "Do X", Status: StatusBacklog, Source: "manual", CreatedAt: time.Now()}
+	b := Todo{ID: "b", DisplayID: 2, Title: "Do X tomorrow", Status: StatusBacklog, Source: "manual", Due: "2026-03-20", CreatedAt: time.Now()}
+	if err := DBInsertTodo(database, a); err != nil {
+		t.Fatalf("insert a: %v", err)
+	}
+	if err := DBInsertTodo(database, b); err != nil {
+		t.Fatalf("insert b: %v", err)
+	}
+
+	// Create synthesis
+	s := Todo{ID: "s1", DisplayID: 3, Title: "Do X by tomorrow", Status: StatusBacklog, Source: "merge", Due: "2026-03-20", CreatedAt: time.Now()}
+	if err := DBInsertTodo(database, s); err != nil {
+		t.Fatalf("insert synth: %v", err)
+	}
+	if err := DBInsertMerge(database, "s1", "a", "same task"); err != nil {
+		t.Fatalf("insert merge a: %v", err)
+	}
+	if err := DBInsertMerge(database, "s1", "b", "same task"); err != nil {
+		t.Fatalf("insert merge b: %v", err)
+	}
+
+	// Load and verify visibility
+	cc, err := LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	visible := cc.VisibleTodos()
+	visibleIDs := make(map[string]bool)
+	for _, v := range visible {
+		visibleIDs[v.ID] = true
+	}
+	if visibleIDs["a"] || visibleIDs["b"] {
+		t.Error("originals should be hidden")
+	}
+	if !visibleIDs["s1"] {
+		t.Error("synthesis should be visible")
+	}
+
+	// Unmerge b (veto)
+	if err := DBSetMergeVetoed(database, "s1", "b", true); err != nil {
+		t.Fatalf("veto: %v", err)
+	}
+	cc, _ = LoadCommandCenterFromDB(database)
+	visible = cc.VisibleTodos()
+	visibleIDs = make(map[string]bool)
+	for _, v := range visible {
+		visibleIDs[v.ID] = true
+	}
+	if !visibleIDs["b"] {
+		t.Error("b should be visible after veto")
+	}
+	if visibleIDs["a"] {
+		t.Error("a should still be hidden")
+	}
+	if !visibleIDs["s1"] {
+		t.Error("synthesis should still be visible")
+	}
+
+	// Verify WerePreviouslyMergedAndVetoed
+	if !WerePreviouslyMergedAndVetoed(cc.Merges, "a", "b") {
+		t.Error("a and b should be vetoed (b was vetoed from their shared synthesis)")
+	}
+
+	// Cleanup: delete synthesis and merges
+	if err := DBDeleteSynthesisMerges(database, "s1"); err != nil {
+		t.Fatalf("delete merges: %v", err)
+	}
+	if err := DBDeleteTodo(database, "s1"); err != nil {
+		t.Fatalf("delete synth: %v", err)
+	}
+	cc, _ = LoadCommandCenterFromDB(database)
+	visible = cc.VisibleTodos()
+	if len(visible) != 2 {
+		t.Fatalf("expected 2 visible todos after cleanup (a + b), got %d", len(visible))
+	}
+}
+
 func TestRemoveBookmarkFromFile(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "bookmarks.json")

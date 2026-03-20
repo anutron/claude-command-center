@@ -45,6 +45,12 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 		cc.GeneratedAt = genAt
 	}
 
+	merges, err := DBLoadMerges(db)
+	if err != nil {
+		return nil, fmt.Errorf("load merges: %w", err)
+	}
+	cc.Merges = merges
+
 	return cc, nil
 }
 
@@ -457,6 +463,27 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 		t.CompletedAt = &ct
 	}
 	return &t, nil
+}
+
+// DBLoadMerges loads all merge records from the database.
+func DBLoadMerges(database *sql.DB) ([]TodoMerge, error) {
+	rows, err := database.Query(`SELECT synthesis_id, original_id, vetoed, created_at FROM cc_todo_merges`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var merges []TodoMerge
+	for rows.Next() {
+		var m TodoMerge
+		var vetoed int
+		if err := rows.Scan(&m.SynthesisID, &m.OriginalID, &vetoed, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		m.Vetoed = vetoed != 0
+		merges = append(merges, m)
+	}
+	return merges, rows.Err()
 }
 
 // DBIsEmpty returns true if no todos exist in the database yet.

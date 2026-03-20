@@ -101,8 +101,16 @@ func generateProposedPrompts(ctx context.Context, l llm.LLM, database *sql.DB, t
 		return generateProposedPromptsLegacy(ctx, l, todos, eligible)
 	}
 
+	// Build active todo list for dedup (before the per-todo loop)
+	var activeTodos []db.Todo
+	for _, t := range todos {
+		if !db.IsTerminalStatus(t.Status) {
+			activeTodos = append(activeTodos, t)
+		}
+	}
+
 	for _, i := range eligible {
-		result, err := GenerateTodoPrompt(ctx, l, todos[i], pathCtx)
+		result, err := GenerateTodoPrompt(ctx, l, todos[i], pathCtx, activeTodos)
 		if err != nil {
 			log.Printf("todo prompt generation for %q: %v", todos[i].ID, err)
 			continue
@@ -116,6 +124,9 @@ func generateProposedPrompts(ctx context.Context, l llm.LLM, database *sql.DB, t
 		todos[i].ProposedPrompt = result.ProposedPrompt
 		if result.ProjectDir != "" {
 			todos[i].ProjectDir = result.ProjectDir
+		}
+		if result.MergeInto != "" {
+			todos[i].MergeInto = result.MergeInto
 		}
 	}
 

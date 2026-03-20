@@ -11,6 +11,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
+	"github.com/anutron/claude-command-center/internal/refresh"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -67,6 +68,29 @@ type claudeTrainFinishedMsg struct {
 	todoID string
 	output string
 	err    error
+}
+
+type claudeSynthesizeFinishedMsg struct {
+	synthesis  db.Todo
+	originals  []db.Todo
+	oldSynthID string // empty if target was a plain todo
+	err        error
+}
+
+func claudeSynthesizeCmd(l llm.LLM, originals []db.Todo, target *db.Todo) tea.Cmd {
+	return func() tea.Msg {
+		result, err := refresh.Synthesize(context.Background(), l, originals)
+		if err != nil {
+			return claudeSynthesizeFinishedMsg{err: err}
+		}
+		synth := refresh.BuildSynthesisTodo(result, originals, target)
+		synth.CreatedAt = time.Now()
+		oldSynthID := ""
+		if target.Source == "merge" {
+			oldSynthID = target.ID
+		}
+		return claudeSynthesizeFinishedMsg{synthesis: synth, originals: originals, oldSynthID: oldSynthID}
+	}
 }
 
 func claudeEditCmd(l llm.LLM, prompt, todoID string) tea.Cmd {
@@ -481,7 +505,7 @@ The user says: %q
 Output ONLY the JSON object, no markdown code fences, no explanation, no other text. Just raw JSON.`, string(todoJSON), instruction)
 }
 
-func buildEnrichPrompt(rawText string) string {
+func buildEnrichPrompt(rawText string, activeTodos []db.Todo) string {
 	var projectSection string
 	if rules, err := db.LoadRoutingRules(); err == nil && len(rules) > 0 {
 		var sb strings.Builder
@@ -503,6 +527,25 @@ func buildEnrichPrompt(rawText string) string {
 		projectSection = sb.String()
 	}
 
+	var todosSection string
+	if len(activeTodos) > 0 {
+		var sb strings.Builder
+		sb.WriteString("\n## Existing Todos\n")
+		sb.WriteString("If the new item is semantically the same as an existing todo, return its ID in merge_into.\n\n")
+		limit := len(activeTodos)
+		if limit > 50 {
+			limit = 50
+		}
+		for _, t := range activeTodos[:limit] {
+			if t.Due != "" {
+				fmt.Fprintf(&sb, "- [#%d] (id: %s) %s (due: %s)\n", t.DisplayID, t.ID, t.Title, t.Due)
+			} else {
+				fmt.Fprintf(&sb, "- [#%d] (id: %s) %s\n", t.DisplayID, t.ID, t.Title)
+			}
+		}
+		todosSection = sb.String()
+	}
+
 	return fmt.Sprintf(`Extract a todo item from the following text and generate an actionable prompt for it.
 
 Return a JSON object with these fields:
@@ -514,13 +557,15 @@ Return a JSON object with these fields:
 - detail: comprehensive background
 - project_dir: best matching project directory from the list below, or empty string
 - proposed_prompt: actionable prompt for a Claude Code agent to execute this task. State the objective clearly in imperative mood. If the matched project has a prompt hint, follow it. If no match, write a general-purpose prompt.
-%s
+- merge_into: ID of an existing todo if this is a duplicate, otherwise empty string
+- merge_note: brief explanation of why this matches the existing todo, otherwise empty string
+%s%s
 Text:
 """
 %s
 """
 
-Output ONLY the JSON object, no markdown code fences, no explanation, no other text. Just raw JSON.`, projectSection, rawText)
+Output ONLY the JSON object, no markdown code fences, no explanation, no other text. Just raw JSON.`, projectSection, todosSection, rawText)
 }
 
 // extractJSON finds JSON object in a string, stripping markdown fences if present.

@@ -210,6 +210,13 @@ func (p *Plugin) buildDetailBody(s *ccStyles, todo db.Todo, innerWidth int, hasA
 	if detailSection != "" {
 		parts = append(parts, detailSection)
 	}
+
+	// Sources section — only for synthesis todos
+	sourcesSection := p.buildSourcesSection(s, todo, innerWidth)
+	if sourcesSection != "" {
+		parts = append(parts, sourcesSection)
+	}
+
 	parts = append(parts, promptSection)
 
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
@@ -381,11 +388,57 @@ func (p *Plugin) buildPathPicker(s *ccStyles, innerWidth int) string {
 	return ""
 }
 
+// buildSourcesSection renders the Sources section for synthesis todos.
+func (p *Plugin) buildSourcesSection(s *ccStyles, todo db.Todo, innerWidth int) string {
+	if todo.Source != "merge" || p.cc == nil {
+		return ""
+	}
+	origIDs := db.DBGetOriginalIDs(p.cc.Merges, todo.ID)
+	if len(origIDs) == 0 {
+		return ""
+	}
+
+	header := s.SectionHeader.Render("  SOURCES")
+	var lines []string
+	lines = append(lines, "", header, "")
+
+	for i, oid := range origIDs {
+		orig := p.cc.FindTodo(oid)
+		var display string
+		if orig != nil {
+			titleStr := flattenTitle(orig.Title)
+			if len(titleStr) > innerWidth-20 && innerWidth > 20 {
+				titleStr = titleStr[:innerWidth-23] + "..."
+			}
+			display = fmt.Sprintf("#%d — %s (%s)", orig.DisplayID, titleStr, orig.Source)
+		} else {
+			display = fmt.Sprintf("%s (not found)", oid)
+		}
+
+		if i == p.mergeSourceCursor {
+			cursor := lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("> ")
+			entry := lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(display)
+			lines = append(lines, "  "+cursor+entry)
+		} else {
+			entry := s.DescMuted.Render(display)
+			lines = append(lines, "    "+entry)
+		}
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, "  "+s.Hint.Render("j/k select source \u00b7 U unmerge selected"))
+
+	return strings.Join(lines, "\n")
+}
+
 // buildDetailHints returns the hint string for the current detail mode.
 func (p *Plugin) buildDetailHints(s *ccStyles, todo db.Todo, hasActiveSession bool) string {
 	switch p.detailMode {
 	case "viewing":
-		baseHints := "j/k prev/next \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch"
+		baseHints := "j/k navigate \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch"
+		if todo.Source == "merge" && p.cc != nil && len(db.DBGetOriginalIDs(p.cc.Merges, todo.ID)) > 0 {
+			baseHints += " \u00b7 U unmerge"
+		}
 		if todo.SessionID != "" && todo.Status != db.StatusRunning && todo.Status != db.StatusEnqueued {
 			baseHints += " \u00b7 r resume"
 		}

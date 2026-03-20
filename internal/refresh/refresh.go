@@ -138,6 +138,12 @@ func Run(opts Options) error {
 		merged.Todos = generateProposedPrompts(ctx, routingLLM, opts.DB, merged.Todos)
 	}
 
+	// Dedup pass: process merge suggestions from routing
+	if routingLLM != nil && opts.DB != nil && len(merged.Todos) > 0 {
+		existingMerges, _ := db.DBLoadMerges(opts.DB)
+		merged.Todos = dedupTodos(ctx, routingLLM, opts.DB, merged.Todos, existingMerges)
+	}
+
 	// Fetch source context for todos that have a source_ref
 	if opts.ContextRegistry != nil && opts.DB != nil {
 		for i := range merged.Todos {
@@ -164,6 +170,81 @@ func Run(opts Options) error {
 	}
 
 	return nil
+}
+
+// dedupTodos processes merge suggestions from routing. For each group of todos
+// that the LLM flagged as duplicates of an existing todo, it synthesizes a
+// combined todo and records the merge relationships.
+func dedupTodos(ctx context.Context, l llm.LLM, database *sql.DB, todos []db.Todo, merges []db.TodoMerge) []db.Todo {
+	// Build lookup
+	todoByID := make(map[string]*db.Todo)
+	for i := range todos {
+		todoByID[todos[i].ID] = &todos[i]
+	}
+
+	// Group merge suggestions: target_id -> []new_originals
+	type mergeGroup struct {
+		target   *db.Todo
+		newTodos []db.Todo
+	}
+	groups := make(map[string]*mergeGroup)
+
+	for i, t := range todos {
+		if t.MergeInto == "" || t.MergeInto == t.ID {
+			continue
+		}
+		target, ok := todoByID[t.MergeInto]
+		if !ok {
+			continue
+		}
+		// Veto check — refresh respects vetoes
+		if db.WerePreviouslyMergedAndVetoed(merges, t.ID, target.ID) {
+			todos[i].MergeInto = ""
+			continue
+		}
+		if _, exists := groups[target.ID]; !exists {
+			groups[target.ID] = &mergeGroup{target: target}
+		}
+		groups[target.ID].newTodos = append(groups[target.ID].newTodos, t)
+	}
+
+	for _, g := range groups {
+		var originals []db.Todo
+		if g.target.Source == "merge" {
+			origIDs := db.DBGetOriginalIDs(merges, g.target.ID)
+			for _, oid := range origIDs {
+				if orig := todoByID[oid]; orig != nil {
+					originals = append(originals, *orig)
+				}
+			}
+		} else {
+			originals = []db.Todo{*g.target}
+		}
+		originals = append(originals, g.newTodos...)
+
+		result, err := Synthesize(ctx, l, originals)
+		if err != nil {
+			log.Printf("dedup synthesis for %q: %v", g.target.ID, err)
+			continue
+		}
+		synth := BuildSynthesisTodo(result, originals, g.target)
+		synth.CreatedAt = time.Now()
+
+		if err := db.DBInsertTodo(database, synth); err != nil {
+			log.Printf("dedup insert synthesis: %v", err)
+			continue
+		}
+		for _, orig := range originals {
+			_ = db.DBInsertMerge(database, synth.ID, orig.ID, "")
+		}
+		if g.target.Source == "merge" {
+			_ = db.DBDeleteSynthesisMerges(database, g.target.ID)
+			_ = db.DBDeleteTodo(database, g.target.ID)
+		}
+
+		todos = append(todos, synth)
+	}
+	return todos
 }
 
 func logSourceResult(name string, r *SourceResult) {
