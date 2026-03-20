@@ -458,12 +458,11 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 
 	for i := visStart; i < visEnd; i++ {
 		todo := todos[i]
-		num := i + 1
 
 		isLoading := loadingTodoID != "" && todo.ID == loadingTodoID
 
 		title := truncateToWidth(flattenTitle(todo.Title), titleMaxWidth)
-		numStr := fmt.Sprintf("%d", num)
+		numStr := fmt.Sprintf("%d", todo.DisplayID)
 		if isLoading {
 			numStr = loadingSpinnerChar(frame)
 		}
@@ -814,7 +813,7 @@ func renderExpandedTodoView(s *ccStyles, g *gradientColors, todos []db.Todo, cur
 		var items []string
 		for i := startIdx; i < endIdx; i++ {
 			isLoading := loadingTodoID != "" && todos[i].ID == loadingTodoID
-			item := renderExpandedTodoItem(s, g, todos[i], i+1, i == cursor, colWidth, frame, isLoading)
+			item := renderExpandedTodoItem(s, g, todos[i], todos[i].DisplayID, i == cursor, colWidth, frame, isLoading)
 			items = append(items, item)
 		}
 
