@@ -161,7 +161,7 @@ and generating a prompt to execute it there.
 ## Instructions
 1. First, verify this is actually Aaron's task. A task is Aaron's if ANY of these are true:
    a) Aaron stated he would do it or explicitly agreed to do it
-   b) Someone else assigned the work to Aaron by name (e.g., "Aaron will...", "Darren and Aaron will follow-up on...",
+   b) Someone else assigned the work to Aaron by name (e.g., "Aaron will...", "Bob and Aaron will follow-up on...",
       "Aaron is going to...", "Aaron to handle..."). These are commitments made ON BEHALF of Aaron.
    REJECT only if:
    - The commitment was made by someone else about THEMSELVES (not Aaron) — e.g., "I will" in [Other] blocks

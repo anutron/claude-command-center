@@ -163,7 +163,7 @@ Refresh locking uses `syscall.Flock()` for atomic advisory file locking (`intern
 - Package `refresh` (not `main`); exposes `Run(opts Options) error`
 - GitHub repos come from source struct config, not hardcoded
 - Calendar supports multiple IDs via CalendarSource config
-- Auto-accept is configurable via CalendarSource.AutoAcceptDomains (not hardcoded to @thanx.com)
+- Auto-accept is configurable via CalendarSource.AutoAcceptDomains (not hardcoded to @example.com)
 - Env file reads from `~/.config/ccc/.env` instead of `~/.airon-env`
 - State stored in SQLite (via `internal/db`) instead of `command-center.json`
 - DataSource interface replaces hardcoded goroutines — each source owns its auth, enablement, and fetching

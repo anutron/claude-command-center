@@ -119,7 +119,7 @@ where information overlaps. Fill gaps from older entries.
 
 Originals (oldest first):
 1. [#12] "do X" (manual, no due, no who_waiting)
-2. [#14] "do X for Zach" (slack, due: monday, who_waiting: Zach)
+2. [#14] "do X for Carol" (slack, due: monday, who_waiting: Carol)
 
 Return a single combined todo as JSON.
 ```
@@ -127,9 +127,9 @@ Return a single combined todo as JSON.
 **Output:**
 ```json
 {
-  "title": "Do X for Zach",
+  "title": "Do X for Carol",
   "due": "monday",
-  "who_waiting": "Zach",
+  "who_waiting": "Carol",
   "detail": "Originally captured as 'do X', later confirmed via Slack with deadline and stakeholder.",
   "context": "",
   "effort": ""
@@ -206,7 +206,7 @@ The existing `/` search/filter already matches todo titles. Extend it to also ma
 
 - A: "do X" → visible
 - B: "do X due tomorrow" → synthesis S1 created from A+B, A and B hidden, S1 visible with due=tomorrow
-- C: "do X for Zach, due monday" → S1 superseded, new synthesis S2 from A+B+C, C is source of truth: due=monday, who_waiting=Zach
+- C: "do X for Carol, due monday" → S1 superseded, new synthesis S2 from A+B+C, C is source of truth: due=monday, who_waiting=Carol
 - S1 deleted from DB, S2 is the visible todo
 
 ### Synthesis Mechanics

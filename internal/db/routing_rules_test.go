@@ -15,13 +15,13 @@ func setupRoutingRulesDir(t *testing.T) {
 func TestLoadRoutingRules_ValidYAML(t *testing.T) {
 	setupRoutingRulesDir(t)
 
-	content := `/Users/aaron/Development/thanx/merchant-ui/:
+	content := `/home/user/projects/acme-ui/:
   use_for:
-    - Thanx loyalty program UI bugs
+    - Acme web app UI bugs
     - merchant dashboard features
   not_for:
     - backend API work
-/Users/aaron/Development/other/:
+/home/user/projects/other/:
   use_for:
     - general frontend
 `
@@ -38,14 +38,14 @@ func TestLoadRoutingRules_ValidYAML(t *testing.T) {
 		t.Fatalf("expected 2 paths, got %d", len(rules))
 	}
 
-	r := rules["/Users/aaron/Development/thanx/merchant-ui/"]
+	r := rules["/home/user/projects/acme-ui/"]
 	if len(r.UseFor) != 2 {
 		t.Errorf("expected 2 use_for entries, got %d", len(r.UseFor))
 	}
 	if len(r.NotFor) != 1 {
 		t.Errorf("expected 1 not_for entry, got %d", len(r.NotFor))
 	}
-	if r.UseFor[0] != "Thanx loyalty program UI bugs" {
+	if r.UseFor[0] != "Acme web app UI bugs" {
 		t.Errorf("unexpected use_for[0]: %q", r.UseFor[0])
 	}
 	if r.NotFor[0] != "backend API work" {
@@ -85,7 +85,7 @@ func TestLoadRoutingRules_MalformedYAML(t *testing.T) {
 func TestAddRoutingRule_CreatesFileAndAppendsRule(t *testing.T) {
 	setupRoutingRulesDir(t)
 
-	path := "/Users/aaron/Development/myproject/"
+	path := "/home/user/projects/myproject/"
 
 	// File doesn't exist yet — AddRoutingRule should create it.
 	if err := AddRoutingRule(path, "use_for", "frontend bugs"); err != nil {

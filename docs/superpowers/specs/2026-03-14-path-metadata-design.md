@@ -181,15 +181,15 @@ Each file contains a `SkillCache` struct with `scanned_at` timestamp. On read:
 # Routing preferences learned from /todo-agent corrections.
 # Managed by the todo-agent — edit manually if needed.
 
-/Users/aaron/Development/thanx/merchant-ui/:
+/home/user/projects/acme-ui/:
   use_for:
-    - Thanx loyalty program UI bugs
+    - Acme web app UI bugs
     - merchant dashboard features
   not_for:
     - backend API work
     - data pipeline issues
 
-/Users/aaron/Development/ai/sherlock/:
+/home/user/projects/data-tools/:
   use_for:
     - data investigations
     - Snowflake query work

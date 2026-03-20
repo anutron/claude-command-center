@@ -460,7 +460,7 @@ func TestDisplayContext(t *testing.T) {
 	}{
 		{"", ""},
 		{"some plain context", "some plain context"},
-		{"https://thanx.slack.com/archives/G01MA920F9/p1773165648549789?thread_ts=1771862390.043209&cid=G01MA920F9", "Slack"},
+		{"https://example.slack.com/archives/C01EXAMPLE/p1773165648549789?thread_ts=1771862390.043209&cid=C01EXAMPLE", "Slack"},
 		{"https://mycompany.slack.com/archives/C01ABC/p123456", "Slack"},
 		{"https://workspace.slack.com/messages/general", "Slack"},
 		{"https://github.com/owner/repo/issues/42", "GitHub"},

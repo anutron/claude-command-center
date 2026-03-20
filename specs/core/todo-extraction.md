@@ -70,7 +70,7 @@ Third-person language indicating someone else assigned work to Aaron:
 
 - "aaron will", "aaron is going to", "aaron to follow/handle/send/review/set up/schedule"
 - "aaron can", "aaron should", "aaron needs to"
-- "and aaron will" (captures "Darren and Aaron will...")
+- "and aaron will" (captures "Bob and Aaron will...")
 
 #### Search Queries (Slack search.messages fallback)
 
@@ -98,7 +98,7 @@ Candidates that pass the pre-filter are sent to haiku for extraction.
 A message is a todo if EITHER:
 
 - **A) Self-commitment**: Aaron explicitly committed to a specific deliverable with a concrete next action
-- **B) Third-party assignment**: Someone else assigned work to Aaron — e.g., "Aaron will...", "Darren and Aaron will follow-up on...", "Aaron is going to..."
+- **B) Third-party assignment**: Someone else assigned work to Aaron — e.g., "Aaron will...", "Bob and Aaron will follow-up on...", "Aaron is going to..."
 
 In both cases:
 
@@ -121,7 +121,7 @@ A commitment is Aaron's if:
 
 - Aaron states he will do something in an `[Aaron]` block
 - Aaron agrees/affirms in an `[Aaron]` block when asked by `[Other]`
-- Someone in an `[Other]` block assigns work to Aaron by name (e.g., "Aaron will follow up on...", "Darren and Aaron will handle...")
+- Someone in an `[Other]` block assigns work to Aaron by name (e.g., "Aaron will follow up on...", "Bob and Aaron will handle...")
 
 REJECT:
 
@@ -136,7 +136,7 @@ After extraction, the routing LLM validates ownership before assigning a project
 A task is Aaron's if ANY of these are true:
 
 - **a)** Aaron stated he would do it or explicitly agreed to do it
-- **b)** Someone else assigned the work to Aaron by name (e.g., "Aaron will...", "Darren and Aaron will follow-up on...")
+- **b)** Someone else assigned the work to Aaron by name (e.g., "Aaron will...", "Bob and Aaron will follow-up on...")
 
 REJECT only if:
 
@@ -160,7 +160,7 @@ If rejected, `project_dir` is set to `"REJECT"` and the todo is auto-dismissed.
 
 - "I'll send the report tomorrow" matches on "i'll"
 - "Aaron will follow-up on card tokens" matches on "aaron will"
-- "Darren and Aaron will handle the integration" matches on "and aaron will"
+- "Bob and Aaron will handle the integration" matches on "and aaron will"
 - "Great meeting everyone!" does not match any phrase
 - "Sarah will handle that" does not match (no Aaron phrase)
 
@@ -172,7 +172,7 @@ If rejected, `project_dir` is set to `"REJECT"` and the todo is auto-dismissed.
 
 ### Extraction — Third-Party Assignments
 
-- Zach says "Darren and Aaron will follow-up on card tokens from Qu" → extracted with title "Follow up on card tokens and unknown identity from Qu"
+- Carol says "Bob and Aaron will follow-up on card tokens from Qu" → extracted with title "Follow up on card tokens and unknown identity from Qu"
 - Manager says "Aaron is going to set up the demo environment" → extracted
 - Colleague says "Sarah will handle the frontend" → rejected (not Aaron)
 

@@ -35,7 +35,7 @@ func extractSlackCommitments(ctx context.Context, l llm.LLM, candidates []slackC
 
 A message is a todo if EITHER:
 A) The user explicitly committed to a specific deliverable (not just participating in conversation)
-B) Someone else assigned work to the user — e.g., "Aaron will...", "Darren and Aaron will follow-up on...",
+B) Someone else assigned work to the user — e.g., "Aaron will...", "Bob and Aaron will follow-up on...",
    "Aaron is going to...", "Aaron to handle...", "[Name] and Aaron will..."
    These are commitments made ON BEHALF of the user that he needs to be aware of.
 

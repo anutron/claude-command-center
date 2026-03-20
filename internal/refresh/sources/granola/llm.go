@@ -46,7 +46,7 @@ Extract action items and commitments where Aaron will do the work. A commitment 
 - Aaron states he will do something in an [Aaron] block (e.g., "I'll handle that")
 - Aaron agrees/affirms in an [Aaron] block when asked by [Other] (e.g., [Other]: "Can you do X?" [Aaron]: "Yes")
 - Someone in an [Other] block assigns work to Aaron by name (e.g., "Aaron will follow up on...",
-  "Darren and Aaron will handle...", "Aaron is going to..."). These are commitments made ON BEHALF
+  "Bob and Aaron will handle...", "Aaron is going to..."). These are commitments made ON BEHALF
   of Aaron that he needs to be aware of, even if Aaron didn't explicitly agree in the transcript.
 
 Do NOT extract:
