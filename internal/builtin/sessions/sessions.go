@@ -879,33 +879,6 @@ func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 
-	// Number hotkeys 1-9: quick-launch bookmarked session at that position
-	// (only when no filter is active — otherwise digits are filter characters)
-	if p.filterText == "" && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-		r := msg.Runes[0]
-		if r >= '1' && r <= '9' {
-			idx := int(r - '1') // '1' -> 0, '2' -> 1, ...
-			items := p.resumeList.Items()
-			if idx < len(items) {
-				item, ok := items[idx].(sessionItem)
-				if ok {
-					dir := item.session.Project
-					if item.session.WorktreePath != "" {
-						dir = item.session.WorktreePath
-					}
-					return plugin.Action{
-						Type: plugin.ActionLaunch,
-						Args: map[string]string{
-							"dir":       dir,
-							"resume_id": item.session.SessionID,
-						},
-					}
-				}
-			}
-			return plugin.NoopAction()
-		}
-	}
-
 	// Type-to-filter: any printable rune appends to the filter
 	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
 		for _, r := range msg.Runes {
