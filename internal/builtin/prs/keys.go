@@ -56,7 +56,7 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return plugin.ConsumedAction()
 
 	// Open PR in browser
-	case "enter", "o":
+	case "o":
 		filtered := p.filteredPRs(p.activeTab)
 		if len(filtered) == 0 {
 			return plugin.ConsumedAction()
@@ -69,6 +69,29 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		cmd := exec.Command("gh", "pr", "view", "--web", "-R", pr.Repo, fmt.Sprintf("%d", pr.Number))
 		_ = cmd.Start()
 		return plugin.ConsumedAction()
+
+	// Launch PR review in local project
+	case "enter":
+		filtered := p.filteredPRs(p.activeTab)
+		if len(filtered) == 0 {
+			return plugin.ConsumedAction()
+		}
+		pr := filtered[p.cursors[p.activeTab]]
+		dir := p.resolveRepoDir(pr.Repo)
+		if dir == "" {
+			// Can't find local repo — fall back to opening in browser
+			if pr.URL != "" {
+				return plugin.Action{Type: plugin.ActionOpenURL, Payload: pr.URL}
+			}
+			return plugin.ConsumedAction()
+		}
+		return plugin.Action{
+			Type: plugin.ActionLaunch,
+			Args: map[string]string{
+				"dir":            dir,
+				"initial_prompt": fmt.Sprintf("/pr-review-toolkit:review-pr %s", pr.URL),
+			},
+		}
 
 	// Force refresh
 	case "r":
@@ -84,7 +107,8 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "1/2/3/4", Description: "Switch sub-tab", Promoted: true},
 		{Key: "<-/->", Description: "Cycle sub-tabs", Promoted: true},
 		{Key: "j/k", Description: "Navigate PRs", Promoted: true},
-		{Key: "enter/o", Description: "Open PR in browser", Promoted: true},
+		{Key: "enter", Description: "Review PR locally", Promoted: true},
+		{Key: "o", Description: "Open PR in browser", Promoted: true},
 		{Key: "r", Description: "Refresh", Promoted: true},
 	}
 }

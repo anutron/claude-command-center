@@ -4,7 +4,11 @@
 package prs
 
 import (
+	"bufio"
 	"database/sql"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
@@ -24,6 +28,7 @@ type Plugin struct {
 	styles   prsStyles
 	grad     prsGrad
 	logger   plugin.Logger
+	bus      plugin.EventBus
 	rowStyle prRowStyle
 
 	prs        []db.PullRequest
@@ -49,6 +54,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.database = ctx.DB
 	p.cfg = ctx.Config
 	p.logger = ctx.Logger
+	p.bus = ctx.Bus
 
 	if ctx.Styles != nil {
 		p.styles = *ctx.Styles
@@ -63,6 +69,17 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.grad = ui.NewGradientColors(pal)
 	}
 	p.rowStyle = newPRRowStyle(&p.styles)
+
+	// Reload PR data from DB when ai-cron finishes a refresh.
+	if p.bus != nil {
+		p.bus.Subscribe("data.refreshed", func(e plugin.Event) {
+			if p.database != nil {
+				prs, _ := db.DBLoadPullRequests(p.database)
+				p.prs = prs
+				p.lastLoaded = time.Now()
+			}
+		})
+	}
 
 	return nil
 }
@@ -126,6 +143,13 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		}
 		return true, plugin.NoopAction()
 
+	case ui.TickMsg:
+		// Periodically reload PR data from DB.
+		if p.database != nil && time.Since(p.lastLoaded) >= p.RefreshInterval() {
+			return false, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.Refresh()}
+		}
+		return false, plugin.NoopAction()
+
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height
@@ -158,4 +182,52 @@ func (p *Plugin) categoryCounts() [4]int {
 		}
 	}
 	return counts
+}
+
+// resolveRepoDir finds the local directory for a GitHub repo by scanning
+// learned paths' .git/config for a matching remote URL.
+// repo is in "owner/repo" format (e.g. "thanx/thanx-merchant-ui").
+func (p *Plugin) resolveRepoDir(repo string) string {
+	if p.database == nil {
+		return ""
+	}
+	paths, err := db.DBLoadPaths(p.database)
+	if err != nil {
+		return ""
+	}
+	for _, dir := range paths {
+		gitConfig := filepath.Join(strings.TrimRight(dir, "/"), ".git", "config")
+		if matchesRepo(gitConfig, repo) {
+			return strings.TrimRight(dir, "/")
+		}
+	}
+	return ""
+}
+
+// matchesRepo checks if a .git/config file contains a remote URL matching
+// the given "owner/repo" string.
+func matchesRepo(gitConfigPath, repo string) bool {
+	f, err := os.Open(gitConfigPath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	// Match against github.com:owner/repo or github.com/owner/repo
+	sshSuffix := "github.com:" + repo
+	httpsSuffix := "github.com/" + repo
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "url =") {
+			continue
+		}
+		url := strings.TrimSpace(strings.TrimPrefix(line, "url ="))
+		url = strings.TrimSuffix(url, ".git")
+		if strings.HasSuffix(url, sshSuffix) || strings.HasSuffix(url, httpsSuffix) {
+			return true
+		}
+	}
+	return false
 }

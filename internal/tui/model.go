@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -282,8 +283,11 @@ func (m Model) Init() tea.Cmd {
 	// Initial data load for plugins that need it.
 	if m.db != nil {
 		for _, p := range m.allPlugins {
-			if p.RefreshInterval() == 0 && p.Slug() == "sessions" {
-				cmds = append(cmds, p.Refresh())
+			switch p.Slug() {
+			case "sessions", "prs":
+				if cmd := p.Refresh(); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
 	}
@@ -482,6 +486,12 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 		}, &cmds)
 		cmds = append(cmds, tea.Quit)
 		return m, tea.Batch(cmds...)
+
+	case plugin.ActionOpenURL:
+		if action.Payload != "" {
+			_ = exec.Command("open", action.Payload).Start()
+		}
+		return m, nil
 
 	case plugin.ActionQuit:
 		return m, tea.Quit

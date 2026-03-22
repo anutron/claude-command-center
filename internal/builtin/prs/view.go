@@ -219,7 +219,7 @@ func (p *Plugin) renderReviewDecision(decision string) string {
 
 // renderHints renders the bottom hint line.
 func (p *Plugin) renderHints() string {
-	hints := p.styles.Hint.Render("1-4 switch tab   <-/-> cycle   j/k navigate   enter/o open   r refresh")
+	hints := p.styles.Hint.Render("1-4 switch tab   <-/-> cycle   j/k navigate   enter review   o open   r refresh")
 	return "\n" + lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hints)
 }
 

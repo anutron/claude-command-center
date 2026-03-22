@@ -46,13 +46,14 @@ Track open pull requests across GitHub in four actionable categories. Surfaces P
 
 ## Data Flow
 
-1. `ccc-refresh` runs `gh search prs --author=@me --state=open` and `gh search prs --review-requested=@me --state=open`
+1. `ai-cron` runs `gh search prs --author=@me --state=open` and `gh search prs --review-requested=@me --state=open`
 2. For each PR, fetches detail via `gh pr view` (reviews, reviewRequests, statusCheckRollup, comments)
 3. Merges authored + review-requested lists, deduplicates by `owner/repo#number` key
 4. Computes category for each PR using `computeCategory` (see Category Assignment below)
 5. Writes results to `cc_pull_requests` SQLite table via `DBSavePullRequests`
 6. Plugin's `Refresh()` method loads from DB via `DBLoadPullRequests` (every 30s or on `r` key)
 7. `prsLoadedMsg` delivers data to `HandleMessage`, which updates state and clamps cursors
+8. On `enter`, plugin resolves `owner/repo` to a local directory by scanning learned paths' `.git/config` for matching remote URLs, then launches Claude with `/pr-review-toolkit:review-pr <url>`
 
 ## Category Assignment
 
@@ -72,13 +73,14 @@ A PR gets exactly one category. The first matching rule wins.
 | 1/2/3/4 | Switch to sub-tab by number | yes |
 | left/right, h/l | Cycle sub-tabs | yes |
 | up/down, j/k | Navigate PR list (wraps around) | yes |
-| enter/o | Open selected PR in browser (via URL or `gh pr view --web`) | yes |
+| enter | Launch PR review in local project (`/pr-review-toolkit:review-pr <url>`) — falls back to browser if no local repo found | yes |
+| o | Open selected PR in browser (via URL or `gh pr view --web`) | yes |
 | r | Force refresh from DB | yes |
 
 ## Hint Bar
 
 ```
-1-4 switch tab   <-/-> cycle   j/k navigate   enter/o open   r refresh
+1-4 switch tab   <-/-> cycle   j/k navigate   enter review   o open   r refresh
 ```
 
 ## View
@@ -113,7 +115,9 @@ None — `cc_pull_requests` table is created in core `schema.go`.
 
 ## Event Bus
 
-None — the PR plugin does not publish or subscribe to events.
+**Subscribes to:**
+
+- `data.refreshed` — reloads PR data from DB when ai-cron completes a refresh cycle
 
 ## Test Cases
 
