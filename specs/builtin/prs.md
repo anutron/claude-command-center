@@ -23,6 +23,8 @@ Track open pull requests across GitHub in four actionable categories. Surfaces P
 | `category.go` | Category constants, display names, empty-state messages |
 | `styles.go` | Row-level styles (success/failure/pending/draft colors) |
 | `messages.go` | Internal message types (prsLoadedMsg) |
+| `trigger.go` | `needsAgent` pure predicate, `evaluateAgentTriggers` scan + spawn logic |
+| `trigger_test.go` | Tests for agent trigger detection (needsAgent conditions) |
 
 **Related files:**
 
