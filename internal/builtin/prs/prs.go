@@ -144,6 +144,10 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 				p.cursors[i] = max(0, len(filtered)-1)
 			}
 		}
+		// Evaluate whether any PRs need an agent spawned.
+		if cmd := p.evaluateAgentTriggers(); cmd != nil {
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		}
 		return true, plugin.NoopAction()
 
 	case ui.TickMsg:
