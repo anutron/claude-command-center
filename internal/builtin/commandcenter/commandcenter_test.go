@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -34,8 +35,9 @@ func testPlugin(t *testing.T) *Plugin {
 
 	cfg := config.DefaultConfig()
 	ctx := plugin.Context{
-		DB:     database,
-		Config: cfg,
+		DB:          database,
+		Config:      cfg,
+		AgentRunner: agent.NewRunner(3),
 	}
 	if err := p.Init(ctx); err != nil {
 		t.Fatalf("Init failed: %v", err)

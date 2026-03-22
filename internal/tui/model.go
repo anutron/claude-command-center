@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/builtin/commandcenter"
 	"github.com/anutron/claude-command-center/internal/builtin/prs"
 	"github.com/anutron/claude-command-center/internal/builtin/sessions"
@@ -92,6 +93,13 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	grad := &GradientColors{}
 	*grad = NewGradientColors(pal)
 
+	// Create a single shared agent runner for all plugins.
+	maxConcurrent := cfg.Agent.MaxConcurrent
+	if maxConcurrent <= 0 {
+		maxConcurrent = 3
+	}
+	runner := agent.NewRunner(maxConcurrent)
+
 	sessPlug := &sessions.Plugin{}
 	ccPlug := commandcenter.New()
 	prsPlug := &prs.Plugin{}
@@ -109,14 +117,15 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	registry.Register(settingsPlug)
 
 	ctx := plugin.Context{
-		DB:     database,
-		Config: cfg,
-		Styles: styles,
-		Grad:   grad,
-		Bus:    bus,
-		Logger: logger,
-		DBPath: config.DBPath(),
-		LLM:    l,
+		DB:          database,
+		Config:      cfg,
+		Styles:      styles,
+		Grad:        grad,
+		Bus:         bus,
+		Logger:      logger,
+		DBPath:      config.DBPath(),
+		LLM:         l,
+		AgentRunner: runner,
 	}
 
 	_ = sessPlug.Init(ctx)

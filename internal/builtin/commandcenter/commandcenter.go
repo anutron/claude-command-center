@@ -295,12 +295,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.llm = llm.NoopLLM{}
 	}
 
-	// Initialize agent session tracking
-	maxConcurrent := ctx.Config.Agent.MaxConcurrent
-	if maxConcurrent <= 0 {
-		maxConcurrent = 3
-	}
-	p.agentRunner = agent.NewRunner(maxConcurrent)
+	// Use the shared agent runner from Context.
+	p.agentRunner = ctx.AgentRunner
 
 	// Set refresh interval from config
 	ccRefreshInterval = ctx.Config.ParseRefreshInterval()
