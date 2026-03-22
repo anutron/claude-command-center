@@ -247,6 +247,15 @@ func migrateSchema(db *sql.DB) error {
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_runs_name_started
 		ON cc_automation_runs(name, started_at)`)
 
+	// PR automation columns (agent tracking)
+	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN state TEXT NOT NULL DEFAULT 'open'`)
+	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN head_sha TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN agent_session_id TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN agent_status TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN agent_category TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN agent_head_sha TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN agent_summary TEXT NOT NULL DEFAULT ''`)
+
 	return nil
 }
 
