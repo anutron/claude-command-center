@@ -105,6 +105,10 @@ func (p *Plugin) renderPRRow(pr db.PullRequest, maxWidth int) string {
 		line += "  " + detail
 	}
 
+	if flag := p.renderAgentStatus(pr); flag != "" {
+		line += "  " + flag
+	}
+
 	return truncate(line, maxWidth)
 }
 
@@ -214,6 +218,25 @@ func (p *Plugin) renderReviewDecision(decision string) string {
 		return p.rowStyle.pending.Render("review required")
 	default:
 		return p.styles.DescMuted.Render(decision)
+	}
+}
+
+// renderAgentStatus returns a styled status indicator for agent-processed PRs.
+func (p *Plugin) renderAgentStatus(pr db.PullRequest) string {
+	switch pr.AgentStatus {
+	case "pending":
+		return p.rowStyle.pending.Render("⏳ queued")
+	case "running":
+		return p.rowStyle.pending.Render("⏳ running")
+	case "completed":
+		return p.rowStyle.success.Render("✓ ready")
+	case "failed":
+		return p.rowStyle.failure.Render("✗ failed")
+	default:
+		if (pr.Category == "review" || pr.Category == "respond") && p.resolveRepoDir(pr.Repo) == "" {
+			return p.rowStyle.failure.Render("⚠ no repo")
+		}
+		return ""
 	}
 }
 
