@@ -1231,12 +1231,12 @@ func TestPullRequestRoundTrip(t *testing.T) {
 		t.Errorf("pending_reviewer_logins mismatch: %v", pr42.PendingReviewerLogins)
 	}
 
-	// Verify nil slices become nil (not populated)
-	if pr43.ReviewerLogins != nil {
-		t.Errorf("expected nil reviewer_logins for PR#43, got %v", pr43.ReviewerLogins)
+	// Nil slices are saved as "[]" JSON, so they round-trip as empty (not nil)
+	if len(pr43.ReviewerLogins) != 0 {
+		t.Errorf("expected empty reviewer_logins for PR#43, got %v", pr43.ReviewerLogins)
 	}
-	if pr43.PendingReviewerLogins != nil {
-		t.Errorf("expected nil pending_reviewer_logins for PR#43, got %v", pr43.PendingReviewerLogins)
+	if len(pr43.PendingReviewerLogins) != 0 {
+		t.Errorf("expected empty pending_reviewer_logins for PR#43, got %v", pr43.PendingReviewerLogins)
 	}
 
 	if !pr43.Draft {

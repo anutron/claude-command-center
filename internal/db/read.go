@@ -246,14 +246,15 @@ func dbLoadPendingActions(db *sql.DB) ([]PendingAction, error) {
 	return actions, rows.Err()
 }
 
-// DBLoadPullRequests loads all pull requests from the database.
+// DBLoadPullRequests loads all non-archived pull requests from the database.
 func DBLoadPullRequests(d *sql.DB) ([]PullRequest, error) {
 	rows, err := d.Query(`SELECT id, repo, number, title, url, author, draft,
 		created_at, updated_at, review_decision, my_role,
 		reviewer_logins, pending_reviewer_logins,
 		comment_count, unresolved_thread_count, last_activity_at,
-		ci_status, category, fetched_at
-		FROM cc_pull_requests ORDER BY last_activity_at DESC`)
+		ci_status, category, fetched_at,
+		state, head_sha, agent_session_id, agent_status, agent_category, agent_head_sha, agent_summary
+		FROM cc_pull_requests WHERE state != 'archived' ORDER BY last_activity_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -265,12 +266,14 @@ func DBLoadPullRequests(d *sql.DB) ([]PullRequest, error) {
 		var createdStr, updatedStr, lastActivityStr, fetchedStr string
 		var reviewDecision, myRole, ciStatus, category sql.NullString
 		var reviewersJSON, pendingReviewersJSON sql.NullString
+		var state, headSHA, agentSessionID, agentStatus, agentCategory, agentHeadSHA, agentSummary sql.NullString
 
 		err := rows.Scan(&pr.ID, &pr.Repo, &pr.Number, &pr.Title, &pr.URL, &pr.Author, &pr.Draft,
 			&createdStr, &updatedStr, &reviewDecision, &myRole,
 			&reviewersJSON, &pendingReviewersJSON,
 			&pr.CommentCount, &pr.UnresolvedThreadCount, &lastActivityStr,
-			&ciStatus, &category, &fetchedStr)
+			&ciStatus, &category, &fetchedStr,
+			&state, &headSHA, &agentSessionID, &agentStatus, &agentCategory, &agentHeadSHA, &agentSummary)
 		if err != nil {
 			return nil, err
 		}
@@ -283,6 +286,13 @@ func DBLoadPullRequests(d *sql.DB) ([]PullRequest, error) {
 		pr.MyRole = myRole.String
 		pr.CIStatus = ciStatus.String
 		pr.Category = category.String
+		pr.State = state.String
+		pr.HeadSHA = headSHA.String
+		pr.AgentSessionID = agentSessionID.String
+		pr.AgentStatus = agentStatus.String
+		pr.AgentCategory = agentCategory.String
+		pr.AgentHeadSHA = agentHeadSHA.String
+		pr.AgentSummary = agentSummary.String
 
 		if reviewersJSON.Valid {
 			if err := json.Unmarshal([]byte(reviewersJSON.String), &pr.ReviewerLogins); err != nil {
