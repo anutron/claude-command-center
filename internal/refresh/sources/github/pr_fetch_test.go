@@ -285,6 +285,26 @@ func TestComputeCIStatus(t *testing.T) {
 	}
 }
 
+func TestBuildPullRequests_PopulatesHeadSHA(t *testing.T) {
+	now := time.Now()
+	authored := []RawPR{{
+		Number: 1, Title: "Test", URL: "https://github.com/t/r/pull/1",
+		Repository: struct{ NameWithOwner string `json:"nameWithOwner"` }{NameWithOwner: "t/r"},
+		Author:     struct{ Login string `json:"login"` }{Login: "alice"},
+		CreatedAt:  now, UpdatedAt: now,
+	}}
+	details := map[string]*PRDetail{
+		"t/r#1": {HeadRefOid: "abc123"},
+	}
+	prs := buildPullRequests(authored, nil, details, "alice", now)
+	if len(prs) != 1 {
+		t.Fatal("expected 1 PR")
+	}
+	if prs[0].HeadSHA != "abc123" {
+		t.Errorf("HeadSHA = %q, want abc123", prs[0].HeadSHA)
+	}
+}
+
 func TestExtractPendingReviewerLogins(t *testing.T) {
 	detail := &PRDetail{
 		ReviewRequests: []struct {

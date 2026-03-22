@@ -40,6 +40,7 @@ type PullRequest struct {
 	LastActivityAt        time.Time `json:"last_activity_at"`
 	CIStatus              string    `json:"ci_status"`               // "success", "failure", "pending"
 	Category              string    `json:"category"`                // computed: "waiting", "respond", "review", "stale"
+	HeadSHA               string    `json:"head_sha"`                // commit SHA of the PR head
 	FetchedAt             time.Time `json:"fetched_at"`
 }
 

@@ -32,6 +32,7 @@ type RawPR struct {
 
 // PRDetail holds per-PR detail from `gh pr view`.
 type PRDetail struct {
+	HeadRefOid     string `json:"headRefOid"`
 	ReviewDecision string `json:"reviewDecision"`
 	Reviews        []struct {
 		Author struct {
@@ -78,7 +79,7 @@ var ghSearchPRs = func(ctx context.Context, args []string) ([]byte, error) {
 // ghPRView is a variable for testability.
 var ghPRView = func(ctx context.Context, repo string, number int) ([]byte, error) {
 	args := []string{"pr", "view", fmt.Sprintf("%d", number), "-R", repo,
-		"--json", "reviews,reviewRequests,statusCheckRollup,reviewDecision,comments,latestReviews"}
+		"--json", "reviews,reviewRequests,statusCheckRollup,reviewDecision,comments,latestReviews,headRefOid"}
 	cmd := exec.CommandContext(ctx, "gh", args...)
 	out, err := cmd.Output()
 	if err != nil {
@@ -174,7 +175,9 @@ func buildPullRequests(authored, requested []RawPR, details map[string]*PRDetail
 		ciStatus := ""
 		lastActivity := pr.UpdatedAt
 
+		headSHA := ""
 		if detail != nil {
+			headSHA = detail.HeadRefOid
 			reviewDecision = detail.ReviewDecision
 			reviewerLogins = extractReviewerLogins(detail)
 			pendingReviewerLogins = extractPendingReviewerLogins(detail, username)
@@ -207,6 +210,7 @@ func buildPullRequests(authored, requested []RawPR, details map[string]*PRDetail
 			UnresolvedThreadCount: 0, // gh CLI doesn't expose this directly
 			LastActivityAt:        lastActivity,
 			CIStatus:              ciStatus,
+			HeadSHA:               headSHA,
 			FetchedAt:             now,
 		}
 		dbPR.Category = computeCategory(dbPR, username, now)
