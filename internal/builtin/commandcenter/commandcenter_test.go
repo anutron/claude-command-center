@@ -1191,84 +1191,8 @@ func TestYKeyInTriageFilterDoesNotPanic(t *testing.T) {
 	}
 }
 
-func TestExtractSessionSummary(t *testing.T) {
-	tests := []struct {
-		name     string
-		output   string
-		exitCode int
-		wantSub  string // substring expected in summary
-		wantNot  string // substring that should NOT appear
-	}{
-		{
-			name:     "empty output success",
-			output:   "",
-			exitCode: 0,
-			wantSub:  "Session completed successfully",
-		},
-		{
-			name:     "empty output failure",
-			output:   "",
-			exitCode: 1,
-			wantSub:  "exited with code 1",
-		},
-		{
-			name: "assistant text content",
-			output: `{"type":"system","session_id":"abc123"}
-{"type":"assistant","content":[{"type":"text","text":"I fixed the bug in main.go by updating the error handler."}]}
-`,
-			exitCode: 0,
-			wantSub:  "I fixed the bug in main.go",
-			wantNot:  `"type"`,
-		},
-		{
-			name: "multiple assistant messages uses last",
-			output: `{"type":"assistant","content":[{"type":"text","text":"Looking at the code..."}]}
-{"type":"assistant","content":[{"type":"text","text":"Done! I updated 3 files and added tests."}]}
-`,
-			exitCode: 0,
-			wantSub:  "Done! I updated 3 files",
-		},
-		{
-			name: "result event preferred over assistant",
-			output: `{"type":"assistant","content":[{"type":"text","text":"Working on it..."}]}
-{"type":"result","result":"Completed: fixed the login bug and added unit tests."}
-`,
-			exitCode: 0,
-			wantSub:  "Completed: fixed the login bug",
-		},
-		{
-			name: "ignores non-text content blocks",
-			output: `{"type":"assistant","content":[{"type":"tool_use","name":"Read","input":{"path":"/foo"}},{"type":"text","text":"I read the file and found the issue."}]}
-`,
-			exitCode: 0,
-			wantSub:  "I read the file and found the issue",
-			wantNot:  "tool_use",
-		},
-		{
-			name:     "malformed JSON lines skipped",
-			output:   "not json\n{\"type\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Summary here.\"}]}\n",
-			exitCode: 0,
-			wantSub:  "Summary here.",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sess := &agentSession{
-				exitCode: tt.exitCode,
-			}
-			sess.Output.WriteString(tt.output)
-
-			got := extractSessionSummary(sess)
-			if tt.wantSub != "" && !strings.Contains(got, tt.wantSub) {
-				t.Errorf("extractSessionSummary() = %q, want substring %q", got, tt.wantSub)
-			}
-			if tt.wantNot != "" && strings.Contains(got, tt.wantNot) {
-				t.Errorf("extractSessionSummary() = %q, should not contain %q", got, tt.wantNot)
-			}
-		})
-	}
-}
+// TestExtractSessionSummary is now tested in internal/agent/runner_test.go
+// since the implementation was moved to the agent package.
 
 func TestBuildEnrichPromptIncludesActiveTodos(t *testing.T) {
 	todos := []db.Todo{

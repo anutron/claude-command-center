@@ -105,16 +105,16 @@ func (p *Plugin) renderSessionViewer(width, height int) string {
 
 // buildSessionStatusLine builds the status bar for the session viewer.
 func (p *Plugin) buildSessionStatusLine(s *ccStyles) string {
-	sess := p.activeSessions[p.sessionViewerTodoID]
+	sess := p.agentRunner.Session(p.sessionViewerTodoID)
 
 	// Status indicator
 	var statusPart string
 	if p.sessionViewerDone {
 		statusPart = lipgloss.NewStyle().Foreground(s.ColorGreen).Bold(true).Render("completed \u25cf")
 	} else if sess != nil {
-		sess.mu.Lock()
+		sess.Mu.Lock()
 		status := sess.Status
-		sess.mu.Unlock()
+		sess.Mu.Unlock()
 		switch status {
 		case "blocked":
 			statusPart = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true).Render("blocked \u25cf")
@@ -128,9 +128,9 @@ func (p *Plugin) buildSessionStatusLine(s *ccStyles) string {
 	// Session ID
 	var sessionIDPart string
 	if sess != nil {
-		sess.mu.Lock()
+		sess.Mu.Lock()
 		sid := sess.SessionID
-		sess.mu.Unlock()
+		sess.Mu.Unlock()
 		if sid != "" {
 			if len(sid) > 8 {
 				sid = sid[:8]
@@ -165,13 +165,13 @@ func (p *Plugin) buildSessionStatusLine(s *ccStyles) string {
 
 // buildSessionViewerContent renders all events into a single string for the viewport.
 func (p *Plugin) buildSessionViewerContent(s *ccStyles) string {
-	sess := p.activeSessions[p.sessionViewerTodoID]
+	sess := p.agentRunner.Session(p.sessionViewerTodoID)
 	var events []sessionEvent
 	if sess != nil {
-		sess.mu.Lock()
+		sess.Mu.Lock()
 		events = make([]sessionEvent, len(sess.Events))
 		copy(events, sess.Events)
-		sess.mu.Unlock()
+		sess.Mu.Unlock()
 	} else if len(p.sessionViewerReplayEvents) > 0 {
 		events = p.sessionViewerReplayEvents
 	}

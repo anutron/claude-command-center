@@ -52,7 +52,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 	// Block edit/mutation operations only when THIS instance owns the running agent.
 	agentActive := false
 	if todo := p.detailTodo(); todo != nil {
-		_, agentActive = p.activeSessions[todo.ID]
+		agentActive = p.agentRunner.Session(todo.ID) != nil
 	}
 
 	switch msg.String() {
@@ -138,15 +138,13 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 	case "w":
 		// Open session viewer for todos with active agent sessions or saved logs
 		if todo := p.detailTodo(); todo != nil {
-			if _, hasSession := p.activeSessions[todo.ID]; hasSession {
+			if sess := p.agentRunner.Session(todo.ID); sess != nil {
 				// Live session — watch in real time
 				p.initSessionViewer(todo.ID)
 				// Start listening for events if not already
 				if !p.sessionViewerListening {
-					if sess, ok := p.activeSessions[todo.ID]; ok {
-						p.sessionViewerListening = true
-						return plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForAgentEvent(todo.ID, sess.EventsCh)}
-					}
+					p.sessionViewerListening = true
+					return plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForAgentEvent(todo.ID, sess.EventsCh)}
 				}
 				return plugin.ConsumedAction()
 			} else if todo.SessionLogPath != "" {
@@ -221,7 +219,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			if resumeID == "" {
 				verb = "re-launched"
 			}
-			if p.canLaunchAgent() || len(p.sessionQueue) == 0 {
+			if p.canLaunchAgent() || p.agentRunner.QueueLen() == 0 {
 				p.flashMessage = fmt.Sprintf("Agent %s for: %s", verb, truncateToWidth(flattenTitle(todo.Title), 40))
 			} else {
 				p.flashMessage = fmt.Sprintf("Agent queued for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
