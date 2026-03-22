@@ -1,12 +1,12 @@
 # CCC Automations Guide
 
-Build headless scripts that run during `ccc-refresh` cycles. Automations have no UI footprint — no tab, no bubbletea dependency. They are short-lived subprocesses (seconds, not hours) that perform small tasks like syncing data, sending notifications, or updating external systems based on CCC state.
+Build headless scripts that run during `ai-cron` cycles. Automations have no UI footprint — no tab, no bubbletea dependency. They are short-lived subprocesses (seconds, not hours) that perform small tasks like syncing data, sending notifications, or updating external systems based on CCC state.
 
 ## Automations vs Plugins
 
 | | Automations | External Plugins |
 |---|---|---|
-| **Runtime** | `ccc-refresh` (headless) | `ccc` (TUI) |
+| **Runtime** | `ai-cron` (headless) | `ccc` (TUI) |
 | **Lifecycle** | Spawned, runs, exits (seconds) | Long-lived subprocess |
 | **UI** | None | Own tab in the TUI |
 | **Purpose** | Background tasks, side effects | Interactive features |
@@ -82,7 +82,7 @@ The `schedule` field controls when an automation runs. The runner checks the `cc
 
 | Schedule | Description |
 |----------|-------------|
-| `every_refresh` | Runs on every `ccc-refresh` cycle. |
+| `every_refresh` | Runs on every `ai-cron` cycle. |
 | `hourly` | Runs at most once per hour (due if last run was more than 1 hour ago). |
 | `daily` | Runs once per calendar day (due if no run since midnight local time). |
 | `daily_9am` | Runs once per day, but only if current local time is 9:00 AM or later. |
@@ -95,10 +95,10 @@ The `schedule` field controls when an automation runs. The runner checks the `cc
 
 ## Lifecycle
 
-Each automation runs through a fixed sequence per `ccc-refresh` cycle:
+Each automation runs through a fixed sequence per `ai-cron` cycle:
 
 ```
-ccc-refresh                        Automation subprocess
+ai-cron                        Automation subprocess
     |                                      |
     |-- spawn (sh -c <command>) ---------->|
     |                                      |
@@ -405,10 +405,10 @@ python3 ~/my-automation/main.py
 
 ### Step 7: Run for real
 
-Run `ccc-refresh` (or wait for the next automatic cycle):
+Run `ai-cron` (or wait for the next automatic cycle):
 
 ```bash
-ccc-refresh -v
+ai-cron -v
 ```
 
 Your automation will appear in the output. Check the Settings > Automations panel in the TUI to see run status.
@@ -450,7 +450,7 @@ DELETE FROM cc_automation_runs WHERE name = 'my-automation';
 
 **Automation skipped with no log** -- Disabled automations (`enabled: false`) are silently skipped. An unknown schedule value is also skipped.
 
-**Database is locked** -- Open the database in read-only mode (`?mode=ro` in the URI) to avoid contention with `ccc-refresh` and other automations. If you need to write, use your own separate database or a namespaced table.
+**Database is locked** -- Open the database in read-only mode (`?mode=ro` in the URI) to avoid contention with `ai-cron` and other automations. If you need to write, use your own separate database or a namespaced table.
 
 **Buffered stdout** -- The protocol requires JSON lines to be flushed immediately. Python's `ccc_automation.py` handles this with `sys.stdout.flush()`. If writing an automation in another language, make sure stdout is unbuffered or line-buffered.
 
@@ -459,7 +459,7 @@ DELETE FROM cc_automation_runs WHERE name = 'my-automation';
 ## Security Model
 
 - **Scoped config:** Automations only receive config sections listed in `config_scopes`. An automation with `config_scopes: ["slack"]` cannot see GitHub tokens or calendar credentials.
-- **Subprocess isolation:** Automations run as child processes with the same user permissions as `ccc-refresh`. No additional sandboxing.
+- **Subprocess isolation:** Automations run as child processes with the same user permissions as `ai-cron`. No additional sandboxing.
 - **Database access:** The DB path is provided for read access. Do not write to CCC-owned tables. If you need persistent state, use your own namespaced table or external storage.
 - **No network restrictions:** Automations can make any network calls your user account permits.
 

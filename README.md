@@ -44,7 +44,7 @@ Configure data sources, check connection health, and manage OAuth tokens from in
 
 ### Automations
 
-Run scheduled headless scripts during `ccc-refresh` cycles — no UI footprint. Automations hook into the refresh pipeline to act on your data (e.g., auto-accepting calendar invites from trusted domains). A Python SDK is included for writing your own. See [docs/automations.md](docs/automations.md).
+Run scheduled headless scripts during `ai-cron` cycles — no UI footprint. Automations hook into the refresh pipeline to act on your data (e.g., auto-accepting calendar invites from trusted domains). A Python SDK is included for writing your own. See [docs/automations.md](docs/automations.md).
 
 ### External Plugins
 
@@ -57,11 +57,11 @@ Extend CCC with plugins written in any language. Plugins communicate over JSON-l
 CCC is two binaries and a plugin system:
 
 - **`ccc`** — The TUI. Built with [bubbletea](https://github.com/charmbracelet/bubbletea). Renders the dashboard, manages sessions, and launches Claude.
-- **`ccc-refresh`** — The data fetcher. Runs on a schedule (or manually) to pull data from all connected sources into a local SQLite database.
+- **`ai-cron`** — The data fetcher. Runs on a schedule (or manually) to pull data from all connected sources into a local SQLite database.
 - **Plugin system** — Built-in plugins (sessions, command center, settings) plus external plugins that run as subprocesses speaking JSON-lines.
 - **Automations** — Headless scripts executed during refresh cycles for background tasks like auto-accepting calendar invites. Written in Python via the included SDK.
 
-Data flows one way: `ccc-refresh` writes to SQLite, `ccc` reads from it. The TUI never hits external APIs directly.
+Data flows one way: `ai-cron` writes to SQLite, `ccc` reads from it. The TUI never hits external APIs directly.
 
 ## Built-in Connectors
 

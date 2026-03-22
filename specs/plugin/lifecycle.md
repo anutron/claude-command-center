@@ -98,7 +98,7 @@ tick-based DB reload:
 - **ReturnMsg:** Always reload from DB
 - **LaunchMsg:** No special handling needed (state is in DB)
 
-The 5-minute `ccRefreshInterval` for spawning `ccc-refresh` is preserved as-is
+The 5-minute `ccRefreshInterval` for spawning `ai-cron` is preserved as-is
 in the tick handler.
 
 ## Test Cases

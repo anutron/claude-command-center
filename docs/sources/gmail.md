@@ -84,7 +84,7 @@ Fields:
 
 ## Verification
 
-1. Run `ccc-refresh -verbose` and look for `gmail:` log lines
+1. Run `ai-cron -verbose` and look for `gmail:` log lines
 2. Emails with the configured label should appear as todos in the TUI
 3. In Settings, Gmail credentials should show "Token found" / "Configured"
 4. The doctor check validates:

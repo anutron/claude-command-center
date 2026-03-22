@@ -4,14 +4,14 @@
 
 CCC is a terminal-based productivity dashboard built in Go with bubbletea. It aggregates data from external services (calendar, GitHub, Granola, Slack, Gmail) into a single TUI with a plugin architecture.
 
-**Key binaries:** `ccc` (TUI), `ccc-refresh` (data fetcher)
+**Key binaries:** `ccc` (TUI), `ai-cron` (data fetcher)
 **Config:** `~/.config/ccc/config.yaml`
 **Database:** `~/.config/ccc/data/ccc.db` (SQLite, WAL mode)
 
 ## Build & Test
 
 ```bash
-make build     # Build ccc + ccc-refresh binaries
+make build     # Build ccc + ai-cron binaries
 make test      # Run all tests (go test -v ./...)
 make install   # Symlink binaries to /usr/local/bin
 make servers   # Build MCP servers (gmail)
@@ -64,7 +64,7 @@ Step-by-step: given X, system does Y, resulting in Z
 
 ```
 cmd/ccc/              # TUI binary entrypoint
-cmd/ccc-refresh/      # Refresh binary entrypoint
+cmd/ai-cron/      # Refresh binary entrypoint
 internal/
   builtin/            # Built-in plugins (sessions, command-center, settings)
   config/             # Config loading, validation

@@ -96,7 +96,7 @@ If only `~/.config/google-calendar-mcp/token.json` exists (older format without 
 
 ## Verification
 
-1. Run `ccc-refresh -verbose` and check for calendar fetch output
+1. Run `ai-cron -verbose` and check for calendar fetch output
 2. In the TUI, the Sessions tab should show today's events
 3. In the TUI Settings > Calendar, credentials should show "Configured"
 4. The doctor check (`Settings > Calendar > r` to refresh) validates:

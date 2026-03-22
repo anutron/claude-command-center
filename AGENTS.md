@@ -40,10 +40,10 @@ make install
 ```
 
 This does the following:
-- Compiles `ccc` (TUI binary) and `ccc-refresh` (data fetcher binary)
+- Compiles `ccc` (TUI binary) and `ai-cron` (data fetcher binary)
 - Code-signs the `ccc` binary for macOS
 - Builds MCP servers (Gmail -- requires Node.js)
-- Symlinks `ccc` and `ccc-refresh` to `/usr/local/bin/`
+- Symlinks `ccc` and `ai-cron` to `/usr/local/bin/`
 - Symlinks the pomodoro plugin to `/usr/local/bin/ccc-pomodoro`
 - Installs Claude skills to `~/.claude/skills/`
 
@@ -141,7 +141,7 @@ Detailed per-source setup guides:
 After enabling a source, run a manual refresh to pull data immediately:
 
 ```bash
-ccc-refresh -v
+ai-cron -v
 ```
 
 ## Running Tests
@@ -194,7 +194,7 @@ sudo make install
 Or create the symlinks manually:
 ```bash
 ln -sf $(pwd)/ccc /usr/local/bin/ccc
-ln -sf $(pwd)/ccc-refresh /usr/local/bin/ccc-refresh
+ln -sf $(pwd)/ai-cron /usr/local/bin/ai-cron
 ```
 
 ### Config file parse error
@@ -240,7 +240,7 @@ external_plugins:
 
 ## Automations
 
-Automations are headless scripts that run during `ccc-refresh` cycles. Unlike plugins (which have a TUI tab), automations operate in the background with no UI footprint. A Python SDK is included for writing automations.
+Automations are headless scripts that run during `ai-cron` cycles. Unlike plugins (which have a TUI tab), automations operate in the background with no UI footprint. A Python SDK is included for writing automations.
 
 To register an automation, add it to `config.yaml`:
 
@@ -266,4 +266,4 @@ For full details — SDK usage, scheduling, environment variables, and the inclu
 | `~/.config/ccc/data/ccc.log` | Application log |
 | `~/.config/ccc/credentials/` | OAuth credentials directory |
 | `/usr/local/bin/ccc` | TUI binary (symlink) |
-| `/usr/local/bin/ccc-refresh` | Data fetcher binary (symlink) |
+| `/usr/local/bin/ai-cron` | Data fetcher binary (symlink) |

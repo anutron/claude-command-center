@@ -24,7 +24,7 @@ automations:
 
 ## How It Works
 
-1. On each `ccc-refresh` cycle, the automation receives the CCC database path
+1. On each `ai-cron` cycle, the automation receives the CCC database path
 2. It queries `cc_calendar_events` for future events with `needsAction` or `tentative` status
 3. Events matching any `accept_patterns` substring (in title or organizer) are accepted
 4. In `dry_run: true` mode (the default), it only logs what it would do

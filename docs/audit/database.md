@@ -75,7 +75,7 @@ No N+1 patterns found. `LoadCommandCenterFromDB` (line 142) makes 5 sequential q
 
 ### Issues
 
-1. **Individual todo/thread mutations are not transacted** — `DBCompleteTodo`, `DBDismissTodo`, `DBDeferTodo`, etc. (lines 354-391) each issue a single `db.Exec`. These are inherently atomic as single statements, which is fine. However, the TUI could theoretically issue conflicting writes if the user acts while `ccc-refresh` is running (both write to the same tables). The `busy_timeout=5000` PRAGMA mitigates this.
+1. **Individual todo/thread mutations are not transacted** — `DBCompleteTodo`, `DBDismissTodo`, `DBDeferTodo`, etc. (lines 354-391) each issue a single `db.Exec`. These are inherently atomic as single statements, which is fine. However, the TUI could theoretically issue conflicting writes if the user acts while `ai-cron` is running (both write to the same tables). The `busy_timeout=5000` PRAGMA mitigates this.
 
 2. **Plugin migrations are not transacted** — `/Users/aaron/Personal/claude-command-center/internal/plugin/migrations.go` line 41: each migration SQL is executed individually, then its version is recorded. If the SQL succeeds but the version INSERT fails (e.g., disk full), the migration will be re-applied on next startup. If the migration SQL is not idempotent (e.g., `ALTER TABLE ADD COLUMN` without `IF NOT EXISTS`), this could cause errors. Each migration+record pair should be wrapped in a transaction.
 
@@ -119,7 +119,7 @@ The core schema migration is a single `CREATE TABLE IF NOT EXISTS` block. This i
 
 1. **No `sql.DB.Close()` in main application lifecycle** — Not visible in the DB package itself, but worth verifying that the TUI and refresh binaries close the DB connection on shutdown. The `sql.DB` handle is passed into plugins via `plugin.Context.DB` but plugin `Shutdown()` methods don't close it (which is correct — the host should close it).
 
-2. **No connection pool configuration** — `sql.DB` defaults are used (no `SetMaxOpenConns`, `SetMaxIdleConns`). For SQLite with WAL mode, `SetMaxOpenConns(1)` is a common best practice to prevent "database is locked" errors, especially when both the TUI and `ccc-refresh` may access the same DB file. The `busy_timeout=5000` helps but does not eliminate the issue.
+2. **No connection pool configuration** — `sql.DB` defaults are used (no `SetMaxOpenConns`, `SetMaxIdleConns`). For SQLite with WAL mode, `SetMaxOpenConns(1)` is a common best practice to prevent "database is locked" errors, especially when both the TUI and `ai-cron` may access the same DB file. The `busy_timeout=5000` helps but does not eliminate the issue.
 
 ## WAL Mode and Concurrency
 
@@ -129,7 +129,7 @@ The core schema migration is a single `CREATE TABLE IF NOT EXISTS` block. This i
 
 ### Concerns
 
-1. **Two processes share the same DB** — The TUI (`ccc`) and the refresh binary (`ccc-refresh`) both call `OpenDB` on the same path. WAL mode allows concurrent readers with one writer, and `busy_timeout` handles contention. However, `DBSaveRefreshResult` holds a write lock for the entire bulk replace (which could take noticeable time if there are many todos/threads). During this window, TUI writes (complete/dismiss/defer) will block up to 5 seconds.
+1. **Two processes share the same DB** — The TUI (`ccc`) and the refresh binary (`ai-cron`) both call `OpenDB` on the same path. WAL mode allows concurrent readers with one writer, and `busy_timeout` handles contention. However, `DBSaveRefreshResult` holds a write lock for the entire bulk replace (which could take noticeable time if there are many todos/threads). During this window, TUI writes (complete/dismiss/defer) will block up to 5 seconds.
 
 2. **No `PRAGMA synchronous` setting** — Defaults to `FULL` in WAL mode, which is safe but slower. `PRAGMA synchronous=NORMAL` is generally recommended for WAL mode as it provides a good safety/performance tradeoff.
 

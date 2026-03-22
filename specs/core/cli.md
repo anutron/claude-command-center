@@ -32,7 +32,7 @@ Diagnostic command that checks system health. Prints `[OK]` or `[!!]` per check 
 3. Calendar credentials present and valid
 4. GitHub CLI authenticated (`gh auth token`)
 5. Granola configured (stored-accounts.json exists)
-6. `ccc-refresh` binary found (next to executable or on PATH)
+6. `ai-cron` binary found (next to executable or on PATH)
 7. `claude` CLI on PATH
 8. Data freshness — warns if `generated_at` > 30 minutes stale
 
@@ -42,7 +42,7 @@ Exit code 0 if all pass, 1 if any fail.
 
 Adds a crontab entry for scheduled background refresh. Uses crontab instead of launchd to avoid macOS "Background Items Added" notifications that re-trigger on every binary rebuild.
 
-- Crontab entry with `# ccc-refresh schedule` marker comment
+- Crontab entry with `# ai-cron schedule` marker comment
 - Interval from `config.refresh_interval` (default 5m), converted to cron `*/N * * * *`
 - Sources `~/.config/ccc/.env` before running (for API keys in cron environment)
 - Logs to `~/.config/ccc/data/refresh.log`
@@ -51,9 +51,9 @@ Adds a crontab entry for scheduled background refresh. Uses crontab instead of l
 
 ### `ccc uninstall-schedule`
 
-Removes the ccc-refresh crontab entry.
+Removes the ai-cron crontab entry.
 
-- Removes lines containing the `# ccc-refresh schedule` marker
+- Removes lines containing the `# ai-cron schedule` marker
 - Clears crontab entirely if no other entries remain
 - Also cleans up legacy launchd plist if present
 - No-op if no schedule is installed
@@ -66,7 +66,7 @@ Sends a notification event to all running CCC instances, causing them to reload 
 - Connects to each unix socket and sends the event string (default: "reload")
 - Stale sockets (connection refused) are automatically cleaned up
 - Prints count of instances notified
-- Useful for external scripts (e.g., after ccc-refresh runs in launchd)
+- Useful for external scripts (e.g., after ai-cron runs in launchd)
 
 ### `ccc update-todo`
 

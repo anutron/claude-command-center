@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Provides a mechanism for personal headless scripts that run during `ccc-refresh` cycles. Automations are separate from UI plugins — they have no tab, no visual presence, and no bubbletea dependency. They are short-lived subprocesses (seconds, not hours) that perform small tasks like syncing data, sending notifications, or updating external systems based on CCC state.
+Provides a mechanism for personal headless scripts that run during `ai-cron` cycles. Automations are separate from UI plugins — they have no tab, no visual presence, and no bubbletea dependency. They are short-lived subprocesses (seconds, not hours) that perform small tasks like syncing data, sending notifications, or updating external systems based on CCC state.
 
 ## Interface
 
 - **Inputs**: `automations:` section from `config.yaml`, scoped config per automation, DB path
 - **Outputs**: Result status + message per automation, log entries
-- **Dependencies**: `ccc-refresh` (host), SQLite DB, external executables (any language)
+- **Dependencies**: `ai-cron` (host), SQLite DB, external executables (any language)
 
 ## Config Schema
 
@@ -167,7 +167,7 @@ Each automation runs through a fixed sequence per invocation:
 
 | Value | Description |
 |-------|-------------|
-| `every_refresh` | Run on every `ccc-refresh` cycle |
+| `every_refresh` | Run on every `ai-cron` cycle |
 | `hourly` | Run at most once per hour |
 | `daily` | Run once per calendar day (first refresh of the day) |
 | `daily_9am` | Run once per day, only if current time is 9:00 AM or later |
@@ -206,13 +206,13 @@ CREATE INDEX IF NOT EXISTS idx_automation_runs_name_started
 ## Security Model
 
 - **Scoped config**: Automations receive only the config sections listed in their `config_scopes`, not the full `config.yaml`. An automation with `config_scopes: ["slack"]` cannot see GitHub tokens or calendar credentials.
-- **Subprocess isolation**: Automations run as child processes with the same user permissions as `ccc-refresh`. No additional sandboxing is applied.
+- **Subprocess isolation**: Automations run as child processes with the same user permissions as `ai-cron`. No additional sandboxing is applied.
 - **DB access**: The DB path is provided for read access. Automations should not write to CCC tables (the host tracks run results). If an automation needs its own persistent state, it should use its own namespaced table or external storage.
 - **No network restrictions**: Automations can make any network calls the user's account permits.
 
 ## Behavior
 
-Given a `ccc-refresh` cycle:
+Given a `ai-cron` cycle:
 
 1. Load the `automations:` list from config
 2. Filter to `enabled: true` automations

@@ -65,7 +65,7 @@ There are no additional fields -- Granola auth is entirely handled by the deskto
 
 ## Verification
 
-1. Run `ccc-refresh -verbose` and look for `granola:` log lines showing:
+1. Run `ai-cron -verbose` and look for `granola:` log lines showing:
    - Number of meetings found
    - Number of new meetings to process (vs. skipped)
    - Per-meeting transcript and summary character counts

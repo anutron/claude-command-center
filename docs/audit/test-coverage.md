@@ -19,7 +19,7 @@ The project has solid test coverage for core data structures, plugin infrastruct
 | `internal/external` | Yes | `external.go`, `process.go` | `loader.go`, `protocol.go` | **Good** — handshake, render, key handling, crash detection, async events; loader untested |
 | `internal/llm` | No | (none) | `llm.go`, `claude_cli.go`, `noop.go` | **None** — no tests for LLM layer |
 | `cmd/ccc` | No | (none) | `main.go` | **None** — CLI entrypoint |
-| `cmd/ccc-refresh` | No | (none) | `main.go` | **None** — CLI entrypoint |
+| `cmd/ai-cron` | No | (none) | `main.go` | **None** — CLI entrypoint |
 
 ## Critical Untested Code
 

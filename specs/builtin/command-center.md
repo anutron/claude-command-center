@@ -19,7 +19,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `cc_messages.go` | Message handling for async results (Claude responses, refresh finished, DB writes) |
 | `cc_view.go` | Command center rendering: calendar panel, todo panel, warnings, suggestions, help overlay, detail view, booking UI |
 | `styles.go` | Local style/gradient types populated from `config.Palette` (avoids circular imports with tui) |
-| `refresh.go` | Background refresh command (finds and spawns `ccc-refresh` binary) |
+| `refresh.go` | Background refresh command (finds and spawns `ai-cron` binary) |
 | `claude.go` | Background Claude CLI/LLM commands (edit, enrich, command, focus), prompt builders |
 
 **Related refresh files** (in `internal/refresh/`):
@@ -67,7 +67,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `/` | normal | Search/filter todos (case insensitive) |
 | `b` | normal | Toggle backlog (completed items) |
 | `s` | normal | Enter booking mode for selected todo |
-| `r` | normal | Manual refresh (spawns ccc-refresh) |
+| `r` | normal | Manual refresh (spawns ai-cron) |
 | `enter` | normal | Open detail view for selected todo |
 | `o` | normal | Launch session for todo (by session_id, project_dir, or navigate to sessions) |
 | `?` | any | Toggle help overlay |
@@ -222,11 +222,11 @@ Instead of polling on a timer, the command center uses lifecycle messages to rel
 - **ReturnMsg:** Always reload from DB (returning from a Claude session)
 - **NotifyMsg:** Reload from DB (cross-instance notifications)
 
-### Refresh (ccc-refresh)
+### Refresh (ai-cron)
 
 - Auto-refresh triggers when data is older than a threshold (tick-based)
 - Manual refresh via `r` key
-- Spawns `ccc-refresh` binary, then reloads from DB
+- Spawns `ai-cron` binary, then reloads from DB
 - Refresh binary located next to running executable, then falls back to PATH
 - **Incremental sync**: Granola and Slack sources check `cc_source_sync` for their last successful sync time and skip already-processed meetings/messages, reducing LLM calls
 - **Deterministic source_ref (Granola)**: Source refs use `{meeting_id}-{sha256(title)[:8]}` instead of LLM-generated values, making deduplication reliable

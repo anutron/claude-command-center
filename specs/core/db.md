@@ -87,7 +87,7 @@ All types are exported for use by other packages:
 - `DBSaveSuggestions` -- replaces the full suggestions row
 
 ### Bulk Refresh
-- `DBSaveRefreshResult` -- atomically replaces all refresh-managed data (todos, threads, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ccc-refresh`.
+- `DBSaveRefreshResult` -- atomically replaces all refresh-managed data (todos, threads, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`.
 
 ### Bookmarks & Paths (DB)
 - `DBLoadBookmarks`, `DBInsertBookmark`, `DBRemoveBookmark`

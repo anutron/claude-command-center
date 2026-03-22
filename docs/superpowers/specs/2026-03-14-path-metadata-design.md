@@ -232,7 +232,7 @@ type RoutingRule struct {
 
 The todo prompt generation has two layers:
 
-- **`/todo-agent`** — The shared production logic: takes a todo + project context, returns a project_dir + proposed_prompt. Used by both the refresh agent (`ccc-refresh`) and the trainer. This is a **Go function** in the refresh package, not a skill — it uses the same prompt template that `generateProposedPrompts()` currently uses, extended with project context and routing rules.
+- **`/todo-agent`** — The shared production logic: takes a todo + project context, returns a project_dir + proposed_prompt. Used by both the refresh agent (`ai-cron`) and the trainer. This is a **Go function** in the refresh package, not a skill — it uses the same prompt template that `generateProposedPrompts()` currently uses, extended with project context and routing rules.
 
 - **`/todo-trainer`** — Interactive testing harness (Claude Code skill). Lets the user simulate what the refresh agent produces, correct it, and capture routing rules. Scoped to project routing + prompt generation only (not commitment extraction from meetings/Slack — that gets its own trainer later).
 
@@ -344,7 +344,7 @@ Return ONLY JSON:
 ```yaml
 # ~/.config/ccc/config.yaml
 refresh:
-  model: haiku  # model used by ccc-refresh for prompt generation
+  model: haiku  # model used by ai-cron for prompt generation
 ```
 
 The trainer reads this config to match the refresh agent's behavior. If unset, defaults to whatever `claude` CLI defaults to.

@@ -155,7 +155,7 @@ Calendar, GitHub, and Granola source packages also export `Settings` types imple
 ## Key Design Decisions
 
 - Source packages import the parent `refresh` package for shared types (GoogleTokenFile, CleanJSON, etc.) — no circular imports since `refresh` never imports source packages
-- `cmd/ccc-refresh/main.go` constructs sources from source packages, passes them to `refresh.Run()`
+- `cmd/ai-cron/main.go` constructs sources from source packages, passes them to `refresh.Run()`
 - Calendar credential migration happens in `CalendarSource.Fetch()`, making it self-contained
 - PostMerger pattern keeps the orchestrator source-agnostic while allowing calendar-specific post-merge actions
 

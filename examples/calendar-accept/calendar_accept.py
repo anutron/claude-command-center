@@ -78,7 +78,7 @@ class CalendarAcceptAutomation(CCCAutomation):
     def _find_pending_events(self):
         """Query the CCC database for calendar events needing a response.
 
-        The cc_calendar_events table is populated by ccc-refresh. We look for
+        The cc_calendar_events table is populated by ai-cron. We look for
         events in the future where response_status indicates we haven't accepted.
         """
         events = []

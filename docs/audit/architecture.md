@@ -8,7 +8,7 @@ The layering is mostly clean with `db` as a proper leaf package and `plugin` as 
 
 ```
 cmd/ccc           -> config, db, external, llm, plugin, tui
-cmd/ccc-refresh   -> config, db, llm, refresh
+cmd/ai-cron   -> config, db, llm, refresh
 
 tui               -> builtin/commandcenter, builtin/sessions, builtin/settings, config, db, plugin
   builtin/commandcenter -> config, db, llm, plugin, refresh  (!)
@@ -29,7 +29,7 @@ db                -> (no internal imports — leaf package)
 
 - **File:** `/Users/aaron/Personal/claude-command-center/internal/builtin/commandcenter/refresh.go`
 - The `commandcenter` plugin (a TUI-side component) imports `internal/refresh` to call `refresh.IsLocked()`. This creates a dependency from the TUI layer into the data-fetching layer.
-- The `commandcenter` plugin spawns `ccc-refresh` as a subprocess via `exec.Command`, but also links against the `refresh` package to check the lock file. This means the TUI binary (`cmd/ccc`) transitively depends on the entire `refresh` package, including all its data source implementations (calendar, gmail, github, slack, granola) and their dependencies.
+- The `commandcenter` plugin spawns `ai-cron` as a subprocess via `exec.Command`, but also links against the `refresh` package to check the lock file. This means the TUI binary (`cmd/ccc`) transitively depends on the entire `refresh` package, including all its data source implementations (calendar, gmail, github, slack, granola) and their dependencies.
 - **Impact:** Increases the binary size of `ccc` and couples TUI to refresh internals. The lock check should be extracted to a shared utility or the `config` package.
 
 ### 2. `config` imports `db` — severity: MODERATE
@@ -61,7 +61,7 @@ This plugin does too much:
 - LLM-powered command processing (natural language to todo)
 - LLM-powered todo editing
 - LLM-powered focus recommendations
-- Background refresh orchestration (spawning `ccc-refresh`)
+- Background refresh orchestration (spawning `ai-cron`)
 - Detail views, help overlays, flash messages
 - Two distinct sub-views (command center + threads)
 
@@ -138,7 +138,7 @@ There is one backdoor: `commandcenter.Plugin` exposes `PendingLaunchTodo()` and 
 - Transitively imports: `builtin/*`, `refresh` (via `commandcenter`)
 - Responsibilities: Config loading, DB setup, plugin wiring, TUI loop, Claude session launching
 
-### `cmd/ccc-refresh` (data fetcher binary)
+### `cmd/ai-cron` (data fetcher binary)
 
 - Imports: `config`, `db`, `llm`, `refresh`
 - Responsibilities: Config loading, DB setup, lock acquisition, data source fetching, merge, save

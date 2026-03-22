@@ -64,7 +64,7 @@ Store the token in `config.yaml` directly. The file should have restrictive perm
 
 ## Verification
 
-1. Run `ccc-refresh -verbose` and look for `slack:` log lines showing:
+1. Run `ai-cron -verbose` and look for `slack:` log lines showing:
    - Number of channels found and their type breakdown
    - Number of candidates found
    - Number of new candidates processed

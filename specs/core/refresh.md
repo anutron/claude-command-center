@@ -75,9 +75,9 @@ Fields on Plugin struct: `lastRefreshAt time.Time`, `lastRefreshError string`.
 
 During `Init()`, after loading CC from DB, if `GeneratedAt` is older than the configured refresh interval, an auto-refresh is triggered via `StartCmds()`. This handles the common case of launching CCC after machine sleep.
 
-## ccc-refresh Binary
+## ai-cron Binary
 
-A standalone binary at `cmd/ccc-refresh/main.go` provides the CLI entrypoint for refresh.
+A standalone binary at `cmd/ai-cron/main.go` provides the CLI entrypoint for refresh.
 
 **Flags:**
 - `-v` — verbose logging
@@ -88,19 +88,19 @@ This binary is what crontab invokes on schedule, and what the TUI spawns when th
 
 ## Background Scheduling (crontab)
 
-Background refresh uses crontab instead of launchd. macOS BTM (Background Task Management) tracks `executableModifiedDate` for launch agent binaries — every `make build` recompiles `ccc-refresh`, changes its mtime, and re-triggers the "Background Items Added" notification. Crontab bypasses BTM entirely.
+Background refresh uses crontab instead of launchd. macOS BTM (Background Task Management) tracks `executableModifiedDate` for launch agent binaries — every `make build` recompiles `ai-cron`, changes its mtime, and re-triggers the "Background Items Added" notification. Crontab bypasses BTM entirely.
 
 The schedule is managed via `ccc install-schedule` and `ccc uninstall-schedule` (see `specs/core/cli.md`). Implementation lives in `internal/config/schedule.go`.
 
 **Schedule entry format:**
 
 ```
-*/N * * * * [ -f ~/.config/ccc/.env ] && . ~/.config/ccc/.env; /path/to/ccc-refresh >> ~/.config/ccc/data/refresh.log 2>&1 # ccc-refresh schedule
+*/N * * * * [ -f ~/.config/ccc/.env ] && . ~/.config/ccc/.env; /path/to/ai-cron >> ~/.config/ccc/data/refresh.log 2>&1 # ai-cron schedule
 ```
 
 - **Interval**: Derived from `config.refresh_interval`, converted to whole minutes (`*/N`), minimum 1 minute
 - **Env sourcing**: The `.env` file is sourced inline since cron does not inherit shell environment variables (needed for `SLACK_BOT_TOKEN`, etc.)
-- **Marker comment**: `# ccc-refresh schedule` identifies CCC entries for idempotent install/uninstall
+- **Marker comment**: `# ai-cron schedule` identifies CCC entries for idempotent install/uninstall
 - **Log file**: Output appended to `~/.config/ccc/data/refresh.log`
 - **Legacy cleanup**: Install and uninstall both remove the old launchd plist (`~/Library/LaunchAgents/com.ccc.refresh.plist`) if present
 
@@ -186,7 +186,7 @@ type ContextFetcher interface {
 
 ### ContextRegistry
 
-Maps source names to `ContextFetcher` implementations. Registered at startup in `ccc-refresh`.
+Maps source names to `ContextFetcher` implementations. Registered at startup in `ai-cron`.
 
 | Source | TTL | Fetch Strategy |
 |--------|-----|---------------|

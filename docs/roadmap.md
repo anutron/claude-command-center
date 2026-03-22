@@ -27,7 +27,7 @@ Extract the Command Center TUI from AI-RON into a standalone, installable projec
 - [x] 3 built-in plugins: Sessions, Command Center, Settings
 - [x] Settings detail views with per-item config screens
 - [x] Eliminate command-center.json — refresh writes directly to SQLite
-- [x] `ccc-refresh` standalone binary with `-v`, `--dry-run`, `--no-llm`
+- [x] `ai-cron` standalone binary with `-v`, `--dry-run`, `--no-llm`
 - [x] PID lockfile refresh locking
 - [x] Data source validation on enable (calendar, GitHub, Granola)
 - [x] Specs for all features

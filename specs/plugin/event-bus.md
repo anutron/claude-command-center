@@ -40,7 +40,7 @@ type EventBus interface {
 | `todo.promoted` | `{id, title}` | settings (log) | Todo promoted to top |
 | `todo.edited` | `{id, title}` | settings (log) | Todo edited via LLM |
 | `pending.todo` | `{todo_id, title, context, detail, who_waiting, due, effort}` | sessions | User selected a todo for launch without a project dir |
-| `data.refreshed` | `{source}` | sessions | ccc-refresh completed |
+| `data.refreshed` | `{source}` | sessions | ai-cron completed |
 
 ### Sessions Events
 

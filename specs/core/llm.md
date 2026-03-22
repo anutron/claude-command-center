@@ -76,7 +76,7 @@ Operations tagged: `edit`, `enrich`, `command`, `date-parse`, `review-address`, 
 
 `LLM` field added to `refresh.Options` (typed as `llm.LLM`). The refresh functions `extractCommitments`, `extractSlackCommitments`, and `generateSuggestions` accept `llm.LLM` as a parameter instead of calling `callClaude` directly.
 
-### cmd/ccc-refresh
+### cmd/ai-cron
 
 Constructs two `ClaudeCLI` instances: `{Model: "haiku"}` for extraction/suggestions and `{Model: "sonnet"}` for routing/validation. Falls back to `NoopLLM` if `--no-llm` or `claude` not available. Passes `LLM` (haiku) and `RoutingLLM` (sonnet) into `refresh.Options`. **No sandboxing** — refresh is a background process with its own error handling.
 

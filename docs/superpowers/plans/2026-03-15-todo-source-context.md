@@ -830,7 +830,7 @@ func runFetchContext(idStr string) error {
 }
 ```
 
-The `buildContextRegistry()` function creates a `ContextRegistry` and registers all source fetchers. It needs to load auth configs for sources that need them (Slack bot token, Gmail config). This follows the same pattern as `cmd/ccc-refresh/main.go` for initializing sources.
+The `buildContextRegistry()` function creates a `ContextRegistry` and registers all source fetchers. It needs to load auth configs for sources that need them (Slack bot token, Gmail config). This follows the same pattern as `cmd/ai-cron/main.go` for initializing sources.
 
 - [ ] **Step 2: Add buildContextRegistry function**
 
@@ -905,9 +905,9 @@ if opts.ContextRegistry != nil && opts.DB != nil {
 }
 ```
 
-- [ ] **Step 3: Wire up registry in ccc-refresh main**
+- [ ] **Step 3: Wire up registry in ai-cron main**
 
-In `cmd/ccc-refresh/main.go`, build the context registry and pass it in `Options.ContextRegistry`. Follow the same pattern as `buildContextRegistry()` from Task 10.
+In `cmd/ai-cron/main.go`, build the context registry and pass it in `Options.ContextRegistry`. Follow the same pattern as `buildContextRegistry()` from Task 10.
 
 - [ ] **Step 4: Run full test suite**
 
@@ -916,7 +916,7 @@ Run: `go test ./...`
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/refresh/refresh.go cmd/ccc-refresh/main.go
+git add internal/refresh/refresh.go cmd/ai-cron/main.go
 git commit -m "Fetch source context during refresh for new todos"
 ```
 

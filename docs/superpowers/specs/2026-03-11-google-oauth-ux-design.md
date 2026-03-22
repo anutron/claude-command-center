@@ -251,7 +251,7 @@ The huh form model is stored on the settings `Plugin` struct. The settings `Hand
   [!!] Gmail credentials
        No credentials file — open Settings > Gmail and press 'a' to set up
   [OK] Granola
-  [OK] ccc-refresh binary
+  [OK] ai-cron binary
   [OK] claude CLI
   [OK] Data freshness (2m ago)
 
@@ -268,7 +268,7 @@ The huh form model is stored on the settings `Plugin` struct. The settings `Hand
 | `internal/plugin/plugin.go` | Extend `SettingsProvider` with `SettingsOpenCmd()` and `HandleSettingsMsg()`. |
 | `internal/auth/types.go` | New. `GoogleTokenFile`, `ToOAuth2Token()` — extracted from `refresh/auth.go`. |
 | `internal/auth/config.go` | New. `LoadGoogleOAuth2Config`, `LoadCalendarCredsFromClaudeConfig`. |
-| `internal/auth/env.go` | New. `LoadEnvFile`, `ReadEnv`, `WriteEnvValue` — atomic write to avoid races with `ccc-refresh`. |
+| `internal/auth/env.go` | New. `LoadEnvFile`, `ReadEnv`, `WriteEnvValue` — atomic write to avoid races with `ai-cron`. |
 | `internal/auth/flow.go` | New. `AuthFlowCmd` — generic non-blocking OAuth flow as `tea.Cmd`. Random port on `127.0.0.1:0`. |
 | `internal/refresh/sources/calendar/doctor.go` | New. `ValidateCalendarResult()`, `DoctorChecks()` with live tokeninfo check. |
 | `internal/refresh/sources/gmail/doctor.go` | New. `GmailDoctor`, `ValidateGmailResult()`, `DoctorChecks()` with live tokeninfo check. |
@@ -358,4 +358,4 @@ Each is an isolated migration. Not part of this design's scope.
 - huh form: Tab navigates fields, host Tab blocked during FocusForm
 - huh form: `q` key does not quit app during form entry
 - .env write: creates file if missing, updates existing key without clobbering others
-- .env write: atomic (temp file + rename) to avoid partial reads by ccc-refresh
+- .env write: atomic (temp file + rename) to avoid partial reads by ai-cron

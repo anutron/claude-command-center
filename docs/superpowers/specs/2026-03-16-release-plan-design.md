@@ -30,7 +30,7 @@ Human-facing pitch document. Not a setup guide.
   - Automated todo list management
   - Agentic todo list resolution
 - Feature highlights with screenshots (user will provide screenshots; leave placeholders in the README for each feature)
-- Architecture at a glance: TUI binary (`ccc`) + data fetcher (`ccc-refresh`) + plugin system
+- Architecture at a glance: TUI binary (`ccc`) + data fetcher (`ai-cron`) + plugin system
 - Quick pointer to AGENTS.md for setup
 - No installation details — AGENTS.md owns that
 
