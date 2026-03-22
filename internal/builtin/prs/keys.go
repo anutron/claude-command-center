@@ -122,6 +122,21 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 			},
 		}
 
+	// Watch running agent output
+	case "w":
+		filtered := p.filteredPRs(p.activeTab)
+		if len(filtered) == 0 {
+			return plugin.ConsumedAction()
+		}
+		pr := filtered[p.cursors[p.activeTab]]
+		if pr.AgentStatus != "running" {
+			return plugin.ConsumedAction()
+		}
+		if p.agentRunner != nil {
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.agentRunner.Watch(pr.ID)}
+		}
+		return plugin.ConsumedAction()
+
 	// Force refresh
 	case "r":
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.Refresh()}
@@ -138,6 +153,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "j/k", Description: "Navigate PRs", Promoted: true},
 		{Key: "enter", Description: "Review/respond (resume agent or launch)", Promoted: true},
 		{Key: "o", Description: "Open PR in browser", Promoted: true},
+		{Key: "w", Description: "Watch running agent", Promoted: true},
 		{Key: "r", Description: "Refresh", Promoted: true},
 	}
 }

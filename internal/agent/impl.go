@@ -169,6 +169,14 @@ func (r *defaultRunner) CheckProcesses() tea.Cmd {
 	return nil
 }
 
+func (r *defaultRunner) Watch(id string) tea.Cmd {
+	sess, ok := r.activeSessions[id]
+	if !ok {
+		return nil
+	}
+	return ListenForSessionEvent(id, sess.EventsCh)
+}
+
 func (r *defaultRunner) Shutdown() {
 	for _, sess := range r.activeSessions {
 		if sess.Stdin != nil {

@@ -51,6 +51,10 @@ type Runner interface {
 	// it for summary extraction. Call this after receiving SessionFinishedMsg.
 	CleanupFinished(id string) *Session
 
+	// Watch returns a tea.Cmd that opens a live tail of the running session's
+	// log file. Returns nil if the session is not found or has no log path.
+	Watch(id string) tea.Cmd
+
 	// Shutdown sends SIGINT to all active sessions and waits briefly for exit.
 	Shutdown()
 }
