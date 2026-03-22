@@ -955,6 +955,9 @@ func (p *Plugin) buildFormForSlug(item *NavItem) (*huh.Form, tea.Cmd) {
 	case "system-shell":
 		form := p.buildShellForm()
 		return form, form.Init()
+	case "agent-sandbox":
+		form := p.buildAgentSandboxForm()
+		return form, form.Init()
 	case "system-logs":
 		return nil, nil
 	case "system-automations":

@@ -203,6 +203,15 @@ func (p *Plugin) rebuildNav() {
 		Items: dsItems,
 	})
 
+	// --- AGENT ---
+	agent := Category{
+		Label: "AGENT",
+		Items: []NavItem{
+			{Label: "Sandbox", Slug: "agent-sandbox", Kind: "agent", Description: "Agent file-write permissions and network access controls"},
+		},
+	}
+	p.navCategories = append(p.navCategories, agent)
+
 	// --- SYSTEM ---
 	system := Category{
 		Label: "SYSTEM",
