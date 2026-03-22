@@ -491,6 +491,36 @@ func containsHelper(s, substr string) bool {
 	return false
 }
 
+func TestAgentConfig_SandboxDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Agent.TodoWriteLearnedPathsEnabled() {
+		t.Error("TodoWriteLearnedPaths should default to true")
+	}
+	if len(cfg.Agent.AutonomousAllowedDomains) == 0 {
+		t.Error("AutonomousAllowedDomains should have defaults")
+	}
+	// Verify specific default domains
+	domains := cfg.Agent.AutonomousAllowedDomains
+	found := map[string]bool{"github.com": false, "api.github.com": false}
+	for _, d := range domains {
+		if _, ok := found[d]; ok {
+			found[d] = true
+		}
+	}
+	for domain, ok := range found {
+		if !ok {
+			t.Errorf("expected default domain %q in AutonomousAllowedDomains", domain)
+		}
+	}
+
+	// Verify explicit false overrides the default
+	f := false
+	cfg.Agent.TodoWriteLearnedPaths = &f
+	if cfg.Agent.TodoWriteLearnedPathsEnabled() {
+		t.Error("TodoWriteLearnedPaths should be false when explicitly set")
+	}
+}
+
 func TestParseRefreshInterval(t *testing.T) {
 	tests := []struct {
 		name     string
