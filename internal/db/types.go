@@ -42,6 +42,14 @@ type PullRequest struct {
 	Category              string    `json:"category"`                // computed: "waiting", "respond", "review", "stale"
 	HeadSHA               string    `json:"head_sha"`                // commit SHA of the PR head
 	FetchedAt             time.Time `json:"fetched_at"`
+
+	// Agent tracking fields
+	State          string `json:"state"`            // "open" or "archived"
+	AgentSessionID string `json:"agent_session_id"` // Claude session UUID
+	AgentStatus    string `json:"agent_status"`     // "", "pending", "running", "completed", "failed"
+	AgentCategory  string `json:"agent_category"`   // "review" or "respond"
+	AgentHeadSHA   string `json:"agent_head_sha"`   // SHA when agent last ran
+	AgentSummary   string `json:"agent_summary"`    // Summary from agent completion
 }
 
 type Warning struct {
