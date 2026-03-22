@@ -23,7 +23,7 @@ type ccRefreshFinishedMsg struct {
 	err error
 }
 
-// refreshCCCmd spawns the ccc-refresh binary to gather data from APIs.
+// refreshCCCmd spawns the ai-cron binary to gather data from APIs.
 // Skips if another refresh process already holds the lock.
 func refreshCCCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -38,7 +38,7 @@ func refreshCCCmd() tea.Cmd {
 		if binary != "" {
 			cmd = exec.Command(binary)
 		} else {
-			cmd = exec.Command("ccc-refresh")
+			cmd = exec.Command("ai-cron")
 		}
 
 		var stderr bytes.Buffer
@@ -49,21 +49,21 @@ func refreshCCCmd() tea.Cmd {
 		if err != nil {
 			errMsg := strings.TrimSpace(stderr.String())
 			if errMsg != "" {
-				err = fmt.Errorf("ccc-refresh failed: %s", errMsg)
+				err = fmt.Errorf("ai-cron failed: %s", errMsg)
 			}
 		}
 		return ccRefreshFinishedMsg{err: err}
 	}
 }
 
-// findRefreshBinary looks for ccc-refresh next to the current executable.
+// findRefreshBinary looks for ai-cron next to the current executable.
 func findRefreshBinary() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
 	}
 	dir := filepath.Dir(exe)
-	candidate := filepath.Join(dir, "ccc-refresh")
+	candidate := filepath.Join(dir, "ai-cron")
 	if _, err := os.Stat(candidate); err == nil {
 		return candidate
 	}

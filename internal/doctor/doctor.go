@@ -80,7 +80,7 @@ func runDoctorChecks(providers []plugin.DoctorProvider, opts plugin.DoctorOpts) 
 		}
 	}
 
-	// 4. ccc-refresh binary
+	// 4. ai-cron binary
 	checks = append(checks, checkRefreshBinary())
 
 	// 5. claude CLI
@@ -114,16 +114,16 @@ func checkRefreshBinary() DoctorCheck {
 	// Check next to current executable
 	exe, err := os.Executable()
 	if err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "ccc-refresh")
+		candidate := filepath.Join(filepath.Dir(exe), "ai-cron")
 		if _, err := os.Stat(candidate); err == nil {
-			return DoctorCheck{Name: "ccc-refresh binary", OK: true}
+			return DoctorCheck{Name: "ai-cron binary", OK: true}
 		}
 	}
 	// Check on PATH
-	if _, err := exec.LookPath("ccc-refresh"); err == nil {
-		return DoctorCheck{Name: "ccc-refresh binary", OK: true}
+	if _, err := exec.LookPath("ai-cron"); err == nil {
+		return DoctorCheck{Name: "ai-cron binary", OK: true}
 	}
-	return DoctorCheck{Name: "ccc-refresh binary", OK: false, Message: "Not found — run 'make install'"}
+	return DoctorCheck{Name: "ai-cron binary", OK: false, Message: "Not found — run 'make install'"}
 }
 
 func checkClaudeCLI() DoctorCheck {
@@ -144,7 +144,7 @@ func checkDataFreshness() DoctorCheck {
 	var generatedAt sql.NullString
 	err = database.QueryRow("SELECT value FROM cc_meta WHERE key = 'generated_at'").Scan(&generatedAt)
 	if err != nil || !generatedAt.Valid {
-		return DoctorCheck{Name: "Data freshness", OK: false, Message: "No data — run 'ccc-refresh' to populate"}
+		return DoctorCheck{Name: "Data freshness", OK: false, Message: "No data — run 'ai-cron' to populate"}
 	}
 
 	t, err := time.Parse(time.RFC3339, generatedAt.String)
@@ -154,7 +154,7 @@ func checkDataFreshness() DoctorCheck {
 
 	age := time.Since(t)
 	if age > 30*time.Minute {
-		return DoctorCheck{Name: "Data freshness", OK: false, Message: fmt.Sprintf("Data is %s old — run 'ccc-refresh'", age.Round(time.Minute))}
+		return DoctorCheck{Name: "Data freshness", OK: false, Message: fmt.Sprintf("Data is %s old — run 'ai-cron'", age.Round(time.Minute))}
 	}
 	return DoctorCheck{Name: "Data freshness", OK: true, Message: fmt.Sprintf("Data is %s old", age.Round(time.Minute))}
 }

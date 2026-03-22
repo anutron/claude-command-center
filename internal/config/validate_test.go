@@ -100,7 +100,7 @@ func TestValidateSlack_MissingToken(t *testing.T) {
 func TestIsScheduleInstalled_Missing(t *testing.T) {
 	// IsScheduleInstalled checks crontab for the marker comment.
 	// With no crontab entry, it should return false.
-	// Note: this test relies on the test environment not having a ccc-refresh crontab entry.
+	// Note: this test relies on the test environment not having a ai-cron crontab entry.
 	// We can't easily mock crontab, so we just verify the function doesn't panic.
 	_ = IsScheduleInstalled()
 }

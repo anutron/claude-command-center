@@ -1,6 +1,6 @@
 package automation
 
-// HostMsg is a message sent from the host (ccc-refresh) to an automation subprocess.
+// HostMsg is a message sent from the host (ai-cron) to an automation subprocess.
 type HostMsg struct {
 	Type     string                 `json:"type"`               // "init", "run", "shutdown"
 	DBPath   string                 `json:"db_path,omitempty"`

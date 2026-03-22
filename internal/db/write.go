@@ -419,7 +419,7 @@ func DBSavePullRequests(tx *sql.Tx, prs []PullRequest) error {
 
 // DBSaveRefreshResult atomically replaces all refresh-managed data (todos,
 // calendar, suggestions, pending actions, generated_at) in a single
-// transaction. This is the write path used by ccc-refresh.
+// transaction. This is the write path used by ai-cron.
 func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 	tx, err := d.Begin()
 	if err != nil {

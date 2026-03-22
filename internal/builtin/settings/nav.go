@@ -178,8 +178,8 @@ func (p *Plugin) rebuildNav() {
 				// "unverified" (yellow warning, not green check) so the
 				// user knows the token hasn't been proven to work yet.
 				item.ValidationStatus = "unverified"
-				item.ValidationMsg = "Token configured — run ccc-refresh to verify"
-				item.ValidHint = "Run ccc-refresh or wait for next auto-refresh"
+				item.ValidationMsg = "Token configured — run ai-cron to verify"
+				item.ValidHint = "Run ai-cron or wait for next auto-refresh"
 				v := false
 				item.Valid = &v
 			} else if ss.LastError != "" {

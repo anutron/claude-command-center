@@ -200,9 +200,9 @@ type AgentConfig struct {
 	MaxConcurrent     int     `yaml:"max_concurrent"`
 }
 
-// RefreshConfig controls ccc-refresh behavior.
+// RefreshConfig controls ai-cron behavior.
 type RefreshConfig struct {
-	// Model selects which LLM model ccc-refresh uses for prompt generation.
+	// Model selects which LLM model ai-cron uses for prompt generation.
 	// Empty string means use the CLI default.
 	Model string `yaml:"model,omitempty"`
 }

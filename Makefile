@@ -1,5 +1,5 @@
 BINARY = ccc
-REFRESH_BINARY = ccc-refresh
+REFRESH_BINARY = ai-cron
 INSTALL_PATH = /usr/local/bin/$(BINARY)
 REFRESH_INSTALL_PATH = /usr/local/bin/$(REFRESH_BINARY)
 MAIN_WORKTREE := $(shell git worktree list --porcelain 2>/dev/null | head -2 | grep '^worktree ' | sed 's/^worktree //')
@@ -9,7 +9,7 @@ IS_WORKTREE := $(shell [ "$$(pwd)" != "$(MAIN_WORKTREE)" ] && echo 1 || echo 0)
 
 build:
 	go build -o $(BINARY) ./cmd/ccc/
-	go build -o $(REFRESH_BINARY) ./cmd/ccc-refresh/
+	go build -o $(REFRESH_BINARY) ./cmd/ai-cron/
 	codesign -s - --identifier "com.ccc.tui" -f $(BINARY)
 
 test:

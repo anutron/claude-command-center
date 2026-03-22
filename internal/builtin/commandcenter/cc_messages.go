@@ -295,7 +295,7 @@ func (p *Plugin) handleRefreshFinished(msg ccRefreshFinishedMsg) (bool, plugin.A
 		p.flashMessageAt = time.Now()
 	} else {
 		p.lastRefreshError = ""
-		p.publishEvent("data.refreshed", map[string]interface{}{"source": "ccc-refresh"})
+		p.publishEvent("data.refreshed", map[string]interface{}{"source": "ai-cron"})
 	}
 	if p.database != nil {
 		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
@@ -1014,7 +1014,7 @@ func (p *Plugin) handleTickMsg() (bool, plugin.Action) {
 		cmds = append(cmds, agentCmd)
 	}
 
-	// Trigger ccc-refresh when data is older than the refresh interval (default 5m).
+	// Trigger ai-cron when data is older than the refresh interval (default 5m).
 	if p.cc != nil && !p.ccRefreshing && time.Since(p.cc.GeneratedAt) > ccRefreshInterval {
 		if time.Since(p.ccLastRefreshTriggered) > ccRefreshInterval {
 			p.ccRefreshing = true

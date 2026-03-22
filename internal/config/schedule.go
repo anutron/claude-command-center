@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-const crontabMarker = "# ccc-refresh schedule"
+const crontabMarker = "# ai-cron schedule"
 
-// IsScheduleInstalled checks if a ccc-refresh crontab entry exists.
+// IsScheduleInstalled checks if a ai-cron crontab entry exists.
 func IsScheduleInstalled() bool {
 	out, err := exec.Command("crontab", "-l").Output()
 	if err != nil {
@@ -19,7 +19,7 @@ func IsScheduleInstalled() bool {
 	return strings.Contains(string(out), crontabMarker)
 }
 
-// InstallSchedule adds a crontab entry for ccc-refresh.
+// InstallSchedule adds a crontab entry for ai-cron.
 // Uses crontab instead of launchd to avoid macOS "Background Items Added"
 // notifications that re-trigger on every binary rebuild.
 func InstallSchedule() error {
@@ -29,17 +29,17 @@ func InstallSchedule() error {
 	}
 	interval := cfg.ParseRefreshInterval()
 
-	// Find ccc-refresh binary
-	binary, err := exec.LookPath("ccc-refresh")
+	// Find ai-cron binary
+	binary, err := exec.LookPath("ai-cron")
 	if err != nil {
 		// Try next to current executable
 		exe, exeErr := os.Executable()
 		if exeErr != nil {
-			return fmt.Errorf("ccc-refresh not found on PATH — run 'make install' first")
+			return fmt.Errorf("ai-cron not found on PATH — run 'make install' first")
 		}
-		candidate := filepath.Join(filepath.Dir(exe), "ccc-refresh")
+		candidate := filepath.Join(filepath.Dir(exe), "ai-cron")
 		if _, statErr := os.Stat(candidate); statErr != nil {
-			return fmt.Errorf("ccc-refresh not found on PATH — run 'make install' first")
+			return fmt.Errorf("ai-cron not found on PATH — run 'make install' first")
 		}
 		binary = candidate
 	}
@@ -75,7 +75,7 @@ func InstallSchedule() error {
 		return nil
 	}
 
-	// Remove any old ccc-refresh entries
+	// Remove any old ai-cron entries
 	lines := strings.Split(existing, "\n")
 	var kept []string
 	for _, line := range lines {
@@ -105,7 +105,7 @@ func InstallSchedule() error {
 	return nil
 }
 
-// UninstallSchedule removes the ccc-refresh crontab entry.
+// UninstallSchedule removes the ai-cron crontab entry.
 func UninstallSchedule() error {
 	out, _ := exec.Command("crontab", "-l").Output()
 	existing := string(out)
@@ -118,7 +118,7 @@ func UninstallSchedule() error {
 		return nil
 	}
 
-	// Remove ccc-refresh entries
+	// Remove ai-cron entries
 	lines := strings.Split(existing, "\n")
 	var kept []string
 	for _, line := range lines {
