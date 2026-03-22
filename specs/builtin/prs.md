@@ -44,6 +44,18 @@ Track open pull requests across GitHub in four actionable categories. Surfaces P
 - `width, height int` — viewport dimensions
 - `frame int` — animation frame counter (for pulsing cursor)
 
+### Per-PR Fields (on `db.PullRequest`)
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `state` | string | `"open"` or `"archived"` — replaces deletion on close |
+| `head_sha` | string | Current HEAD SHA from GitHub (`headRefOid`) |
+| `agent_session_id` | string | Claude session UUID for active/last agent run |
+| `agent_status` | string | `""`, `"pending"`, `"running"`, `"completed"`, `"failed"` |
+| `agent_category` | string | Which category triggered the agent (`"review"` or `"respond"`) |
+| `agent_head_sha` | string | HEAD SHA when the agent last ran |
+| `agent_summary` | string | Extracted summary when agent completes |
+
 ## Data Flow
 
 1. `ai-cron` runs `gh search prs --author=@me --state=open` and `gh search prs --review-requested=@me --state=open`
@@ -54,6 +66,9 @@ Track open pull requests across GitHub in four actionable categories. Surfaces P
 6. Plugin's `Refresh()` method loads from DB via `DBLoadPullRequests` (every 30s or on `r` key)
 7. `prsLoadedMsg` delivers data to `HandleMessage`, which updates state and clamps cursors
 8. On `enter`, plugin resolves `owner/repo` to a local directory by scanning learned paths' `.git/config` for matching remote URLs, then launches Claude with `/pr-review-toolkit:review-pr <url>`
+9. **Trigger detection**: On every PR data load, scan for PRs where `category in ("review", "respond")` AND (`head_sha != agent_head_sha` OR `category != agent_category`) AND `agent_status` not in `("running", "pending")`. Matching PRs are queued for agent spawn.
+10. **Agent spawn**: For each triggered PR, resolve local repo dir, then call `agentRunner.LaunchOrQueue(request)`. Update PR row with `agent_status = "running"`, `agent_category`, `agent_head_sha = head_sha`.
+11. **OnComplete**: Agent runner fires callback — update `agent_status` to `"completed"` or `"failed"`, set `agent_session_id` and `agent_summary`, insert bookmark via `DBInsertBookmark`.
 
 ## Category Assignment
 
@@ -73,14 +88,27 @@ A PR gets exactly one category. The first matching rule wins.
 | 1/2/3/4 | Switch to sub-tab by number | yes |
 | left/right, h/l | Cycle sub-tabs | yes |
 | up/down, j/k | Navigate PR list (wraps around) | yes |
-| enter | Launch PR review in local project (`/pr-review-toolkit:review-pr <url>`) — falls back to browser if no local repo found | yes |
+| enter | Context-aware: resume completed agent, attach to running agent, or launch manual review/respond session — falls back to browser if no local repo found | yes |
 | o | Open selected PR in browser (via URL or `gh pr view --web`) | yes |
+| w | Watch running agent (read-only stream viewer) | yes |
 | r | Force refresh from DB | yes |
+
+### Enter Key Behavior (context-aware)
+
+| PR Agent State | Action |
+|---|---|
+| Agent completed | Resume bookmarked session (`--resume <agent_session_id>`) |
+| Agent running | Attach to live session |
+| Agent pending | Flash: "Agent queued, waiting for slot..." |
+| Agent failed | Resume session to see what went wrong |
+| No agent (review tab) | Launch `/pr-review-toolkit:review-pr <url>` (manual) |
+| No agent (respond tab) | Launch `/pr-respond <url>` (interactive, no --apply) |
+| No local repo | Flash: "No local repo found — add a session path first" |
 
 ## Hint Bar
 
 ```
-1-4 switch tab   <-/-> cycle   j/k navigate   enter review   o open   r refresh
+1-4 tab  j/k nav  enter review/respond  o open  w watch  r refresh
 ```
 
 ## View
@@ -91,7 +119,18 @@ Rendered as `[1] Waiting (3)  [2] Respond (1)  [3] Review (2)  [4] Stale (0)` wi
 
 ### PR Row
 
-Each row shows `repo#number  Title  <contextual detail>` with a pulsing `>` cursor on the selected row.
+Each row shows `repo#number  Title  <contextual detail>  <agent status>` with a pulsing `>` cursor on the selected row.
+
+#### Agent Status Indicators
+
+| State | Indicator | Color |
+|---|---|---|
+| No agent | (nothing) | — |
+| Pending | `⏳ queued` | pending/yellow |
+| Running | `⏳ running` | pending/yellow |
+| Completed | `✓ ready` | success/green |
+| Failed | `✗ failed` | failure/red |
+| No local repo | `⚠ no repo` | muted |
 
 Contextual detail varies by category:
 
@@ -117,7 +156,38 @@ None — `cc_pull_requests` table is created in core `schema.go`.
 
 **Subscribes to:**
 
-- `data.refreshed` — reloads PR data from DB when ai-cron completes a refresh cycle
+- `data.refreshed` — reloads PR data from DB when ai-cron completes a refresh cycle; also triggers agent evaluation (scan for PRs needing agent spawn)
+
+## Agent Automation
+
+### Trigger Condition
+
+On every PR data load (after `data.refreshed` or 30s tick), scan for PRs matching ALL of:
+
+1. `category` is `"review"` or `"respond"`
+2. `head_sha != agent_head_sha` OR `category != agent_category` (or `agent_head_sha` is empty)
+3. `agent_status` is not `"running"` or `"pending"`
+
+### Lifecycle
+
+1. PR submitted (V1) → enters "review" → `agent_head_sha` is empty → agent fires
+2. Reviewer responds to V1 → enters "respond" → same SHA but `agent_category` was "review" → different category, agent fires
+3. Agent commits (towards V2) → you push (V2, new SHA) → enters "respond" again → `head_sha != agent_head_sha` → new agent fires
+4. Cycle repeats
+
+### Sandbox Constraints
+
+PR agents run with restricted permissions (autonomous profile):
+
+- **Filesystem**: Worktree only (respond) or workdir only (review) — no extra write paths
+- **Network**: `autonomous_allowed_domains` from config (defaults to `github.com`, `api.github.com`)
+- **MCP**: Disabled — no access to Slack, Gmail, etc.
+
+### OnComplete Behavior
+
+1. Update PR row: `agent_status = "completed"` (or `"failed"`), `agent_session_id`, `agent_summary`
+2. Insert bookmark via `DBInsertBookmark` for session resumption
+3. PR row displays `✓ ready` or `✗ failed` indicator
 
 ## Test Cases
 

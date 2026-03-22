@@ -92,7 +92,7 @@ internal/refresh/
 |---------|------|---------|--------|------------|
 | sources/calendar | "calendar" | Calendar | CalendarIDs, AutoAcceptDomains, enabled | Yes (pending actions) |
 | sources/gmail | "gmail" | Threads + Todos (if todo_label set) | GmailConfig (enabled, todo_label, advanced), llm.LLM | Yes (label removal on completion) |
-| sources/github | "github" | Threads | Repos, Username, enabled | No |
+| sources/github | "github" | Threads, PullRequests | Repos, Username, enabled | No |
 | sources/slack | "slack" | Todos (via LLM) | llm.LLM | No |
 | sources/granola | "granola" | Todos (via LLM) | llm.LLM, enabled | No |
 
@@ -158,6 +158,10 @@ Calendar, GitHub, and Granola source packages also export `Settings` types imple
 - `cmd/ai-cron/main.go` constructs sources from source packages, passes them to `refresh.Run()`
 - Calendar credential migration happens in `CalendarSource.Fetch()`, making it self-contained
 - PostMerger pattern keeps the orchestrator source-agnostic while allowing calendar-specific post-merge actions
+
+### GitHub PR Detail Fields
+
+The `gh pr view --json` call includes `headRefOid` to fetch the current HEAD SHA of each PR. This is mapped to `HeadSHA` on the `db.PullRequest` struct and stored in the `head_sha` column. The HEAD SHA serves as the version signal for agent trigger detection — when the SHA changes, a new agent run is warranted.
 
 ## Data Safety
 
