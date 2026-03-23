@@ -288,7 +288,9 @@ type Plugin struct {
 	filterText string
 
 	// Active sessions sub-tab
-	active *activeView
+	active         *activeView
+	flashMessage   string
+	flashMessageAt time.Time
 }
 
 // Slug returns the plugin identifier.
@@ -976,6 +978,82 @@ func (p *Plugin) handleActiveTab(msg tea.KeyMsg) plugin.Action {
 			p.active.MoveDown()
 		}
 		return plugin.NoopAction()
+
+	case "enter":
+		if p.active == nil {
+			return plugin.NoopAction()
+		}
+		sel := p.active.SelectedSession()
+		if sel == nil {
+			return plugin.NoopAction()
+		}
+		dir := sel.Project
+		if sel.WorktreePath != "" {
+			dir = sel.WorktreePath
+		}
+		return plugin.Action{
+			Type: plugin.ActionLaunch,
+			Args: map[string]string{
+				"dir":       dir,
+				"resume_id": sel.SessionID,
+			},
+		}
+
+	case "b":
+		if p.active == nil {
+			return plugin.NoopAction()
+		}
+		sel := p.active.SelectedSession()
+		if sel == nil {
+			return plugin.NoopAction()
+		}
+		if p.db != nil {
+			label := sel.Topic
+			if label == "" {
+				label = sel.Branch
+			}
+			bk := db.Session{
+				SessionID:    sel.SessionID,
+				Project:      sel.Project,
+				Repo:         sel.Repo,
+				Branch:       sel.Branch,
+				Created:      parseTime(sel.RegisteredAt),
+				Summary:      sel.Topic,
+				WorktreePath: sel.WorktreePath,
+			}
+			_ = db.DBInsertBookmark(p.db, bk, label)
+			// Reload bookmark list
+			sessions, _ := db.DBLoadBookmarks(p.db)
+			p.resumeList.SetItems(buildSessionItems(sessions))
+		}
+		p.flashMessage = "Bookmarked: " + sel.SessionID[:8]
+		p.flashMessageAt = time.Now()
+		return plugin.ConsumedAction()
+
+	case "d":
+		if p.active == nil {
+			return plugin.NoopAction()
+		}
+		sel := p.active.SelectedSession()
+		if sel == nil {
+			return plugin.NoopAction()
+		}
+		if sel.State == "active" || sel.State == "running" {
+			p.flashMessage = "Can't dismiss active session"
+			p.flashMessageAt = time.Now()
+			return plugin.ConsumedAction()
+		}
+		// Archive via daemon RPC
+		if p.active.daemonClient != nil {
+			client := p.active.daemonClient()
+			if client != nil {
+				_ = client.ArchiveSession(daemon.ArchiveSessionParams{SessionID: sel.SessionID})
+			}
+		}
+		p.active.RemoveSession(sel.SessionID)
+		p.flashMessage = "Dismissed: " + sel.SessionID[:8]
+		p.flashMessageAt = time.Now()
+		return plugin.ConsumedAction()
 	}
 	return plugin.NoopAction()
 }
@@ -1144,6 +1222,11 @@ func (p *Plugin) viewActiveTab() string {
 	}
 	listView := p.active.View(p.width, p.height)
 	hints := p.renderHints()
+	// Show flash message if recent (within 3 seconds)
+	if p.flashMessage != "" && time.Since(p.flashMessageAt) < 3*time.Second {
+		flash := p.styles.sectionHeader.Render("  " + p.flashMessage)
+		return lipgloss.JoinVertical(lipgloss.Left, listView, "", flash, "", hints)
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, listView, "", hints)
 }
 
@@ -1275,7 +1358,7 @@ func (p *Plugin) renderHints() string {
 	} else {
 		switch p.subTab {
 		case "active":
-			hints = p.styles.hint.Render("up/down navigate   a active   n new   r resume   t worktrees   esc back")
+			hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   up/down navigate   a active   n new   r resume   t worktrees   esc back")
 		case "new":
 			if p.filterText != "" {
 				hints = p.styles.hint.Render(fmt.Sprintf("filter: %s   enter launch   esc clear   backspace edit", p.filterText))

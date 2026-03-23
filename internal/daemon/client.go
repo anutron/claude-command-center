@@ -99,6 +99,12 @@ func (c *Client) UpdateSession(params UpdateSessionParams) error {
 	return err
 }
 
+// ArchiveSession marks an ended session as archived, removing it from the list.
+func (c *Client) ArchiveSession(params ArchiveSessionParams) error {
+	_, err := c.call("ArchiveSession", params)
+	return err
+}
+
 // ListSessions returns all non-archived sessions from the daemon.
 func (c *Client) ListSessions() ([]SessionInfo, error) {
 	result, err := c.call("ListSessions", nil)

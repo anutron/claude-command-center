@@ -206,6 +206,19 @@ func (av *activeView) SelectedSession() *daemon.SessionInfo {
 	return &s
 }
 
+// RemoveSession removes the session with the given ID from the local list.
+func (av *activeView) RemoveSession(sessionID string) {
+	for i, s := range av.sessions {
+		if s.SessionID == sessionID {
+			av.sessions = append(av.sessions[:i], av.sessions[i+1:]...)
+			if av.cursor >= len(av.sessions) && av.cursor > 0 {
+				av.cursor = len(av.sessions) - 1
+			}
+			return
+		}
+	}
+}
+
 // parseTime parses an RFC3339 time string, returning zero time on failure.
 func parseTime(s string) time.Time {
 	t, _ := time.Parse(time.RFC3339, s)

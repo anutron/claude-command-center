@@ -90,6 +90,22 @@ func (r *sessionRegistry) update(params UpdateSessionParams) error {
 	return db.DBUpdateSession(r.database, params.SessionID, fields)
 }
 
+// archive marks a session as "archived", removing it from the active list.
+func (r *sessionRegistry) archive(sessionID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	info, ok := r.sessions[sessionID]
+	if !ok {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+	if info.State == "active" {
+		return fmt.Errorf("cannot archive active session: %s", sessionID)
+	}
+	info.State = "archived"
+	return db.DBUpdateSessionState(r.database, sessionID, "archived")
+}
+
 // list returns all non-archived sessions.
 func (r *sessionRegistry) list() []SessionInfo {
 	r.mu.Lock()

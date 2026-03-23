@@ -7,6 +7,9 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/daemon"
+	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/plugin"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestActiveViewEmptyState(t *testing.T) {
@@ -214,5 +217,232 @@ func TestActiveViewDisplayOrder(t *testing.T) {
 	}
 	if items[0].session.Topic != "Newer" {
 		t.Fatal("expected newer session first within group")
+	}
+}
+
+func TestActiveViewRemoveSession(t *testing.T) {
+	pal := config.GetPalette("aurora", nil)
+	styles := newSessionStyles(pal)
+	av := NewActiveView(nil, styles)
+
+	now := time.Now()
+	av.sessions = []daemon.SessionInfo{
+		{SessionID: "s1", Topic: "First", Project: "/a", State: "ended", RegisteredAt: now.Format(time.RFC3339)},
+		{SessionID: "s2", Topic: "Second", Project: "/b", State: "ended", RegisteredAt: now.Format(time.RFC3339)},
+	}
+
+	av.RemoveSession("s1")
+	if len(av.sessions) != 1 {
+		t.Fatalf("expected 1 session after remove, got %d", len(av.sessions))
+	}
+	if av.sessions[0].SessionID != "s2" {
+		t.Fatal("expected s2 to remain")
+	}
+}
+
+// setupActivePlugin creates a Plugin with the active sub-tab selected and
+// sessions injected into the activeView for testing key handlers.
+func setupActivePlugin(t *testing.T, sessions []daemon.SessionInfo) *Plugin {
+	t.Helper()
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
+	database, err := db.OpenDB(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	cfg := testConfig()
+	p := &Plugin{}
+	err = p.Init(plugin.Context{
+		DB:     database,
+		Config: cfg,
+		Bus:    plugin.NewBus(),
+		Logger: testLogger{},
+	})
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	p.HandleMessage(tea.WindowSizeMsg{Width: 120, Height: 40})
+	p.subTab = "active"
+	p.active.sessions = sessions
+	return p
+}
+
+func TestActiveEnterProducesLaunchAction(t *testing.T) {
+	now := time.Now()
+	sessions := []daemon.SessionInfo{
+		{
+			SessionID:    "abc12345-6789-0000-0000-000000000000",
+			Topic:        "Working on feature",
+			Project:      "/home/user/project-a",
+			State:        "active",
+			RegisteredAt: now.Format(time.RFC3339),
+		},
+	}
+	p := setupActivePlugin(t, sessions)
+
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if action.Type != plugin.ActionLaunch {
+		t.Fatalf("expected ActionLaunch, got %s", action.Type)
+	}
+	if action.Args["dir"] != "/home/user/project-a" {
+		t.Fatalf("expected dir=/home/user/project-a, got %s", action.Args["dir"])
+	}
+	if action.Args["resume_id"] != "abc12345-6789-0000-0000-000000000000" {
+		t.Fatalf("expected resume_id=abc12345-..., got %s", action.Args["resume_id"])
+	}
+}
+
+func TestActiveEnterUsesWorktreePath(t *testing.T) {
+	now := time.Now()
+	sessions := []daemon.SessionInfo{
+		{
+			SessionID:    "abc12345-6789-0000-0000-000000000000",
+			Topic:        "Worktree session",
+			Project:      "/home/user/project-a",
+			WorktreePath: "/home/user/project-a/.claude/worktrees/feature-x",
+			State:        "active",
+			RegisteredAt: now.Format(time.RFC3339),
+		},
+	}
+	p := setupActivePlugin(t, sessions)
+
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if action.Type != plugin.ActionLaunch {
+		t.Fatalf("expected ActionLaunch, got %s", action.Type)
+	}
+	if action.Args["dir"] != "/home/user/project-a/.claude/worktrees/feature-x" {
+		t.Fatalf("expected worktree path as dir, got %s", action.Args["dir"])
+	}
+}
+
+func TestActiveBookmarkSavesToDB(t *testing.T) {
+	now := time.Now()
+	sessions := []daemon.SessionInfo{
+		{
+			SessionID:    "abc12345-6789-0000-0000-000000000000",
+			Topic:        "Bookmarkable",
+			Project:      "/home/user/proj",
+			Repo:         "origin/proj",
+			Branch:       "main",
+			State:        "active",
+			RegisteredAt: now.Format(time.RFC3339),
+		},
+	}
+	p := setupActivePlugin(t, sessions)
+
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if action.Type != plugin.ActionConsumed {
+		t.Fatalf("expected ActionConsumed, got %s", action.Type)
+	}
+
+	// Verify the bookmark was saved
+	bookmarks, err := db.DBLoadBookmarks(p.db)
+	if err != nil {
+		t.Fatalf("load bookmarks: %v", err)
+	}
+	if len(bookmarks) != 1 {
+		t.Fatalf("expected 1 bookmark, got %d", len(bookmarks))
+	}
+	if bookmarks[0].SessionID != "abc12345-6789-0000-0000-000000000000" {
+		t.Fatalf("expected session ID in bookmark, got %s", bookmarks[0].SessionID)
+	}
+
+	// Verify flash message
+	if !strings.Contains(p.flashMessage, "Bookmarked") {
+		t.Fatalf("expected flash message about bookmark, got %s", p.flashMessage)
+	}
+}
+
+func TestActiveDismissEndedSession(t *testing.T) {
+	now := time.Now()
+	sessions := []daemon.SessionInfo{
+		{
+			SessionID:    "abc12345-6789-0000-0000-000000000000",
+			Topic:        "Ended session",
+			Project:      "/home/user/proj",
+			State:        "ended",
+			RegisteredAt: now.Format(time.RFC3339),
+			EndedAt:      now.Format(time.RFC3339),
+		},
+	}
+	p := setupActivePlugin(t, sessions)
+
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if action.Type != plugin.ActionConsumed {
+		t.Fatalf("expected ActionConsumed, got %s", action.Type)
+	}
+
+	// Session should be removed from the active view
+	if len(p.active.sessions) != 0 {
+		t.Fatalf("expected 0 sessions after dismiss, got %d", len(p.active.sessions))
+	}
+
+	if !strings.Contains(p.flashMessage, "Dismissed") {
+		t.Fatalf("expected dismiss flash message, got %s", p.flashMessage)
+	}
+}
+
+func TestActiveDismissActiveSessionBlocked(t *testing.T) {
+	now := time.Now()
+	sessions := []daemon.SessionInfo{
+		{
+			SessionID:    "abc12345-6789-0000-0000-000000000000",
+			Topic:        "Active session",
+			Project:      "/home/user/proj",
+			State:        "active",
+			RegisteredAt: now.Format(time.RFC3339),
+		},
+	}
+	p := setupActivePlugin(t, sessions)
+
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if action.Type != plugin.ActionConsumed {
+		t.Fatalf("expected ActionConsumed, got %s", action.Type)
+	}
+
+	// Session should still be there
+	if len(p.active.sessions) != 1 {
+		t.Fatalf("expected 1 session (not dismissed), got %d", len(p.active.sessions))
+	}
+
+	if !strings.Contains(p.flashMessage, "Can't dismiss") {
+		t.Fatalf("expected 'Can't dismiss' flash message, got %s", p.flashMessage)
+	}
+}
+
+func TestActiveDismissRunningSessionBlocked(t *testing.T) {
+	now := time.Now()
+	sessions := []daemon.SessionInfo{
+		{
+			SessionID:    "abc12345-6789-0000-0000-000000000000",
+			Topic:        "Running session",
+			Project:      "/home/user/proj",
+			State:        "running",
+			RegisteredAt: now.Format(time.RFC3339),
+		},
+	}
+	p := setupActivePlugin(t, sessions)
+
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if action.Type != plugin.ActionConsumed {
+		t.Fatalf("expected ActionConsumed, got %s", action.Type)
+	}
+
+	if len(p.active.sessions) != 1 {
+		t.Fatalf("expected 1 session (not dismissed), got %d", len(p.active.sessions))
+	}
+
+	if !strings.Contains(p.flashMessage, "Can't dismiss") {
+		t.Fatalf("expected blocked flash message, got %s", p.flashMessage)
+	}
+}
+
+func TestActiveEnterEmptyDoesNothing(t *testing.T) {
+	p := setupActivePlugin(t, nil)
+
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if action.Type != plugin.ActionNoop {
+		t.Fatalf("expected ActionNoop on empty list, got %s", action.Type)
 	}
 }
