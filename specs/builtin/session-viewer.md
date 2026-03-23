@@ -85,6 +85,7 @@ Raw stream-JSON events are mapped to `sessionEvent` based on the `type` field:
 
 - **Normal (session active):** `j/k scroll · G bottom · g top · c message · o join · esc back`
 - **Normal (session ended):** `j/k scroll · G bottom · g top · o join · esc back · session ended`
+- **Normal (log replay, session still active):** `j/k scroll · G bottom · g top · o join · esc back · end of log`
 - **Input mode:** `enter send · esc cancel`
 - **Detail view hint (active session):** `w watch`
 - **Detail view hint (completed session with log):** `w log`
@@ -142,7 +143,7 @@ The session viewer uses the idiomatic bubbletea async pattern via `listenForAgen
 
 Shows three parts joined by `|`:
 
-- **Status indicator**: `active ●` (cyan), `blocked ●` (red), `completed ●` (green), or `inactive` (muted)
+- **Status indicator**: `active ●` (cyan), `blocked ●` (red), `streaming ●` (cyan, log replay of still-running session), `completed ●` (green), or `inactive` (muted)
 - **Session ID**: first 8 characters of the Claude session UUID (if available)
 - **Elapsed time**: `Ns elapsed` or `Nm NNs elapsed`
 
@@ -208,6 +209,7 @@ When `w` is pressed on a todo with `SessionLogPath` but no active session:
 3. Parsed events are stored in `p.sessionViewerReplayEvents`
 4. The viewer opens in done/read-only mode (starts at top, not bottom)
 5. `buildSessionViewerContent` falls back to `sessionViewerReplayEvents` when no active session exists
+6. If the todo is still in an agent status (running/enqueued/blocked), the viewer shows "streaming" status and "--- end of log ---" instead of "completed"/"--- session ended ---" to indicate the log is incomplete
 
 ### Design Decisions
 
@@ -293,6 +295,8 @@ The `?` key toggles a help overlay. When in detail view, it shows detail-specifi
 - `w` on a todo with missing/unreadable `SessionLogPath` shows error flash
 - `w` on a todo with no active session and no `SessionLogPath` shows "No active session" flash
 - Replay viewer opens in done mode (read-only, `sessionViewerDone = true`)
+- Replay viewer for a still-active todo shows "streaming" status, "end of log" hint, and "--- end of log ---" footer
+- Replay viewer for a finished todo shows "completed" status, "session ended" hint, and "--- session ended ---" footer
 - Replay viewer starts at top of content (not bottom)
 - `buildSessionViewerContent` uses `sessionViewerReplayEvents` when no active session
 - Detail hints show "w log" for todos with `SessionLogPath` and no active session

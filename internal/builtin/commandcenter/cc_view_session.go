@@ -76,6 +76,8 @@ func (p *Plugin) renderSessionViewer(width, height int) string {
 	var hints string
 	if p.sessionViewerInputting {
 		hints = s.Hint.Render("enter send \u00b7 esc cancel")
+	} else if p.sessionViewerDone && p.isReplayingActiveSession() {
+		hints = s.Hint.Render("j/k scroll \u00b7 G bottom \u00b7 g top \u00b7 o join \u00b7 esc back \u00b7 end of log")
 	} else if p.sessionViewerDone {
 		hints = s.Hint.Render("j/k scroll \u00b7 G bottom \u00b7 g top \u00b7 o join \u00b7 esc back \u00b7 session ended")
 	} else {
@@ -109,7 +111,9 @@ func (p *Plugin) buildSessionStatusLine(s *ccStyles) string {
 
 	// Status indicator
 	var statusPart string
-	if p.sessionViewerDone {
+	if p.sessionViewerDone && p.isReplayingActiveSession() {
+		statusPart = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("streaming \u25cf")
+	} else if p.sessionViewerDone {
 		statusPart = lipgloss.NewStyle().Foreground(s.ColorGreen).Bold(true).Render("completed \u25cf")
 	} else if sess != nil {
 		sess.Mu.Lock()
@@ -192,11 +196,24 @@ func (p *Plugin) buildSessionViewerContent(s *ccStyles) string {
 		}
 	}
 
-	if p.sessionViewerDone {
+	if p.sessionViewerDone && p.isReplayingActiveSession() {
+		lines = append(lines, "", s.DescMuted.Render("--- end of log ---"))
+	} else if p.sessionViewerDone {
 		lines = append(lines, "", s.DescMuted.Render("--- session ended ---"))
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// isReplayingActiveSession returns true when the viewer is showing a log replay
+// for a session whose todo is still in an agent state (running/enqueued/blocked).
+// This distinguishes "end of log file" from "session actually finished".
+func (p *Plugin) isReplayingActiveSession() bool {
+	if len(p.sessionViewerReplayEvents) == 0 {
+		return false // not in replay mode
+	}
+	todo := p.sessionViewerTodo()
+	return todo != nil && db.IsAgentStatus(todo.Status)
 }
 
 // sessionViewerTodo returns the todo for the session viewer.
