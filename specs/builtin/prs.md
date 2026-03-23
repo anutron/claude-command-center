@@ -94,7 +94,7 @@ A PR gets exactly one category. The first matching rule wins.
 | enter | Context-aware: resume completed agent, attach to running agent, or launch manual review/respond session — falls back to browser if no local repo found | yes |
 | o | Open selected PR in browser (via URL or `gh pr view --web`) | yes |
 | w | Watch running agent (read-only stream viewer) | yes |
-| i | Toggle ignore on selected PR. Sets `ignored=1` in DB. Flash: "PR ignored" / "PR restored" | yes |
+| i | Toggle ignore on selected PR. Sets `ignored=1` in DB. Flash: "PR ignored: {title}" | yes |
 | I | Ignore repo of selected PR. Inserts into `cc_ignored_repos`. Flash: "{repo} ignored — all PRs hidden" | yes |
 | r | Force refresh from DB | yes |
 
@@ -152,7 +152,7 @@ Each row shows `repo#number  Title  <contextual detail>  <agent status>` with a 
 | Running | `⏳ running` | pending/yellow |
 | Completed | `✓ ready` | success/green |
 | Failed | `✗ failed` | failure/red |
-| No local repo | `⚠ no repo` | muted |
+| No local repo | `⚠ no repo` | failure/red |
 
 Contextual detail varies by category:
 

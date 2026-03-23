@@ -94,13 +94,13 @@ All types are exported for use by other packages:
   1. Upsert each fresh PR by ID (`owner/repo#number`) — updates all GitHub-sourced fields while **preserving** agent columns (`agent_session_id`, `agent_status`, `agent_category`, `agent_head_sha`, `agent_summary`)
   2. Archive PRs not in the fresh batch — set `state = "archived"` (do not delete)
   3. Reactivate archived PRs that reappear — set `state = "open"`
-- **Load**: `DBLoadPullRequests` filters to `state = "open"` AND `ignored = 0` AND `repo NOT IN (SELECT repo FROM cc_ignored_repos)` by default
+- **Load**: `DBLoadPullRequests` filters to `state != "archived"` AND `ignored = 0` AND `repo NOT IN (SELECT repo FROM cc_ignored_repos)`, ordered by `last_activity_at DESC`
 - `DBUpdatePRAgentStatus(db, prID, agentStatus, agentSessionID, agentCategory, agentHeadSHA, agentSummary)` — focused update for agent tracking columns on a single PR
 - `DBSetPRIgnored(db, prID, ignored bool)` — sets the `ignored` flag on a single PR
 - `DBAddIgnoredRepo(db, repo string)` — inserts a repo into `cc_ignored_repos` (INSERT OR IGNORE)
 - `DBRemoveIgnoredRepo(db, repo string)` — removes a repo from `cc_ignored_repos`
 - `DBLoadIgnoredRepos(db)` — returns all repos in `cc_ignored_repos` as `[]string`
-- `DBLoadIgnoredPRs(db)` — returns all PRs with `ignored = 1` (regardless of state)
+- `DBLoadIgnoredPRs(db)` — returns all non-archived PRs with `ignored = 1`
 
 ### Bulk Refresh
 - `DBSaveRefreshResult` -- atomically replaces all refresh-managed data (todos, threads, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`.
@@ -223,4 +223,4 @@ All types are exported for use by other packages:
 - `DBAddIgnoredRepo` + `DBLoadPullRequests` excludes all PRs from that repo
 - `DBRemoveIgnoredRepo` restores PRs from that repo to query results
 - `DBLoadIgnoredRepos` returns all ignored repos
-- `DBLoadIgnoredPRs` returns PRs with `ignored = 1` regardless of state
+- `DBLoadIgnoredPRs` returns non-archived PRs with `ignored = 1`
