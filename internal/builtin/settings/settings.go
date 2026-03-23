@@ -969,6 +969,10 @@ func (p *Plugin) buildFormForSlug(item *NavItem) (*huh.Form, tea.Cmd) {
 			form := p.buildDatasourceForm(item)
 			return form, form.Init()
 		case "plugin":
+			if item.Slug == "prs" {
+				form := p.buildPRSettingsForm()
+				return form, form.Init()
+			}
 			form := p.buildPluginForm(item)
 			if form != nil {
 				return form, form.Init()
