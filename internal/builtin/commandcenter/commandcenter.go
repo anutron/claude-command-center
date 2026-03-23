@@ -8,6 +8,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -150,7 +151,8 @@ type Plugin struct {
 	flashMessageAt time.Time
 
 	// Agent sessions
-	agentRunner agent.Runner
+	agentRunner     agent.Runner
+	daemonClientFunc func() *daemon.Client // nil-safe getter; set after Init by TUI host
 
 	// Session viewer
 	sessionViewerActive       bool
@@ -837,6 +839,20 @@ func (p *Plugin) detailTodoActiveIndex() int {
 		}
 	}
 	return -1
+}
+
+// SetDaemonClientFunc wires the daemon client getter so the command center
+// can route agent operations through the daemon when connected.
+func (p *Plugin) SetDaemonClientFunc(fn func() *daemon.Client) {
+	p.daemonClientFunc = fn
+}
+
+// daemonClient returns the daemon RPC client, or nil if not connected.
+func (p *Plugin) daemonClient() *daemon.Client {
+	if p.daemonClientFunc == nil {
+		return nil
+	}
+	return p.daemonClientFunc()
 }
 
 // SubView returns the current sub-view name.
