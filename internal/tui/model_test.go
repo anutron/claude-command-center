@@ -40,8 +40,8 @@ func TestNewModel(t *testing.T) {
 	if m.Launch != nil {
 		t.Error("expected Launch to be nil initially")
 	}
-	if len(m.tabs) != 5 {
-		t.Errorf("expected 5 tabs, got %d", len(m.tabs))
+	if len(m.tabs) != 6 {
+		t.Errorf("expected 6 tabs, got %d", len(m.tabs))
 	}
 }
 
@@ -55,38 +55,44 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 
 	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
-	// Tab forward
+	// Tab forward through all 6 tabs: Active(0), New Session(1), Resume(2), Command(3), PRs(4), Settings(5)
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
+	if m.activeTab != tabLaunch {
+		t.Errorf("expected tabLaunch after one tab, got %d", m.activeTab)
+	}
+
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = result.(Model)
 	if m.activeTab != tabResume {
-		t.Errorf("expected tabResume after one tab, got %d", m.activeTab)
+		t.Errorf("expected tabResume after two tabs, got %d", m.activeTab)
 	}
 
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
 	if m.activeTab != tabCommand {
-		t.Errorf("expected tabCommand after two tabs, got %d", m.activeTab)
+		t.Errorf("expected tabCommand after three tabs, got %d", m.activeTab)
 	}
 
-	// PRs tab (index 3)
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	m = result.(Model)
-	if m.activeTab != 3 {
-		t.Errorf("expected tab 3 (PRs) after three tabs, got %d", m.activeTab)
-	}
-
-	// Settings tab (index 4)
+	// PRs tab (index 4)
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
 	if m.activeTab != 4 {
-		t.Errorf("expected tab 4 (Settings) after four tabs, got %d", m.activeTab)
+		t.Errorf("expected tab 4 (PRs) after four tabs, got %d", m.activeTab)
 	}
 
-	// Wrap back to tabNew
+	// Settings tab (index 5)
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = result.(Model)
+	if m.activeTab != 5 {
+		t.Errorf("expected tab 5 (Settings) after five tabs, got %d", m.activeTab)
+	}
+
+	// Wrap back to tabNew (0)
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
 	if m.activeTab != tabNew {
-		t.Errorf("expected tabNew after five tabs (wrap), got %d", m.activeTab)
+		t.Errorf("expected tabNew after six tabs (wrap), got %d", m.activeTab)
 	}
 }
 
@@ -198,23 +204,22 @@ func TestPluginTabMapping(t *testing.T) {
 
 	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
-	// First two tabs should be sessions plugin
-	if m.tabs[0].plugin.Slug() != "sessions" {
-		t.Errorf("expected tab 0 to be sessions, got %s", m.tabs[0].plugin.Slug())
-	}
-	if m.tabs[1].plugin.Slug() != "sessions" {
-		t.Errorf("expected tab 1 to be sessions, got %s", m.tabs[1].plugin.Slug())
+	// First three tabs should be sessions plugin (Active, New Session, Resume)
+	for i := 0; i < 3; i++ {
+		if m.tabs[i].plugin.Slug() != "sessions" {
+			t.Errorf("expected tab %d to be sessions, got %s", i, m.tabs[i].plugin.Slug())
+		}
 	}
 	// Next should be commandcenter
-	if m.tabs[2].plugin.Slug() != "commandcenter" {
-		t.Errorf("expected tab 2 to be commandcenter, got %s", m.tabs[2].plugin.Slug())
+	if m.tabs[3].plugin.Slug() != "commandcenter" {
+		t.Errorf("expected tab 3 to be commandcenter, got %s", m.tabs[3].plugin.Slug())
 	}
 	// Next should be prs
-	if m.tabs[3].plugin.Slug() != "prs" {
-		t.Errorf("expected tab 3 to be prs, got %s", m.tabs[3].plugin.Slug())
+	if m.tabs[4].plugin.Slug() != "prs" {
+		t.Errorf("expected tab 4 to be prs, got %s", m.tabs[4].plugin.Slug())
 	}
 	// Last tab should be settings
-	if m.tabs[4].plugin.Slug() != "settings" {
-		t.Errorf("expected tab 4 to be settings, got %s", m.tabs[4].plugin.Slug())
+	if m.tabs[5].plugin.Slug() != "settings" {
+		t.Errorf("expected tab 5 to be settings, got %s", m.tabs[5].plugin.Slug())
 	}
 }

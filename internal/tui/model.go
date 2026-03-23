@@ -34,9 +34,10 @@ var _ plugin.Starter = (*commandcenter.Plugin)(nil)
 type tab int
 
 const (
-	tabNew tab = iota
-	tabResume
-	tabCommand
+	tabNew     tab = iota // "Active" sessions tab
+	tabLaunch             // "New Session" launcher tab
+	tabResume             // "Resume" bookmarked sessions tab
+	tabCommand            // "Command Center" tab
 )
 
 type tabEntry struct {
@@ -83,8 +84,9 @@ type Model struct {
 	db *sql.DB
 
 	// Daemon connection for session registry and event subscription.
-	daemonConn *DaemonConn
-	bus        plugin.EventBus
+	daemonConn   *DaemonConn
+	sessionsPlug *sessions.Plugin
+	bus          plugin.EventBus
 }
 
 // NewModel creates the main TUI model with plugins.
@@ -132,6 +134,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	// Build the full tab list (allTabs); rebuildTabs filters to visible.
 	var allTabs []tabEntry
 	allTabs = append(allTabs,
+		tabEntry{label: "Active", plugin: sessPlug, route: "active", ownerSlug: "sessions"},
 		tabEntry{label: "New Session", plugin: sessPlug, route: "new", ownerSlug: "sessions"},
 		tabEntry{label: "Resume", plugin: sessPlug, route: "resume", ownerSlug: "sessions"},
 		tabEntry{label: "Command Center", plugin: ccPlug, route: "commandcenter", ownerSlug: "commandcenter"},
@@ -167,14 +170,15 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	allPlugins = append(allPlugins, extPlugins...)
 
 	m := Model{
-		cfg:        cfg,
-		styles:     styles,
-		grad:       grad,
-		allTabs:    allTabs,
-		activeTab:  0,
-		allPlugins: allPlugins,
-		db:         database,
-		bus:        bus,
+		cfg:          cfg,
+		styles:       styles,
+		grad:         grad,
+		allTabs:      allTabs,
+		activeTab:    0,
+		allPlugins:   allPlugins,
+		db:           database,
+		sessionsPlug: sessPlug,
+		bus:          bus,
 	}
 	m.rebuildTabs()
 	return m
@@ -246,6 +250,10 @@ func (m *Model) SetReturnContext(todoID string, wasResumeJoin bool) {
 // Must be called before the program is run.
 func (m *Model) SetDaemonConn(dc *DaemonConn) {
 	m.daemonConn = dc
+	// Wire daemon client getter into the sessions plugin for the active view.
+	if m.sessionsPlug != nil {
+		m.sessionsPlug.SetDaemonClientFunc(dc.Client)
+	}
 }
 
 // DaemonClient returns the daemon RPC client, or nil if not connected.

@@ -392,28 +392,29 @@ func TestTypeToFilterNewTab(t *testing.T) {
 	p.newList.SetItems(p.buildNewItems())
 
 	// Typing a character should immediately start filtering (no '/' needed)
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
-	if p.filterText != "a" {
-		t.Fatalf("expected filterText 'a', got %q", p.filterText)
+	// Note: 'a' is a sub-tab shortcut, so use 'b' which is not a shortcut.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if p.filterText != "b" {
+		t.Fatalf("expected filterText 'b', got %q", p.filterText)
 	}
 
 	// Type more chars
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
-	if p.filterText != "alp" {
-		t.Fatalf("expected filterText 'alp', got %q", p.filterText)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	if p.filterText != "bet" {
+		t.Fatalf("expected filterText 'bet', got %q", p.filterText)
 	}
 
 	// Visible items should be filtered
 	visible := p.newList.VisibleItems()
 	if len(visible) != 1 {
-		t.Fatalf("expected 1 visible item after filtering 'alp', got %d", len(visible))
+		t.Fatalf("expected 1 visible item after filtering 'bet', got %d", len(visible))
 	}
 
 	// Backspace should edit the filter
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyBackspace})
-	if p.filterText != "al" {
-		t.Fatalf("expected filterText 'al', got %q after backspace", p.filterText)
+	if p.filterText != "be" {
+		t.Fatalf("expected filterText 'be', got %q after backspace", p.filterText)
 	}
 
 	// Escape should clear the filter
