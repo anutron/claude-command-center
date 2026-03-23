@@ -204,6 +204,72 @@ func TestDBSavePullRequests_ReactivatesArchivedPRs(t *testing.T) {
 	}
 }
 
+func TestDBSetPRIgnored(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+
+	now := time.Now()
+	tx, _ := d.Begin()
+	DBSavePullRequests(tx, []PullRequest{
+		{ID: "r#1", Repo: "r", Number: 1, Title: "T", URL: "u", Author: "a",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now, FetchedAt: now},
+	})
+	tx.Commit()
+
+	// Ignore
+	if err := DBSetPRIgnored(d, "r#1", true); err != nil {
+		t.Fatal(err)
+	}
+	var ignored bool
+	d.QueryRow(`SELECT ignored FROM cc_pull_requests WHERE id='r#1'`).Scan(&ignored)
+	if !ignored {
+		t.Error("expected ignored=true")
+	}
+
+	// Restore
+	if err := DBSetPRIgnored(d, "r#1", false); err != nil {
+		t.Fatal(err)
+	}
+	d.QueryRow(`SELECT ignored FROM cc_pull_requests WHERE id='r#1'`).Scan(&ignored)
+	if ignored {
+		t.Error("expected ignored=false")
+	}
+}
+
+func TestDBIgnoredRepos_AddRemoveLoad(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+
+	// Add
+	if err := DBAddIgnoredRepo(d, "org/repo-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := DBAddIgnoredRepo(d, "org/repo-b"); err != nil {
+		t.Fatal(err)
+	}
+	// Duplicate is no-op
+	if err := DBAddIgnoredRepo(d, "org/repo-a"); err != nil {
+		t.Fatal(err)
+	}
+
+	repos, err := DBLoadIgnoredRepos(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 2 {
+		t.Errorf("expected 2 repos, got %d", len(repos))
+	}
+
+	// Remove
+	if err := DBRemoveIgnoredRepo(d, "org/repo-a"); err != nil {
+		t.Fatal(err)
+	}
+	repos, _ = DBLoadIgnoredRepos(d)
+	if len(repos) != 1 || repos[0] != "org/repo-b" {
+		t.Errorf("expected [org/repo-b], got %v", repos)
+	}
+}
+
 func TestDBUpdatePRAgentStatus(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

@@ -556,6 +556,25 @@ func DBLoadMerges(database *sql.DB) ([]TodoMerge, error) {
 	return merges, rows.Err()
 }
 
+// DBLoadIgnoredRepos returns all repos in the ignore list, sorted alphabetically.
+func DBLoadIgnoredRepos(d *sql.DB) ([]string, error) {
+	rows, err := d.Query(`SELECT repo FROM cc_ignored_repos ORDER BY repo`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var repos []string
+	for rows.Next() {
+		var repo string
+		if err := rows.Scan(&repo); err != nil {
+			return nil, err
+		}
+		repos = append(repos, repo)
+	}
+	return repos, rows.Err()
+}
+
 // DBIsEmpty returns true if no todos exist in the database yet.
 func DBIsEmpty(db *sql.DB) bool {
 	var count int

@@ -451,6 +451,24 @@ func DBSavePullRequests(tx *sql.Tx, prs []PullRequest) error {
 	return nil
 }
 
+// DBSetPRIgnored sets or clears the ignored flag on a pull request.
+func DBSetPRIgnored(d *sql.DB, id string, ignored bool) error {
+	_, err := d.Exec(`UPDATE cc_pull_requests SET ignored = ? WHERE id = ?`, ignored, id)
+	return err
+}
+
+// DBAddIgnoredRepo adds a repo to the ignore list.
+func DBAddIgnoredRepo(d *sql.DB, repo string) error {
+	_, err := d.Exec(`INSERT OR IGNORE INTO cc_ignored_repos (repo) VALUES (?)`, repo)
+	return err
+}
+
+// DBRemoveIgnoredRepo removes a repo from the ignore list.
+func DBRemoveIgnoredRepo(d *sql.DB, repo string) error {
+	_, err := d.Exec(`DELETE FROM cc_ignored_repos WHERE repo = ?`, repo)
+	return err
+}
+
 // DBUpdatePRAgentStatus updates the agent tracking columns for a pull request.
 func DBUpdatePRAgentStatus(d *sql.DB, id, agentStatus, agentSessionID, agentCategory, agentHeadSHA, agentSummary string) error {
 	_, err := d.Exec(`UPDATE cc_pull_requests SET
