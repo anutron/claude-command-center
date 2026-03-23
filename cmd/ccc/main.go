@@ -28,6 +28,36 @@ func main() {
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "--daemon-internal":
+			if err := runDaemonInternal(); err != nil {
+				fmt.Fprintf(os.Stderr, "Daemon error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "daemon":
+			if err := runDaemon(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "register":
+			if err := runRegister(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "update-session":
+			if err := runUpdateSession(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "refresh":
+			if err := runRefreshCmd(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "doctor":
 			fmt.Println("Claude Command Center — Doctor")
 			fmt.Println()
@@ -270,6 +300,12 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  paths                List learned project paths (--json, --auto-describe, --add-rule)")
 	fmt.Fprintln(os.Stderr, "  worktrees            List CCC-managed git worktrees")
 	fmt.Fprintln(os.Stderr, "  worktrees prune      Remove all CCC worktrees (or prune [path] for one repo)")
+	fmt.Fprintln(os.Stderr, "  daemon start         Start the background daemon")
+	fmt.Fprintln(os.Stderr, "  daemon stop          Stop the background daemon")
+	fmt.Fprintln(os.Stderr, "  daemon status        Check daemon status")
+	fmt.Fprintln(os.Stderr, "  register             Register a session with the daemon")
+	fmt.Fprintln(os.Stderr, "  update-session       Update a session's topic")
+	fmt.Fprintln(os.Stderr, "  refresh              Trigger a data refresh via daemon")
 	fmt.Fprintln(os.Stderr, "  sessions             Same as default")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Options:")
