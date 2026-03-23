@@ -546,6 +546,49 @@ func DBLoadMerges(database *sql.DB) ([]TodoMerge, error) {
 	return merges, rows.Err()
 }
 
+// ---------------------------------------------------------------------------
+// Read methods -- Sessions (daemon registry)
+// ---------------------------------------------------------------------------
+
+// DBLoadSessions loads all sessions ordered by registered_at DESC.
+func DBLoadSessions(d *sql.DB) ([]SessionRecord, error) {
+	return dbLoadSessionsWhere(d, "1=1")
+}
+
+// DBLoadActiveSessions loads sessions where state is "active" or "ended",
+// ordered by registered_at DESC.
+func DBLoadActiveSessions(d *sql.DB) ([]SessionRecord, error) {
+	return dbLoadSessionsWhere(d, "state IN ('active', 'ended')")
+}
+
+func dbLoadSessionsWhere(d *sql.DB, where string) ([]SessionRecord, error) {
+	rows, err := d.Query(`SELECT session_id, topic, pid, project, repo, branch,
+		worktree_path, state, registered_at, ended_at
+		FROM cc_sessions WHERE ` + where + ` ORDER BY registered_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []SessionRecord
+	for rows.Next() {
+		var s SessionRecord
+		var topic, project, repo, branch, worktreePath, endedAt sql.NullString
+		if err := rows.Scan(&s.SessionID, &topic, &s.PID, &project, &repo, &branch,
+			&worktreePath, &s.State, &s.RegisteredAt, &endedAt); err != nil {
+			return nil, err
+		}
+		s.Topic = topic.String
+		s.Project = project.String
+		s.Repo = repo.String
+		s.Branch = branch.String
+		s.WorktreePath = worktreePath.String
+		s.EndedAt = endedAt.String
+		sessions = append(sessions, s)
+	}
+	return sessions, rows.Err()
+}
+
 // DBIsEmpty returns true if no todos exist in the database yet.
 func DBIsEmpty(db *sql.DB) bool {
 	var count int
