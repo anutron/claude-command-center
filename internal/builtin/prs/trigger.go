@@ -40,9 +40,20 @@ func (p *Plugin) evaluateAgentTriggers() tea.Cmd {
 	if p.agentRunner == nil {
 		return nil
 	}
+
+	// Build a set of IDs already active or queued in the runner to avoid
+	// re-triggering even if the DB status write hasn't been read back yet.
+	activeIDs := make(map[string]bool)
+	for _, info := range p.agentRunner.Active() {
+		activeIDs[info.ID] = true
+	}
+
 	var cmds []tea.Cmd
 	for _, pr := range p.prs {
 		if !needsAgent(pr) {
+			continue
+		}
+		if activeIDs[pr.ID] {
 			continue
 		}
 		dir := p.resolveRepoDir(pr.Repo)
@@ -68,8 +79,10 @@ func (p *Plugin) evaluateAgentTriggers() tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 		// Mark as pending immediately so we don't re-trigger on the next tick.
-		_ = db.DBUpdatePRAgentStatus(p.database, prCopy.ID,
-			"pending", "", prCopy.Category, prCopy.HeadSHA, "")
+		if err := db.DBUpdatePRAgentStatus(p.database, prCopy.ID,
+			"pending", "", prCopy.Category, prCopy.HeadSHA, ""); err != nil {
+			p.logger.Error("prs", fmt.Sprintf("failed to set PR %s agent status to pending: %v", prCopy.ID, err))
+		}
 	}
 	if len(cmds) == 0 {
 		return nil

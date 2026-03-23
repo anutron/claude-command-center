@@ -204,6 +204,26 @@ On every PR data load (after `data.refreshed` or 30s tick), scan for PRs matchin
 3. Agent commits (towards V2) → you push (V2, new SHA) → enters "respond" again → `head_sha != agent_head_sha` → new agent fires
 4. Cycle repeats
 
+### Deduplication & Safety
+
+Three layers prevent runaway agent spawning:
+
+1. **`needsAgent` predicate** — returns false if `agent_status` is `"running"` or `"pending"` (DB-level guard)
+2. **`evaluateAgentTriggers` active-set check** — queries `agentRunner.Active()` and skips PRs with an existing active session (in-memory guard, protects against DB read lag)
+3. **`LaunchOrQueue` dedup** — rejects requests whose ID is already in the active session map or the queue (runner-level guard, prevents any caller from double-launching)
+
+### Agent Status Lifecycle (PR Plugin)
+
+The PR plugin handles agent lifecycle messages in `HandleMessage`:
+
+| Message | DB Update | In-Memory Update |
+|---------|-----------|-----------------|
+| `SessionStartedMsg` | `agent_status = "running"` | Update `p.prs` status |
+| `SessionIDCapturedMsg` | `agent_session_id = <id>` | Update `p.prs` session ID |
+| `SessionFinishedMsg` | `agent_status = "completed"/"failed"`, `agent_summary` | Update `p.prs` status |
+
+Messages are matched to PRs by checking if `msg.ID` exists in `p.prs` (PR IDs are `"owner/repo#number"`).
+
 ### Sandbox Constraints
 
 PR agents run with restricted permissions (autonomous profile):

@@ -6,6 +6,7 @@ package prs
 import (
 	"bufio"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,6 +154,46 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		}
 		return true, plugin.NoopAction()
 
+	case agent.SessionStartedMsg:
+		if p.isPRAgent(msg.ID) {
+			if err := db.DBUpdatePRAgentStatus(p.database, msg.ID,
+				"running", "", "", "", ""); err != nil {
+				p.logger.Error("prs", fmt.Sprintf("agent status update (running) failed for %s: %v", msg.ID, err))
+			}
+			p.updatePRAgentStatus(msg.ID, "running")
+			return true, plugin.NoopAction()
+		}
+
+	case agent.SessionIDCapturedMsg:
+		if p.isPRAgent(msg.ID) {
+			if err := db.DBUpdatePRAgentStatus(p.database, msg.ID,
+				"running", msg.SessionID, "", "", ""); err != nil {
+				p.logger.Error("prs", fmt.Sprintf("agent session ID update failed for %s: %v", msg.ID, err))
+			}
+			p.updatePRSessionID(msg.ID, msg.SessionID)
+			return true, plugin.NoopAction()
+		}
+
+	case agent.SessionFinishedMsg:
+		if p.isPRAgent(msg.ID) {
+			status := "completed"
+			if msg.ExitCode != 0 {
+				status = "failed"
+			}
+			var summary string
+			if p.agentRunner != nil {
+				if sess := p.agentRunner.Session(msg.ID); sess != nil {
+					summary = agent.ExtractSessionSummary(sess)
+				}
+			}
+			if err := db.DBUpdatePRAgentStatus(p.database, msg.ID,
+				status, "", "", "", summary); err != nil {
+				p.logger.Error("prs", fmt.Sprintf("agent status update (%s) failed for %s: %v", status, msg.ID, err))
+			}
+			p.updatePRAgentStatus(msg.ID, status)
+			return true, plugin.NoopAction()
+		}
+
 	case ui.TickMsg:
 		// Periodically reload PR data from DB.
 		if p.database != nil && time.Since(p.lastLoaded) >= p.RefreshInterval() {
@@ -212,6 +253,37 @@ func (p *Plugin) resolveRepoDir(repo string) string {
 		}
 	}
 	return ""
+}
+
+// isPRAgent returns true if the given agent ID matches a PR in our list.
+// PR agent IDs are PR IDs like "owner/repo#123".
+func (p *Plugin) isPRAgent(id string) bool {
+	for _, pr := range p.prs {
+		if pr.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// updatePRAgentStatus updates the in-memory agent status for a PR.
+func (p *Plugin) updatePRAgentStatus(id, status string) {
+	for i := range p.prs {
+		if p.prs[i].ID == id {
+			p.prs[i].AgentStatus = status
+			return
+		}
+	}
+}
+
+// updatePRSessionID updates the in-memory agent session ID for a PR.
+func (p *Plugin) updatePRSessionID(id, sessionID string) {
+	for i := range p.prs {
+		if p.prs[i].ID == id {
+			p.prs[i].AgentSessionID = sessionID
+			return
+		}
+	}
 }
 
 // matchesRepo checks if a .git/config file contains a remote URL matching

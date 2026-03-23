@@ -40,6 +40,16 @@ func (r *defaultRunner) canLaunch() bool {
 }
 
 func (r *defaultRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
+	// Dedup: reject if this ID is already active or queued.
+	if _, active := r.activeSessions[req.ID]; active {
+		return false, nil
+	}
+	for _, q := range r.sessionQueue {
+		if q.ID == req.ID {
+			return false, nil
+		}
+	}
+
 	if r.canLaunch() {
 		return false, r.launchSession(req)
 	}
@@ -135,9 +145,19 @@ func (r *defaultRunner) CheckProcesses() tea.Cmd {
 		case <-sess.done:
 			sess.Mu.Lock()
 			exitCode := sess.exitCode
+			sid := sess.SessionID
 			sess.Mu.Unlock()
 			capturedID := id
 			capturedEC := exitCode
+			// Emit SessionIDCapturedMsg before SessionFinishedMsg so the
+			// session ID is persisted even when the agent finishes before
+			// CheckProcesses runs during the "running" phase.
+			if sid != "" {
+				capturedSID := sid
+				cmds = append(cmds, func() tea.Msg {
+					return SessionIDCapturedMsg{ID: capturedID, SessionID: capturedSID}
+				})
+			}
 			cmds = append(cmds, func() tea.Msg {
 				return SessionFinishedMsg{ID: capturedID, ExitCode: capturedEC}
 			})

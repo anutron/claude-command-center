@@ -64,6 +64,42 @@ func TestRunner_CheckProcessesEmpty(t *testing.T) {
 	}
 }
 
+func TestRunner_LaunchOrQueue_DedupActive(t *testing.T) {
+	r := NewRunner(10).(*defaultRunner)
+	// Simulate an active session by placing one directly in the map.
+	r.activeSessions["pr-1"] = &Session{ID: "pr-1"}
+
+	// Attempting to launch the same ID should be silently rejected.
+	queued, cmd := r.LaunchOrQueue(Request{ID: "pr-1", Prompt: "dup"})
+	if queued {
+		t.Error("expected queued=false for duplicate active ID")
+	}
+	if cmd != nil {
+		t.Error("expected nil cmd for duplicate active ID")
+	}
+}
+
+func TestRunner_LaunchOrQueue_DedupQueued(t *testing.T) {
+	r := NewRunner(1).(*defaultRunner)
+	// Fill the active slot so next request gets queued.
+	r.activeSessions["other"] = &Session{ID: "other"}
+
+	// Queue a request.
+	r.sessionQueue = append(r.sessionQueue, Request{ID: "pr-2", Prompt: "first"})
+
+	// Attempting to queue the same ID should be silently rejected.
+	queued, cmd := r.LaunchOrQueue(Request{ID: "pr-2", Prompt: "dup"})
+	if queued {
+		t.Error("expected queued=false for duplicate queued ID")
+	}
+	if cmd != nil {
+		t.Error("expected nil cmd for duplicate queued ID")
+	}
+	if len(r.sessionQueue) != 1 {
+		t.Errorf("expected queue length 1, got %d", len(r.sessionQueue))
+	}
+}
+
 func TestDetectBlockingEvent(t *testing.T) {
 	tests := []struct {
 		name     string
