@@ -30,6 +30,7 @@ type Config struct {
 	Agent           AgentConfig            `yaml:"agent"`
 	Automations     []AutomationConfig     `yaml:"automations,omitempty"`
 	Refresh         RefreshConfig          `yaml:"refresh"`
+	Daemon          DaemonConfig           `yaml:"daemon"`
 
 	// DisabledPlugins lists slugs of built-in plugins the user has turned off.
 	// e.g. ["sessions", "commandcenter"]
@@ -200,6 +201,12 @@ type AgentConfig struct {
 	MaxConcurrent     int     `yaml:"max_concurrent"`
 }
 
+// DaemonConfig holds settings for the CCC daemon process.
+type DaemonConfig struct {
+	RefreshInterval  string `yaml:"refresh_interval"`  // default "5m"
+	SessionRetention string `yaml:"session_retention"` // default "7d"
+}
+
 // RefreshConfig controls ai-cron behavior.
 type RefreshConfig struct {
 	// Model selects which LLM model ai-cron uses for prompt generation.
@@ -249,6 +256,10 @@ func DefaultConfig() *Config {
 			DefaultPermission: "default",
 			DefaultMode:       "normal",
 			MaxConcurrent:     3,
+		},
+		Daemon: DaemonConfig{
+			RefreshInterval:  "5m",
+			SessionRetention: "7d",
 		},
 	}
 }

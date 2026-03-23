@@ -491,6 +491,16 @@ func containsHelper(s, substr string) bool {
 	return false
 }
 
+func TestDaemonConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Daemon.RefreshInterval != "5m" {
+		t.Fatalf("expected 5m, got %s", cfg.Daemon.RefreshInterval)
+	}
+	if cfg.Daemon.SessionRetention != "7d" {
+		t.Fatalf("expected 7d, got %s", cfg.Daemon.SessionRetention)
+	}
+}
+
 func TestParseRefreshInterval(t *testing.T) {
 	tests := []struct {
 		name     string
