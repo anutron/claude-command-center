@@ -262,7 +262,7 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 
 #### Session Lifecycle
 
-1. **Launch or queue**: User presses `enter` in task runner step 3. `launchOrQueueAgent` either starts the session immediately or queues it based on `cfg.Agent.MaxConcurrent` (default 3).
+1. **Launch or queue**: User presses `enter` in task runner step 3. `launchOrQueueAgent` either starts the session immediately or queues it based on `cfg.Agent.MaxConcurrent` (default 10).
 2. **Auto-accept**: Launching/queuing automatically sets the todo's `triage_status` to `"accepted"` so it leaves the "new" inbox.
 3. **Process start**: `launchAgent` spawns `claude --print --output-format stream-json --verbose [flags] <prompt>` as a subprocess. The session's `done` channel and exit code are managed by a background goroutine.
 4. **Monitoring**: A background goroutine reads stdout line-by-line, parsing stream-JSON events. It detects blocking events (tool_use with `SendUserMessage` or `AskUser`) and updates `sess.Status` to `"blocked"` with the question text.
@@ -320,11 +320,11 @@ Completed sessions (`session_status == "review"` or `"failed"`) show:
 | `review` | `● ready for review` | Green |
 | `queued` | `⏳ queued` | Muted |
 
-An agent status header line also appears when sessions are running: `"2/3 agents running, 1 queued"`.
+An agent status header line also appears when sessions are running: `"2/10 agents running, 1 queued"`.
 
 #### Concurrency Management
 
-- `cfg.Agent.MaxConcurrent` controls the max number of simultaneous sessions (default 3)
+- `cfg.Agent.MaxConcurrent` controls the max number of simultaneous sessions (default 10)
 - `canLaunchAgent()` checks `len(activeSessions) < maxConcurrent`
 - Excess sessions are pushed to `sessionQueue` with status `"queued"`
 - Queue is drained FIFO as sessions complete
@@ -493,7 +493,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Agent sessions: triage "Blocked" tab filters todos with session_status "blocked"
 - Agent sessions: triage "Active" tab filters todos with session_status "active"
 - Agent sessions: normal view excludes todos with non-empty session_status from accepted list
-- Agent sessions: concurrency respects cfg.Agent.MaxConcurrent (default 3)
+- Agent sessions: concurrency respects cfg.Agent.MaxConcurrent (default 10)
 - Todo-agent pipeline: eligible todos are active, have a source != "manual", and no proposed_prompt
 - Todo-agent pipeline: with learned paths, calls GenerateTodoPrompt per todo (sets project_dir + proposed_prompt)
 - Todo-agent pipeline: without learned paths, falls back to legacy batch prompt (prompt-only, no project_dir)

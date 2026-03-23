@@ -19,10 +19,10 @@ func TestRunner_NewRunner(t *testing.T) {
 }
 
 func TestRunner_DefaultMaxConcurrent(t *testing.T) {
-	// Passing 0 should default to 3
+	// Passing 0 should default to 10
 	r := NewRunner(0).(*defaultRunner)
-	if r.maxConcurrent != 3 {
-		t.Errorf("expected maxConcurrent=3, got %d", r.maxConcurrent)
+	if r.maxConcurrent != 10 {
+		t.Errorf("expected maxConcurrent=10, got %d", r.maxConcurrent)
 	}
 }
 

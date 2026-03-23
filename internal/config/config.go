@@ -260,7 +260,7 @@ func DefaultConfig() *Config {
 			DefaultBudget:            5.00,
 			DefaultPermission:        "default",
 			DefaultMode:              "normal",
-			MaxConcurrent:            3,
+			MaxConcurrent:            10,
 			AutonomousAllowedDomains: []string{"github.com", "api.github.com"},
 		},
 	}

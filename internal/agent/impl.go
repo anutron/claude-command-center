@@ -27,7 +27,7 @@ type defaultRunner struct {
 // NewRunner creates a new Runner with the given concurrency limit.
 func NewRunner(maxConcurrent int) Runner {
 	if maxConcurrent <= 0 {
-		maxConcurrent = 3
+		maxConcurrent = 10
 	}
 	return &defaultRunner{
 		maxConcurrent:  maxConcurrent,
