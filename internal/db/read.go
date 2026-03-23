@@ -254,7 +254,11 @@ func DBLoadPullRequests(d *sql.DB) ([]PullRequest, error) {
 		comment_count, unresolved_thread_count, last_activity_at,
 		ci_status, category, fetched_at,
 		state, head_sha, agent_session_id, agent_status, agent_category, agent_head_sha, agent_summary
-		FROM cc_pull_requests WHERE state != 'archived' ORDER BY last_activity_at DESC`)
+		FROM cc_pull_requests
+		WHERE state != 'archived'
+		  AND ignored = 0
+		  AND repo NOT IN (SELECT repo FROM cc_ignored_repos)
+		ORDER BY last_activity_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -573,6 +577,26 @@ func DBLoadIgnoredRepos(d *sql.DB) ([]string, error) {
 		repos = append(repos, repo)
 	}
 	return repos, rows.Err()
+}
+
+// DBLoadIgnoredPRs returns all ignored but non-archived PRs (for settings pane).
+func DBLoadIgnoredPRs(d *sql.DB) ([]PullRequest, error) {
+	rows, err := d.Query(`SELECT id, repo, number, title, url, author
+		FROM cc_pull_requests WHERE ignored = 1 AND state != 'archived'
+		ORDER BY last_activity_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var prs []PullRequest
+	for rows.Next() {
+		var pr PullRequest
+		if err := rows.Scan(&pr.ID, &pr.Repo, &pr.Number, &pr.Title, &pr.URL, &pr.Author); err != nil {
+			return nil, err
+		}
+		prs = append(prs, pr)
+	}
+	return prs, nil
 }
 
 // DBIsEmpty returns true if no todos exist in the database yet.

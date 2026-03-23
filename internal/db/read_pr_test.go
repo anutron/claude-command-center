@@ -54,3 +54,78 @@ func TestDBLoadPullRequests_ReadsAgentColumns(t *testing.T) {
 		t.Errorf("HeadSHA not loaded: got %q", prs[0].HeadSHA)
 	}
 }
+
+func TestDBLoadPullRequests_FiltersIgnoredPRs(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+
+	now := time.Now()
+	tx, _ := d.Begin()
+	DBSavePullRequests(tx, []PullRequest{
+		{ID: "r#1", Repo: "r", Number: 1, Title: "Visible", URL: "u", Author: "a",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now, FetchedAt: now},
+		{ID: "r#2", Repo: "r", Number: 2, Title: "Ignored", URL: "u", Author: "a",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now, FetchedAt: now},
+	})
+	tx.Commit()
+
+	DBSetPRIgnored(d, "r#2", true)
+
+	prs, err := DBLoadPullRequests(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 1 || prs[0].ID != "r#1" {
+		t.Errorf("expected 1 visible PR, got %d", len(prs))
+	}
+}
+
+func TestDBLoadPullRequests_FiltersIgnoredRepos(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+
+	now := time.Now()
+	tx, _ := d.Begin()
+	DBSavePullRequests(tx, []PullRequest{
+		{ID: "good/repo#1", Repo: "good/repo", Number: 1, Title: "Visible", URL: "u", Author: "a",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now, FetchedAt: now},
+		{ID: "bad/repo#1", Repo: "bad/repo", Number: 1, Title: "Hidden", URL: "u", Author: "a",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now, FetchedAt: now},
+	})
+	tx.Commit()
+
+	DBAddIgnoredRepo(d, "bad/repo")
+
+	prs, err := DBLoadPullRequests(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 1 || prs[0].Repo != "good/repo" {
+		t.Errorf("expected 1 PR from good/repo, got %d", len(prs))
+	}
+}
+
+func TestDBLoadIgnoredPRs(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+
+	now := time.Now()
+	tx, _ := d.Begin()
+	DBSavePullRequests(tx, []PullRequest{
+		{ID: "r#1", Repo: "r", Number: 1, Title: "Ignored", URL: "u", Author: "a",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now, FetchedAt: now},
+		{ID: "r#2", Repo: "r", Number: 2, Title: "Not Ignored", URL: "u", Author: "a",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now, FetchedAt: now},
+	})
+	tx.Commit()
+
+	DBSetPRIgnored(d, "r#1", true)
+
+	prs, err := DBLoadIgnoredPRs(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 1 || prs[0].ID != "r#1" {
+		t.Errorf("expected 1 ignored PR, got %d", len(prs))
+	}
+}
