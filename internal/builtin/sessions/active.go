@@ -15,6 +15,7 @@ import (
 // from the daemon's session registry.
 type activeView struct {
 	sessions     []daemon.SessionInfo
+	agentsByID   map[string]daemon.AgentStatusResult // agent status keyed by session ID
 	cursor       int
 	daemonClient func() *daemon.Client // nil-safe getter
 	styles       sessionStyles
@@ -46,6 +47,19 @@ func (av *activeView) Refresh() {
 	// Clamp cursor
 	if av.cursor >= len(av.sessions) {
 		av.cursor = max(0, len(av.sessions)-1)
+	}
+
+	// Fetch agent statuses to detect blocked sessions.
+	av.agentsByID = nil
+	agents, err := client.ListAgents()
+	if err != nil {
+		return
+	}
+	if len(agents) > 0 {
+		av.agentsByID = make(map[string]daemon.AgentStatusResult, len(agents))
+		for _, a := range agents {
+			av.agentsByID[a.ID] = a
+		}
 	}
 }
 
@@ -127,10 +141,14 @@ func (av *activeView) View(width, height int) string {
 			lines = append(lines, av.styles.sectionHeader.Render("  "+item.project))
 		}
 
-		// Status indicator
+		// Status indicator: green=active, yellow=blocked, gray=ended
 		var indicator string
 		if item.session.State == "running" {
-			indicator = lipgloss.NewStyle().Foreground(lipgloss.Color("#50fa7b")).Render("●")
+			if av.isSessionBlocked(item.session.SessionID) {
+				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color("#f1fa8c")).Render("●")
+			} else {
+				indicator = lipgloss.NewStyle().Foreground(lipgloss.Color("#50fa7b")).Render("●")
+			}
 		} else {
 			indicator = av.styles.descMuted.Render("○")
 		}
@@ -145,8 +163,12 @@ func (av *activeView) View(width, height int) string {
 			}
 		}
 
-		// Age
+		// Age + blocked annotation
 		age := sessionAge(item.session.RegisteredAt)
+		var statusAnnotation string
+		if item.session.State == "running" && av.isSessionBlocked(item.session.SessionID) {
+			statusAnnotation = lipgloss.NewStyle().Foreground(lipgloss.Color("#f1fa8c")).Render("Blocked")
+		}
 
 		// Build the line
 		pointer := "  "
@@ -159,11 +181,16 @@ func (av *activeView) View(width, height int) string {
 			labelStyle = av.styles.selectedItem
 		}
 
+		suffix := av.styles.descMuted.Render(age)
+		if statusAnnotation != "" {
+			suffix = statusAnnotation + "  " + suffix
+		}
+
 		line := fmt.Sprintf("%s%s %s  %s",
 			pointer,
 			indicator,
 			labelStyle.Render(label),
-			av.styles.descMuted.Render(age),
+			suffix,
 		)
 		lines = append(lines, line)
 		itemIdx++
@@ -217,6 +244,26 @@ func (av *activeView) RemoveSession(sessionID string) {
 			return
 		}
 	}
+}
+
+// isSessionBlocked checks if a session has a CCC-spawned agent in "blocked" state.
+// It matches by session ID against the agent statuses fetched during Refresh().
+func (av *activeView) isSessionBlocked(sessionID string) bool {
+	if len(av.agentsByID) == 0 || sessionID == "" {
+		return false
+	}
+	// Agents are keyed by their launch ID (todo ID), but AgentStatusResult has
+	// a SessionID field. Check all agents for a matching session ID with blocked status.
+	for _, a := range av.agentsByID {
+		if a.SessionID == sessionID && a.Status == "blocked" {
+			return true
+		}
+		// Also check by agent ID directly (session ID may be the agent's ID in some flows).
+		if a.ID == sessionID && a.Status == "blocked" {
+			return true
+		}
+	}
+	return false
 }
 
 // parseTime parses an RFC3339 time string, returning zero time on failure.
