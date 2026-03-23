@@ -251,7 +251,7 @@ func (p *Plugin) renderAgentStatus(pr db.PullRequest) string {
 
 // renderHints renders the bottom hint line.
 func (p *Plugin) renderHints() string {
-	hints := p.styles.Hint.Render("1-4 switch tab   <-/-> cycle   j/k navigate   enter review   o open   w watch   r refresh")
+	hints := p.styles.Hint.Render("1-4 tab  j/k nav  enter review/respond  o open  w watch  i ignore  r refresh")
 	return "\n" + lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hints)
 }
 
