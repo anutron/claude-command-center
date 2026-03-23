@@ -13,6 +13,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/ui"
@@ -32,6 +33,12 @@ type Plugin struct {
 	bus         plugin.EventBus
 	agentRunner agent.Runner
 	rowStyle    prRowStyle
+
+	// daemonClient returns the daemon RPC client, or nil if not connected.
+	// When available, agent operations go through the daemon instead of the
+	// local agentRunner. This allows graceful degradation: if the daemon is
+	// not connected, the plugin falls back to direct agentRunner calls.
+	daemonClient func() *daemon.Client
 
 	prs        []db.PullRequest
 	activeTab  int    // 0=waiting, 1=respond, 2=review, 3=stale
@@ -92,6 +99,20 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 
 // Shutdown cleans up plugin resources.
 func (p *Plugin) Shutdown() {}
+
+// SetDaemonClientFunc wires the daemon client getter so agent operations
+// go through the daemon RPC instead of the local runner.
+func (p *Plugin) SetDaemonClientFunc(fn func() *daemon.Client) {
+	p.daemonClient = fn
+}
+
+// getDaemonClient returns the daemon client if available, nil otherwise.
+func (p *Plugin) getDaemonClient() *daemon.Client {
+	if p.daemonClient == nil {
+		return nil
+	}
+	return p.daemonClient()
+}
 
 // Migrations returns DB migrations for the PR tracking plugin.
 func (p *Plugin) Migrations() []plugin.Migration {

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -11,10 +13,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/automation"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
+	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/refresh"
 	calendarsrc "github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
 	githubsrc "github.com/anutron/claude-command-center/internal/refresh/sources/github"
@@ -231,7 +235,8 @@ func runDaemonInternal() error {
 	return srv.Serve()
 }
 
-// runRefresh builds data sources and runs a refresh cycle (same logic as ai-cron).
+// runRefresh builds data sources, runs a refresh cycle, and then executes
+// any configured automations (same logic as ai-cron but running inside the daemon).
 func runRefresh(cfg *config.Config, database *sql.DB) error {
 	var l llm.LLM
 	if llm.Available() {
@@ -255,9 +260,38 @@ func runRefresh(cfg *config.Config, database *sql.DB) error {
 		granolasrc.New(cfg.Granola.Enabled, l, database),
 	}
 
-	return refresh.Run(refresh.Options{
+	if err := refresh.Run(refresh.Options{
 		DB:      database,
 		Sources: sources,
 		LLM:     l,
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Run automations after successful data refresh.
+	if len(cfg.Automations) > 0 {
+		logPath := filepath.Join(config.DataDir(), "automation.log")
+		logger, err := plugin.NewFileLogger(logPath)
+		if err != nil {
+			log.Printf("Warning: could not create automation logger: %v", err)
+			return nil // Don't fail the refresh for automation logger issues.
+		}
+		defer logger.Close()
+
+		autoRunner := automation.Runner{
+			Automations: cfg.Automations,
+			Config:      cfg,
+			DBPath:      config.DBPath(),
+			Logger:      logger,
+			LogPath:     logPath,
+		}
+		results := autoRunner.RunAll(context.Background(), "daemon-refresh")
+		for _, r := range results {
+			if r.Status == "error" {
+				log.Printf("automation %s: %s (%s)", r.Name, r.Message, r.Elapsed)
+			}
+		}
+	}
+
+	return nil
 }

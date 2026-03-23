@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/anutron/claude-command-center/internal/agent"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -35,11 +36,14 @@ func needsAgent(pr db.PullRequest) bool {
 }
 
 // evaluateAgentTriggers scans loaded PRs and spawns agents for any that
-// qualify. Safe to call when agentRunner is nil (returns nil).
+// qualify. Prefers the daemon RPC for agent operations; falls back to the
+// local agentRunner if the daemon is not connected.
 func (p *Plugin) evaluateAgentTriggers() tea.Cmd {
-	if p.agentRunner == nil {
+	client := p.getDaemonClient()
+	if client == nil && p.agentRunner == nil {
 		return nil
 	}
+
 	var cmds []tea.Cmd
 	for _, pr := range p.prs {
 		if !needsAgent(pr) {
@@ -56,17 +60,30 @@ func (p *Plugin) evaluateAgentTriggers() tea.Cmd {
 		}
 
 		prCopy := pr
-		req := agent.Request{
-			ID:         prCopy.ID,
-			Prompt:     prompt,
-			ProjectDir: dir,
-			Worktree:   isRespond,
-			Permission: "default",
+
+		// Try daemon RPC first, fall back to local runner.
+		if client != nil {
+			_ = client.LaunchAgent(daemon.LaunchAgentParams{
+				ID:         prCopy.ID,
+				Prompt:     prompt,
+				Dir:        dir,
+				Worktree:   isRespond,
+				Permission: "default",
+			})
+		} else if p.agentRunner != nil {
+			req := agent.Request{
+				ID:         prCopy.ID,
+				Prompt:     prompt,
+				ProjectDir: dir,
+				Worktree:   isRespond,
+				Permission: "default",
+			}
+			_, cmd := p.agentRunner.LaunchOrQueue(req)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
-		_, cmd := p.agentRunner.LaunchOrQueue(req)
-		if cmd != nil {
-			cmds = append(cmds, cmd)
-		}
+
 		// Mark as pending immediately so we don't re-trigger on the next tick.
 		_ = db.DBUpdatePRAgentStatus(p.database, prCopy.ID,
 			"pending", "", prCopy.Category, prCopy.HeadSHA, "")

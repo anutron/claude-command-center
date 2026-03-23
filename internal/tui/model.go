@@ -87,6 +87,8 @@ type Model struct {
 	// Daemon connection for session registry and event subscription.
 	daemonConn   *DaemonConn
 	sessionsPlug *sessions.Plugin
+	ccPlug       *commandcenter.Plugin
+	prsPlug      *prs.Plugin
 	bus          plugin.EventBus
 }
 
@@ -187,6 +189,8 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		allPlugins:   allPlugins,
 		db:           database,
 		sessionsPlug: sessPlug,
+		ccPlug:       ccPlug,
+		prsPlug:      prsPlug,
 		bus:          bus,
 	}
 	m.rebuildTabs()
@@ -262,6 +266,12 @@ func (m *Model) SetDaemonConn(dc *DaemonConn) {
 	// Wire daemon client getter into the sessions plugin for the active view.
 	if m.sessionsPlug != nil {
 		m.sessionsPlug.SetDaemonClientFunc(dc.Client)
+	}
+	if m.ccPlug != nil {
+		m.ccPlug.SetDaemonClientFunc(dc.Client)
+	}
+	if m.prsPlug != nil {
+		m.prsPlug.SetDaemonClientFunc(dc.Client)
 	}
 }
 
