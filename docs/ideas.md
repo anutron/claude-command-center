@@ -47,3 +47,21 @@ When a Claude instance is spawned from a todo (headless or interactive), update 
 - Show in CCC's own status bar and/or pipe to Claude Code's status line config
 
 **Prerequisite**: Todo Agent Launcher's session tracking. Needs a way to detect agent start/completion events — could use the EventBus or poll session status.
+
+---
+
+## CCC as a Global MCP Server
+
+Expose CCC's data and tools as an MCP server available to all Claude sessions on the machine — not just agents CCC spawns, but any manual session in any iTerm tab.
+
+**Tool surface (brainstorm):**
+- Read calendar, PRs, todos, slack context
+- Query agent status (what's running, what's blocked)
+- Create/update todos from any session
+- Agent coordination — "what are other agents working on?" to avoid conflicts
+
+**Key question:** What's the right boundary between read-only queries and actionable tools? Need to design the tool surface carefully.
+
+**Origin:** Inspired by Argus's MCP injection pattern (auto-injects KB tools into every agent), but broader — CCC would be a live system API, not just a knowledge base.
+
+**Prerequisite:** Daemon (#2 below) would be the natural host for the MCP HTTP server, since it's already a persistent process.
