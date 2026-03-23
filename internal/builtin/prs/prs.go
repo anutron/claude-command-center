@@ -40,6 +40,9 @@ type Plugin struct {
 	width      int
 	height     int
 	frame      int
+
+	flashMessage   string
+	flashMessageAt time.Time
 }
 
 // Slug returns the plugin identifier.

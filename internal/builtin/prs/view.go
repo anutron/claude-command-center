@@ -36,6 +36,15 @@ func (p *Plugin) View(width, height, frame int) string {
 
 	hints := p.renderHints()
 
+	// Clear stale flash messages
+	if p.flashMessage != "" && time.Since(p.flashMessageAt) > 5*time.Second {
+		p.flashMessage = ""
+	}
+	if p.flashMessage != "" {
+		flash := p.styles.Hint.Render("  > " + p.flashMessage)
+		hints = flash + "\n" + hints
+	}
+
 	return lipgloss.JoinVertical(lipgloss.Left, tabBar, listView, hints)
 }
 
