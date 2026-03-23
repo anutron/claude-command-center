@@ -9,31 +9,39 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 )
 
 // ServerConfig holds the configuration for a daemon server.
 type ServerConfig struct {
-	SocketPath string
-	DB         *sql.DB
+	SocketPath      string
+	DB              *sql.DB
+	RefreshFunc     func() error
+	RefreshInterval time.Duration
 }
 
 // Server listens on a Unix socket and dispatches JSON-RPC requests.
 type Server struct {
-	cfg      ServerConfig
-	listener net.Listener
-	ctx      context.Context
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	clients  []net.Conn
+	cfg         ServerConfig
+	listener    net.Listener
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.Mutex
+	clients     []net.Conn
+	subscribers subscriberSet
+	registry    *sessionRegistry
+	refresh     *refreshLoop
 }
 
 // NewServer creates a new daemon server with the given configuration.
 func NewServer(cfg ServerConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
-		cfg:    cfg,
-		ctx:    ctx,
-		cancel: cancel,
+		cfg:      cfg,
+		ctx:      ctx,
+		cancel:   cancel,
+		registry: newSessionRegistry(cfg.DB),
+		refresh:  newRefreshLoop(cfg.RefreshFunc, cfg.RefreshInterval),
 	}
 }
 
@@ -53,6 +61,8 @@ func (s *Server) Serve() error {
 	s.mu.Lock()
 	s.listener = ln
 	s.mu.Unlock()
+
+	s.refresh.start()
 
 	for {
 		conn, err := ln.Accept()
@@ -75,6 +85,7 @@ func (s *Server) Serve() error {
 
 // Shutdown gracefully stops the server.
 func (s *Server) Shutdown() {
+	s.refresh.stop()
 	s.cancel()
 
 	s.mu.Lock()
@@ -113,6 +124,19 @@ func (s *Server) handleConn(conn net.Conn) {
 			continue
 		}
 
+		// Subscribe is special: after OK response, the conn becomes push-only.
+		if req.Method == "Subscribe" {
+			resp := RPCResponse{ID: req.ID}
+			raw, _ := json.Marshal(map[string]bool{"ok": true})
+			resp.Result = raw
+			WriteMessage(conn, resp)
+			s.subscribers.add(conn)
+			// Block until shutdown — the conn is now a subscriber.
+			<-s.ctx.Done()
+			s.subscribers.remove(conn)
+			return
+		}
+
 		result, rpcErr := s.dispatch(&req)
 		resp := RPCResponse{ID: req.ID}
 		if rpcErr != nil {
@@ -129,6 +153,34 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 	switch req.Method {
 	case "Ping":
 		return map[string]bool{"ok": true}, nil
+	case "Refresh":
+		go s.refresh.run()
+		return map[string]bool{"ok": true}, nil
+
+	case "RegisterSession":
+		var params RegisterSessionParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}
+		}
+		if err := s.registry.register(params); err != nil {
+			return nil, &RPCError{Code: -32000, Message: err.Error()}
+		}
+		return map[string]bool{"ok": true}, nil
+
+	case "UpdateSession":
+		var params UpdateSessionParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}
+		}
+		if err := s.registry.update(params); err != nil {
+			return nil, &RPCError{Code: -32000, Message: err.Error()}
+		}
+		return map[string]bool{"ok": true}, nil
+
+	case "ListSessions":
+		sessions := s.registry.list()
+		return sessions, nil
+
 	default:
 		return nil, &RPCError{Code: -32601, Message: fmt.Sprintf("method not found: %s", req.Method)}
 	}
