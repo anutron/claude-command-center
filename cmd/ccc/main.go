@@ -255,8 +255,13 @@ func main() {
 		// Start unix socket listener for cross-instance notifications
 		cleanupNotify := tui.StartNotifyListener(p)
 
+		// Connect to daemon (auto-starts if needed) and subscribe to events.
+		daemonConn := tui.StartDaemonConnection(p, logger, bus)
+		m.SetDaemonConn(daemonConn)
+
 		finalModel, err := p.Run()
 		cleanupNotify()
+		daemonConn.Close()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)

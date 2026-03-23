@@ -13,6 +13,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/builtin/sessions"
 	"github.com/anutron/claude-command-center/internal/builtin/settings"
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/external"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -80,6 +81,10 @@ type Model struct {
 	onboardingState *onboardingState
 
 	db *sql.DB
+
+	// Daemon connection for session registry and event subscription.
+	daemonConn *DaemonConn
+	bus        plugin.EventBus
 }
 
 // NewModel creates the main TUI model with plugins.
@@ -169,6 +174,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		activeTab:  0,
 		allPlugins: allPlugins,
 		db:         database,
+		bus:        bus,
 	}
 	m.rebuildTabs()
 	return m
@@ -236,6 +242,22 @@ func (m *Model) SetReturnContext(todoID string, wasResumeJoin bool) {
 	m.returnWasResumeJoin = wasResumeJoin
 }
 
+// SetDaemonConn attaches the daemon connection to the model.
+// Must be called before the program is run.
+func (m *Model) SetDaemonConn(dc *DaemonConn) {
+	m.daemonConn = dc
+}
+
+// DaemonClient returns the daemon RPC client, or nil if not connected.
+func (m Model) DaemonClient() *daemon.Client {
+	return m.daemonConn.Client()
+}
+
+// DaemonConnected returns whether the daemon connection is active.
+func (m Model) DaemonConnected() bool {
+	return m.daemonConn.Connected()
+}
+
 // SetOnboarding enables the onboarding flow. Must be called before the program is run.
 func (m *Model) SetOnboarding() {
 	m.onboarding = true
@@ -246,7 +268,7 @@ func (m Model) activePlugin() plugin.Plugin {
 	return m.tabs[m.activeTab].plugin
 }
 
-// Shutdown calls Shutdown on every unique plugin.
+// Shutdown calls Shutdown on every unique plugin and closes daemon connections.
 func (m Model) Shutdown() {
 	seen := map[string]bool{}
 	for _, p := range m.allPlugins {
@@ -255,6 +277,7 @@ func (m Model) Shutdown() {
 			p.Shutdown()
 		}
 	}
+	m.daemonConn.Close()
 }
 
 func (m Model) Init() tea.Cmd {
@@ -386,6 +409,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		action := m.activePlugin().HandleKey(msg)
 		return m.processAction(action)
+
+	case DaemonEventMsg:
+		// Route daemon events through the event bus so plugins can react.
+		if m.bus != nil {
+			routeDaemonEvent(m.bus, msg.Event)
+		}
+		// For data.refreshed, also trigger plugin Refresh() to reload from DB.
+		if msg.Event.Type == "data.refreshed" {
+			var cmds []tea.Cmd
+			m.broadcastMessage(plugin.NotifyMsg{Event: "reload"}, &cmds)
+			return m, tea.Batch(cmds...)
+		}
+		return m, nil
+
+	case DaemonDisconnectedMsg:
+		if m.daemonConn != nil {
+			m.daemonConn.connected = false
+		}
+		// Schedule a reconnect attempt.
+		return m, daemonReconnectCmd()
+
+	case daemonReconnectMsg:
+		// Attempt to reconnect to the daemon.
+		if m.daemonConn != nil && m.daemonConn.Reconnect() {
+			m.daemonConn.connected = true
+			return m, nil
+		}
+		// Still disconnected — schedule another attempt after delay.
+		return m, daemonReconnectCmd()
 
 	case plugin.NotifyMsg:
 		// External notification — reload all plugins from DB
