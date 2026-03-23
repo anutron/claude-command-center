@@ -51,6 +51,7 @@ Track open pull requests across GitHub in four actionable categories. Surfaces P
 | Field | Type | Purpose |
 |-------|------|---------|
 | `state` | string | `"open"` or `"archived"` — replaces deletion on close |
+| `ignored` | boolean | Per-PR ignore flag — hidden from all tabs when set |
 | `head_sha` | string | Current HEAD SHA from GitHub (`headRefOid`) |
 | `agent_session_id` | string | Claude session UUID for active/last agent run |
 | `agent_status` | string | `""`, `"pending"`, `"running"`, `"completed"`, `"failed"` |
@@ -93,6 +94,8 @@ A PR gets exactly one category. The first matching rule wins.
 | enter | Context-aware: resume completed agent, attach to running agent, or launch manual review/respond session — falls back to browser if no local repo found | yes |
 | o | Open selected PR in browser (via URL or `gh pr view --web`) | yes |
 | w | Watch running agent (read-only stream viewer) | yes |
+| i | Toggle ignore on selected PR. Sets `ignored=1` in DB. Flash: "PR ignored" / "PR restored" | yes |
+| I | Ignore repo of selected PR. Inserts into `cc_ignored_repos`. Flash: "{repo} ignored — all PRs hidden" | yes |
 | r | Force refresh from DB | yes |
 
 ### Enter Key Behavior (context-aware)
@@ -107,10 +110,27 @@ A PR gets exactly one category. The first matching rule wins.
 | No agent (respond tab) | Launch `/pr-respond <url>` (interactive, no --apply) |
 | No local repo | Flash: "No local repo found — add a session path first" |
 
+## Ignore
+
+### Per-PR Ignore
+- Toggled via `i` key on the selected PR
+- Stored as `ignored` column on `cc_pull_requests` (boolean, default 0)
+- Ignored PRs are filtered at the DB query level — they never appear in any tab
+- Auto-cleaned when PR is archived (no stale ignore flags accumulate)
+
+### Per-Repo Ignore
+- Set via `I` key on the selected PR's repo
+- Stored in `cc_ignored_repos` table (`repo TEXT PRIMARY KEY`)
+- All PRs from ignored repos are filtered at the DB query level
+- Managed (un-ignored) via the Settings pane
+
+### Filtering
+- Ignored items are filtered at DB query level — they never appear in any tab and never trigger agents
+
 ## Hint Bar
 
 ```
-1-4 tab  j/k nav  enter review/respond  o open  w watch  r refresh
+1-4 tab  j/k nav  enter review/respond  o open  w watch  i ignore  r refresh
 ```
 
 ## View
@@ -149,6 +169,13 @@ Each category has a distinct empty message:
 - Respond: "No PRs need your response right now."
 - Review: "No PRs waiting for your review."
 - Stale: "No stale PRs -- everything is moving."
+
+## Settings Pane
+
+Accessible via Settings > PLUGINS > PRs:
+
+- **Ignored Repos**: Lists all repos in `cc_ignored_repos` with un-ignore support (removes row from table)
+- **Ignored PRs**: Lists all PRs with `ignored = 1` with un-ignore support (sets `ignored = 0`)
 
 ## Migrations
 

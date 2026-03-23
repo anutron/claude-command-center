@@ -88,13 +88,19 @@ All types are exported for use by other packages:
 
 ### Pull Requests
 
-- **Schema**: `cc_pull_requests` table gains 7 new columns: `state` (TEXT, default `"open"`), `head_sha` (TEXT), `agent_session_id` (TEXT), `agent_status` (TEXT), `agent_category` (TEXT), `agent_head_sha` (TEXT), `agent_summary` (TEXT)
+- **Schema**: `cc_pull_requests` table gains 8 new columns: `state` (TEXT, default `"open"`), `ignored` (BOOLEAN, NOT NULL, default 0), `head_sha` (TEXT), `agent_session_id` (TEXT), `agent_status` (TEXT), `agent_category` (TEXT), `agent_head_sha` (TEXT), `agent_summary` (TEXT)
+- **New table**: `cc_ignored_repos (repo TEXT PRIMARY KEY)` — stores repos whose PRs should be globally hidden
 - **Save strategy**: `DBSavePullRequests` uses merge-based upsert (was delete-all/re-insert):
   1. Upsert each fresh PR by ID (`owner/repo#number`) — updates all GitHub-sourced fields while **preserving** agent columns (`agent_session_id`, `agent_status`, `agent_category`, `agent_head_sha`, `agent_summary`)
   2. Archive PRs not in the fresh batch — set `state = "archived"` (do not delete)
   3. Reactivate archived PRs that reappear — set `state = "open"`
-- **Load**: `DBLoadPullRequests` filters to `state = "open"` by default
+- **Load**: `DBLoadPullRequests` filters to `state = "open"` AND `ignored = 0` AND `repo NOT IN (SELECT repo FROM cc_ignored_repos)` by default
 - `DBUpdatePRAgentStatus(db, prID, agentStatus, agentSessionID, agentCategory, agentHeadSHA, agentSummary)` — focused update for agent tracking columns on a single PR
+- `DBSetPRIgnored(db, prID, ignored bool)` — sets the `ignored` flag on a single PR
+- `DBAddIgnoredRepo(db, repo string)` — inserts a repo into `cc_ignored_repos` (INSERT OR IGNORE)
+- `DBRemoveIgnoredRepo(db, repo string)` — removes a repo from `cc_ignored_repos`
+- `DBLoadIgnoredRepos(db)` — returns all repos in `cc_ignored_repos` as `[]string`
+- `DBLoadIgnoredPRs(db)` — returns all PRs with `ignored = 1` (regardless of state)
 
 ### Bulk Refresh
 - `DBSaveRefreshResult` -- atomically replaces all refresh-managed data (todos, threads, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`.
@@ -213,3 +219,8 @@ All types are exported for use by other packages:
 - `DBLoadPullRequests` returns only `state = "open"` PRs
 - `DBUpdatePRAgentStatus` updates agent columns without touching GitHub fields
 - `head_sha` round-trips correctly through save/load
+- `DBSetPRIgnored` sets ignored flag; `DBLoadPullRequests` excludes ignored PRs
+- `DBAddIgnoredRepo` + `DBLoadPullRequests` excludes all PRs from that repo
+- `DBRemoveIgnoredRepo` restores PRs from that repo to query results
+- `DBLoadIgnoredRepos` returns all ignored repos
+- `DBLoadIgnoredPRs` returns PRs with `ignored = 1` regardless of state
