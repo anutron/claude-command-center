@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/ui"
@@ -12,14 +13,15 @@ import (
 
 // Context is provided to plugins during Init.
 type Context struct {
-	DB     *sql.DB
-	Config *config.Config
-	Styles *ui.Styles
-	Grad   *ui.GradientColors
-	Bus    EventBus
-	Logger Logger
-	DBPath string
-	LLM    llm.LLM
+	DB          *sql.DB
+	Config      *config.Config
+	Styles      *ui.Styles
+	Grad        *ui.GradientColors
+	Bus         EventBus
+	Logger      Logger
+	DBPath      string
+	LLM         llm.LLM
+	AgentRunner agent.Runner
 }
 
 // Action type constants.

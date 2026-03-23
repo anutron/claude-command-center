@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"syscall"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
@@ -150,8 +150,7 @@ type Plugin struct {
 	flashMessageAt time.Time
 
 	// Agent sessions
-	activeSessions map[string]*agentSession
-	sessionQueue   []queuedSession
+	agentRunner agent.Runner
 
 	// Session viewer
 	sessionViewerActive       bool
@@ -296,8 +295,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.llm = llm.NoopLLM{}
 	}
 
-	// Initialize agent session tracking
-	p.activeSessions = make(map[string]*agentSession)
+	// Use the shared agent runner from Context.
+	p.agentRunner = ctx.AgentRunner
 
 	// Set refresh interval from config
 	ccRefreshInterval = ctx.Config.ParseRefreshInterval()
@@ -423,22 +422,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 // Shutdown is called when the plugin is being shut down.
 // It sends SIGINT to all active agent sessions so Claude CLI can save session state.
 func (p *Plugin) Shutdown() {
-	for _, sess := range p.activeSessions {
-		if sess.Stdin != nil {
-			sess.Stdin.Close()
-		}
-		if sess.Cmd != nil && sess.Cmd.Process != nil {
-			sess.Cmd.Process.Signal(syscall.SIGINT)
-		}
-	}
-	// Give agents a moment to save state before the process exits.
-	for _, sess := range p.activeSessions {
-		if sess.done != nil {
-			select {
-			case <-sess.done:
-			case <-time.After(3 * time.Second):
-			}
-		}
+	if p.agentRunner != nil {
+		p.agentRunner.Shutdown()
 	}
 }
 

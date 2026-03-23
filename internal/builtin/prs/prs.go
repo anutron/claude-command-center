@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -23,13 +24,14 @@ var _ plugin.Plugin = (*Plugin)(nil)
 
 // Plugin implements plugin.Plugin for PR tracking.
 type Plugin struct {
-	database *sql.DB
-	cfg      *config.Config
-	styles   prsStyles
-	grad     prsGrad
-	logger   plugin.Logger
-	bus      plugin.EventBus
-	rowStyle prRowStyle
+	database    *sql.DB
+	cfg         *config.Config
+	styles      prsStyles
+	grad        prsGrad
+	logger      plugin.Logger
+	bus         plugin.EventBus
+	agentRunner agent.Runner
+	rowStyle    prRowStyle
 
 	prs        []db.PullRequest
 	activeTab  int    // 0=waiting, 1=respond, 2=review, 3=stale
@@ -38,6 +40,9 @@ type Plugin struct {
 	width      int
 	height     int
 	frame      int
+
+	flashMessage   string
+	flashMessageAt time.Time
 }
 
 // Slug returns the plugin identifier.
@@ -55,6 +60,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.cfg = ctx.Config
 	p.logger = ctx.Logger
 	p.bus = ctx.Bus
+	p.agentRunner = ctx.AgentRunner
 
 	if ctx.Styles != nil {
 		p.styles = *ctx.Styles
@@ -140,6 +146,10 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			if p.cursors[i] >= len(filtered) {
 				p.cursors[i] = max(0, len(filtered)-1)
 			}
+		}
+		// Evaluate whether any PRs need an agent spawned.
+		if cmd := p.evaluateAgentTriggers(); cmd != nil {
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
 		return true, plugin.NoopAction()
 

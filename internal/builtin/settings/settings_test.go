@@ -122,8 +122,8 @@ func TestNavCategoriesPopulated(t *testing.T) {
 
 func TestNavCategoryCount(t *testing.T) {
 	p, _ := testSetup(t)
-	if len(p.navCategories) != 4 {
-		t.Errorf("expected 4 categories, got %d", len(p.navCategories))
+	if len(p.navCategories) != 5 {
+		t.Errorf("expected 5 categories, got %d", len(p.navCategories))
 	}
 }
 
@@ -257,8 +257,8 @@ func TestNavHasExpectedItems(t *testing.T) {
 
 func TestNavItemCount(t *testing.T) {
 	p, _ := testSetup(t)
-	// APPEARANCE(2) + PLUGINS(1: external) + DATA SOURCES(5) + SYSTEM(6) = 14
-	expected := 14
+	// APPEARANCE(2) + PLUGINS(1: external) + DATA SOURCES(5) + AGENT(1) + SYSTEM(6) = 15
+	expected := 15
 	if got := p.navItemCount(); got != expected {
 		t.Errorf("expected %d nav items, got %d", expected, got)
 	}

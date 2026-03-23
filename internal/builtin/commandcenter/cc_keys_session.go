@@ -4,6 +4,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -112,10 +113,10 @@ func (p *Plugin) handleSessionViewerInput(msg tea.KeyMsg) plugin.Action {
 			return plugin.ConsumedAction()
 		}
 
-		sess := p.activeSessions[p.sessionViewerTodoID]
+		sess := p.agentRunner.Session(p.sessionViewerTodoID)
 		if sess != nil {
 			// Send the message via stdin pipe
-			if err := sendUserMessage(sess, text); err != nil {
+			if err := agent.SendUserMessage(sess, text); err != nil {
 				if p.logger != nil {
 					p.logger.Warn("commandcenter", "failed to send user message", "err", err)
 				}
@@ -126,9 +127,9 @@ func (p *Plugin) handleSessionViewerInput(msg tea.KeyMsg) plugin.Action {
 					Text:      text,
 					Timestamp: time.Now().Format(time.RFC3339),
 				}
-				sess.mu.Lock()
+				sess.Mu.Lock()
 				sess.Events = append(sess.Events, userEvent)
-				sess.mu.Unlock()
+				sess.Mu.Unlock()
 
 				// Refresh the viewport content
 				p.updateSessionViewerContent()

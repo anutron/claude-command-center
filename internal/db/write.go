@@ -379,38 +379,104 @@ func DBSwapTodoOrder(database *sql.DB, idA, idB string) error {
 // Write methods -- Pull Requests
 // ---------------------------------------------------------------------------
 
-// DBSavePullRequests replaces all pull requests in the database within the
-// given transaction. Slice fields (ReviewerLogins, PendingReviewerLogins)
-// are JSON-serialized.
+// DBSavePullRequests performs a merge-based upsert of pull requests within the
+// given transaction. Agent columns are preserved on conflict. Open PRs not in
+// the fresh batch are archived (state='archived') rather than deleted.
+// Slice fields (ReviewerLogins, PendingReviewerLogins) are JSON-serialized.
 func DBSavePullRequests(tx *sql.Tx, prs []PullRequest) error {
-	if _, err := tx.Exec(`DELETE FROM cc_pull_requests`); err != nil {
-		return fmt.Errorf("clear pull requests: %w", err)
+	// Build set of fresh IDs for archive step
+	freshIDs := make(map[string]bool, len(prs))
+	for _, pr := range prs {
+		freshIDs[pr.ID] = true
 	}
 
+	// Archive open PRs not in fresh batch
+	rows, err := tx.Query(`SELECT id FROM cc_pull_requests WHERE state = 'open'`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			rows.Scan(&id)
+			if !freshIDs[id] {
+				tx.Exec(`UPDATE cc_pull_requests SET state = 'archived' WHERE id = ?`, id)
+			}
+		}
+	}
+
+	// Upsert each PR — preserve agent columns on conflict
 	for _, pr := range prs {
 		reviewersJSON, _ := json.Marshal(pr.ReviewerLogins)
-		pendingReviewersJSON, _ := json.Marshal(pr.PendingReviewerLogins)
+		if pr.ReviewerLogins == nil {
+			reviewersJSON = []byte("[]")
+		}
+		pendingJSON, _ := json.Marshal(pr.PendingReviewerLogins)
+		if pr.PendingReviewerLogins == nil {
+			pendingJSON = []byte("[]")
+		}
 
-		_, err := tx.Exec(`INSERT INTO cc_pull_requests (id, repo, number, title, url, author, draft,
-			created_at, updated_at, review_decision, my_role,
-			reviewer_logins, pending_reviewer_logins,
-			comment_count, unresolved_thread_count, last_activity_at,
-			ci_status, category, fetched_at)
+		_, err := tx.Exec(`INSERT INTO cc_pull_requests
+			(id, repo, number, title, url, author, draft,
+			 created_at, updated_at, review_decision, my_role,
+			 reviewer_logins, pending_reviewer_logins,
+			 comment_count, unresolved_thread_count, last_activity_at,
+			 ci_status, category, fetched_at, state, head_sha)
 			VALUES (?, ?, ?, ?, ?, ?, ?,
-			?, ?, NULLIF(?, ''), NULLIF(?, ''),
-			?, ?,
-			?, ?, ?,
-			NULLIF(?, ''), NULLIF(?, ''), ?)`,
+				?, ?, NULLIF(?,''), NULLIF(?,''),
+				?, ?,
+				?, ?, ?,
+				NULLIF(?,''), NULLIF(?,''), ?, 'open', ?)
+			ON CONFLICT(id) DO UPDATE SET
+				repo=excluded.repo, number=excluded.number,
+				title=excluded.title, url=excluded.url,
+				author=excluded.author, draft=excluded.draft,
+				created_at=excluded.created_at, updated_at=excluded.updated_at,
+				review_decision=excluded.review_decision, my_role=excluded.my_role,
+				reviewer_logins=excluded.reviewer_logins,
+				pending_reviewer_logins=excluded.pending_reviewer_logins,
+				comment_count=excluded.comment_count,
+				unresolved_thread_count=excluded.unresolved_thread_count,
+				last_activity_at=excluded.last_activity_at,
+				ci_status=excluded.ci_status, category=excluded.category,
+				fetched_at=excluded.fetched_at, state='open',
+				head_sha=excluded.head_sha`,
 			pr.ID, pr.Repo, pr.Number, pr.Title, pr.URL, pr.Author, pr.Draft,
 			FormatTime(pr.CreatedAt), FormatTime(pr.UpdatedAt), pr.ReviewDecision, pr.MyRole,
-			string(reviewersJSON), string(pendingReviewersJSON),
+			string(reviewersJSON), string(pendingJSON),
 			pr.CommentCount, pr.UnresolvedThreadCount, FormatTime(pr.LastActivityAt),
-			pr.CIStatus, pr.Category, FormatTime(pr.FetchedAt))
+			pr.CIStatus, pr.Category, FormatTime(pr.FetchedAt), pr.HeadSHA)
 		if err != nil {
-			return fmt.Errorf("insert pull request %s: %w", pr.ID, err)
+			return fmt.Errorf("upsert pull request %s: %w", pr.ID, err)
 		}
 	}
 	return nil
+}
+
+// DBSetPRIgnored sets or clears the ignored flag on a pull request.
+func DBSetPRIgnored(d *sql.DB, id string, ignored bool) error {
+	_, err := d.Exec(`UPDATE cc_pull_requests SET ignored = ? WHERE id = ?`, ignored, id)
+	return err
+}
+
+// DBAddIgnoredRepo adds a repo to the ignore list.
+func DBAddIgnoredRepo(d *sql.DB, repo string) error {
+	_, err := d.Exec(`INSERT OR IGNORE INTO cc_ignored_repos (repo) VALUES (?)`, repo)
+	return err
+}
+
+// DBRemoveIgnoredRepo removes a repo from the ignore list.
+func DBRemoveIgnoredRepo(d *sql.DB, repo string) error {
+	_, err := d.Exec(`DELETE FROM cc_ignored_repos WHERE repo = ?`, repo)
+	return err
+}
+
+// DBUpdatePRAgentStatus updates the agent tracking columns for a pull request.
+func DBUpdatePRAgentStatus(d *sql.DB, id, agentStatus, agentSessionID, agentCategory, agentHeadSHA, agentSummary string) error {
+	_, err := d.Exec(`UPDATE cc_pull_requests SET
+		agent_status=?, agent_session_id=NULLIF(?,''),
+		agent_category=?, agent_head_sha=?, agent_summary=NULLIF(?,'')
+		WHERE id=?`,
+		agentStatus, agentSessionID, agentCategory, agentHeadSHA, agentSummary, id)
+	return err
 }
 
 // ---------------------------------------------------------------------------

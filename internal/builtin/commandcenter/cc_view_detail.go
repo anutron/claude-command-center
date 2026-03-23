@@ -22,7 +22,7 @@ func (p *Plugin) renderDetailViewScrollable(width, height int) string {
 		innerWidth = 40
 	}
 
-	_, hasActiveSession := p.activeSessions[todo.ID]
+	hasActiveSession := p.agentRunner.Session(todo.ID) != nil
 
 	// Build the full body content (no truncation).
 	body := p.buildDetailBody(s, *todo, innerWidth, hasActiveSession)

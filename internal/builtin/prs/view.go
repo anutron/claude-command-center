@@ -36,6 +36,15 @@ func (p *Plugin) View(width, height, frame int) string {
 
 	hints := p.renderHints()
 
+	// Clear stale flash messages
+	if p.flashMessage != "" && time.Since(p.flashMessageAt) > 5*time.Second {
+		p.flashMessage = ""
+	}
+	if p.flashMessage != "" {
+		flash := p.styles.Hint.Render("  > " + p.flashMessage)
+		hints = flash + "\n" + hints
+	}
+
 	return lipgloss.JoinVertical(lipgloss.Left, tabBar, listView, hints)
 }
 
@@ -103,6 +112,10 @@ func (p *Plugin) renderPRRow(pr db.PullRequest, maxWidth int) string {
 	line := repoNum + " " + title
 	if detail != "" {
 		line += "  " + detail
+	}
+
+	if flag := p.renderAgentStatus(pr); flag != "" {
+		line += "  " + flag
 	}
 
 	return truncate(line, maxWidth)
@@ -217,9 +230,28 @@ func (p *Plugin) renderReviewDecision(decision string) string {
 	}
 }
 
+// renderAgentStatus returns a styled status indicator for agent-processed PRs.
+func (p *Plugin) renderAgentStatus(pr db.PullRequest) string {
+	switch pr.AgentStatus {
+	case "pending":
+		return p.rowStyle.pending.Render("⏳ queued")
+	case "running":
+		return p.rowStyle.pending.Render("⏳ running")
+	case "completed":
+		return p.rowStyle.success.Render("✓ ready")
+	case "failed":
+		return p.rowStyle.failure.Render("✗ failed")
+	default:
+		if (pr.Category == "review" || pr.Category == "respond") && p.resolveRepoDir(pr.Repo) == "" {
+			return p.rowStyle.failure.Render("⚠ no repo")
+		}
+		return ""
+	}
+}
+
 // renderHints renders the bottom hint line.
 func (p *Plugin) renderHints() string {
-	hints := p.styles.Hint.Render("1-4 switch tab   <-/-> cycle   j/k navigate   enter review   o open   r refresh")
+	hints := p.styles.Hint.Render("1-4 tab  j/k nav  enter review/respond  o open  w watch  i ignore  r refresh")
 	return "\n" + lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hints)
 }
 

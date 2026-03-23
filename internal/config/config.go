@@ -195,10 +195,22 @@ type AutomationConfig struct {
 }
 
 type AgentConfig struct {
-	DefaultBudget     float64 `yaml:"default_budget"`
-	DefaultPermission string  `yaml:"default_permission"`
-	DefaultMode       string  `yaml:"default_mode"`
-	MaxConcurrent     int     `yaml:"max_concurrent"`
+	DefaultBudget            float64  `yaml:"default_budget"`
+	DefaultPermission        string   `yaml:"default_permission"`
+	DefaultMode              string   `yaml:"default_mode"`
+	MaxConcurrent            int      `yaml:"max_concurrent"`
+	TodoWriteLearnedPaths    *bool    `yaml:"todo_write_learned_paths,omitempty"`
+	TodoExtraWritePaths      []string `yaml:"todo_extra_write_paths,omitempty"`
+	AutonomousAllowedDomains []string `yaml:"autonomous_allowed_domains,omitempty"`
+}
+
+// TodoWriteLearnedPathsEnabled returns whether agents can write to learned paths.
+// Defaults to true if not explicitly set.
+func (a *AgentConfig) TodoWriteLearnedPathsEnabled() bool {
+	if a.TodoWriteLearnedPaths == nil {
+		return true
+	}
+	return *a.TodoWriteLearnedPaths
 }
 
 // DaemonConfig holds settings for the CCC daemon process.
@@ -252,10 +264,11 @@ func DefaultConfig() *Config {
 		Palette: "aurora",
 		Todos:   TodosConfig{Enabled: true},
 		Agent: AgentConfig{
-			DefaultBudget:     5.00,
-			DefaultPermission: "default",
-			DefaultMode:       "normal",
-			MaxConcurrent:     3,
+			DefaultBudget:            5.00,
+			DefaultPermission:        "default",
+			DefaultMode:              "normal",
+			MaxConcurrent:            10,
+			AutonomousAllowedDomains: []string{"github.com", "api.github.com"},
 		},
 		Daemon: DaemonConfig{
 			RefreshInterval:  "5m",

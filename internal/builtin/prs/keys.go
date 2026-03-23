@@ -3,7 +3,9 @@ package prs
 import (
 	"fmt"
 	"os/exec"
+	"time"
 
+	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -70,13 +72,38 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		_ = cmd.Start()
 		return plugin.ConsumedAction()
 
-	// Launch PR review in local project
+	// Launch PR review, resume agent session, or navigate to running agent
 	case "enter":
 		filtered := p.filteredPRs(p.activeTab)
 		if len(filtered) == 0 {
 			return plugin.ConsumedAction()
 		}
 		pr := filtered[p.cursors[p.activeTab]]
+
+		switch pr.AgentStatus {
+		case "completed", "failed":
+			// Resume the agent's finished session for inspection
+			if pr.AgentSessionID != "" {
+				dir := p.resolveRepoDir(pr.Repo)
+				if dir == "" {
+					return plugin.ConsumedAction()
+				}
+				return plugin.Action{
+					Type: plugin.ActionLaunch,
+					Args: map[string]string{
+						"dir":       dir,
+						"resume_id": pr.AgentSessionID,
+					},
+				}
+			}
+		case "running":
+			// Navigate to the command center which shows running agents
+			return plugin.Action{Type: plugin.ActionNavigate, Payload: "command"}
+		case "pending":
+			return plugin.ConsumedAction()
+		}
+
+		// No agent — launch manual review/respond session
 		dir := p.resolveRepoDir(pr.Repo)
 		if dir == "" {
 			// Can't find local repo — fall back to opening in browser
@@ -85,13 +112,66 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 			}
 			return plugin.ConsumedAction()
 		}
+		prompt := fmt.Sprintf("/pr-review-toolkit:review-pr %s", pr.URL)
+		if pr.Category == CategoryRespond {
+			prompt = fmt.Sprintf("/pr-respond %s", pr.URL)
+		}
 		return plugin.Action{
 			Type: plugin.ActionLaunch,
 			Args: map[string]string{
 				"dir":            dir,
-				"initial_prompt": fmt.Sprintf("/pr-review-toolkit:review-pr %s", pr.URL),
+				"initial_prompt": prompt,
 			},
 		}
+
+	// Watch running agent output
+	case "w":
+		filtered := p.filteredPRs(p.activeTab)
+		if len(filtered) == 0 {
+			return plugin.ConsumedAction()
+		}
+		pr := filtered[p.cursors[p.activeTab]]
+		if pr.AgentStatus != "running" {
+			return plugin.ConsumedAction()
+		}
+		if p.agentRunner != nil {
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.agentRunner.Watch(pr.ID)}
+		}
+		return plugin.ConsumedAction()
+
+	// Ignore/restore individual PR
+	case "i":
+		filtered := p.filteredPRs(p.activeTab)
+		if len(filtered) == 0 {
+			return plugin.ConsumedAction()
+		}
+		pr := filtered[p.cursors[p.activeTab]]
+		if err := db.DBSetPRIgnored(p.database, pr.ID, true); err != nil {
+			p.flashMessage = "Error: " + err.Error()
+			p.flashMessageAt = time.Now()
+			return plugin.ConsumedAction()
+		}
+		p.flashMessage = fmt.Sprintf("PR ignored: %s", pr.Title)
+		p.flashMessageAt = time.Now()
+		// Reload to remove from view
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.Refresh()}
+
+	// Ignore entire repo
+	case "I":
+		filtered := p.filteredPRs(p.activeTab)
+		if len(filtered) == 0 {
+			return plugin.ConsumedAction()
+		}
+		pr := filtered[p.cursors[p.activeTab]]
+		if err := db.DBAddIgnoredRepo(p.database, pr.Repo); err != nil {
+			p.flashMessage = "Error: " + err.Error()
+			p.flashMessageAt = time.Now()
+			return plugin.ConsumedAction()
+		}
+		p.flashMessage = fmt.Sprintf("%s ignored — all PRs hidden", pr.Repo)
+		p.flashMessageAt = time.Now()
+		// Reload to remove all repo PRs from view
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.Refresh()}
 
 	// Force refresh
 	case "r":
@@ -107,8 +187,11 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "1/2/3/4", Description: "Switch sub-tab", Promoted: true},
 		{Key: "<-/->", Description: "Cycle sub-tabs", Promoted: true},
 		{Key: "j/k", Description: "Navigate PRs", Promoted: true},
-		{Key: "enter", Description: "Review PR locally", Promoted: true},
+		{Key: "enter", Description: "Review/respond (resume agent or launch)", Promoted: true},
 		{Key: "o", Description: "Open PR in browser", Promoted: true},
+		{Key: "w", Description: "Watch running agent", Promoted: true},
+		{Key: "i", Description: "Ignore PR", Promoted: true},
+		{Key: "I", Description: "Ignore repo", Promoted: true},
 		{Key: "r", Description: "Refresh", Promoted: true},
 	}
 }
