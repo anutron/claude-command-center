@@ -118,6 +118,50 @@ func (c *Client) ListSessions() ([]SessionInfo, error) {
 	return sessions, nil
 }
 
+// LaunchAgent tells the daemon to launch or queue an agent session.
+func (c *Client) LaunchAgent(params LaunchAgentParams) error {
+	_, err := c.call("LaunchAgent", params)
+	return err
+}
+
+// StopAgent tells the daemon to kill a running agent session.
+func (c *Client) StopAgent(id string) error {
+	_, err := c.call("StopAgent", StopAgentParams{ID: id})
+	return err
+}
+
+// AgentStatus queries the status of a specific agent session.
+func (c *Client) AgentStatus(id string) (AgentStatusResult, error) {
+	result, err := c.call("AgentStatus", AgentStatusParams{ID: id})
+	if err != nil {
+		return AgentStatusResult{}, err
+	}
+	var status AgentStatusResult
+	if err := json.Unmarshal(result, &status); err != nil {
+		return AgentStatusResult{}, fmt.Errorf("unmarshal agent status: %w", err)
+	}
+	return status, nil
+}
+
+// ListAgents returns all currently active agent sessions.
+func (c *Client) ListAgents() ([]AgentStatusResult, error) {
+	result, err := c.call("ListAgents", nil)
+	if err != nil {
+		return nil, err
+	}
+	var agents []AgentStatusResult
+	if err := json.Unmarshal(result, &agents); err != nil {
+		return nil, fmt.Errorf("unmarshal agents: %w", err)
+	}
+	return agents, nil
+}
+
+// SendAgentInput sends a message to a running agent's stdin.
+func (c *Client) SendAgentInput(id string, message string) error {
+	_, err := c.call("SendAgentInput", SendAgentInputParams{ID: id, Message: message})
+	return err
+}
+
 // Subscribe blocks, reading events forever. Must be called on a dedicated Client
 // instance — this connection cannot be used for RPCs after subscribing.
 func (c *Client) Subscribe(handler func(Event)) error {

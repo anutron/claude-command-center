@@ -10,6 +10,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/anutron/claude-command-center/internal/agent"
 )
 
 // ServerConfig holds the configuration for a daemon server.
@@ -18,6 +20,7 @@ type ServerConfig struct {
 	DB              *sql.DB
 	RefreshFunc     func() error
 	RefreshInterval time.Duration
+	AgentRunner     agent.Runner
 }
 
 // Server listens on a Unix socket and dispatches JSON-RPC requests.
@@ -31,6 +34,7 @@ type Server struct {
 	subscribers subscriberSet
 	registry    *sessionRegistry
 	refresh     *refreshLoop
+	runner      agent.Runner
 }
 
 // NewServer creates a new daemon server with the given configuration.
@@ -42,6 +46,7 @@ func NewServer(cfg ServerConfig) *Server {
 		cancel:   cancel,
 		registry: newSessionRegistry(cfg.DB),
 		refresh:  newRefreshLoop(cfg.RefreshFunc, cfg.RefreshInterval),
+		runner:   cfg.AgentRunner,
 	}
 }
 
@@ -85,6 +90,9 @@ func (s *Server) Serve() error {
 
 // Shutdown gracefully stops the server.
 func (s *Server) Shutdown() {
+	if s.runner != nil {
+		s.runner.Shutdown()
+	}
 	s.refresh.stop()
 	s.cancel()
 
@@ -190,6 +198,17 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 			return nil, &RPCError{Code: -32000, Message: err.Error()}
 		}
 		return map[string]bool{"ok": true}, nil
+
+	case "LaunchAgent":
+		return s.handleLaunchAgent(req)
+	case "StopAgent":
+		return s.handleStopAgent(req)
+	case "AgentStatus":
+		return s.handleAgentStatus(req)
+	case "ListAgents":
+		return s.handleListAgents(req)
+	case "SendAgentInput":
+		return s.handleSendAgentInput(req)
 
 	default:
 		return nil, &RPCError{Code: -32601, Message: fmt.Sprintf("method not found: %s", req.Method)}

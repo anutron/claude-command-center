@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/anutron/claude-command-center/internal/config"
 	"syscall"
@@ -19,6 +20,7 @@ import (
 
 // defaultRunner is the concrete implementation of Runner.
 type defaultRunner struct {
+	mu             sync.Mutex
 	maxConcurrent  int
 	activeSessions map[string]*Session
 	sessionQueue   []Request
@@ -35,11 +37,14 @@ func NewRunner(maxConcurrent int) Runner {
 	}
 }
 
+// canLaunch must be called with r.mu held.
 func (r *defaultRunner) canLaunch() bool {
 	return len(r.activeSessions) < r.maxConcurrent
 }
 
 func (r *defaultRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.canLaunch() {
 		return false, r.launchSession(req)
 	}
@@ -48,22 +53,27 @@ func (r *defaultRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
 }
 
 func (r *defaultRunner) Kill(id string) bool {
+	r.mu.Lock()
 	sess, ok := r.activeSessions[id]
 	if !ok {
+		r.mu.Unlock()
 		return false
 	}
+	delete(r.activeSessions, id)
+	r.mu.Unlock()
 	if sess.Stdin != nil {
 		sess.Stdin.Close()
 	}
 	if sess.Cmd != nil && sess.Cmd.Process != nil {
 		sess.Cmd.Process.Kill()
 	}
-	delete(r.activeSessions, id)
 	return true
 }
 
 func (r *defaultRunner) SendMessage(id string, message string) error {
+	r.mu.Lock()
 	sess, ok := r.activeSessions[id]
+	r.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("no active session for %s", id)
 	}
@@ -71,19 +81,23 @@ func (r *defaultRunner) SendMessage(id string, message string) error {
 }
 
 func (r *defaultRunner) Status(id string) *SessionStatus {
+	r.mu.Lock()
 	sess, ok := r.activeSessions[id]
 	if !ok {
 		// Check queue
 		for _, req := range r.sessionQueue {
 			if req.ID == id {
+				r.mu.Unlock()
 				return &SessionStatus{
 					ID:     id,
 					Status: "queued",
 				}
 			}
 		}
+		r.mu.Unlock()
 		return nil
 	}
+	r.mu.Unlock()
 	sess.Mu.Lock()
 	defer sess.Mu.Unlock()
 	return &SessionStatus{
@@ -96,6 +110,7 @@ func (r *defaultRunner) Status(id string) *SessionStatus {
 }
 
 func (r *defaultRunner) Active() []SessionInfo {
+	r.mu.Lock()
 	result := make([]SessionInfo, 0, len(r.activeSessions))
 	for id, sess := range r.activeSessions {
 		sess.Mu.Lock()
@@ -108,18 +123,25 @@ func (r *defaultRunner) Active() []SessionInfo {
 		sess.Mu.Unlock()
 		result = append(result, info)
 	}
+	r.mu.Unlock()
 	return result
 }
 
 func (r *defaultRunner) QueueLen() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return len(r.sessionQueue)
 }
 
 func (r *defaultRunner) Session(id string) *Session {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r.activeSessions[id]
 }
 
 func (r *defaultRunner) DrainQueue() (Request, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if len(r.sessionQueue) == 0 || !r.canLaunch() {
 		return Request{}, false
 	}
@@ -129,6 +151,8 @@ func (r *defaultRunner) DrainQueue() (Request, bool) {
 }
 
 func (r *defaultRunner) CheckProcesses() tea.Cmd {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	var cmds []tea.Cmd
 	for id, sess := range r.activeSessions {
 		select {
@@ -170,7 +194,9 @@ func (r *defaultRunner) CheckProcesses() tea.Cmd {
 }
 
 func (r *defaultRunner) Watch(id string) tea.Cmd {
+	r.mu.Lock()
 	sess, ok := r.activeSessions[id]
+	r.mu.Unlock()
 	if !ok {
 		return nil
 	}
@@ -178,7 +204,14 @@ func (r *defaultRunner) Watch(id string) tea.Cmd {
 }
 
 func (r *defaultRunner) Shutdown() {
+	r.mu.Lock()
+	sessions := make([]*Session, 0, len(r.activeSessions))
 	for _, sess := range r.activeSessions {
+		sessions = append(sessions, sess)
+	}
+	r.mu.Unlock()
+
+	for _, sess := range sessions {
 		if sess.Stdin != nil {
 			sess.Stdin.Close()
 		}
@@ -186,7 +219,7 @@ func (r *defaultRunner) Shutdown() {
 			sess.Cmd.Process.Signal(syscall.SIGINT)
 		}
 	}
-	for _, sess := range r.activeSessions {
+	for _, sess := range sessions {
 		if sess.done != nil {
 			select {
 			case <-sess.done:
@@ -200,14 +233,17 @@ func (r *defaultRunner) Shutdown() {
 // SessionFinishedMsg, to clean up the session from the active map.
 // Returns the finished session (for summary extraction) or nil.
 func (r *defaultRunner) onSessionFinished(id string) *Session {
+	r.mu.Lock()
 	sess, ok := r.activeSessions[id]
 	if !ok {
+		r.mu.Unlock()
 		return nil
 	}
+	delete(r.activeSessions, id)
+	r.mu.Unlock()
 	if sess.Stdin != nil {
 		sess.Stdin.Close()
 	}
-	delete(r.activeSessions, id)
 	return sess
 }
 
@@ -288,6 +324,11 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 			done:      make(chan struct{}),
 			output:    &strings.Builder{},
 		}
+
+		// Register the session in the active map so Status/Active/Kill work.
+		r.mu.Lock()
+		r.activeSessions[req.ID] = sess
+		r.mu.Unlock()
 
 		// Background goroutine: read stream-JSON stdout, detect blocking events,
 		// parse events, and signal completion.
