@@ -256,6 +256,10 @@ func migrateSchema(db *sql.DB) error {
 	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN agent_head_sha TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN agent_summary TEXT NOT NULL DEFAULT ''`)
 
+	// PR ignore support
+	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN ignored BOOLEAN NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_ignored_repos (repo TEXT PRIMARY KEY)`)
+
 	return nil
 }
 
