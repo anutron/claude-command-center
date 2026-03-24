@@ -72,6 +72,9 @@ type Plugin struct {
 	// Plugin form values (bound to active huh form for plugin panes)
 	pluginValues *pluginFormValues
 
+	// Budget form values (bound to active huh form for agent-budget pane)
+	budgetValues *budgetFormValues
+
 	// Logs state (used by content_logs)
 	logOffset      int
 	logFilterInput textinput.Model
@@ -1005,6 +1008,8 @@ func (p *Plugin) saveFormValues(slug string) {
 		p.saveBannerValues()
 	case "palette":
 		p.savePaletteValues()
+	case "agent-budget":
+		p.saveBudgetValues()
 	}
 }
 
@@ -1025,6 +1030,8 @@ func (p *Plugin) handleFormCompletion(slug string) tea.Cmd {
 		return p.handleSkillsFormCompletion()
 	case "system-shell":
 		return p.handleShellFormCompletion()
+	case "agent-budget":
+		return p.handleBudgetFormCompletion()
 	// Auth-related form completions (pre-existing)
 	case "calendar", "gmail":
 		// If this was a credential form for OAuth, chain to the auth flow.

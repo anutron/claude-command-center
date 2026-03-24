@@ -763,16 +763,12 @@ func (m Model) pollBudgetCmd() tea.Cmd {
 }
 
 // renderBudgetWidget returns the styled budget widget string for the top-right corner.
-// Returns empty string if budget data is not yet available.
+// Shows budget and agent count. Falls back to $0 when budget data isn't available.
 func (m Model) renderBudgetWidget() string {
-	if !m.budgetAvailable {
-		return ""
-	}
-
 	bs := m.budgetStatus
 
 	// Emergency stop overrides everything.
-	if bs.EmergencyStopped {
+	if m.budgetAvailable && bs.EmergencyStopped {
 		return lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#f7768e")).
 			Bold(true).
@@ -781,32 +777,41 @@ func (m Model) renderBudgetWidget() string {
 
 	spent := bs.HourlySpent
 	limit := bs.HourlyLimit
+	agents := bs.ActiveAgents
 
-	// Format the budget text.
+	// Format: [$X.XX/$Y/hr · 3 agents]
 	text := fmt.Sprintf("[$%.2f/$%.0f/hr", spent, limit)
+	if agents > 0 {
+		text += fmt.Sprintf(" · %d agent", agents)
+		if agents != 1 {
+			text += "s"
+		}
+	}
 
 	// Determine style based on warning level and agent activity.
-	switch bs.WarningLevel {
-	case "critical":
-		text += " CRITICAL]"
-		return lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#f7768e")).
-			Bold(true).
-			Render(text)
-	case "warning":
-		text += " \u26a0]"
-		return lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#e0af68")).
-			Render(text)
-	default:
-		text += "]"
-		if bs.ActiveAgents > 0 {
+	if m.budgetAvailable {
+		switch bs.WarningLevel {
+		case "critical":
+			text += " CRITICAL]"
 			return lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#c0caf5")).
+				Foreground(lipgloss.Color("#f7768e")).
+				Bold(true).
+				Render(text)
+		case "warning":
+			text += " \u26a0]"
+			return lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#e0af68")).
 				Render(text)
 		}
+	}
+
+	text += "]"
+	if agents > 0 {
 		return lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#565f89")).
+			Foreground(lipgloss.Color("#c0caf5")).
 			Render(text)
 	}
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#565f89")).
+		Render(text)
 }
