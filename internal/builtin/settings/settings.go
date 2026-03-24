@@ -17,6 +17,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/auth"
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/refresh/sources/calendar"
@@ -91,6 +92,9 @@ type Plugin struct {
 	// Flash message
 	flashMessage   string
 	flashMessageAt time.Time
+
+	// Daemon client getter for budget status queries.
+	daemonClientFunc func() *daemon.Client
 
 	width, height int
 }
@@ -168,6 +172,12 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 
 	return nil
+}
+
+// SetDaemonClientFunc wires the daemon client getter so the budget settings
+// pane can query live budget status from the daemon.
+func (p *Plugin) SetDaemonClientFunc(fn func() *daemon.Client) {
+	p.daemonClientFunc = fn
 }
 
 // RegisterProvider adds a SettingsProvider for a given slug.
@@ -954,6 +964,9 @@ func (p *Plugin) buildFormForSlug(item *NavItem) (*huh.Form, tea.Cmd) {
 		return form, form.Init()
 	case "system-shell":
 		form := p.buildShellForm()
+		return form, form.Init()
+	case "agent-budget":
+		form := p.buildAgentBudgetForm()
 		return form, form.Init()
 	case "agent-sandbox":
 		form := p.buildAgentSandboxForm()

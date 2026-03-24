@@ -26,7 +26,16 @@ import (
 // quitTimeoutMsg is sent after the double-escape timeout expires.
 type quitTimeoutMsg struct{}
 
+// budgetStatusMsg carries a fresh budget status from the daemon.
+type budgetStatusMsg struct {
+	status daemon.BudgetStatusResult
+	err    error
+}
+
 const quitTimeout = 2 * time.Second
+
+// budgetPollInterval controls how often the TUI polls budget status from the daemon.
+const budgetPollInterval = 5 * time.Second
 
 // Verify built-in plugins implement Starter at compile time.
 var _ plugin.Starter = (*sessions.Plugin)(nil)
@@ -93,7 +102,13 @@ type Model struct {
 	sessionsPlug *sessions.Plugin
 	ccPlug       *commandcenter.Plugin
 	prsPlug      *prs.Plugin
+	settingsPlug *settings.Plugin
 	bus          plugin.EventBus
+
+	// Budget widget state — polled from daemon.
+	budgetStatus     daemon.BudgetStatusResult
+	budgetLastPoll   time.Time
+	budgetAvailable  bool // true once we've received at least one successful poll
 }
 
 // NewModel creates the main TUI model with plugins.
@@ -195,6 +210,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		sessionsPlug: sessPlug,
 		ccPlug:       ccPlug,
 		prsPlug:      prsPlug,
+		settingsPlug: settingsPlug,
 		bus:          bus,
 	}
 	m.rebuildTabs()
@@ -277,6 +293,9 @@ func (m *Model) SetDaemonConn(dc *DaemonConn) {
 	if m.prsPlug != nil {
 		m.prsPlug.SetDaemonClientFunc(dc.Client)
 	}
+	if m.settingsPlug != nil {
+		m.settingsPlug.SetDaemonClientFunc(dc.Client)
+	}
 }
 
 // DaemonClient returns the daemon RPC client, or nil if not connected.
@@ -346,6 +365,9 @@ func (m Model) Init() tea.Cmd {
 		}
 	}
 
+	// Trigger initial budget poll.
+	cmds = append(cmds, m.pollBudgetCmd())
+
 	if m.returnedFromLaunch {
 		todoID := m.returnTodoID
 		wasResume := m.returnWasResumeJoin
@@ -369,6 +391,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.frame++
 		var cmds []tea.Cmd
 		cmds = append(cmds, ui.TickCmd())
+		// Poll budget status periodically from the daemon.
+		if time.Since(m.budgetLastPoll) >= budgetPollInterval && m.DaemonConnected() {
+			m.budgetLastPoll = time.Now()
+			cmds = append(cmds, m.pollBudgetCmd())
+		}
 		m.broadcastMessage(msg, &cmds)
 		return m, tea.Batch(cmds...)
 
@@ -485,6 +512,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Still disconnected — schedule another attempt after delay.
 		return m, daemonReconnectCmd()
+
+	case budgetStatusMsg:
+		if msg.err == nil {
+			m.budgetStatus = msg.status
+			m.budgetAvailable = true
+		}
+		return m, nil
 
 	case plugin.NotifyMsg:
 		// External notification — reload all plugins from DB
@@ -697,5 +731,81 @@ func (m Model) renderTabBar() string {
 		}
 	}
 	tabBar := strings.Join(parts, "")
+
+	// Append budget widget to the right of the tab bar.
+	budget := m.renderBudgetWidget()
+	if budget != "" {
+		tabBar = lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, tabBar)
+		// Overlay budget widget on the right side.
+		budgetWidth := lipgloss.Width(budget)
+		tabBarWidth := lipgloss.Width(tabBar)
+		if budgetWidth < tabBarWidth {
+			// Replace trailing spaces with the budget widget.
+			tabBar = tabBar[:tabBarWidth-budgetWidth] + budget
+		}
+		return tabBar
+	}
+
 	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, tabBar)
+}
+
+// pollBudgetCmd returns a tea.Cmd that fetches budget status from the daemon.
+func (m Model) pollBudgetCmd() tea.Cmd {
+	return func() tea.Msg {
+		client := m.DaemonClient()
+		if client == nil {
+			return budgetStatusMsg{err: fmt.Errorf("no daemon connection")}
+		}
+		status, err := client.GetBudgetStatus()
+		return budgetStatusMsg{status: status, err: err}
+	}
+}
+
+// renderBudgetWidget returns the styled budget widget string for the top-right corner.
+// Returns empty string if budget data is not yet available.
+func (m Model) renderBudgetWidget() string {
+	if !m.budgetAvailable {
+		return ""
+	}
+
+	bs := m.budgetStatus
+
+	// Emergency stop overrides everything.
+	if bs.EmergencyStopped {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#f7768e")).
+			Bold(true).
+			Render("[EMERGENCY STOP]")
+	}
+
+	spent := bs.HourlySpent
+	limit := bs.HourlyLimit
+
+	// Format the budget text.
+	text := fmt.Sprintf("[$%.2f/$%.0f/hr", spent, limit)
+
+	// Determine style based on warning level and agent activity.
+	switch bs.WarningLevel {
+	case "limit":
+		text += " STOPPED]"
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#f7768e")).
+			Bold(true).
+			Render(text)
+	case "warning":
+		text += " \u26a0]"
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#e0af68")).
+			Render(text)
+	default:
+		text += "]"
+		if bs.ActiveAgents > 0 {
+			return lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#c0caf5")).
+				Render(text)
+		}
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#565f89")).
+			Render(text)
+	}
 }

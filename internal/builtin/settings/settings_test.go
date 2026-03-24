@@ -257,8 +257,8 @@ func TestNavHasExpectedItems(t *testing.T) {
 
 func TestNavItemCount(t *testing.T) {
 	p, _ := testSetup(t)
-	// APPEARANCE(2) + PLUGINS(1: external) + DATA SOURCES(5) + AGENT(1) + SYSTEM(6) = 15
-	expected := 15
+	// APPEARANCE(2) + PLUGINS(1: external) + DATA SOURCES(5) + AGENT(2: budget+sandbox) + SYSTEM(6) = 16
+	expected := 16
 	if got := p.navItemCount(); got != expected {
 		t.Errorf("expected %d nav items, got %d", expected, got)
 	}
