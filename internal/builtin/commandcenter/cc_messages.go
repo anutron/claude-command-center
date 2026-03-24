@@ -891,9 +891,6 @@ func (p *Plugin) handleLaunchMsg(msg plugin.LaunchMsg) (bool, plugin.Action) {
 				// The runner's Kill sends SIGKILL; for graceful shutdown we need
 				// to access the session directly.
 				if sess := p.agentRunner.Session(info.ID); sess != nil {
-					if sess.Stdin != nil {
-						sess.Stdin.Close()
-					}
 					if sess.Cmd != nil && sess.Cmd.Process != nil {
 						sess.Cmd.Process.Signal(syscall.SIGINT)
 					}

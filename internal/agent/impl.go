@@ -316,7 +316,6 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 			Status:    "processing",
 			StartedAt: time.Now(),
 			Pty:       ptmx,
-			Stdin:     nil, // PTY mode: messages go through sess.Pty
 			LogPath:   logPath,
 			EventsCh:  make(chan SessionEvent, 64),
 			done:      make(chan struct{}),

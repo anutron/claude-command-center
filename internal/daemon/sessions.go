@@ -32,7 +32,7 @@ func newSessionRegistry(database *sql.DB) *sessionRegistry {
 
 // loadFromDB populates the in-memory map from cc_sessions (non-archived only).
 func (r *sessionRegistry) loadFromDB() {
-	records, err := db.DBLoadActiveSessions(r.database)
+	records, err := db.DBLoadVisibleSessions(r.database)
 	if err != nil {
 		return
 	}
@@ -43,11 +43,13 @@ func (r *sessionRegistry) loadFromDB() {
 
 // register adds a new session to the registry and persists it to the DB.
 func (r *sessionRegistry) register(params RegisterSessionParams) error {
+	// Resolve git info outside the lock — exec.Command can be slow.
+	repo, branch := gitInfoFromDir(params.Project)
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	now := db.FormatTime(time.Now())
-	repo, branch := gitInfoFromDir(params.Project)
 
 	info := &SessionInfo{
 		SessionID:    params.SessionID,

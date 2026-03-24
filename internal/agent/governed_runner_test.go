@@ -266,16 +266,17 @@ func TestGovernedRunner_LaunchDenied_EmergencyStop(t *testing.T) {
 	}
 }
 
-func TestGovernedRunner_ShutdownTriggersEmergencyStop(t *testing.T) {
+func TestGovernedRunner_ShutdownDoesNotPersistEmergencyStop(t *testing.T) {
 	cfg := defaultAgentCfg()
 	gr, inner := newTestGovernedRunner(t, cfg)
 
 	gr.Shutdown()
 
-	// Budget tracker should be in emergency stop.
+	// Budget tracker should NOT be in emergency stop after a normal shutdown.
+	// Emergency stop is reserved for explicit user action (ctrl+x / stop-all RPC).
 	status := gr.budget.Status()
-	if !status.EmergencyStopped {
-		t.Error("expected emergency stop after Shutdown()")
+	if status.EmergencyStopped {
+		t.Error("expected no emergency stop after normal Shutdown()")
 	}
 
 	// Inner runner should have been shut down.

@@ -9,13 +9,15 @@ import (
 type refreshLoop struct {
 	fn       func() error
 	interval time.Duration
+	notify   func() // called after each successful refresh
 	mu       sync.Mutex
 	running  bool
 	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
-func newRefreshLoop(fn func() error, interval time.Duration) *refreshLoop {
-	return &refreshLoop{fn: fn, interval: interval, stopCh: make(chan struct{})}
+func newRefreshLoop(fn func() error, interval time.Duration, notify func()) *refreshLoop {
+	return &refreshLoop{fn: fn, interval: interval, notify: notify, stopCh: make(chan struct{})}
 }
 
 func (r *refreshLoop) start() {
@@ -37,7 +39,9 @@ func (r *refreshLoop) start() {
 }
 
 func (r *refreshLoop) stop() {
-	close(r.stopCh)
+	r.stopOnce.Do(func() {
+		close(r.stopCh)
+	})
 }
 
 func (r *refreshLoop) run() error {
@@ -59,6 +63,8 @@ func (r *refreshLoop) run() error {
 	err := r.fn()
 	if err != nil {
 		log.Printf("refresh error: %v", err)
+	} else if r.notify != nil {
+		r.notify()
 	}
 	return err
 }

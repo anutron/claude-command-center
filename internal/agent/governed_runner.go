@@ -68,19 +68,29 @@ func (g *GovernedRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
 		}
 	}
 
-	// 3. Record the launch cost before delegating.
+	// 3. Record the launch cost and wire cost callback before delegating.
 	costRowID := g.budget.RecordLaunch(req.ID, req.Automation, req.Budget)
 	g.mu.Lock()
 	g.costRows[req.ID] = costEntry{rowID: costRowID, startedAt: time.Now()}
 	g.mu.Unlock()
 
-	// 4. Wire cost callback so PTY log token parsing updates the budget DB.
 	req.CostCallback = func(inputTokens, outputTokens int, costUSD float64) {
 		g.budget.RecordCost(costRowID, inputTokens, outputTokens, costUSD)
 	}
 
-	// 5. Delegate to the inner runner.
-	return g.inner.LaunchOrQueue(req)
+	// 4. Delegate to the inner runner.
+	innerQueued, innerCmd := g.inner.LaunchOrQueue(req)
+
+	// If the inner runner queued it (concurrency limit), clean up the cost row
+	// so it doesn't pollute budget accounting while sitting in the queue.
+	if innerQueued {
+		g.mu.Lock()
+		delete(g.costRows, req.ID)
+		g.mu.Unlock()
+		g.budget.RecordFinished(costRowID, 0, 0, 0)
+	}
+
+	return innerQueued, innerCmd
 }
 
 // Kill delegates to the inner runner.
@@ -151,8 +161,8 @@ func (g *GovernedRunner) Watch(id string) tea.Cmd {
 	return g.inner.Watch(id)
 }
 
-// Shutdown triggers emergency stop on the budget tracker and shuts down the inner runner.
+// Shutdown shuts down the inner runner (sends SIGINT to active sessions).
+// It does NOT persist emergency stop — that is reserved for explicit user action.
 func (g *GovernedRunner) Shutdown() {
-	g.budget.EmergencyStop()
 	g.inner.Shutdown()
 }

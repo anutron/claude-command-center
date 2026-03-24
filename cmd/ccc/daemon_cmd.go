@@ -73,7 +73,7 @@ func runDaemonStart() error {
 	}
 
 	logPath := filepath.Join(config.DataDir(), "daemon.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open daemon log: %w", err)
 	}

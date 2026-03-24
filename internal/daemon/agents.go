@@ -73,14 +73,21 @@ func (s *Server) handleLaunchAgent(req *RPCRequest) (interface{}, *RPCError) {
 
 	queued, cmd := s.runner.LaunchOrQueue(agentReq)
 
+	// If queued=true and cmd is non-nil, the GovernedRunner denied the launch
+	// (budget or rate limit). Execute the cmd to get the denial reason.
+	if queued && cmd != nil {
+		msg := cmd()
+		if denied, ok := msg.(agent.LaunchDeniedMsg); ok {
+			return nil, &RPCError{Code: -32000, Message: denied.Reason}
+		}
+	}
+
 	// If not queued, execute the tea.Cmd in a goroutine to actually start the process.
-	// The tea.Cmd returns a tea.Msg but we're not in a bubbletea loop, so we
-	// fire-and-forget and broadcast status events.
 	if !queued && cmd != nil {
 		go func() {
 			msg := cmd()
 			if started, ok := msg.(agent.SessionStartedMsg); ok {
-				// Broadcast the start event
+				// Broadcast the start event.
 				data, _ := json.Marshal(AgentStatusResult{
 					ID:        started.ID,
 					Status:    "processing",
@@ -90,6 +97,9 @@ func (s *Server) handleLaunchAgent(req *RPCRequest) (interface{}, *RPCError) {
 					Type: "agent.started",
 					Data: data,
 				})
+
+				// Watch for session completion and clean up.
+				go s.watchAgentDone(started.ID, started.Session)
 			}
 		}()
 	}
@@ -192,4 +202,23 @@ func (s *Server) handleSendAgentInput(req *RPCRequest) (interface{}, *RPCError) 
 		return nil, &RPCError{Code: -32000, Message: err.Error()}
 	}
 	return map[string]bool{"ok": true}, nil
+}
+
+// watchAgentDone waits for a session to finish and performs cleanup:
+// calls CleanupFinished to remove it from activeSessions and finalize cost rows,
+// then broadcasts an agent.finished event.
+func (s *Server) watchAgentDone(id string, sess *agent.Session) {
+	<-sess.Done()
+
+	s.runner.CleanupFinished(id)
+
+	exitCode := sess.ExitCode()
+	data, _ := json.Marshal(map[string]interface{}{
+		"id":        id,
+		"exit_code": exitCode,
+	})
+	s.Broadcast(Event{
+		Type: "agent.finished",
+		Data: data,
+	})
 }

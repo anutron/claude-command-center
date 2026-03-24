@@ -569,9 +569,9 @@ func DBLoadSessions(d *sql.DB) ([]SessionRecord, error) {
 	return dbLoadSessionsWhere(d, "1=1")
 }
 
-// DBLoadActiveSessions loads sessions where state is "active" or "ended",
+// DBLoadVisibleSessions loads sessions where state is "active" or "ended",
 // ordered by registered_at DESC.
-func DBLoadActiveSessions(d *sql.DB) ([]SessionRecord, error) {
+func DBLoadVisibleSessions(d *sql.DB) ([]SessionRecord, error) {
 	return dbLoadSessionsWhere(d, "state IN ('active', 'ended')")
 }
 

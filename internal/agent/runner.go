@@ -5,7 +5,6 @@
 package agent
 
 import (
-	"io"
 	"os"
 	"os/exec"
 	"sync"
@@ -89,11 +88,7 @@ type Session struct {
 	LogPath   string
 
 	// Pty is the PTY master file descriptor when the session is launched via PTY.
-	// It is nil for pipe-based sessions. The caller must close it when done.
 	Pty *os.File
-
-	// Stdin pipe for sending messages to the agent.
-	Stdin io.WriteCloser
 
 	// Events tracks parsed session events for the live viewer.
 	Events   []SessionEvent

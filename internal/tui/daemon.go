@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -81,7 +82,7 @@ func autoStartDaemon(logger plugin.Logger) error {
 	}
 
 	logPath := filepath.Join(config.DataDir(), "daemon.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open daemon log: %w", err)
 	}
@@ -130,7 +131,7 @@ func StartDaemonConnection(p *tea.Program, logger plugin.Logger, bus plugin.Even
 		logger.Info("daemon", "running without daemon connection (not fatal)")
 		return dc
 	}
-	dc.connected = true
+	dc.connected.Store(true)
 
 	// Open a second connection for event subscription.
 	sockPath := daemonSocketPath()
@@ -158,7 +159,7 @@ func StartDaemonConnection(p *tea.Program, logger plugin.Logger, bus plugin.Even
 type DaemonConn struct {
 	rpcClient *daemon.Client
 	subClient *daemon.Client
-	connected bool
+	connected atomic.Bool
 	logger    plugin.Logger
 	bus       plugin.EventBus
 	program   *tea.Program // stored for reconnection subscription goroutine
@@ -177,7 +178,7 @@ func (dc *DaemonConn) Connected() bool {
 	if dc == nil {
 		return false
 	}
-	return dc.connected
+	return dc.connected.Load()
 }
 
 // Close shuts down both connections.
@@ -212,7 +213,7 @@ func (dc *DaemonConn) Reconnect() bool {
 
 	dc.rpcClient = connectDaemon(dc.logger)
 	if dc.rpcClient == nil {
-		dc.connected = false
+		dc.connected.Store(false)
 		return false
 	}
 
@@ -221,11 +222,11 @@ func (dc *DaemonConn) Reconnect() bool {
 	subClient, err := daemon.NewClient(sockPath)
 	if err != nil {
 		dc.logger.Info("daemon", fmt.Sprintf("reconnect: subscription connection failed: %v", err))
-		dc.connected = false
+		dc.connected.Store(false)
 		return false
 	}
 	dc.subClient = subClient
-	dc.connected = true
+	dc.connected.Store(true)
 
 	go func() {
 		err := subClient.Subscribe(func(e daemon.Event) {

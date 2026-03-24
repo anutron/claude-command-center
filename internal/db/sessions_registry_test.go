@@ -38,9 +38,9 @@ func TestInsertAndLoadSession(t *testing.T) {
 		t.Fatalf("DBInsertSession: %v", err)
 	}
 
-	sessions, err := DBLoadActiveSessions(d)
+	sessions, err := DBLoadVisibleSessions(d)
 	if err != nil {
-		t.Fatalf("DBLoadActiveSessions: %v", err)
+		t.Fatalf("DBLoadVisibleSessions: %v", err)
 	}
 	if len(sessions) != 1 {
 		t.Fatalf("expected 1 active session, got %d", len(sessions))
@@ -150,9 +150,9 @@ func TestUpdateSessionState(t *testing.T) {
 	}
 
 	// "ended" sessions should still appear in active sessions query
-	active, err := DBLoadActiveSessions(d)
+	active, err := DBLoadVisibleSessions(d)
 	if err != nil {
-		t.Fatalf("DBLoadActiveSessions: %v", err)
+		t.Fatalf("DBLoadVisibleSessions: %v", err)
 	}
 	if len(active) != 1 {
 		t.Fatalf("expected 1 active/ended session, got %d", len(active))
@@ -162,9 +162,9 @@ func TestUpdateSessionState(t *testing.T) {
 	if err := DBUpdateSessionState(d, "sess-state-test", "archived"); err != nil {
 		t.Fatalf("DBUpdateSessionState (archived): %v", err)
 	}
-	active, err = DBLoadActiveSessions(d)
+	active, err = DBLoadVisibleSessions(d)
 	if err != nil {
-		t.Fatalf("DBLoadActiveSessions: %v", err)
+		t.Fatalf("DBLoadVisibleSessions: %v", err)
 	}
 	if len(active) != 0 {
 		t.Fatalf("expected 0 active sessions after archiving, got %d", len(active))

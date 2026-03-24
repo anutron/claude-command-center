@@ -499,7 +499,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case DaemonDisconnectedMsg:
 		if m.daemonConn != nil {
-			m.daemonConn.connected = false
+			m.daemonConn.connected.Store(false)
 		}
 		// Schedule a reconnect attempt.
 		return m, daemonReconnectCmd()
@@ -507,7 +507,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case daemonReconnectMsg:
 		// Attempt to reconnect to the daemon.
 		if m.daemonConn != nil && m.daemonConn.Reconnect() {
-			m.daemonConn.connected = true
 			return m, nil
 		}
 		// Still disconnected — schedule another attempt after delay.
@@ -786,8 +785,8 @@ func (m Model) renderBudgetWidget() string {
 
 	// Determine style based on warning level and agent activity.
 	switch bs.WarningLevel {
-	case "limit":
-		text += " STOPPED]"
+	case "critical":
+		text += " CRITICAL]"
 		return lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#f7768e")).
 			Bold(true).

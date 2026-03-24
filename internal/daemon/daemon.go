@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/agent"
@@ -42,15 +43,21 @@ type Server struct {
 // NewServer creates a new daemon server with the given configuration.
 func NewServer(cfg ServerConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Server{
+	s := &Server{
 		cfg:      cfg,
 		ctx:      ctx,
 		cancel:   cancel,
 		registry: newSessionRegistry(cfg.DB),
-		refresh:  newRefreshLoop(cfg.RefreshFunc, cfg.RefreshInterval),
 		runner:   cfg.AgentRunner,
 		governed: cfg.GovernedRunner,
 	}
+	// Wire refresh loop with a post-refresh callback that broadcasts
+	// data.refreshed to subscribers and prunes dead sessions.
+	s.refresh = newRefreshLoop(cfg.RefreshFunc, cfg.RefreshInterval, func() {
+		s.registry.pruneDead()
+		s.Broadcast(Event{Type: "data.refreshed"})
+	})
+	return s
 }
 
 // Serve starts listening on the Unix socket and accepting connections.
@@ -59,12 +66,14 @@ func (s *Server) Serve() error {
 	// Remove stale socket file if it exists.
 	os.Remove(s.cfg.SocketPath)
 
+	// Set restrictive umask before creating the socket so it is never
+	// world-accessible, even briefly (avoids TOCTOU race with Chmod).
+	oldMask := syscall.Umask(0177)
 	ln, err := net.Listen("unix", s.cfg.SocketPath)
+	syscall.Umask(oldMask)
 	if err != nil {
 		return fmt.Errorf("daemon listen: %w", err)
 	}
-	// Set socket permissions to owner-only.
-	os.Chmod(s.cfg.SocketPath, 0600)
 
 	s.mu.Lock()
 	s.listener = ln
@@ -119,6 +128,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	}()
 
 	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // 4MB max for large agent prompts
 	for scanner.Scan() {
 		select {
 		case <-s.ctx.Done():
@@ -165,7 +175,12 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 	case "Ping":
 		return map[string]bool{"ok": true}, nil
 	case "Refresh":
-		go s.refresh.run()
+		go func() {
+			if err := s.refresh.run(); err == nil {
+				s.registry.pruneDead()
+				s.Broadcast(Event{Type: "data.refreshed"})
+			}
+		}()
 		return map[string]bool{"ok": true}, nil
 
 	case "RegisterSession":
