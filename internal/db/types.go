@@ -521,6 +521,20 @@ func (cc *CommandCenter) AddPendingBooking(todoID string, durationMinutes int) {
 	})
 }
 
+// SessionRecord represents a row in the cc_sessions table (daemon session registry).
+type SessionRecord struct {
+	SessionID    string `json:"session_id"`
+	Topic        string `json:"topic"`
+	PID          int    `json:"pid"`
+	Project      string `json:"project"`
+	Repo         string `json:"repo"`
+	Branch       string `json:"branch"`
+	WorktreePath string `json:"worktree_path"`
+	State        string `json:"state"` // active | ended | archived
+	RegisteredAt string `json:"registered_at"`
+	EndedAt      string `json:"ended_at,omitempty"`
+}
+
 // PathEntry holds full metadata for a learned path row.
 type PathEntry struct {
 	Path        string    `json:"path"`

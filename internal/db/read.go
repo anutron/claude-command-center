@@ -560,6 +560,49 @@ func DBLoadMerges(database *sql.DB) ([]TodoMerge, error) {
 	return merges, rows.Err()
 }
 
+// ---------------------------------------------------------------------------
+// Read methods -- Sessions (daemon registry)
+// ---------------------------------------------------------------------------
+
+// DBLoadSessions loads all sessions ordered by registered_at DESC.
+func DBLoadSessions(d *sql.DB) ([]SessionRecord, error) {
+	return dbLoadSessionsWhere(d, "1=1")
+}
+
+// DBLoadVisibleSessions loads sessions where state is "active" or "ended",
+// ordered by registered_at DESC.
+func DBLoadVisibleSessions(d *sql.DB) ([]SessionRecord, error) {
+	return dbLoadSessionsWhere(d, "state IN ('active', 'ended')")
+}
+
+func dbLoadSessionsWhere(d *sql.DB, where string) ([]SessionRecord, error) {
+	rows, err := d.Query(`SELECT session_id, topic, pid, project, repo, branch,
+		worktree_path, state, registered_at, ended_at
+		FROM cc_sessions WHERE ` + where + ` ORDER BY registered_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []SessionRecord
+	for rows.Next() {
+		var s SessionRecord
+		var topic, project, repo, branch, worktreePath, endedAt sql.NullString
+		if err := rows.Scan(&s.SessionID, &topic, &s.PID, &project, &repo, &branch,
+			&worktreePath, &s.State, &s.RegisteredAt, &endedAt); err != nil {
+			return nil, err
+		}
+		s.Topic = topic.String
+		s.Project = project.String
+		s.Repo = repo.String
+		s.Branch = branch.String
+		s.WorktreePath = worktreePath.String
+		s.EndedAt = endedAt.String
+		sessions = append(sessions, s)
+	}
+	return sessions, rows.Err()
+}
+
 // DBLoadIgnoredRepos returns all repos in the ignore list, sorted alphabetically.
 func DBLoadIgnoredRepos(d *sql.DB) ([]string, error) {
 	rows, err := d.Query(`SELECT repo FROM cc_ignored_repos ORDER BY repo`)

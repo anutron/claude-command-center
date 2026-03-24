@@ -124,15 +124,35 @@ func (p *Plugin) handleSessionViewerInput(msg tea.KeyMsg) plugin.Action {
 			return plugin.ConsumedAction()
 		}
 
-		sess := p.agentRunner.Session(p.sessionViewerTodoID)
-		if sess != nil {
-			// Send the message via stdin pipe
-			if err := agent.SendUserMessage(sess, text); err != nil {
+		sent := false
+		// Try daemon RPC first for sending input.
+		if dc := p.daemonClient(); dc != nil {
+			if err := dc.SendAgentInput(p.sessionViewerTodoID, text); err != nil {
 				if p.logger != nil {
-					p.logger.Warn("commandcenter", "failed to send user message", "err", err)
+					p.logger.Warn("commandcenter", "daemon SendAgentInput failed, falling back to local", "err", err)
 				}
 			} else {
-				// Append a user event to the session's Events slice for display
+				sent = true
+			}
+		}
+
+		// Local runner fallback.
+		if !sent {
+			sess := p.agentRunner.Session(p.sessionViewerTodoID)
+			if sess != nil {
+				if err := agent.SendUserMessage(sess, text); err != nil {
+					if p.logger != nil {
+						p.logger.Warn("commandcenter", "failed to send user message", "err", err)
+					}
+				} else {
+					sent = true
+				}
+			}
+		}
+
+		if sent {
+			// Append a user event for display (works for both daemon and local).
+			if sess := p.agentRunner.Session(p.sessionViewerTodoID); sess != nil {
 				userEvent := sessionEvent{
 					Type:      "user",
 					Text:      text,
@@ -141,10 +161,8 @@ func (p *Plugin) handleSessionViewerInput(msg tea.KeyMsg) plugin.Action {
 				sess.Mu.Lock()
 				sess.Events = append(sess.Events, userEvent)
 				sess.Mu.Unlock()
-
-				// Refresh the viewport content
-				p.updateSessionViewerContent()
 			}
+			p.updateSessionViewerContent()
 		}
 
 		// Clear input and exit input mode

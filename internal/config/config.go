@@ -30,6 +30,7 @@ type Config struct {
 	Agent           AgentConfig            `yaml:"agent"`
 	Automations     []AutomationConfig     `yaml:"automations,omitempty"`
 	Refresh         RefreshConfig          `yaml:"refresh"`
+	Daemon          DaemonConfig           `yaml:"daemon"`
 
 	// DisabledPlugins lists slugs of built-in plugins the user has turned off.
 	// e.g. ["sessions", "commandcenter"]
@@ -201,6 +202,17 @@ type AgentConfig struct {
 	TodoWriteLearnedPaths    *bool    `yaml:"todo_write_learned_paths,omitempty"`
 	TodoExtraWritePaths      []string `yaml:"todo_extra_write_paths,omitempty"`
 	AutonomousAllowedDomains []string `yaml:"autonomous_allowed_domains,omitempty"`
+
+	// Budget caps
+	HourlyBudget     float64 `yaml:"hourly_budget"`      // max spend per rolling hour (default $25)
+	DailyBudget      float64 `yaml:"daily_budget"`        // max spend per rolling 24h (default $100)
+	BudgetWarningPct float64 `yaml:"budget_warning_pct"`  // warn at this fraction of budget (default 0.80)
+
+	// Rate limiting & backoff
+	MaxLaunchesPerAutomationPerHour int `yaml:"max_launches_per_automation_per_hour"` // default 20
+	CooldownMinutes                 int `yaml:"cooldown_minutes"`                     // pause after budget hit (default 15)
+	FailureBackoffBaseSec           int `yaml:"failure_backoff_base_seconds"`          // initial backoff on failure (default 60)
+	FailureBackoffMaxSec            int `yaml:"failure_backoff_max_seconds"`           // max backoff cap (default 3600)
 }
 
 // TodoWriteLearnedPathsEnabled returns whether agents can write to learned paths.
@@ -210,6 +222,12 @@ func (a *AgentConfig) TodoWriteLearnedPathsEnabled() bool {
 		return true
 	}
 	return *a.TodoWriteLearnedPaths
+}
+
+// DaemonConfig holds settings for the CCC daemon process.
+type DaemonConfig struct {
+	RefreshInterval  string `yaml:"refresh_interval"`  // default "5m"
+	SessionRetention string `yaml:"session_retention"` // default "7d"
 }
 
 // RefreshConfig controls ai-cron behavior.
@@ -273,6 +291,18 @@ func DefaultConfig() *Config {
 			DefaultMode:              "normal",
 			MaxConcurrent:            10,
 			AutonomousAllowedDomains: []string{"github.com", "api.github.com"},
+
+			HourlyBudget:                    25.00,
+			DailyBudget:                     100.00,
+			BudgetWarningPct:                0.80,
+			MaxLaunchesPerAutomationPerHour: 20,
+			CooldownMinutes:                 15,
+			FailureBackoffBaseSec:           60,
+			FailureBackoffMaxSec:            3600,
+		},
+		Daemon: DaemonConfig{
+			RefreshInterval:  "5m",
+			SessionRetention: "7d",
 		},
 	}
 }

@@ -1,5 +1,9 @@
 package lockfile
 
+// TODO(daemon-stable): Remove flock once daemon is proven stable.
+// The daemon is the sole refresh writer; flock exists only for backward
+// compatibility during the ai-cron → daemon transition.
+
 import (
 	"errors"
 	"fmt"

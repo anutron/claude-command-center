@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -285,6 +286,11 @@ type Plugin struct {
 	// Type-to-filter: characters typed on new/resume tabs are collected here
 	// and applied as a substring filter without requiring a '/' prefix.
 	filterText string
+
+	// Active sessions sub-tab
+	active         *activeView
+	flashMessage   string
+	flashMessageAt time.Time
 }
 
 // Slug returns the plugin identifier.
@@ -359,6 +365,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	s.Style = lipgloss.NewStyle().Foreground(p.styles.colorCyan)
 	p.spinner = s
 
+	// Initialise active view (daemon client getter wired later via SetDaemonClientFunc)
+	p.active = NewActiveView(nil, p.styles)
+
 	// Subscribe to events
 	if p.bus != nil {
 		p.bus.Subscribe("pending.todo", func(e plugin.Event) {
@@ -389,9 +398,27 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 				p.resumeList.SetItems(buildSessionItems(sessions))
 			}
 		})
+
+		// Subscribe to daemon session events for live updates
+		for _, topic := range []string{"session.registered", "session.updated", "session.ended"} {
+			p.bus.Subscribe(topic, func(e plugin.Event) {
+				if p.active != nil {
+					p.active.Refresh()
+				}
+			})
+		}
 	}
 
 	return nil
+}
+
+// SetDaemonClientFunc wires the daemon client getter so the active sessions
+// view can fetch live data. Must be called after Init but before the program runs.
+func (p *Plugin) SetDaemonClientFunc(fn func() *daemon.Client) {
+	if p.active != nil {
+		p.active.daemonClient = fn
+		p.active.Refresh()
+	}
 }
 
 // StartCmds returns initial tea.Cmds (e.g., spinner tick) the host should run.
@@ -408,6 +435,7 @@ func (p *Plugin) Migrations() []plugin.Migration { return nil }
 // Routes returns navigable sub-routes.
 func (p *Plugin) Routes() []plugin.Route {
 	return []plugin.Route{
+		{Slug: "active", Description: "Active sessions sub-tab"},
 		{Slug: "new", Description: "New session sub-tab"},
 		{Slug: "resume", Description: "Resume session sub-tab"},
 		{Slug: "worktrees", Description: "Worktrees sub-tab"},
@@ -418,6 +446,11 @@ func (p *Plugin) Routes() []plugin.Route {
 func (p *Plugin) NavigateTo(route string, args map[string]string) {
 	p.filterText = ""
 	switch route {
+	case "active":
+		p.subTab = "active"
+		if p.active != nil {
+			p.active.Refresh()
+		}
 	case "new":
 		p.subTab = "new"
 		p.applyFilter()
@@ -444,6 +477,7 @@ func (p *Plugin) Refresh() tea.Cmd {
 // KeyBindings returns the key bindings for this plugin.
 func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 	return []plugin.KeyBinding{
+		{Key: "a", Description: "Active sessions sub-tab", Promoted: true},
 		{Key: "n", Description: "New session sub-tab", Promoted: true},
 		{Key: "r", Description: "Resume session sub-tab", Promoted: true},
 		{Key: "t", Description: "Worktrees sub-tab", Promoted: true},
@@ -473,10 +507,19 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	}
 
 	// When a filter is active on new/resume tabs, only allow navigation keys
-	// and filter-editing keys — don't match single-char shortcuts (n/r/t).
+	// and filter-editing keys — don't match single-char shortcuts (a/n/r/t).
 	filtering := p.filterText != "" && (p.subTab == "new" || p.subTab == "resume")
 
 	switch msg.String() {
+	case "a":
+		if !filtering {
+			p.subTab = "active"
+			p.filterText = ""
+			if p.active != nil {
+				p.active.Refresh()
+			}
+			return plugin.NoopAction()
+		}
 	case "n":
 		if !filtering {
 			p.subTab = "new"
@@ -503,7 +546,7 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 			p.applyFilter()
 			return plugin.NoopAction()
 		}
-		if p.subTab == "worktrees" {
+		if p.subTab == "active" || p.subTab == "worktrees" {
 			p.subTab = "new"
 			return plugin.NoopAction()
 		}
@@ -522,6 +565,8 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	}
 
 	switch p.subTab {
+	case "active":
+		return p.handleActiveTab(msg)
 	case "new":
 		return p.handleNewTab(msg)
 	case "resume":
@@ -624,6 +669,8 @@ func (p *Plugin) View(width, height, frame int) string {
 
 	var content string
 	switch p.subTab {
+	case "active":
+		content = p.viewActiveTab()
 	case "new":
 		content = p.viewNewTab()
 	case "resume":
@@ -919,6 +966,98 @@ func (p *Plugin) handleConfirming(msg tea.KeyMsg) plugin.Action {
 	return plugin.NoopAction()
 }
 
+func (p *Plugin) handleActiveTab(msg tea.KeyMsg) plugin.Action {
+	switch msg.String() {
+	case "up", "k":
+		if p.active != nil {
+			p.active.MoveUp()
+		}
+		return plugin.NoopAction()
+	case "down", "j":
+		if p.active != nil {
+			p.active.MoveDown()
+		}
+		return plugin.NoopAction()
+
+	case "enter":
+		if p.active == nil {
+			return plugin.NoopAction()
+		}
+		sel := p.active.SelectedSession()
+		if sel == nil {
+			return plugin.NoopAction()
+		}
+		dir := sel.Project
+		if sel.WorktreePath != "" {
+			dir = sel.WorktreePath
+		}
+		return plugin.Action{
+			Type: plugin.ActionLaunch,
+			Args: map[string]string{
+				"dir":       dir,
+				"resume_id": sel.SessionID,
+			},
+		}
+
+	case "b":
+		if p.active == nil {
+			return plugin.NoopAction()
+		}
+		sel := p.active.SelectedSession()
+		if sel == nil {
+			return plugin.NoopAction()
+		}
+		if p.db != nil {
+			label := sel.Topic
+			if label == "" {
+				label = sel.Branch
+			}
+			bk := db.Session{
+				SessionID:    sel.SessionID,
+				Project:      sel.Project,
+				Repo:         sel.Repo,
+				Branch:       sel.Branch,
+				Created:      parseTime(sel.RegisteredAt),
+				Summary:      sel.Topic,
+				WorktreePath: sel.WorktreePath,
+			}
+			_ = db.DBInsertBookmark(p.db, bk, label)
+			// Reload bookmark list
+			sessions, _ := db.DBLoadBookmarks(p.db)
+			p.resumeList.SetItems(buildSessionItems(sessions))
+		}
+		p.flashMessage = "Bookmarked: " + sel.SessionID[:8]
+		p.flashMessageAt = time.Now()
+		return plugin.ConsumedAction()
+
+	case "d":
+		if p.active == nil {
+			return plugin.NoopAction()
+		}
+		sel := p.active.SelectedSession()
+		if sel == nil {
+			return plugin.NoopAction()
+		}
+		if sel.State == "active" || sel.State == "running" {
+			p.flashMessage = "Can't dismiss active session"
+			p.flashMessageAt = time.Now()
+			return plugin.ConsumedAction()
+		}
+		// Archive via daemon RPC
+		if p.active.daemonClient != nil {
+			client := p.active.daemonClient()
+			if client != nil {
+				_ = client.ArchiveSession(daemon.ArchiveSessionParams{SessionID: sel.SessionID})
+			}
+		}
+		p.active.RemoveSession(sel.SessionID)
+		p.flashMessage = "Dismissed: " + sel.SessionID[:8]
+		p.flashMessageAt = time.Now()
+		return plugin.ConsumedAction()
+	}
+	return plugin.NoopAction()
+}
+
 func (p *Plugin) handleWorktreesTab(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
 	case "enter":
@@ -1077,6 +1216,20 @@ func gitRepoRootFor(dir string) string {
 // Internal: views
 // ---------------------------------------------------------------------------
 
+func (p *Plugin) viewActiveTab() string {
+	if p.active == nil {
+		return p.styles.hint.Render("  Daemon not connected.")
+	}
+	listView := p.active.View(p.width, p.height)
+	hints := p.renderHints()
+	// Show flash message if recent (within 3 seconds)
+	if p.flashMessage != "" && time.Since(p.flashMessageAt) < 3*time.Second {
+		flash := p.styles.sectionHeader.Render("  " + p.flashMessage)
+		return lipgloss.JoinVertical(lipgloss.Left, listView, "", flash, "", hints)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, listView, "", hints)
+}
+
 func (p *Plugin) viewNewTab() string {
 	var banner string
 	if p.pendingLaunchTodo != nil {
@@ -1204,22 +1357,24 @@ func (p *Plugin) renderHints() string {
 		}
 	} else {
 		switch p.subTab {
+		case "active":
+			hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   up/down navigate   a active   n new   r resume   t worktrees   esc back")
 		case "new":
 			if p.filterText != "" {
 				hints = p.styles.hint.Render(fmt.Sprintf("filter: %s   enter launch   esc clear   backspace edit", p.filterText))
 			} else {
-				hints = p.styles.hint.Render("type to filter   enter launch   w worktree   n new   r resume   t worktrees   shift+up/down reorder   del remove   esc quit")
+				hints = p.styles.hint.Render("type to filter   enter launch   w worktree   a active   n new   r resume   t worktrees   shift+up/down reorder   del remove   esc quit")
 			}
 		case "resume":
 			if p.filterText != "" {
 				hints = p.styles.hint.Render(fmt.Sprintf("filter: %s   enter resume   esc clear   backspace edit", p.filterText))
 			} else {
-				hints = p.styles.hint.Render("type to filter   enter resume   n new   r resume   t worktrees   del remove   esc quit")
+				hints = p.styles.hint.Render("type to filter   enter resume   a active   n new   r resume   t worktrees   del remove   esc quit")
 			}
 		case "worktrees":
-			hints = p.styles.hint.Render("enter launch   d delete   p prune   n new   r resume   esc back")
+			hints = p.styles.hint.Render("enter launch   d delete   p prune   a active   n new   r resume   esc back")
 		default:
-			hints = p.styles.hint.Render("n new   r resume   t worktrees   esc quit")
+			hints = p.styles.hint.Render("a active   n new   r resume   t worktrees   esc quit")
 		}
 	}
 	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hints)

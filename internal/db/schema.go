@@ -235,6 +235,20 @@ func migrateSchema(db *sql.DB) error {
 		AND t2.rowid <= cc_todos.rowid
 	) WHERE display_id IS NULL OR display_id = 0`)
 
+	// Session registry table (for the CCC daemon).
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_sessions (
+		session_id TEXT PRIMARY KEY,
+		topic TEXT,
+		pid INTEGER,
+		project TEXT,
+		repo TEXT,
+		branch TEXT,
+		worktree_path TEXT,
+		state TEXT NOT NULL DEFAULT 'active',
+		registered_at TEXT NOT NULL,
+		ended_at TEXT
+	)`)
+
 	// Automation runs tracking table (for the automation framework).
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_automation_runs (
 		id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -259,6 +273,32 @@ func migrateSchema(db *sql.DB) error {
 	// PR ignore support
 	_, _ = db.Exec(`ALTER TABLE cc_pull_requests ADD COLUMN ignored BOOLEAN NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_ignored_repos (repo TEXT PRIMARY KEY)`)
+
+	// Agent cost tracking (for agent governance / budget caps)
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_agent_costs (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id      TEXT NOT NULL,
+		automation    TEXT NOT NULL DEFAULT '',
+		started_at    TEXT NOT NULL,
+		finished_at   TEXT,
+		duration_sec  INTEGER,
+		budget_usd    REAL NOT NULL DEFAULT 0,
+		cost_usd      REAL NOT NULL DEFAULT 0,
+		input_tokens  INTEGER NOT NULL DEFAULT 0,
+		output_tokens INTEGER NOT NULL DEFAULT 0,
+		cost_source   TEXT NOT NULL DEFAULT 'estimate',
+		exit_code     INTEGER,
+		status        TEXT NOT NULL DEFAULT 'running'
+	)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_costs_started ON cc_agent_costs(started_at)`)
+
+	// Budget state key-value store (for agent governance)
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_budget_state (
+		key        TEXT PRIMARY KEY,
+		value_num  REAL NOT NULL DEFAULT 0,
+		value_text TEXT NOT NULL DEFAULT '',
+		updated_at TEXT NOT NULL
+	)`)
 
 	return nil
 }

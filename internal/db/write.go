@@ -679,6 +679,70 @@ func DBDeleteTodo(db *sql.DB, id string) error {
 	return err
 }
 
+// ---------------------------------------------------------------------------
+// Write methods -- Sessions (daemon registry)
+// ---------------------------------------------------------------------------
+
+// DBInsertSession inserts or replaces a session in cc_sessions.
+func DBInsertSession(d *sql.DB, s SessionRecord) error {
+	_, err := d.Exec(`INSERT OR REPLACE INTO cc_sessions
+		(session_id, topic, pid, project, repo, branch, worktree_path, state, registered_at, ended_at)
+		VALUES (?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), ?, ?, NULLIF(?, ''))`,
+		s.SessionID, s.Topic, s.PID, s.Project, s.Repo, s.Branch, s.WorktreePath, s.State, s.RegisteredAt, s.EndedAt)
+	if err != nil {
+		return fmt.Errorf("insert session %s: %w", s.SessionID, err)
+	}
+	return nil
+}
+
+// DBUpdateSession updates specific fields on a session. Only whitelisted
+// field names are accepted to prevent SQL injection.
+func DBUpdateSession(d *sql.DB, sessionID string, fields map[string]interface{}) error {
+	allowed := map[string]bool{
+		"topic": true, "pid": true, "project": true, "repo": true,
+		"branch": true, "worktree_path": true, "state": true, "ended_at": true,
+	}
+
+	setClauses := make([]string, 0, len(fields))
+	args := make([]interface{}, 0, len(fields)+1)
+	for k, v := range fields {
+		if !allowed[k] {
+			return fmt.Errorf("disallowed field %q in session update", k)
+		}
+		setClauses = append(setClauses, k+" = ?")
+		args = append(args, v)
+	}
+	if len(setClauses) == 0 {
+		return nil
+	}
+
+	query := "UPDATE cc_sessions SET "
+	for i, clause := range setClauses {
+		if i > 0 {
+			query += ", "
+		}
+		query += clause
+	}
+	query += " WHERE session_id = ?"
+	args = append(args, sessionID)
+
+	_, err := d.Exec(query, args...)
+	if err != nil {
+		return fmt.Errorf("update session %s: %w", sessionID, err)
+	}
+	return nil
+}
+
+// DBUpdateSessionState updates the state of a session. If the new state is
+// "ended", ended_at is automatically set to the current time.
+func DBUpdateSessionState(d *sql.DB, sessionID, state string) error {
+	fields := map[string]interface{}{"state": state}
+	if state == "ended" {
+		fields["ended_at"] = FormatTime(time.Now())
+	}
+	return DBUpdateSession(d, sessionID, fields)
+}
+
 // DBClearPendingActions removes all pending actions.
 func DBClearPendingActions(d *sql.DB) error {
 	_, err := d.Exec(`DELETE FROM cc_pending_actions`)

@@ -158,7 +158,7 @@ func (r *Runner) runOne(ctx context.Context, auto config.AutomationConfig, trigg
 	// Step 2: Wait for ready (5s timeout), consuming any log messages
 	// that the automation sends during on_init.
 	for {
-		readyMsg, err := proc.receive(5 * time.Second)
+		readyMsg, err := proc.receive(ctx, 5*time.Second)
 		if err != nil {
 			result.Status = "error"
 			result.Message = "init timeout"
@@ -199,7 +199,7 @@ func (r *Runner) runOne(ctx context.Context, auto config.AutomationConfig, trigg
 
 	// Step 4: Read messages until we get a result.
 	for {
-		msg, err := proc.receive(30 * time.Second)
+		msg, err := proc.receive(ctx, 30*time.Second)
 		if err != nil {
 			result.Status = "error"
 			result.Message = fmt.Sprintf("timeout after 30s")

@@ -491,6 +491,16 @@ func containsHelper(s, substr string) bool {
 	return false
 }
 
+func TestDaemonConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Daemon.RefreshInterval != "5m" {
+		t.Fatalf("expected 5m, got %s", cfg.Daemon.RefreshInterval)
+	}
+	if cfg.Daemon.SessionRetention != "7d" {
+		t.Fatalf("expected 7d, got %s", cfg.Daemon.SessionRetention)
+	}
+}
+
 func TestAgentConfig_SandboxDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if !cfg.Agent.TodoWriteLearnedPathsEnabled() {
@@ -518,6 +528,120 @@ func TestAgentConfig_SandboxDefaults(t *testing.T) {
 	cfg.Agent.TodoWriteLearnedPaths = &f
 	if cfg.Agent.TodoWriteLearnedPathsEnabled() {
 		t.Error("TodoWriteLearnedPaths should be false when explicitly set")
+	}
+}
+
+func TestAgentConfig_GovernanceDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	a := cfg.Agent
+
+	if a.HourlyBudget != 25.00 {
+		t.Errorf("HourlyBudget: got %v, want 25.00", a.HourlyBudget)
+	}
+	if a.DailyBudget != 100.00 {
+		t.Errorf("DailyBudget: got %v, want 100.00", a.DailyBudget)
+	}
+	if a.BudgetWarningPct != 0.80 {
+		t.Errorf("BudgetWarningPct: got %v, want 0.80", a.BudgetWarningPct)
+	}
+	if a.MaxLaunchesPerAutomationPerHour != 20 {
+		t.Errorf("MaxLaunchesPerAutomationPerHour: got %d, want 20", a.MaxLaunchesPerAutomationPerHour)
+	}
+	if a.CooldownMinutes != 15 {
+		t.Errorf("CooldownMinutes: got %d, want 15", a.CooldownMinutes)
+	}
+	if a.FailureBackoffBaseSec != 60 {
+		t.Errorf("FailureBackoffBaseSec: got %d, want 60", a.FailureBackoffBaseSec)
+	}
+	if a.FailureBackoffMaxSec != 3600 {
+		t.Errorf("FailureBackoffMaxSec: got %d, want 3600", a.FailureBackoffMaxSec)
+	}
+}
+
+func TestAgentConfig_GovernanceYAMLRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", dir)
+
+	cfg := DefaultConfig()
+	cfg.Agent.HourlyBudget = 50.00
+	cfg.Agent.DailyBudget = 200.00
+	cfg.Agent.BudgetWarningPct = 0.90
+	cfg.Agent.MaxLaunchesPerAutomationPerHour = 10
+	cfg.Agent.CooldownMinutes = 30
+	cfg.Agent.FailureBackoffBaseSec = 120
+	cfg.Agent.FailureBackoffMaxSec = 7200
+
+	if err := Save(cfg); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	a := loaded.Agent
+	if a.HourlyBudget != 50.00 {
+		t.Errorf("HourlyBudget: got %v, want 50.00", a.HourlyBudget)
+	}
+	if a.DailyBudget != 200.00 {
+		t.Errorf("DailyBudget: got %v, want 200.00", a.DailyBudget)
+	}
+	if a.BudgetWarningPct != 0.90 {
+		t.Errorf("BudgetWarningPct: got %v, want 0.90", a.BudgetWarningPct)
+	}
+	if a.MaxLaunchesPerAutomationPerHour != 10 {
+		t.Errorf("MaxLaunchesPerAutomationPerHour: got %d, want 10", a.MaxLaunchesPerAutomationPerHour)
+	}
+	if a.CooldownMinutes != 30 {
+		t.Errorf("CooldownMinutes: got %d, want 30", a.CooldownMinutes)
+	}
+	if a.FailureBackoffBaseSec != 120 {
+		t.Errorf("FailureBackoffBaseSec: got %d, want 120", a.FailureBackoffBaseSec)
+	}
+	if a.FailureBackoffMaxSec != 7200 {
+		t.Errorf("FailureBackoffMaxSec: got %d, want 7200", a.FailureBackoffMaxSec)
+	}
+}
+
+func TestAgentConfig_GovernanceDefaultsWhenNotConfigured(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CCC_CONFIG_DIR", dir)
+
+	// Write a minimal config with no agent governance fields
+	minimalConfig := `name: Test
+palette: aurora
+`
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(minimalConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	a := loaded.Agent
+	if a.HourlyBudget != 25.00 {
+		t.Errorf("HourlyBudget should default to 25.00, got %v", a.HourlyBudget)
+	}
+	if a.DailyBudget != 100.00 {
+		t.Errorf("DailyBudget should default to 100.00, got %v", a.DailyBudget)
+	}
+	if a.BudgetWarningPct != 0.80 {
+		t.Errorf("BudgetWarningPct should default to 0.80, got %v", a.BudgetWarningPct)
+	}
+	if a.MaxLaunchesPerAutomationPerHour != 20 {
+		t.Errorf("MaxLaunchesPerAutomationPerHour should default to 20, got %d", a.MaxLaunchesPerAutomationPerHour)
+	}
+	if a.CooldownMinutes != 15 {
+		t.Errorf("CooldownMinutes should default to 15, got %d", a.CooldownMinutes)
+	}
+	if a.FailureBackoffBaseSec != 60 {
+		t.Errorf("FailureBackoffBaseSec should default to 60, got %d", a.FailureBackoffBaseSec)
+	}
+	if a.FailureBackoffMaxSec != 3600 {
+		t.Errorf("FailureBackoffMaxSec should default to 3600, got %d", a.FailureBackoffMaxSec)
 	}
 }
 
