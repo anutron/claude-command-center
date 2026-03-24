@@ -2,12 +2,8 @@ package tui
 
 import (
 	"fmt"
-	"log"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
@@ -72,45 +68,10 @@ func connectDaemon(logger plugin.Logger) *daemon.Client {
 
 // autoStartDaemon spawns the daemon as a detached background process.
 func autoStartDaemon(logger plugin.Logger) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("resolve executable: %w", err)
+	if err := daemon.StartProcess(); err != nil {
+		return err
 	}
-
-	if err := os.MkdirAll(config.DataDir(), 0o755); err != nil {
-		return fmt.Errorf("create data dir: %w", err)
-	}
-
-	logPath := filepath.Join(config.DataDir(), "daemon.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return fmt.Errorf("open daemon log: %w", err)
-	}
-
-	cmd := exec.Command(exe, "--daemon-internal")
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true, // Create new session — survives parent exit.
-	}
-
-	if err := cmd.Start(); err != nil {
-		logFile.Close()
-		return fmt.Errorf("start daemon: %w", err)
-	}
-	logFile.Close()
-
-	// Write PID file so daemon stop/status work.
-	pidPath := filepath.Join(config.ConfigDir(), "daemon.pid")
-	if err := os.MkdirAll(config.ConfigDir(), 0o755); err != nil {
-		log.Printf("WARNING: could not create config dir for PID file: %v", err)
-	}
-	_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0o644)
-
-	// Release the process so it's fully detached.
-	_ = cmd.Process.Release()
-
-	logger.Info("daemon", fmt.Sprintf("auto-started daemon (PID: %d)", cmd.Process.Pid))
+	logger.Info("daemon", "auto-started daemon")
 	return nil
 }
 

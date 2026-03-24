@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 )
@@ -228,9 +229,11 @@ func (p *Plugin) applyDaemonStateChange(desired string) string {
 				return "Daemon resumed"
 			}
 		} else {
-			// Start from stopped state — auto-start will handle it on reconnect.
-			// Trigger reconnect by returning a message.
-			return "Daemon will auto-start on next connection attempt"
+			// Start from stopped state.
+			if err := daemon.StartProcess(); err != nil {
+				return "Failed to start: " + err.Error()
+			}
+			return "Daemon started"
 		}
 	case "paused":
 		if current == "stopped" {
