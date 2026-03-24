@@ -543,7 +543,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "r":
-		if !p.ccRefreshing {
+		if !p.ccRefreshing && p.cfg.RefreshEnabled() {
 			p.ccRefreshing = true
 			p.ccLastRefreshTriggered = time.Now()
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: refreshCCCmd()}
@@ -566,8 +566,18 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 	case "o":
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
 			todo := activeTodos[p.ccCursor]
+			sid := todo.SessionID
+			// Try to recover session ID from log file if missing.
+			if sid == "" {
+				sid = p.extractSessionIDFromLog(&todo)
+			}
 			// If todo has an existing session, resume it directly
-			if todo.SessionID != "" {
+			if sid != "" {
+				// Backfill the in-memory and DB session ID.
+				if todo.SessionID == "" {
+					todo.SessionID = sid
+					p.persistSessionID(todo.ID, sid)
+				}
 				dir := todo.ProjectDir
 				if dir == "" {
 					home, _ := os.UserHomeDir()
@@ -577,7 +587,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 					Type: "launch",
 					Args: map[string]string{
 						"dir":       dir,
-						"resume_id": todo.SessionID,
+						"resume_id": sid,
 						"todo_id":   todo.ID,
 					},
 				}
@@ -693,7 +703,11 @@ func (p *Plugin) handleBooking(msg tea.KeyMsg) plugin.Action {
 			p.flashMessage = fmt.Sprintf("Booking %dm for %s...", dur, activeTodos[p.ccCursor].Title)
 			p.flashMessageAt = time.Now()
 			p.bookingMode = false
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, refreshCCCmd())}
+			cmds := []tea.Cmd{dbCmd}
+			if p.cfg.RefreshEnabled() {
+				cmds = append(cmds, refreshCCCmd())
+			}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 		}
 		p.bookingMode = false
 		return plugin.NoopAction()

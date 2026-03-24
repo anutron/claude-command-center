@@ -201,7 +201,7 @@ func New() *Plugin {
 
 // StartCmds returns initial tea.Cmds (e.g., spinner tick) the host should run.
 func (p *Plugin) StartCmds() tea.Cmd {
-	if p.ccRefreshing {
+	if p.ccRefreshing && p.cfg.RefreshEnabled() {
 		return tea.Batch(p.spinner.Tick, refreshCCCmd())
 	}
 	return p.spinner.Tick
@@ -249,7 +249,7 @@ func (p *Plugin) RefreshInterval() time.Duration {
 
 // Refresh returns a command that triggers a CC refresh.
 func (p *Plugin) Refresh() tea.Cmd {
-	if !p.ccRefreshing {
+	if !p.ccRefreshing && p.cfg.RefreshEnabled() {
 		p.ccRefreshing = true
 		p.ccLastRefreshTriggered = time.Now()
 		return refreshCCCmd()

@@ -60,7 +60,18 @@ func (p *Plugin) handleSessionViewer(msg tea.KeyMsg) plugin.Action {
 
 	case "o":
 		// Join session interactively (existing launch flow)
-		if todo := p.sessionViewerTodo(); todo != nil && todo.SessionID != "" {
+		if todo := p.sessionViewerTodo(); todo != nil {
+			if todo.SessionID == "" {
+				// Session ID wasn't captured — try to extract from the log file.
+				if sid := p.extractSessionIDFromLog(todo); sid != "" {
+					todo.SessionID = sid
+					p.persistSessionID(todo.ID, sid)
+				} else {
+					p.flashMessage = "No session ID captured — session cannot be joined"
+					p.flashMessageAt = time.Now()
+					return plugin.ConsumedAction()
+				}
+			}
 			dir := todo.ProjectDir
 			if dir == "" {
 				home, _ := os.UserHomeDir()

@@ -991,7 +991,7 @@ func (p *Plugin) handleTickMsg() (bool, plugin.Action) {
 	}
 
 	// Trigger ai-cron when data is older than the refresh interval (default 5m).
-	if p.cc != nil && !p.ccRefreshing && time.Since(p.cc.GeneratedAt) > ccRefreshInterval {
+	if p.cfg.RefreshEnabled() && p.cc != nil && !p.ccRefreshing && time.Since(p.cc.GeneratedAt) > ccRefreshInterval {
 		if time.Since(p.ccLastRefreshTriggered) > ccRefreshInterval {
 			p.ccRefreshing = true
 			p.ccLastRefreshTriggered = time.Now()

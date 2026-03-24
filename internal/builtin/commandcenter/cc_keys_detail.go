@@ -1,7 +1,9 @@
 package commandcenter
 
 import (
+	"bufio"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -164,12 +166,22 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 	case "o":
 		// If todo has a session_id, join/resume that session directly
 		if todo := p.detailTodo(); todo != nil {
-			if todo.SessionID != "" {
+			sid := todo.SessionID
+			// Try to recover session ID from log file if missing.
+			if sid == "" {
+				sid = p.extractSessionIDFromLog(todo)
+			}
+			if sid != "" {
 				// Verify session file still exists before attempting to join.
-				if !sessionFileExists(todo.SessionID) {
+				if !sessionFileExists(sid) {
 					p.flashMessage = "Session expired — use r to re-run or c to edit prompt first"
 					p.flashMessageAt = time.Now()
 					return plugin.ConsumedAction()
+				}
+				// Backfill the in-memory and DB session ID.
+				if todo.SessionID == "" {
+					todo.SessionID = sid
+					p.persistSessionID(todo.ID, sid)
 				}
 				dir := todo.ProjectDir
 				if dir == "" {
@@ -180,7 +192,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 					Type: "launch",
 					Args: map[string]string{
 						"dir":       dir,
-						"resume_id": todo.SessionID,
+						"resume_id": sid,
 						"todo_id":   todo.ID,
 					},
 				}
@@ -695,4 +707,43 @@ func sessionFileExists(sessionID string) bool {
 		}
 	}
 	return false
+}
+
+// extractSessionIDFromLog reads the first few lines of a todo's session log
+// to recover the session_id when it wasn't captured via the normal event flow.
+func (p *Plugin) extractSessionIDFromLog(todo *db.Todo) string {
+	logPath := todo.SessionLogPath
+	if logPath == "" {
+		return ""
+	}
+	f, err := os.Open(logPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 512*1024)
+	// Check first 10 lines for a session_id field.
+	for i := 0; i < 10 && scanner.Scan(); i++ {
+		line := scanner.Text()
+		var event map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+		if sid, ok := event["session_id"].(string); ok && sid != "" {
+			return sid
+		}
+	}
+	return ""
+}
+
+// persistSessionID writes a recovered session ID to the DB in the background.
+func (p *Plugin) persistSessionID(todoID, sessionID string) {
+	if p.database == nil {
+		return
+	}
+	go func() {
+		_ = db.DBUpdateTodoSessionID(p.database, todoID, sessionID)
+	}()
 }

@@ -214,9 +214,20 @@ func (a *AgentConfig) TodoWriteLearnedPathsEnabled() bool {
 
 // RefreshConfig controls ai-cron behavior.
 type RefreshConfig struct {
+	// Enabled controls whether CCC spawns ai-cron on a timer.
+	// Defaults to true when omitted for backwards compat.
+	Enabled *bool `yaml:"enabled,omitempty"`
 	// Model selects which LLM model ai-cron uses for prompt generation.
 	// Empty string means use the CLI default.
 	Model string `yaml:"model,omitempty"`
+}
+
+// RefreshEnabled returns whether the periodic ai-cron refresh is enabled.
+func (c *Config) RefreshEnabled() bool {
+	if c.Refresh.Enabled == nil {
+		return true
+	}
+	return *c.Refresh.Enabled
 }
 
 // BannerVisible returns whether the banner should be shown.
