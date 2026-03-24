@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/anutron/claude-command-center/internal/config"
 	"syscall"
 	"time"
+
+	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/creack/pty"
+	"github.com/google/uuid"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -61,8 +63,9 @@ func (r *defaultRunner) Kill(id string) bool {
 	}
 	delete(r.activeSessions, id)
 	r.mu.Unlock()
-	if sess.Stdin != nil {
-		sess.Stdin.Close()
+	// Close PTY first (sends SIGHUP to child process group).
+	if sess.Pty != nil {
+		sess.Pty.Close()
 	}
 	if sess.Cmd != nil && sess.Cmd.Process != nil {
 		sess.Cmd.Process.Kill()
@@ -212,8 +215,9 @@ func (r *defaultRunner) Shutdown() {
 	r.mu.Unlock()
 
 	for _, sess := range sessions {
-		if sess.Stdin != nil {
-			sess.Stdin.Close()
+		// Close PTY first (sends SIGHUP), then SIGINT for good measure.
+		if sess.Pty != nil {
+			sess.Pty.Close()
 		}
 		if sess.Cmd != nil && sess.Cmd.Process != nil {
 			sess.Cmd.Process.Signal(syscall.SIGINT)
@@ -241,8 +245,8 @@ func (r *defaultRunner) onSessionFinished(id string) *Session {
 	}
 	delete(r.activeSessions, id)
 	r.mu.Unlock()
-	if sess.Stdin != nil {
-		sess.Stdin.Close()
+	if sess.Pty != nil {
+		sess.Pty.Close()
 	}
 	return sess
 }
@@ -253,27 +257,27 @@ func (r *defaultRunner) CleanupFinished(id string) *Session {
 	return r.onSessionFinished(id)
 }
 
-// launchSession starts a headless Claude Code session and returns a tea.Cmd
-// that sends SessionStartedMsg.
+// launchSession starts a headless Claude Code session via PTY and returns a
+// tea.Cmd that sends SessionStartedMsg.
 func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 	return func() tea.Msg {
-		args := []string{
-			"--print",
-			"--output-format", "stream-json",
-			"--input-format", "stream-json",
-			"--verbose",
+		// Generate session ID upfront so we can immediately report it and
+		// know the native log path before the process starts.
+		sessionUUID := uuid.New().String()
+
+		args := []string{"--verbose"}
+
+		if req.ResumeID != "" {
+			args = append(args, "--resume", req.ResumeID)
+		} else {
+			args = append(args, "--session-id", sessionUUID)
 		}
+
 		if req.Permission != "" && req.Permission != "default" {
 			args = append(args, "--permission-mode", req.Permission)
 		}
-		if req.Budget >= 0.50 {
-			args = append(args, "--max-budget-usd", fmt.Sprintf("%.2f", req.Budget))
-		}
 		if req.Worktree {
 			args = append(args, "--worktree")
-		}
-		if req.ResumeID != "" {
-			args = append(args, "--resume", req.ResumeID)
 		}
 
 		cmd := exec.Command("claude", args...)
@@ -281,44 +285,38 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 			cmd.Dir = req.ProjectDir
 		}
 
-		stdout, err := cmd.StdoutPipe()
+		// Launch via PTY instead of pipes.
+		ptmx, err := pty.Start(cmd)
 		if err != nil {
-			LogSessionError(req.ID, "stdout pipe: %v", err)
+			LogSessionError(req.ID, "pty start: %v", err)
 			return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
 		}
 
-		stdin, err := cmd.StdinPipe()
-		if err != nil {
-			LogSessionError(req.ID, "stdin pipe: %v", err)
-			return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
-		}
+		// Drain PTY output to prevent the child process from blocking on
+		// a full PTY buffer. We read events from the native log instead.
+		go io.Copy(io.Discard, ptmx)
 
-		if err := cmd.Start(); err != nil {
-			LogSessionError(req.ID, "start: %v", err)
-			return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
-		}
-
-		// Send the initial prompt via stdin as a stream-json user message.
-		initMsg := map[string]interface{}{
-			"type": "user",
-			"message": map[string]interface{}{
-				"role":    "user",
-				"content": req.Prompt,
-			},
-		}
-		if initData, err := json.Marshal(initMsg); err == nil {
-			initData = append(initData, '\n')
-			stdin.Write(initData)
+		// Write the initial prompt as plain text to the PTY.
+		if req.Prompt != "" {
+			ptmx.Write([]byte(req.Prompt + "\n"))
 		}
 
 		logPath := SessionLogPath(req.ID)
 
+		// Determine the project dir for native log path computation.
+		projectDir := req.ProjectDir
+		if projectDir == "" {
+			projectDir, _ = os.Getwd()
+		}
+
 		sess := &Session{
 			ID:        req.ID,
+			SessionID: sessionUUID,
 			Cmd:       cmd,
 			Status:    "processing",
 			StartedAt: time.Now(),
-			Stdin:     stdin,
+			Pty:       ptmx,
+			Stdin:     nil, // PTY mode: messages go through sess.Pty
 			LogPath:   logPath,
 			EventsCh:  make(chan SessionEvent, 64),
 			done:      make(chan struct{}),
@@ -330,9 +328,9 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 		r.activeSessions[req.ID] = sess
 		r.mu.Unlock()
 
-		// Background goroutine: read stream-JSON stdout, detect blocking events,
-		// parse events, and signal completion.
-		go monitorSession(sess, stdout)
+		// Tail the native log file for events, cost tracking, and status detection.
+		nativeLogPath := NativeLogPath(projectDir, sessionUUID)
+		go monitorSessionFromLog(sess, nativeLogPath, req.CostCallback, req.Budget)
 
 		return SessionStartedMsg{
 			ID:      req.ID,
@@ -341,24 +339,42 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 	}
 }
 
-// monitorSession reads stream-JSON from stdout and updates the session state.
-func monitorSession(sess *Session, stdout io.Reader) {
+// monitorSessionFromLog tails the Claude native JSONL log file for events,
+// cost tracking, and session status. It replaces the old pipe-based monitorSession.
+func monitorSessionFromLog(sess *Session, nativeLogPath string, costCb CostCallback, budgetUSD float64) {
 	logFile := OpenSessionLog(sess.LogPath)
 	if logFile != nil {
 		defer logFile.Close()
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	eventCh := make(chan map[string]interface{}, 64)
+	go tailNativeLog(ctx, nativeLogPath, 0, eventCh)
+
+	// Track cumulative cost for per-session budget enforcement.
+	var cumulativeCost float64
+
+	// processDone signals when the child process exits.
+	processDone := make(chan struct{})
+	go func() {
+		defer close(processDone)
+		_ = sess.Cmd.Wait()
+	}()
+
 	defer func() {
+		cancel() // stop log tailer
+
 		close(sess.EventsCh)
 
 		exitCode := 0
-		if err := sess.Cmd.Wait(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			} else {
-				exitCode = -1
-			}
+		// Wait for process to finish (may already be done).
+		<-processDone
+		if sess.Cmd.ProcessState != nil && !sess.Cmd.ProcessState.Success() {
+			exitCode = sess.Cmd.ProcessState.ExitCode()
 		}
+
 		sess.Mu.Lock()
 		sess.exitCode = exitCode
 		sess.Mu.Unlock()
@@ -370,77 +386,120 @@ func monitorSession(sess *Session, stdout io.Reader) {
 		close(sess.done)
 	}()
 
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for {
+		select {
+		case event, ok := <-eventCh:
+			if !ok {
+				return
+			}
 
-	sessionIDCaptured := false
-	for scanner.Scan() {
-		line := scanner.Text()
+			// Serialize to JSON for CCC's own log file and output buffer.
+			line, _ := json.Marshal(event)
+			lineStr := string(line)
 
-		if logFile != nil {
-			fmt.Fprintln(logFile, line)
-		}
+			if logFile != nil {
+				fmt.Fprintln(logFile, lineStr)
+			}
 
-		sess.Mu.Lock()
-		sess.output.WriteString(line)
-		sess.output.WriteString("\n")
-		sess.Mu.Unlock()
+			sess.Mu.Lock()
+			sess.output.WriteString(lineStr)
+			sess.output.WriteString("\n")
+			sess.Mu.Unlock()
 
-		var event map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
-			continue
-		}
-
-		if !sessionIDCaptured {
-			if sid, ok := event["session_id"].(string); ok && sid != "" {
-				sessionIDCaptured = true
+			// Parse into SessionEvents for the live viewer.
+			parsedEvents := ParseSessionEvent(event)
+			for _, parsed := range parsedEvents {
 				sess.Mu.Lock()
-				sess.SessionID = sid
+				sess.Events = append(sess.Events, parsed)
+				sess.Mu.Unlock()
+				select {
+				case sess.EventsCh <- parsed:
+				default:
+				}
+			}
+
+			// Detect blocking (permission prompts, user questions).
+			if DetectBlockingEvent(event) {
+				question := ExtractBlockingQuestion(event)
+				sess.Mu.Lock()
+				sess.Status = "blocked"
+				sess.Question = question
 				sess.Mu.Unlock()
 			}
-		}
 
-		parsedEvents := ParseSessionEvent(event)
-		for _, parsed := range parsedEvents {
-			sess.Mu.Lock()
-			sess.Events = append(sess.Events, parsed)
-			sess.Mu.Unlock()
-			select {
-			case sess.EventsCh <- parsed:
-			default:
+			// Extract token usage and invoke cost callback.
+			if inputTok, outputTok, hasUsage := extractUsageFromEvent(event); hasUsage {
+				cost := estimateCost(event, inputTok, outputTok)
+				cumulativeCost += cost
+				if costCb != nil {
+					costCb(inputTok, outputTok, cost)
+				}
+
+				// Per-session budget enforcement: if cumulative cost exceeds
+				// the budget, send SIGINT to gracefully stop the agent.
+				if budgetUSD > 0 && cumulativeCost > budgetUSD {
+					if sess.Cmd != nil && sess.Cmd.Process != nil {
+						sess.Cmd.Process.Signal(syscall.SIGINT)
+					}
+				}
 			}
-		}
 
-		if DetectBlockingEvent(event) {
-			question := ExtractBlockingQuestion(event)
-			sess.Mu.Lock()
-			sess.Status = "blocked"
-			sess.Question = question
-			sess.Mu.Unlock()
+		case <-processDone:
+			// Process exited. Drain remaining events from the log with a short deadline.
+			drainCtx, drainCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		drain:
+			for {
+				select {
+				case event, ok := <-eventCh:
+					if !ok {
+						break drain
+					}
+					line, _ := json.Marshal(event)
+					lineStr := string(line)
+					if logFile != nil {
+						fmt.Fprintln(logFile, lineStr)
+					}
+					sess.Mu.Lock()
+					sess.output.WriteString(lineStr)
+					sess.output.WriteString("\n")
+					sess.Mu.Unlock()
+
+					parsedEvents := ParseSessionEvent(event)
+					for _, parsed := range parsedEvents {
+						sess.Mu.Lock()
+						sess.Events = append(sess.Events, parsed)
+						sess.Mu.Unlock()
+						select {
+						case sess.EventsCh <- parsed:
+						default:
+						}
+					}
+
+					if inputTok, outputTok, hasUsage := extractUsageFromEvent(event); hasUsage {
+						cost := estimateCost(event, inputTok, outputTok)
+						cumulativeCost += cost
+						if costCb != nil {
+							costCb(inputTok, outputTok, cost)
+						}
+					}
+				case <-drainCtx.Done():
+					break drain
+				}
+			}
+			drainCancel()
+			return
 		}
 	}
 }
 
-// SendUserMessage writes an NDJSON user message to the agent's stdin pipe.
+// SendUserMessage writes a plain-text user message to the agent's PTY.
 func SendUserMessage(sess *Session, message string) error {
-	if sess.Stdin == nil {
-		return fmt.Errorf("session stdin is not available")
+	if sess.Pty == nil {
+		return fmt.Errorf("session PTY is not available")
 	}
-	payload := map[string]interface{}{
-		"type": "user",
-		"message": map[string]interface{}{
-			"role":    "user",
-			"content": message,
-		},
-	}
-	data, err := json.Marshal(payload)
+	_, err := sess.Pty.Write([]byte(message + "\n"))
 	if err != nil {
-		return fmt.Errorf("marshal user message: %w", err)
-	}
-	data = append(data, '\n')
-	_, err = sess.Stdin.Write(data)
-	if err != nil {
-		return fmt.Errorf("write to agent stdin: %w", err)
+		return fmt.Errorf("write to agent PTY: %w", err)
 	}
 	sess.Mu.Lock()
 	if sess.Status == "blocked" {

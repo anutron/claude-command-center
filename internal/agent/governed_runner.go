@@ -74,7 +74,12 @@ func (g *GovernedRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
 	g.costRows[req.ID] = costEntry{rowID: costRowID, startedAt: time.Now()}
 	g.mu.Unlock()
 
-	// 4. Delegate to the inner runner.
+	// 4. Wire cost callback so PTY log token parsing updates the budget DB.
+	req.CostCallback = func(inputTokens, outputTokens int, costUSD float64) {
+		g.budget.RecordCost(costRowID, inputTokens, outputTokens, costUSD)
+	}
+
+	// 5. Delegate to the inner runner.
 	return g.inner.LaunchOrQueue(req)
 }
 
