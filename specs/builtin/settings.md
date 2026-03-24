@@ -17,14 +17,15 @@ Sidebar (left) + content pane (right). The sidebar lists items grouped by catego
 1. **APPEARANCE** — Banner, Palette
 2. **PLUGINS** — Sessions, Command Center, Threads, Pomodoro, external plugins
 3. **DATA SOURCES** — Calendar, GitHub, Granola, Slack, Gmail
-4. **SYSTEM** — Schedule, MCP Servers, Skills, Shell Integration, Logs
+4. **AGENT** — Daemon, Budget, Sandbox
+5. **SYSTEM** — Automations, Schedule, MCP Servers, Skills, Shell Integration, Logs
 
 ### NavItem
 
 Each sidebar entry is a `NavItem` with:
 - `Label` — display name
 - `Slug` — unique identifier
-- `Kind` — "appearance", "plugin", "datasource", "system"
+- `Kind` — "appearance", "plugin", "datasource", "agent", "system"
 - `Description` — one-liner shown below the title in the content pane header
 - `Enabled` — toggle state (nil = no toggle)
 - `ValidationStatus` / `ValidationMsg` / `ValidHint` — tiered credential validation (data sources)
@@ -77,9 +78,11 @@ All content panes (except logs) use `charmbracelet/huh` forms. Each pane has:
 
 ### Auto-Save Behavior
 
-Forms with editable settings (banner, palette) auto-save on:
+Forms with editable settings (banner, palette, agent-budget) auto-save on:
 - **Pane exit** (esc, left arrow, tab leave)
 - **Field transition** (tab, shift+tab, enter moving between fields)
+
+The daemon form auto-saves by executing the selected action on field transition.
 
 Action-based forms (system, datasource) do NOT auto-save — esc dismisses without executing.
 
@@ -140,6 +143,41 @@ Content layout (top to bottom):
 The Slack integration uses a **user token** (`xoxp-`), not a bot token. The token form says "Slack User Token" with "Starts with xoxp-". Config supports both `token` (preferred) and `bot_token` (backwards compat) fields. Env vars: `SLACK_TOKEN` and `SLACK_BOT_TOKEN`.
 
 The Slack refresh source gracefully degrades: if `conversations.list` fails with `missing_scope`, it falls back to `search.messages` (which only requires `search:read`).
+
+### Daemon (agent-daemon)
+
+Shows the daemon process status and provides lifecycle controls. Queries the daemon via `daemonClientFunc` on each form build.
+
+Form layout (single group, plus optional Live Info group):
+- **Status** — note showing "Running" (green), "Paused" (yellow), or "Stopped" (red)
+- **Action** — select with contextual options:
+  - Running: "Pause", "Stop"
+  - Paused: "Resume", "Stop"
+  - Stopped: "Start"
+- **Live Info** (shown only when daemon is reachable) — read-only note showing active agent count, hourly spend vs limit, daily spend vs limit, and emergency stop status if active
+
+On completion: executes the selected action (`daemon.StartProcess()` for start, client RPC for pause/resume/stop), waits 300ms for the daemon to transition, then rebuilds the form to reflect the new state. Flash message confirms the action result.
+
+Auto-save on field transition calls `saveDaemonValues()` which applies the action immediately (same as form completion).
+
+### Budget (agent-budget)
+
+Editable budget configuration with live spend display and read-only rate limits. Three form groups:
+
+**Group 1 — Current Spend** (read-only, from daemon):
+- **Current Spend** — note showing hourly spend/limit, daily spend/limit, active agent count. Falls back to muted "daemon not connected" / "daemon not available" messages when unreachable.
+- **Emergency Stop** — note showing "ACTIVE — all agents stopped" (red) or "off" (green). Shows "N/A" when daemon is unreachable.
+
+**Group 2 — Editable Fields:**
+- **Max Concurrent Agents** — text input, 4 char limit, validated 1-100
+- **Hourly Budget ($)** — text input, 8 char limit, validated non-negative float
+- **Daily Budget ($)** — text input, 8 char limit, validated non-negative float
+- **Warning Threshold (%)** — text input, 3 char limit, validated 0-100 integer
+
+**Group 3 — Rate Limits** (read-only):
+- **Rate Limits** — note showing max launches per automation per hour, budget cooldown minutes, failure backoff initial/max seconds. Values come from `config.Agent` fields.
+
+Saves to `config.Agent.*` on field transition (auto-save via `saveBudgetValues()`) and on form completion. Publishes `config.saved` event with source `"agent-budget"`. Warning threshold is stored as a 0-1 float internally but displayed/edited as a 0-100 percentage.
 
 ### System Panes (schedule, mcp, skills, shell)
 
@@ -208,3 +246,4 @@ settings.New(registry *plugin.Registry) *Plugin
 - `charmbracelet/huh` — form framework for all content panes
 - `charmbracelet/lipgloss` — styling
 - `plugin.SettingsProvider` — delegated views for data sources and plugins
+- `daemon` — daemon process lifecycle (start) and client RPC (pause, resume, stop, status, budget)

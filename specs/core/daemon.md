@@ -1,0 +1,269 @@
+# SPEC: Daemon Subsystem
+
+## Purpose
+
+The daemon is a long-running background process that provides centralized services to the CCC TUI and CLI: periodic data refresh, terminal session tracking, agent lifecycle management, budget governance, and push-event delivery. It communicates with clients over a Unix socket using newline-delimited JSON-RPC.
+
+## Interface
+
+- **Inputs**:
+  - JSON-RPC requests over a Unix socket (`~/.config/ccc/daemon.sock`)
+  - OS signals (SIGTERM, SIGINT) for graceful shutdown
+  - Configuration from `~/.config/ccc/config.yaml` (refresh interval, agent limits, automations)
+  - SQLite database (`~/.config/ccc/data/ccc.db`) for persistent session state
+
+- **Outputs**:
+  - JSON-RPC responses (one per request)
+  - Push events to subscriber connections (newline-delimited JSON)
+  - PID file at `~/.config/ccc/daemon.pid`
+  - Log output to `~/.config/ccc/data/daemon.log`
+
+- **Dependencies**:
+  - `internal/agent` — `Runner`, `GovernedRunner`, `Session` types for agent process management
+  - `internal/config` — configuration loading, `ConfigDir()`, `DataDir()`, `DBPath()`
+  - `internal/db` — SQLite schema, session record CRUD (`DBInsertSession`, `DBUpdateSession`, `DBLoadVisibleSessions`, etc.)
+  - `internal/refresh` — data source refresh pipeline
+  - `internal/automation` — post-refresh automation execution
+  - `internal/llm` — LLM provider for refresh sources that need summarization
+
+## Behavior
+
+### Wire Protocol
+
+All communication uses newline-delimited JSON over a Unix domain socket. Each message is a single JSON object terminated by `\n`.
+
+- **Request**: `{"method": "<Method>", "id": <int>, "params": {...}}`
+- **Response**: `{"id": <int>, "result": {...}}` or `{"id": <int>, "error": {"code": <int>, "message": "<string>"}}`
+- **Push event**: `{"type": "<event.type>", "data": {...}}`
+
+Error codes follow JSON-RPC conventions:
+- `-32700` — parse error (malformed JSON)
+- `-32601` — method not found
+- `-32602` — invalid params
+- `-32000` — application error (generic)
+
+Scanner buffer: 64KB initial, 4MB max (accommodates large agent prompts).
+
+### Process Lifecycle
+
+**Starting the daemon:**
+
+1. `ccc daemon start` checks the PID file; errors if a live daemon already exists
+2. Re-execs the `ccc` binary with `--daemon-internal` flag
+3. The child process runs in a new session (`Setsid: true`) so it survives parent exit
+4. Parent writes the child PID to `daemon.pid` and exits
+5. Child loads config, opens the database, creates the `Server`, and calls `Serve()`
+
+**Auto-start from TUI:**
+
+1. When the TUI starts, `connectDaemon()` tries to dial the socket
+2. If the connection fails, it calls `daemon.StartProcess()` to spawn the daemon
+3. Waits 500ms, then retries the connection
+4. If still unreachable, the TUI runs without a daemon connection (non-fatal)
+
+**Stopping the daemon:**
+
+- `ccc daemon stop` reads the PID file and sends SIGTERM
+- `ShutdownDaemon` RPC responds with `{"ok": true}`, then asynchronously (after 100ms) calls `Shutdown()`
+- `Shutdown()` stops the agent runner, stops the refresh loop, cancels the server context, closes all client connections, and removes the socket file
+
+**Daemon status:**
+
+- `ccc daemon status` reads the PID file, checks process liveness via signal 0, and optionally pings the socket
+- `GetDaemonStatus` RPC returns `{"state": "running"|"paused", "active_agents": <int>}`
+
+**Pause/Resume:**
+
+- `PauseDaemon` sets the `paused` atomic bool on both the server and the refresh loop; broadcasts `daemon.paused` event
+- `ResumeDaemon` clears the paused flag; broadcasts `daemon.resumed` event
+- While paused: the refresh ticker skips runs, and `LaunchAgent` rejects with an error
+
+### Socket Security
+
+Before creating the Unix socket, the daemon sets umask to `0177` so the socket file is created with owner-only permissions (`0600`). The original umask is restored immediately after `net.Listen`.
+
+### Connection Handling
+
+1. Each accepted connection spawns a goroutine (`handleConn`)
+2. The goroutine reads newline-delimited JSON messages in a loop
+3. Each message is unmarshalled as an `RPCRequest` and dispatched by method name
+4. The response is written back on the same connection
+5. On disconnect, the connection is removed from the client list
+
+**Subscribe is special:** After the server sends the OK response, the connection becomes push-only. The goroutine blocks on `<-s.ctx.Done()` (server shutdown). The connection is added to the subscriber set and receives broadcast events until shutdown.
+
+### Session Registry
+
+The session registry tracks terminal sessions (Claude Code instances) with an in-memory map backed by SQLite persistence.
+
+**States:** `active` → `ended` → `archived`
+
+**RPCs:**
+
+- `RegisterSession(session_id, pid, project, worktree_path)` — Creates a new session. Resolves git remote URL and branch from the project directory (best-effort, via `git -C`). Persists to `cc_sessions` table.
+- `UpdateSession(session_id, topic)` — Updates mutable fields (currently only topic). Errors if session not found.
+- `ListSessions()` — Returns all non-archived sessions from the in-memory map.
+- `ArchiveSession(session_id)` — Marks a session as `archived`. Only allowed for sessions in `ended` state; errors if session is still `active`.
+
+**Dead session pruning:** After each successful refresh, `pruneDead()` iterates active sessions and checks PID liveness via `kill(pid, 0)`. Dead processes are marked `ended` with a timestamp.
+
+**Persistence across restarts:** On startup, `newSessionRegistry` loads all non-archived sessions from the database into the in-memory map.
+
+**Fallback registration:** The `ccc register` CLI command tries the daemon first; if unreachable, it writes directly to the database.
+
+### Refresh Loop
+
+The refresh loop runs a configurable function at a configurable interval (default 5 minutes, minimum 1 minute).
+
+- **Tick-driven:** A `time.Ticker` fires at the configured interval
+- **Pause-aware:** If `paused` is true, the tick is skipped
+- **Reentrant-safe:** A mutex-guarded `running` flag prevents concurrent refresh runs; if a refresh is already in progress, the new tick is silently dropped
+- **On-demand:** The `Refresh` RPC triggers an immediate run in a goroutine (non-blocking to the caller)
+- **Post-refresh callback:** On success, prunes dead sessions and broadcasts `data.refreshed` to subscribers
+- **Refresh content:** Reloads config each cycle (picks up config changes), then runs all data sources (calendar, Gmail, GitHub, Slack, Granola). After a successful refresh, runs any configured automations.
+
+### Agent RPCs
+
+Agents are long-running Claude Code subprocess sessions managed by an `agent.Runner` (optionally wrapped with `agent.GovernedRunner` for budget enforcement).
+
+**LaunchAgent(id, prompt, dir, worktree, permission, budget, resume_id, automation):**
+
+1. Rejects if daemon is paused
+2. Rejects if runner is not configured
+3. Calls `runner.LaunchOrQueue(request)` which returns `(queued, cmd)`
+4. If queued and cmd is non-nil, executes cmd synchronously — if the result is `LaunchDeniedMsg`, returns the denial reason as an RPC error (budget/rate-limit exceeded)
+5. If not queued and cmd is non-nil, executes cmd in a goroutine. On `SessionStartedMsg`, broadcasts `agent.started` event and spawns a watcher goroutine
+6. Returns `{"ok": true, "queued": <bool>}`
+
+**StopAgent(id):**
+
+1. Calls `runner.Kill(id)` — returns not-found error if agent doesn't exist
+2. Broadcasts `agent.stopped` event
+
+**AgentStatus(id):**
+
+- Returns `{id, status, session_id, question, started_at}` from `runner.Status(id)`
+
+**ListAgents():**
+
+- Returns all active agents from `runner.Active()`
+
+**SendAgentInput(id, message):**
+
+- Sends a message to a running agent's stdin via `runner.SendMessage(id, message)`
+
+**Agent completion watcher:**
+
+- `watchAgentDone` blocks on `sess.Done()`, then calls `runner.CleanupFinished(id)` and broadcasts `agent.finished` with exit code
+
+### Budget RPCs
+
+Budget RPCs require a `GovernedRunner` to be configured; they return an error if governance is not enabled.
+
+**GetBudgetStatus():**
+
+- Returns `{hourly_spent, hourly_limit, daily_spent, daily_limit, emergency_stopped, warning_level, active_agents}`
+
+**StopAllAgents():**
+
+1. Kills all active agents via `runner.Kill` for each
+2. Activates emergency stop on the budget tracker (blocks future launches)
+3. Broadcasts `budget.emergency_stop` event
+4. Returns `{stopped: <count>}`
+
+**ResumeAgents():**
+
+1. Clears the emergency stop on the budget tracker
+2. Broadcasts `budget.resumed` event
+3. Returns `{resumed: true}`
+
+### Event Subscription
+
+The subscriber system provides push delivery of server events to connected TUI clients.
+
+**Subscription flow:**
+
+1. Client sends `Subscribe` RPC
+2. Server responds with `{"ok": true}` and adds the connection to the subscriber set
+3. The connection goroutine blocks until server shutdown — no further RPCs are processed on this connection
+4. A separate RPC connection is needed for request/response calls
+
+**Broadcasting:**
+
+1. Copies the subscriber list under lock
+2. Writes to each subscriber outside the lock (so a slow consumer doesn't stall others)
+3. Each write has a 5-second deadline
+4. Failed writes cause the connection to be closed and removed from the subscriber set
+
+**Event types:**
+
+- `data.refreshed` — emitted after each successful refresh
+- `session.registered` / `session.updated` / `session.ended` — session lifecycle (declared in Event type comment; registration/update don't currently broadcast)
+- `daemon.paused` / `daemon.resumed` — daemon state changes
+- `agent.started` / `agent.stopped` / `agent.finished` — agent lifecycle
+- `budget.emergency_stop` / `budget.resumed` — budget governance events
+
+**TUI integration:**
+
+- `DaemonConn` holds two connections: one for RPCs, one for subscription
+- Events are forwarded as `DaemonEventMsg` bubbletea messages via `p.Send()`
+- Events are also routed to the plugin event bus as `plugin.Event{Source: "daemon", Topic: evt.Type}`
+- On disconnect, a `DaemonDisconnectedMsg` is sent; the TUI retries every 10 seconds via `daemonReconnectCmd`
+
+### Wire Types
+
+**RPC param types:**
+
+- `RegisterSessionParams{SessionID, PID, Project, WorktreePath}`
+- `UpdateSessionParams{SessionID, Topic}`
+- `ArchiveSessionParams{SessionID}`
+- `LaunchAgentParams{ID, Prompt, Dir, Worktree, Permission, Budget, ResumeID, Automation}`
+- `StopAgentParams{ID}`
+- `AgentStatusParams{ID}`
+- `SendAgentInputParams{ID, Message}`
+
+**RPC result types:**
+
+- `SessionInfo{SessionID, Topic, PID, Project, Repo, Branch, WorktreePath, State, RegisteredAt, EndedAt}`
+- `AgentStatusResult{ID, Status, SessionID, Question, StartedAt}`
+- `BudgetStatusResult{HourlySpent, HourlyLimit, DailySpent, DailyLimit, EmergencyStopped, WarningLevel, ActiveAgents}`
+- `StopAllAgentsResult{Stopped}`
+- `ResumeAgentsResult{Resumed}`
+- `DaemonStatusResult{State, ActiveAgents}`
+
+## Test Cases
+
+### Happy Path
+
+- Start daemon, verify socket file exists and PID file is written
+- Ping the daemon, receive `{"ok": true}`
+- Register a session, list sessions, verify it appears
+- Update a session topic, list sessions, verify the topic changed
+- Trigger refresh, verify `data.refreshed` event is received by subscriber
+- Launch an agent, verify `agent.started` event is broadcast
+- Stop an agent, verify `agent.stopped` event is broadcast
+- Pause daemon, verify refresh ticks are skipped and agent launches are rejected
+- Resume daemon, verify refresh resumes and agent launches succeed
+- Shutdown daemon via RPC, verify socket file is removed
+
+### Error Cases
+
+- Connect to daemon when none is running — returns connection error
+- Call `LaunchAgent` while daemon is paused — returns error "daemon is paused"
+- Call `UpdateSession` with non-existent session ID — returns "session not found"
+- Call `ArchiveSession` on an active session — returns "cannot archive active session"
+- Call budget RPCs when `GovernedRunner` is nil — returns "budget governance not configured"
+- Call agent RPCs when runner is nil — returns "agent runner not configured"
+- Send malformed JSON — returns parse error (code -32700)
+- Call unknown RPC method — returns method not found (code -32601)
+
+### Edge Cases
+
+- Auto-start from TUI when daemon is not running — daemon starts, TUI connects after 500ms
+- Daemon start when PID file references a dead process — stale PID file is ignored, new daemon starts
+- Dead session pruning — session with dead PID transitions to `ended` state
+- Concurrent refresh — second refresh while first is running is silently dropped (reentrant guard)
+- Subscriber with slow write — 5-second write deadline; failed subscriber is removed, others unaffected
+- Session persistence across daemon restart — sessions loaded from SQLite on startup
+- `ShutdownDaemon` RPC — response is sent before shutdown (100ms delay before `Shutdown()`)
+- Socket file security — umask `0177` ensures socket is never world-accessible, even briefly
