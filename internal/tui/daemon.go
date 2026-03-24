@@ -114,22 +114,26 @@ func autoStartDaemon(logger plugin.Logger) error {
 	return nil
 }
 
-// StartDaemonConnection connects to the daemon and starts an event subscription.
-// It follows the same pattern as StartNotifyListener: called from main.go after
-// tea.NewProgram is created, returns a cleanup function.
-// Also sets the Model's daemon fields via the returned DaemonConn.
-func StartDaemonConnection(p *tea.Program, logger plugin.Logger, bus plugin.EventBus) *DaemonConn {
-	dc := &DaemonConn{
-		logger:  logger,
-		bus:     bus,
-		program: p,
+// NewDaemonConn creates an unconnected DaemonConn. Call Connect(p) after
+// tea.NewProgram to establish the connection and start event subscription.
+// This two-phase init ensures the pointer is shared with the bubbletea model
+// copy (since Model is a value type copied by NewProgram).
+func NewDaemonConn(logger plugin.Logger, bus plugin.EventBus) *DaemonConn {
+	return &DaemonConn{
+		logger: logger,
+		bus:    bus,
 	}
+}
+
+// Connect establishes the daemon RPC connection and starts event subscription.
+func (dc *DaemonConn) Connect(p *tea.Program) {
+	dc.program = p
 
 	// Connect the RPC client.
-	dc.rpcClient = connectDaemon(logger)
+	dc.rpcClient = connectDaemon(dc.logger)
 	if dc.rpcClient == nil {
-		logger.Info("daemon", "running without daemon connection (not fatal)")
-		return dc
+		dc.logger.Info("daemon", "running without daemon connection (not fatal)")
+		return
 	}
 	dc.connected.Store(true)
 
@@ -137,8 +141,8 @@ func StartDaemonConnection(p *tea.Program, logger plugin.Logger, bus plugin.Even
 	sockPath := daemonSocketPath()
 	subClient, err := daemon.NewClient(sockPath)
 	if err != nil {
-		logger.Info("daemon", fmt.Sprintf("could not open subscription connection: %v", err))
-		return dc
+		dc.logger.Info("daemon", fmt.Sprintf("could not open subscription connection: %v", err))
+		return
 	}
 	dc.subClient = subClient
 
@@ -147,11 +151,17 @@ func StartDaemonConnection(p *tea.Program, logger plugin.Logger, bus plugin.Even
 			p.Send(DaemonEventMsg{Event: e})
 		})
 		if err != nil {
-			logger.Info("daemon", fmt.Sprintf("subscription ended: %v", err))
+			dc.logger.Info("daemon", fmt.Sprintf("subscription ended: %v", err))
 		}
 		p.Send(DaemonDisconnectedMsg{})
 	}()
+}
 
+// StartDaemonConnection is a convenience wrapper for backward compatibility.
+// Prefer NewDaemonConn + Connect for new code.
+func StartDaemonConnection(p *tea.Program, logger plugin.Logger, bus plugin.EventBus) *DaemonConn {
+	dc := NewDaemonConn(logger, bus)
+	dc.Connect(p)
 	return dc
 }
 

@@ -256,14 +256,18 @@ func main() {
 		if (isFirstRun || forceSetup) && !returnedFromLaunch {
 			m.SetOnboarding()
 		}
+		// Pre-allocate daemon connection so the pointer is shared with
+		// the bubbletea model copy (value-type Model is copied by NewProgram).
+		daemonConn := tui.NewDaemonConn(logger, bus)
+		m.SetDaemonConn(daemonConn)
+
 		p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus(), tea.WithMouseCellMotion())
 
 		// Start unix socket listener for cross-instance notifications
 		cleanupNotify := tui.StartNotifyListener(p)
 
 		// Connect to daemon (auto-starts if needed) and subscribe to events.
-		daemonConn := tui.StartDaemonConnection(p, logger, bus)
-		m.SetDaemonConn(daemonConn)
+		daemonConn.Connect(p)
 
 		finalModel, err := p.Run()
 		cleanupNotify()
