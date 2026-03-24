@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
-	"github.com/anutron/claude-command-center/internal/daemon"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 )
@@ -16,37 +15,16 @@ import (
 
 // budgetFormValues holds values bound to the budget huh form fields.
 type budgetFormValues struct {
-	DaemonState   string
 	MaxConcurrent string
 	HourlyBudget  string
 	DailyBudget   string
 	WarningPct    string
 }
 
-// getDaemonState queries the daemon for its current state.
-// Returns "stopped" if daemon is unreachable.
-func (p *Plugin) getDaemonState() string {
-	if p.daemonClientFunc == nil {
-		return "stopped"
-	}
-	client := p.daemonClientFunc()
-	if client == nil {
-		return "stopped"
-	}
-	status, err := client.GetDaemonStatus()
-	if err != nil {
-		return "stopped"
-	}
-	return status.State
-}
-
 // buildAgentBudgetForm creates a huh.Form for editing agent budget configuration
-// with daemon controls and live spend status.
+// with a read-only live spend section from the daemon.
 func (p *Plugin) buildAgentBudgetForm() *huh.Form {
-	daemonState := p.getDaemonState()
-
 	p.budgetValues = &budgetFormValues{
-		DaemonState:   daemonState,
 		MaxConcurrent: fmt.Sprintf("%d", p.cfg.Agent.MaxConcurrent),
 		HourlyBudget:  fmt.Sprintf("%.2f", p.cfg.Agent.HourlyBudget),
 		DailyBudget:   fmt.Sprintf("%.2f", p.cfg.Agent.DailyBudget),
@@ -58,7 +36,7 @@ func (p *Plugin) buildAgentBudgetForm() *huh.Form {
 	dailyLimit := fmt.Sprintf("$%.2f", p.cfg.Agent.DailyBudget)
 	var hourlySpend, dailySpend, activeAgents, emergencyStatus string
 
-	if daemonState != "stopped" {
+	if p.daemonClientFunc != nil {
 		client := p.daemonClientFunc()
 		if client != nil {
 			status, err := client.GetBudgetStatus()
@@ -84,7 +62,7 @@ func (p *Plugin) buildAgentBudgetForm() *huh.Form {
 			emergencyStatus = p.styles.muted.Render("N/A")
 		}
 	} else {
-		hourlySpend = p.styles.muted.Render("daemon not running")
+		hourlySpend = p.styles.muted.Render("daemon not available")
 		dailySpend = hourlySpend
 		activeAgents = p.styles.muted.Render("N/A")
 		emergencyStatus = p.styles.muted.Render("N/A")
@@ -96,20 +74,7 @@ func (p *Plugin) buildAgentBudgetForm() *huh.Form {
 	backoffBase := fmt.Sprintf("%d seconds", p.cfg.Agent.FailureBackoffBaseSec)
 	backoffMax := fmt.Sprintf("%d seconds", p.cfg.Agent.FailureBackoffMaxSec)
 
-	// Build daemon state options with labels that reflect current state.
-	stateOptions := []huh.Option[string]{
-		huh.NewOption("Running", "running"),
-		huh.NewOption("Paused (refresh + agents blocked)", "paused"),
-		huh.NewOption("Stopped", "stopped"),
-	}
-
 	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Daemon").
-				Options(stateOptions...).
-				Value(&p.budgetValues.DaemonState),
-		),
 		huh.NewGroup(
 			huh.NewNote().
 				Title("Current Spend").
@@ -210,66 +175,11 @@ func (p *Plugin) buildAgentBudgetForm() *huh.Form {
 	return form
 }
 
-// applyDaemonStateChange executes the appropriate daemon RPC based on the
-// desired state transition. Returns a flash message describing the result.
-func (p *Plugin) applyDaemonStateChange(desired string) string {
-	current := p.getDaemonState()
-	if desired == current {
-		return ""
-	}
-
-	switch desired {
-	case "running":
-		if current == "paused" {
-			// Resume from paused state.
-			if client := p.daemonClientFunc(); client != nil {
-				if err := client.ResumeDaemon(); err != nil {
-					return "Failed to resume: " + err.Error()
-				}
-				return "Daemon resumed"
-			}
-		} else {
-			// Start from stopped state.
-			if err := daemon.StartProcess(); err != nil {
-				return "Failed to start: " + err.Error()
-			}
-			return "Daemon started"
-		}
-	case "paused":
-		if current == "stopped" {
-			return "Cannot pause — daemon is not running"
-		}
-		if client := p.daemonClientFunc(); client != nil {
-			if err := client.PauseDaemon(); err != nil {
-				return "Failed to pause: " + err.Error()
-			}
-			return "Daemon paused"
-		}
-	case "stopped":
-		if current == "stopped" {
-			return ""
-		}
-		if client := p.daemonClientFunc(); client != nil {
-			if err := client.ShutdownDaemon(); err != nil {
-				return "Failed to stop: " + err.Error()
-			}
-			return "Daemon shutting down"
-		}
-	}
-	return ""
-}
-
 // saveBudgetValues persists the current budget form values to config without
 // rebuilding the form. Used for incremental auto-save on field transitions.
 func (p *Plugin) saveBudgetValues() {
 	if p.budgetValues == nil {
 		return
-	}
-
-	// Handle daemon state change first.
-	if msg := p.applyDaemonStateChange(p.budgetValues.DaemonState); msg != "" {
-		p.flashMessage = msg
-		p.flashMessageAt = time.Now()
 	}
 
 	changed := false
@@ -316,12 +226,6 @@ func (p *Plugin) handleBudgetFormCompletion() tea.Cmd {
 	vals := p.budgetValues
 	p.budgetValues = nil
 
-	// Handle daemon state change.
-	if msg := p.applyDaemonStateChange(vals.DaemonState); msg != "" {
-		p.flashMessage = msg
-		p.flashMessageAt = time.Now()
-	}
-
 	if v, err := strconv.Atoi(vals.MaxConcurrent); err == nil {
 		p.cfg.Agent.MaxConcurrent = v
 	}
@@ -336,9 +240,7 @@ func (p *Plugin) handleBudgetFormCompletion() tea.Cmd {
 	}
 
 	if err := config.Save(p.cfg, true); err == nil {
-		if p.flashMessage == "" {
-			p.flashMessage = "Budget saved"
-		}
+		p.flashMessage = "Budget saved"
 		p.publishConfigSaved("agent-budget")
 	} else {
 		p.flashMessage = "Failed to save: " + err.Error()

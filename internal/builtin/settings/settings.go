@@ -72,6 +72,9 @@ type Plugin struct {
 	// Plugin form values (bound to active huh form for plugin panes)
 	pluginValues *pluginFormValues
 
+	// Daemon form values (bound to active huh form for agent-daemon pane)
+	daemonValues *daemonFormValues
+
 	// Budget form values (bound to active huh form for agent-budget pane)
 	budgetValues *budgetFormValues
 
@@ -968,6 +971,9 @@ func (p *Plugin) buildFormForSlug(item *NavItem) (*huh.Form, tea.Cmd) {
 	case "system-shell":
 		form := p.buildShellForm()
 		return form, form.Init()
+	case "agent-daemon":
+		form := p.buildDaemonForm()
+		return form, form.Init()
 	case "agent-budget":
 		form := p.buildAgentBudgetForm()
 		return form, form.Init()
@@ -1008,6 +1014,8 @@ func (p *Plugin) saveFormValues(slug string) {
 		p.saveBannerValues()
 	case "palette":
 		p.savePaletteValues()
+	case "agent-daemon":
+		p.saveDaemonValues()
 	case "agent-budget":
 		p.saveBudgetValues()
 	}
@@ -1030,6 +1038,8 @@ func (p *Plugin) handleFormCompletion(slug string) tea.Cmd {
 		return p.handleSkillsFormCompletion()
 	case "system-shell":
 		return p.handleShellFormCompletion()
+	case "agent-daemon":
+		return p.handleDaemonFormCompletion()
 	case "agent-budget":
 		return p.handleBudgetFormCompletion()
 	// Auth-related form completions (pre-existing)

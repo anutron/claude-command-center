@@ -207,6 +207,7 @@ func (p *Plugin) rebuildNav() {
 	agent := Category{
 		Label: "AGENT",
 		Items: []NavItem{
+			{Label: "Daemon", Slug: "agent-daemon", Kind: "agent", Description: "Daemon process status and controls"},
 			{Label: "Budget", Slug: "agent-budget", Kind: "agent", Description: "Spending limits, rate limits, and emergency stop controls"},
 			{Label: "Sandbox", Slug: "agent-sandbox", Kind: "agent", Description: "Agent file-write permissions and network access controls"},
 		},
