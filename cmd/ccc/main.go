@@ -52,6 +52,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "stop-all":
+			if err := runStopAll(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "refresh":
 			if err := runRefreshCmd(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -311,6 +317,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  register             Register a session with the daemon")
 	fmt.Fprintln(os.Stderr, "  update-session       Update a session's topic")
 	fmt.Fprintln(os.Stderr, "  refresh              Trigger a data refresh via daemon")
+	fmt.Fprintln(os.Stderr, "  stop-all             Emergency stop: kill all running agents")
 	fmt.Fprintln(os.Stderr, "  sessions             Same as default")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Options:")

@@ -110,3 +110,19 @@ func runRefreshCmd() error {
 	fmt.Println("Refresh triggered")
 	return nil
 }
+
+// runStopAll handles: ccc stop-all
+func runStopAll() error {
+	client, err := daemon.NewClient(socketPath())
+	if err != nil {
+		return fmt.Errorf("daemon not running (is it started?): %w", err)
+	}
+	defer client.Close()
+
+	result, err := client.StopAllAgents()
+	if err != nil {
+		return fmt.Errorf("stop-all: %w", err)
+	}
+	fmt.Printf("Emergency stop: all agents stopped. (%d killed)\n", result.Stopped)
+	return nil
+}

@@ -82,6 +82,10 @@ type Model struct {
 	onboarding      bool
 	onboardingState *onboardingState
 
+	// flashMessage is a temporary status message shown below the tab bar.
+	flashMessage   string
+	flashExpiresAt time.Time
+
 	db *sql.DB
 
 	// Daemon connection for session registry and event subscription.
@@ -417,6 +421,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		case tea.KeyCtrlZ:
 			return m, tea.Suspend
+		case tea.KeyCtrlX:
+			// Emergency stop: kill all running agents via daemon.
+			if client := m.DaemonClient(); client != nil {
+				result, err := client.StopAllAgents()
+				if err == nil {
+					m.flashMessage = fmt.Sprintf("EMERGENCY STOP: %d agent(s) killed", result.Stopped)
+					m.flashExpiresAt = time.Now().Add(3 * time.Second)
+				} else {
+					m.flashMessage = fmt.Sprintf("Emergency stop failed: %v", err)
+					m.flashExpiresAt = time.Now().Add(3 * time.Second)
+				}
+			} else {
+				m.flashMessage = "Emergency stop: daemon not connected"
+				m.flashExpiresAt = time.Now().Add(3 * time.Second)
+			}
+			return m, nil
 		case tea.KeyEsc:
 			// Let active plugin try esc first
 			action := m.activePlugin().HandleKey(msg)
@@ -644,10 +664,14 @@ func (m Model) View() string {
 	content := m.activePlugin().View(m.width, contentHeight, m.frame)
 
 	sections = append(sections, "", tabBar)
-	if m.pendingQuit {
+	if m.flashMessage != "" && time.Now().Before(m.flashExpiresAt) {
+		hint := m.styles.TitleBoldC.Render(m.flashMessage)
+		sections = append(sections, lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hint))
+	} else if m.pendingQuit {
 		hint := m.styles.TitleBoldC.Render("Press esc again to quit")
 		sections = append(sections, lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hint))
 	} else {
+		m.flashMessage = "" // clear expired flash
 		sections = append(sections, "")
 	}
 	sections = append(sections, content)
