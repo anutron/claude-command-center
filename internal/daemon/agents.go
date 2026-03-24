@@ -18,6 +18,7 @@ type LaunchAgentParams struct {
 	Permission string  `json:"permission,omitempty"`
 	Budget     float64 `json:"budget,omitempty"`
 	ResumeID   string  `json:"resume_id,omitempty"`
+	Automation string  `json:"automation,omitempty"`
 }
 
 // StopAgentParams are the RPC parameters for stopping an agent.
@@ -67,6 +68,7 @@ func (s *Server) handleLaunchAgent(req *RPCRequest) (interface{}, *RPCError) {
 		Permission: params.Permission,
 		Budget:     params.Budget,
 		ResumeID:   params.ResumeID,
+		Automation: params.Automation,
 	}
 
 	queued, cmd := s.runner.LaunchOrQueue(agentReq)

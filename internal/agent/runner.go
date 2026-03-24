@@ -69,6 +69,7 @@ type Request struct {
 	Budget     float64 // max budget in USD (passed if >= 0.50)
 	ResumeID   string  // if set, resume an existing session
 	AutoStart  bool    // if true, auto-launch when dequeued
+	Automation string  // which automation triggered this agent (e.g. "pr-review")
 }
 
 // Session is the handle for a running agent process.

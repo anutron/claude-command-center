@@ -69,6 +69,7 @@ func (p *Plugin) evaluateAgentTriggers() tea.Cmd {
 				Dir:        dir,
 				Worktree:   isRespond,
 				Permission: "default",
+				Automation: "pr-review",
 			})
 		} else if p.agentRunner != nil {
 			req := agent.Request{
@@ -77,6 +78,7 @@ func (p *Plugin) evaluateAgentTriggers() tea.Cmd {
 				ProjectDir: dir,
 				Worktree:   isRespond,
 				Permission: "default",
+				Automation: "pr-review",
 			}
 			_, cmd := p.agentRunner.LaunchOrQueue(req)
 			if cmd != nil {
