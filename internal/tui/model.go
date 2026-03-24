@@ -711,7 +711,24 @@ func (m Model) View() string {
 	page := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	if m.width > 0 && m.height > 0 {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, page)
+		page = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, page)
+
+		// Overlay budget widget pinned to the upper-right corner (row 1, 2 chars from right).
+		if budget := m.renderBudgetWidget(); budget != "" && m.width > 0 {
+			bw := lipgloss.Width(budget)
+			pad := m.width - bw - 2
+			if pad > 0 {
+				budgetLine := strings.Repeat(" ", pad) + budget
+				lines := strings.Split(page, "\n")
+				row := 1 // 2nd line (0-indexed)
+				if row < len(lines) {
+					lines[row] = budgetLine
+				}
+				page = strings.Join(lines, "\n")
+			}
+		}
+
+		return page
 	}
 	return page
 }
@@ -730,21 +747,6 @@ func (m Model) renderTabBar() string {
 		}
 	}
 	tabBar := strings.Join(parts, "")
-
-	// Append budget widget to the right of the tab bar.
-	budget := m.renderBudgetWidget()
-	if budget != "" {
-		tabBar = lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, tabBar)
-		// Overlay budget widget on the right side.
-		budgetWidth := lipgloss.Width(budget)
-		tabBarWidth := lipgloss.Width(tabBar)
-		if budgetWidth < tabBarWidth {
-			// Replace trailing spaces with the budget widget.
-			tabBar = tabBar[:tabBarWidth-budgetWidth] + budget
-		}
-		return tabBar
-	}
-
 	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, tabBar)
 }
 
