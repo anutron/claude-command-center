@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,12 +148,3 @@ func estimateCost(raw map[string]interface{}, input, output int) float64 {
 
 }
 
-// FormatNativeLogPath is an alias for NativeLogPath for external callers that
-// want to inspect the path without importing internal details.
-var FormatNativeLogPath = NativeLogPath
-
-// init registers a compile-time check that the functions exist.
-func init() {
-	_ = NativeLogPath
-	_ = fmt.Sprint // ensure fmt is used
-}
