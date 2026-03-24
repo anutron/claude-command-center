@@ -6,12 +6,17 @@ package agent
 
 import (
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// CostCallback is invoked when token usage is extracted from an agent session's
+// native log. It receives the input/output token counts and estimated USD cost.
+type CostCallback func(inputTokens, outputTokens int, costUSD float64)
 
 // Runner manages agent session lifecycle.
 type Runner interface {
@@ -66,10 +71,11 @@ type Request struct {
 	ProjectDir string  // working directory for the agent process
 	Worktree   bool    // if true, pass --worktree flag
 	Permission string  // permission mode (e.g. "default", "plan", "auto")
-	Budget     float64 // max budget in USD (passed if >= 0.50)
-	ResumeID   string  // if set, resume an existing session
-	AutoStart  bool    // if true, auto-launch when dequeued
-	Automation string  // which automation triggered this agent (e.g. "pr-review")
+	Budget       float64      // max budget in USD (passed if >= 0.50)
+	ResumeID     string       // if set, resume an existing session
+	AutoStart    bool         // if true, auto-launch when dequeued
+	Automation   string       // which automation triggered this agent (e.g. "pr-review")
+	CostCallback CostCallback // optional callback for token usage updates
 }
 
 // Session is the handle for a running agent process.
@@ -81,6 +87,10 @@ type Session struct {
 	Question  string // populated when blocked
 	StartedAt time.Time
 	LogPath   string
+
+	// Pty is the PTY master file descriptor when the session is launched via PTY.
+	// It is nil for pipe-based sessions. The caller must close it when done.
+	Pty *os.File
 
 	// Stdin pipe for sending messages to the agent.
 	Stdin io.WriteCloser
