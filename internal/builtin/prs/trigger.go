@@ -37,6 +37,9 @@ func needsAgent(pr db.PullRequest) bool {
 // evaluateAgentTriggers scans loaded PRs and spawns agents for any that
 // qualify. Safe to call when agentRunner is nil (returns nil).
 func (p *Plugin) evaluateAgentTriggers() tea.Cmd {
+	// Disabled: re-enable after dedup fix is validated in production.
+	return nil
+
 	if p.agentRunner == nil {
 		return nil
 	}
