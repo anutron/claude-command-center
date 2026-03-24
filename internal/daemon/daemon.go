@@ -21,6 +21,7 @@ type ServerConfig struct {
 	RefreshFunc     func() error
 	RefreshInterval time.Duration
 	AgentRunner     agent.Runner
+	GovernedRunner  *agent.GovernedRunner // optional; enables budget RPCs
 }
 
 // Server listens on a Unix socket and dispatches JSON-RPC requests.
@@ -35,6 +36,7 @@ type Server struct {
 	registry    *sessionRegistry
 	refresh     *refreshLoop
 	runner      agent.Runner
+	governed    *agent.GovernedRunner // non-nil when budget governance is enabled
 }
 
 // NewServer creates a new daemon server with the given configuration.
@@ -47,6 +49,7 @@ func NewServer(cfg ServerConfig) *Server {
 		registry: newSessionRegistry(cfg.DB),
 		refresh:  newRefreshLoop(cfg.RefreshFunc, cfg.RefreshInterval),
 		runner:   cfg.AgentRunner,
+		governed: cfg.GovernedRunner,
 	}
 }
 

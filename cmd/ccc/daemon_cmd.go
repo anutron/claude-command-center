@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/automation"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/daemon"
@@ -215,11 +216,21 @@ func runDaemonInternal() error {
 		return runRefresh(freshCfg, database)
 	}
 
+	// Create agent runner wrapped with budget/rate-limit governance.
+	maxConcurrent := cfg.Agent.MaxConcurrent
+	if maxConcurrent <= 0 {
+		maxConcurrent = 3
+	}
+	innerRunner := agent.NewRunner(maxConcurrent)
+	governedRunner := agent.NewGovernedRunner(innerRunner, database, &cfg.Agent)
+
 	srv := daemon.NewServer(daemon.ServerConfig{
 		SocketPath:      socketPath(),
 		DB:              database,
 		RefreshFunc:     refreshFunc,
 		RefreshInterval: interval,
+		AgentRunner:     governedRunner,
+		GovernedRunner:  governedRunner,
 	})
 
 	// Handle shutdown signals.
