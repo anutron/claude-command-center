@@ -78,3 +78,9 @@ type StopAllAgentsResult struct {
 type ResumeAgentsResult struct {
 	Resumed bool `json:"resumed"`
 }
+
+// DaemonStatusResult is the RPC result for GetDaemonStatus.
+type DaemonStatusResult struct {
+	State        string `json:"state"`         // "running" or "paused"
+	ActiveAgents int    `json:"active_agents"`
+}

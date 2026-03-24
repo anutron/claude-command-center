@@ -201,6 +201,37 @@ func (c *Client) ResumeAgents() (ResumeAgentsResult, error) {
 	return res, nil
 }
 
+// PauseDaemon pauses the daemon — stops refresh and blocks new agent launches.
+func (c *Client) PauseDaemon() error {
+	_, err := c.call("PauseDaemon", nil)
+	return err
+}
+
+// ResumeDaemon resumes the daemon from paused state.
+func (c *Client) ResumeDaemon() error {
+	_, err := c.call("ResumeDaemon", nil)
+	return err
+}
+
+// ShutdownDaemon triggers a graceful daemon shutdown.
+func (c *Client) ShutdownDaemon() error {
+	_, err := c.call("ShutdownDaemon", nil)
+	return err
+}
+
+// GetDaemonStatus returns the current daemon state.
+func (c *Client) GetDaemonStatus() (DaemonStatusResult, error) {
+	result, err := c.call("GetDaemonStatus", nil)
+	if err != nil {
+		return DaemonStatusResult{}, err
+	}
+	var status DaemonStatusResult
+	if err := json.Unmarshal(result, &status); err != nil {
+		return DaemonStatusResult{}, fmt.Errorf("unmarshal daemon status: %w", err)
+	}
+	return status, nil
+}
+
 // Subscribe blocks, reading events forever. Must be called on a dedicated Client
 // instance — this connection cannot be used for RPCs after subscribing.
 func (c *Client) Subscribe(handler func(Event)) error {

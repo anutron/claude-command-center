@@ -49,6 +49,9 @@ type AgentStatusResult struct {
 // Agent dispatch handlers on the Server.
 
 func (s *Server) handleLaunchAgent(req *RPCRequest) (interface{}, *RPCError) {
+	if s.paused.Load() {
+		return nil, &RPCError{Code: -32000, Message: "daemon is paused — resume before launching agents"}
+	}
 	if s.runner == nil {
 		return nil, &RPCError{Code: -32000, Message: "agent runner not configured"}
 	}

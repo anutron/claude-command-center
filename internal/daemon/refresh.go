@@ -3,6 +3,7 @@ package daemon
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type refreshLoop struct {
 	notify   func() // called after each successful refresh
 	mu       sync.Mutex
 	running  bool
+	paused   atomic.Bool // when true, ticker skips refresh runs
 	stopCh   chan struct{}
 	stopOnce sync.Once
 }
@@ -30,7 +32,9 @@ func (r *refreshLoop) start() {
 		for {
 			select {
 			case <-ticker.C:
-				r.run()
+				if !r.paused.Load() {
+					r.run()
+				}
 			case <-r.stopCh:
 				return
 			}

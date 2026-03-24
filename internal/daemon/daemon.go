@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -38,6 +39,7 @@ type Server struct {
 	refresh     *refreshLoop
 	runner      agent.Runner
 	governed    *agent.GovernedRunner // non-nil when budget governance is enabled
+	paused      atomic.Bool           // when true, refresh and agent launches are blocked
 }
 
 // NewServer creates a new daemon server with the given configuration.
@@ -235,9 +237,69 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 	case "ResumeAgents":
 		return s.handleResumeAgents(req)
 
+	case "PauseDaemon":
+		return s.handlePauseDaemon(req)
+	case "ResumeDaemon":
+		return s.handleResumeDaemon(req)
+	case "ShutdownDaemon":
+		return s.handleShutdownDaemon(req)
+	case "GetDaemonStatus":
+		return s.handleGetDaemonStatus(req)
+
 	default:
 		return nil, &RPCError{Code: -32601, Message: fmt.Sprintf("method not found: %s", req.Method)}
 	}
+}
+
+// Paused returns whether the daemon is in paused state.
+func (s *Server) Paused() bool {
+	return s.paused.Load()
+}
+
+func (s *Server) handlePauseDaemon(req *RPCRequest) (interface{}, *RPCError) {
+	s.paused.Store(true)
+	s.refresh.paused.Store(true)
+
+	data, _ := json.Marshal(map[string]bool{"paused": true})
+	s.Broadcast(Event{Type: "daemon.paused", Data: data})
+
+	return map[string]bool{"ok": true}, nil
+}
+
+func (s *Server) handleResumeDaemon(req *RPCRequest) (interface{}, *RPCError) {
+	s.paused.Store(false)
+	s.refresh.paused.Store(false)
+
+	data, _ := json.Marshal(map[string]bool{"resumed": true})
+	s.Broadcast(Event{Type: "daemon.resumed", Data: data})
+
+	return map[string]bool{"ok": true}, nil
+}
+
+func (s *Server) handleShutdownDaemon(req *RPCRequest) (interface{}, *RPCError) {
+	// Respond first, then shut down asynchronously.
+	go func() {
+		time.Sleep(100 * time.Millisecond) // let response flush
+		s.Shutdown()
+	}()
+	return map[string]bool{"ok": true}, nil
+}
+
+func (s *Server) handleGetDaemonStatus(req *RPCRequest) (interface{}, *RPCError) {
+	state := "running"
+	if s.paused.Load() {
+		state = "paused"
+	}
+
+	var activeAgents int
+	if s.runner != nil {
+		activeAgents = len(s.runner.Active())
+	}
+
+	return DaemonStatusResult{
+		State:        state,
+		ActiveAgents: activeAgents,
+	}, nil
 }
 
 func (s *Server) removeClient(conn net.Conn) {
