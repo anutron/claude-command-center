@@ -763,8 +763,14 @@ func (m Model) pollBudgetCmd() tea.Cmd {
 }
 
 // renderBudgetWidget returns the styled budget widget string for the top-right corner.
-// Shows budget and agent count. Falls back to $0 when budget data isn't available.
+// Shows budget and agent count, or [not running] when the daemon isn't connected.
 func (m Model) renderBudgetWidget() string {
+	if !m.DaemonConnected() {
+		return lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#565f89")).
+			Render("[not running]")
+	}
+
 	bs := m.budgetStatus
 
 	// Emergency stop overrides everything.
