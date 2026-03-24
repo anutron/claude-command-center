@@ -213,6 +213,13 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 	case "SendAgentInput":
 		return s.handleSendAgentInput(req)
 
+	case "GetBudgetStatus":
+		return s.handleGetBudgetStatus(req)
+	case "StopAllAgents":
+		return s.handleStopAllAgents(req)
+	case "ResumeAgents":
+		return s.handleResumeAgents(req)
+
 	default:
 		return nil, &RPCError{Code: -32601, Message: fmt.Sprintf("method not found: %s", req.Method)}
 	}

@@ -55,3 +55,26 @@ type SessionInfo struct {
 	RegisteredAt string `json:"registered_at"`
 	EndedAt      string `json:"ended_at"`
 }
+
+// RPC results for budget methods.
+
+// BudgetStatusResult is the RPC result for GetBudgetStatus.
+type BudgetStatusResult struct {
+	HourlySpent      float64 `json:"hourly_spent"`
+	HourlyLimit      float64 `json:"hourly_limit"`
+	DailySpent       float64 `json:"daily_spent"`
+	DailyLimit       float64 `json:"daily_limit"`
+	EmergencyStopped bool    `json:"emergency_stopped"`
+	WarningLevel     string  `json:"warning_level"`
+	ActiveAgents     int     `json:"active_agents"`
+}
+
+// StopAllAgentsResult is the RPC result for StopAllAgents.
+type StopAllAgentsResult struct {
+	Stopped int `json:"stopped"`
+}
+
+// ResumeAgentsResult is the RPC result for ResumeAgents.
+type ResumeAgentsResult struct {
+	Resumed bool `json:"resumed"`
+}

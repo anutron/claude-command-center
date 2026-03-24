@@ -162,6 +162,45 @@ func (c *Client) SendAgentInput(id string, message string) error {
 	return err
 }
 
+// GetBudgetStatus returns the current budget status from the daemon.
+func (c *Client) GetBudgetStatus() (BudgetStatusResult, error) {
+	result, err := c.call("GetBudgetStatus", nil)
+	if err != nil {
+		return BudgetStatusResult{}, err
+	}
+	var status BudgetStatusResult
+	if err := json.Unmarshal(result, &status); err != nil {
+		return BudgetStatusResult{}, fmt.Errorf("unmarshal budget status: %w", err)
+	}
+	return status, nil
+}
+
+// StopAllAgents triggers an emergency stop: kills all active agents and blocks new launches.
+func (c *Client) StopAllAgents() (StopAllAgentsResult, error) {
+	result, err := c.call("StopAllAgents", nil)
+	if err != nil {
+		return StopAllAgentsResult{}, err
+	}
+	var res StopAllAgentsResult
+	if err := json.Unmarshal(result, &res); err != nil {
+		return StopAllAgentsResult{}, fmt.Errorf("unmarshal stop result: %w", err)
+	}
+	return res, nil
+}
+
+// ResumeAgents clears the emergency stop, allowing new agent launches.
+func (c *Client) ResumeAgents() (ResumeAgentsResult, error) {
+	result, err := c.call("ResumeAgents", nil)
+	if err != nil {
+		return ResumeAgentsResult{}, err
+	}
+	var res ResumeAgentsResult
+	if err := json.Unmarshal(result, &res); err != nil {
+		return ResumeAgentsResult{}, fmt.Errorf("unmarshal resume result: %w", err)
+	}
+	return res, nil
+}
+
 // Subscribe blocks, reading events forever. Must be called on a dedicated Client
 // instance — this connection cannot be used for RPCs after subscribing.
 func (c *Client) Subscribe(handler func(Event)) error {
