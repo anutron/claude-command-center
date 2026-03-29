@@ -1,6 +1,6 @@
 // Package sessions implements the sessions plugin for CCC.
-// It manages two sub-views: "New Session" (browse project paths) and
-// "Resume Session" (bookmarked sessions).
+// It manages sub-views: "Sessions" (unified live + saved + archived),
+// "New Session" (browse project paths), and "Worktrees".
 package sessions
 
 import (
@@ -65,27 +65,6 @@ func substringFilter(term string, targets []string) []list.Rank {
 		}
 	}
 	return ranks
-}
-
-// sessionItem represents a paused/resumable session.
-type sessionItem struct {
-	session db.Session
-}
-
-func (i sessionItem) Title() string {
-	return i.session.Repo + " (" + i.session.Branch + ")"
-}
-
-func (i sessionItem) Description() string {
-	date := i.session.Created.Format("Jan 02 15:04")
-	if i.session.Summary != "" {
-		return date + " -- " + i.session.Summary
-	}
-	return date
-}
-
-func (i sessionItem) FilterValue() string {
-	return i.session.Repo + " " + i.session.Branch + " " + i.session.Summary
 }
 
 // worktreeItem represents a CCC-managed worktree in the worktrees sub-tab.
@@ -168,12 +147,6 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 			desc = "  " + d.styles.descMuted.Render(it.path)
 		}
 
-	case sessionItem:
-		repo := d.styles.titleBoldW.Render(it.session.Repo)
-		branch := d.styles.branchYellow.Render(it.session.Branch)
-		title = fmt.Sprintf("%s (%s)", repo, branch)
-		desc = "  " + d.styles.descMuted.Render(it.session.Created.Format("Jan 02")+" -- "+it.session.Summary)
-
 	default:
 		title = item.FilterValue()
 	}
@@ -201,10 +174,6 @@ func truncate(s string, max int) string {
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
-
-type sessionsLoadedMsg struct {
-	sessions []db.Session
-}
 
 type fzfFinishedMsg struct {
 	path string
@@ -261,17 +230,14 @@ type Plugin struct {
 	grad   ui.GradientColors
 
 	newList       list.Model
-	resumeList    list.Model
 	paths         []string
 	confirming    bool
 	confirmYes    bool
 	confirmItem   newItem
-	confirmResume *sessionItem
-	loading       bool
 	spinner       spinner.Model
 	width         int
 	height        int
-	subTab        string // "new", "resume", or "worktrees"
+	subTab        string // "sessions", "new", or "worktrees"
 	frame         int
 
 	// Worktrees sub-tab state
@@ -283,12 +249,12 @@ type Plugin struct {
 
 	pendingLaunchTodo *db.Todo
 
-	// Type-to-filter: characters typed on new/resume tabs are collected here
+	// Type-to-filter: characters typed on new tab are collected here
 	// and applied as a substring filter without requiring a '/' prefix.
 	filterText string
 
-	// Active sessions sub-tab
-	active         *activeView
+	// Unified sessions view (replaces activeView + resumeList)
+	unified        *unifiedView
 	flashMessage   string
 	flashMessageAt time.Time
 }
@@ -319,8 +285,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.grad = ui.NewGradientColors(pal)
 	}
 
-	p.subTab = "new"
-	p.loading = true
+	p.subTab = "sessions"
 
 	paths, _ := db.DBLoadPaths(p.db)
 	// Ensure home_dir is in the paths list (at the front) if configured
@@ -352,21 +317,21 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	nl.Filter = substringFilter
 	p.newList = nl
 
-	rl := list.New([]list.Item{}, delegate, 0, 10)
-	rl.SetShowTitle(false)
-	rl.SetShowStatusBar(false)
-	rl.SetFilteringEnabled(true)
-	rl.SetShowHelp(false)
-	rl.Filter = substringFilter
-	p.resumeList = rl
-
 	s := spinner.New()
 	s.Spinner = spinner.MiniDot
 	s.Style = lipgloss.NewStyle().Foreground(p.styles.colorCyan)
 	p.spinner = s
 
-	// Initialise active view (daemon client getter wired later via SetDaemonClientFunc)
-	p.active = NewActiveView(nil, p.styles)
+	// Initialise unified view (daemon client getter wired later via SetDaemonClientFunc)
+	p.unified = NewUnifiedView(nil, p.styles)
+	p.unified.db = p.db
+
+	// Load initial saved/archived sessions into unified view
+	if p.db != nil {
+		sessions, _ := db.DBLoadBookmarks(p.db)
+		p.unified.SetSavedSessions(sessions)
+		p.unified.ReloadArchived()
+	}
 
 	// Subscribe to events
 	if p.bus != nil {
@@ -392,18 +357,20 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 			p.subTab = "new"
 		})
 		p.bus.Subscribe("data.refreshed", func(e plugin.Event) {
-			// Reload bookmarks when data is refreshed
+			// Reload bookmarks and archived sessions when data is refreshed
 			if p.db != nil {
 				sessions, _ := db.DBLoadBookmarks(p.db)
-				p.resumeList.SetItems(buildSessionItems(sessions))
+				p.unified.SetSavedSessions(sessions)
+				p.unified.ReloadArchived()
 			}
 		})
 
 		// Subscribe to daemon session events for live updates
 		for _, topic := range []string{"session.registered", "session.updated", "session.ended"} {
 			p.bus.Subscribe(topic, func(e plugin.Event) {
-				if p.active != nil {
-					p.active.Refresh()
+				if p.unified != nil {
+					p.unified.Refresh()
+					p.unified.ReloadArchived()
 				}
 			})
 		}
@@ -412,12 +379,12 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	return nil
 }
 
-// SetDaemonClientFunc wires the daemon client getter so the active sessions
+// SetDaemonClientFunc wires the daemon client getter so the unified sessions
 // view can fetch live data. Must be called after Init but before the program runs.
 func (p *Plugin) SetDaemonClientFunc(fn func() *daemon.Client) {
-	if p.active != nil {
-		p.active.daemonClient = fn
-		p.active.Refresh()
+	if p.unified != nil {
+		p.unified.daemonClient = fn
+		p.unified.Refresh()
 	}
 }
 
@@ -435,9 +402,8 @@ func (p *Plugin) Migrations() []plugin.Migration { return nil }
 // Routes returns navigable sub-routes.
 func (p *Plugin) Routes() []plugin.Route {
 	return []plugin.Route{
-		{Slug: "active", Description: "Active sessions sub-tab"},
+		{Slug: "sessions", Description: "Sessions sub-tab"},
 		{Slug: "new", Description: "New session sub-tab"},
-		{Slug: "resume", Description: "Resume session sub-tab"},
 		{Slug: "worktrees", Description: "Worktrees sub-tab"},
 	}
 }
@@ -446,16 +412,14 @@ func (p *Plugin) Routes() []plugin.Route {
 func (p *Plugin) NavigateTo(route string, args map[string]string) {
 	p.filterText = ""
 	switch route {
-	case "active":
-		p.subTab = "active"
-		if p.active != nil {
-			p.active.Refresh()
+	case "sessions":
+		p.subTab = "sessions"
+		if p.unified != nil {
+			p.unified.Refresh()
+			p.unified.ReloadArchived()
 		}
 	case "new":
 		p.subTab = "new"
-		p.applyFilter()
-	case "resume":
-		p.subTab = "resume"
 		p.applyFilter()
 	case "worktrees":
 		p.subTab = "worktrees"
@@ -471,21 +435,32 @@ func (p *Plugin) RefreshInterval() time.Duration { return 0 }
 
 // Refresh returns a tea.Cmd for refreshing session data.
 func (p *Plugin) Refresh() tea.Cmd {
-	return p.loadSessionsCmd()
+	return func() tea.Msg {
+		if p.unified != nil {
+			p.unified.Refresh()
+			p.unified.ReloadArchived()
+			if p.db != nil {
+				sessions, _ := db.DBLoadBookmarks(p.db)
+				p.unified.SetSavedSessions(sessions)
+			}
+		}
+		return nil
+	}
 }
 
 // KeyBindings returns the key bindings for this plugin.
 func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 	return []plugin.KeyBinding{
-		{Key: "a", Description: "Active sessions sub-tab", Promoted: true},
+		{Key: "s", Description: "Sessions sub-tab", Promoted: true},
 		{Key: "n", Description: "New session sub-tab", Promoted: true},
-		{Key: "r", Description: "Resume session sub-tab", Promoted: true},
 		{Key: "t", Description: "Worktrees sub-tab", Promoted: true},
+		{Key: "a", Description: "Toggle archived sessions", Promoted: true},
 		{Key: "w", Description: "Launch in worktree", Promoted: true},
-		{Key: "enter", Description: "Launch session", Promoted: true},
+		{Key: "enter", Description: "Launch/resume session", Promoted: true},
+		{Key: "b", Description: "Bookmark session", Promoted: true},
+		{Key: "d", Description: "Dismiss/delete session", Promoted: true},
 		{Key: "shift+up/down", Description: "Reorder paths", Promoted: true},
-		{Key: "delete", Description: "Remove saved path/session", Promoted: true},
-		{Key: "type", Description: "Filter list"},
+		{Key: "delete", Description: "Remove saved path", Promoted: true},
 		{Key: "esc", Description: "Quit or cancel"},
 	}
 }
@@ -506,29 +481,24 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleConfirming(msg)
 	}
 
-	// When a filter is active on new/resume tabs, only allow navigation keys
-	// and filter-editing keys — don't match single-char shortcuts (a/n/r/t).
-	filtering := p.filterText != "" && (p.subTab == "new" || p.subTab == "resume")
+	// When a filter is active on the new tab, only allow navigation keys
+	// and filter-editing keys — don't match single-char shortcuts (s/n/t).
+	filtering := p.filterText != "" && p.subTab == "new"
 
 	switch msg.String() {
-	case "a":
+	case "s":
 		if !filtering {
-			p.subTab = "active"
+			p.subTab = "sessions"
 			p.filterText = ""
-			if p.active != nil {
-				p.active.Refresh()
+			if p.unified != nil {
+				p.unified.Refresh()
+				p.unified.ReloadArchived()
 			}
 			return plugin.NoopAction()
 		}
 	case "n":
 		if !filtering {
 			p.subTab = "new"
-			p.filterText = ""
-			return plugin.NoopAction()
-		}
-	case "r":
-		if !filtering {
-			p.subTab = "resume"
 			p.filterText = ""
 			return plugin.NoopAction()
 		}
@@ -546,7 +516,7 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 			p.applyFilter()
 			return plugin.NoopAction()
 		}
-		if p.subTab == "active" || p.subTab == "worktrees" {
+		if p.subTab == "sessions" || p.subTab == "worktrees" {
 			p.subTab = "new"
 			return plugin.NoopAction()
 		}
@@ -565,12 +535,10 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	}
 
 	switch p.subTab {
-	case "active":
-		return p.handleActiveTab(msg)
+	case "sessions":
+		return p.handleSessionsTab(msg)
 	case "new":
 		return p.handleNewTab(msg)
-	case "resume":
-		return p.handleResumeTab(msg)
 	case "worktrees":
 		return p.handleWorktreesTab(msg)
 	}
@@ -582,19 +550,12 @@ func (p *Plugin) applyFilter() {
 	switch p.subTab {
 	case "new":
 		p.newList.SetFilterText(p.filterText)
-	case "resume":
-		p.resumeList.SetFilterText(p.filterText)
 	}
 }
 
 // HandleMessage processes non-key messages.
 func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	switch msg := msg.(type) {
-	case sessionsLoadedMsg:
-		p.loading = false
-		p.resumeList.SetItems(buildSessionItems(msg.sessions))
-		return true, plugin.NoopAction()
-
 	case fzfFinishedMsg:
 		if msg.err != nil || msg.path == "" {
 			return true, plugin.NoopAction()
@@ -639,7 +600,6 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			listHeight = 5
 		}
 		p.newList.SetSize(listWidth, listHeight)
-		p.resumeList.SetSize(listWidth, listHeight)
 		return true, plugin.NoopAction()
 	}
 
@@ -651,12 +611,6 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		if cmd != nil {
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
-	case "resume":
-		var cmd tea.Cmd
-		p.resumeList, cmd = p.resumeList.Update(msg)
-		if cmd != nil {
-			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-		}
 	}
 	return false, plugin.NoopAction()
 }
@@ -665,16 +619,13 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 func (p *Plugin) View(width, height, frame int) string {
 	p.frame = frame
 	p.newList.SetDelegate(itemDelegate{frame: frame, styles: &p.styles, grad: &p.grad})
-	p.resumeList.SetDelegate(itemDelegate{frame: frame, styles: &p.styles, grad: &p.grad})
 
 	var content string
 	switch p.subTab {
-	case "active":
-		content = p.viewActiveTab()
+	case "sessions":
+		content = p.viewSessionsTab()
 	case "new":
 		content = p.viewNewTab()
-	case "resume":
-		content = p.viewResumeTab()
 	case "worktrees":
 		content = p.viewWorktreesTab()
 	}
@@ -783,7 +734,6 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 		p.confirming = true
 		p.confirmYes = false
 		p.confirmItem = item
-		p.confirmResume = nil
 		return plugin.NoopAction()
 
 	case "backspace":
@@ -801,7 +751,6 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 		p.confirming = true
 		p.confirmYes = false
 		p.confirmItem = item
-		p.confirmResume = nil
 		return plugin.NoopAction()
 	}
 
@@ -819,130 +768,132 @@ func (p *Plugin) handleNewTab(msg tea.KeyMsg) plugin.Action {
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
-func (p *Plugin) handleResumeTab(msg tea.KeyMsg) plugin.Action {
+func (p *Plugin) handleSessionsTab(msg tea.KeyMsg) plugin.Action {
 	switch msg.String() {
-	case "up":
-		total := len(p.resumeList.VisibleItems())
-		if total > 0 && p.resumeList.Index() == 0 {
-			p.resumeList.Select(total - 1)
-			return plugin.NoopAction()
+	case "up", "k":
+		if p.unified != nil {
+			p.unified.MoveUp()
 		}
-		var cmd tea.Cmd
-		p.resumeList, cmd = p.resumeList.Update(msg)
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-	case "k":
-		if p.filterText != "" {
-			break // treat as filter char when filtering
+		return plugin.NoopAction()
+	case "down", "j":
+		if p.unified != nil {
+			p.unified.MoveDown()
 		}
-		total := len(p.resumeList.VisibleItems())
-		if total > 0 && p.resumeList.Index() == 0 {
-			p.resumeList.Select(total - 1)
-			return plugin.NoopAction()
+		return plugin.NoopAction()
+
+	case "a":
+		if p.unified != nil {
+			p.unified.ToggleArchive()
 		}
-		var cmd tea.Cmd
-		p.resumeList, cmd = p.resumeList.Update(msg)
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-	case "down":
-		total := len(p.resumeList.VisibleItems())
-		if total > 0 && p.resumeList.Index() == total-1 {
-			p.resumeList.Select(0)
-			return plugin.NoopAction()
-		}
-		var cmd tea.Cmd
-		p.resumeList, cmd = p.resumeList.Update(msg)
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
-	case "j":
-		if p.filterText != "" {
-			break // treat as filter char when filtering
-		}
-		total := len(p.resumeList.VisibleItems())
-		if total > 0 && p.resumeList.Index() == total-1 {
-			p.resumeList.Select(0)
-			return plugin.NoopAction()
-		}
-		var cmd tea.Cmd
-		p.resumeList, cmd = p.resumeList.Update(msg)
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+		return plugin.NoopAction()
+
 	case "enter":
-		item, ok := p.resumeList.SelectedItem().(sessionItem)
-		if !ok {
+		if p.unified == nil {
 			return plugin.NoopAction()
 		}
-		// For worktree bookmarks, resume from the worktree path so Claude
-		// Code finds the session (it indexes by launch directory).
-		dir := item.session.Project
-		if item.session.WorktreePath != "" {
-			dir = item.session.WorktreePath
+		sel := p.unified.SelectedItem()
+		if sel == nil {
+			return plugin.NoopAction()
 		}
-		p.filterText = ""
-		p.applyFilter()
+		dir := sel.Project
+		if sel.WorktreePath != "" {
+			dir = sel.WorktreePath
+		}
 		return plugin.Action{
 			Type: plugin.ActionLaunch,
 			Args: map[string]string{
 				"dir":       dir,
-				"resume_id": item.session.SessionID,
+				"resume_id": sel.SessionID,
 			},
 		}
 
-	case "delete":
-		item, ok := p.resumeList.SelectedItem().(sessionItem)
-		if !ok {
+	case "b":
+		if p.unified == nil {
 			return plugin.NoopAction()
 		}
-		p.confirming = true
-		p.confirmYes = false
-		p.confirmItem = newItem{}
-		p.confirmResume = &item
-		return plugin.NoopAction()
+		sel := p.unified.SelectedItem()
+		if sel == nil {
+			return plugin.NoopAction()
+		}
+		if sel.Tier == TierLive || sel.Tier == TierArchived {
+			if p.db != nil {
+				bk := db.Session{
+					SessionID:    sel.SessionID,
+					Project:      sel.Project,
+					Repo:         sel.Repo,
+					Branch:       sel.Branch,
+					Created:      parseTime(sel.RegisteredAt),
+					Summary:      sel.Topic,
+					WorktreePath: sel.WorktreePath,
+				}
+				label := sel.Topic
+				if label == "" {
+					label = sel.Branch
+				}
+				_ = db.DBInsertBookmark(p.db, bk, label)
+				if sel.Tier == TierArchived {
+					_ = db.DBDeleteArchivedSession(p.db, sel.SessionID)
+					p.unified.ReloadArchived()
+				}
+				sessions, _ := db.DBLoadBookmarks(p.db)
+				p.unified.SetSavedSessions(sessions)
+			}
+			p.flashMessage = "Bookmarked: " + sel.SessionID[:min(8, len(sel.SessionID))]
+			p.flashMessageAt = time.Now()
+		}
+		return plugin.ConsumedAction()
 
-	case "backspace":
-		if p.filterText != "" {
-			// Edit filter text
-			p.filterText = p.filterText[:len(p.filterText)-1]
-			p.applyFilter()
+	case "d":
+		if p.unified == nil {
 			return plugin.NoopAction()
 		}
-		// When filter is empty, backspace triggers delete confirmation
-		item, ok := p.resumeList.SelectedItem().(sessionItem)
-		if !ok {
+		sel := p.unified.SelectedItem()
+		if sel == nil {
 			return plugin.NoopAction()
 		}
-		p.confirming = true
-		p.confirmYes = false
-		p.confirmItem = newItem{}
-		p.confirmResume = &item
-		return plugin.NoopAction()
+		switch sel.Tier {
+		case TierLive:
+			if sel.State == "active" || sel.State == "running" {
+				p.flashMessage = "Can't dismiss running session"
+				p.flashMessageAt = time.Now()
+				return plugin.ConsumedAction()
+			}
+			if p.unified.daemonClient != nil {
+				client := p.unified.daemonClient()
+				if client != nil {
+					_ = client.ArchiveSession(daemon.ArchiveSessionParams{SessionID: sel.SessionID})
+				}
+			}
+			p.unified.RemoveSession(sel.SessionID)
+			p.flashMessage = "Dismissed: " + sel.SessionID[:min(8, len(sel.SessionID))]
+		case TierSaved:
+			if p.db != nil {
+				_ = db.DBRemoveBookmark(p.db, sel.SessionID)
+				sessions, _ := db.DBLoadBookmarks(p.db)
+				p.unified.SetSavedSessions(sessions)
+			}
+			p.flashMessage = "Removed bookmark"
+		case TierArchived:
+			if p.db != nil {
+				_ = db.DBDeleteArchivedSession(p.db, sel.SessionID)
+				p.unified.ReloadArchived()
+			}
+			p.unified.RemoveSession(sel.SessionID)
+			p.flashMessage = "Deleted archived session"
+		}
+		p.flashMessageAt = time.Now()
+		return plugin.ConsumedAction()
 	}
-
-	// Type-to-filter: any printable rune appends to the filter
-	if msg.Type == tea.KeyRunes && len(msg.Runes) > 0 {
-		for _, r := range msg.Runes {
-			p.filterText += string(r)
-		}
-		p.applyFilter()
-		return plugin.NoopAction()
-	}
-
-	var cmd tea.Cmd
-	p.resumeList, cmd = p.resumeList.Update(msg)
-	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+	return plugin.NoopAction()
 }
 
 func (p *Plugin) handleConfirming(msg tea.KeyMsg) plugin.Action {
 	doDelete := func() {
-		if p.confirmResume != nil {
-			if p.db != nil {
-				_ = db.DBRemoveBookmark(p.db, p.confirmResume.session.SessionID)
-			}
-			sessions, _ := db.DBLoadBookmarks(p.db)
-			p.resumeList.SetItems(buildSessionItems(sessions))
-		} else {
-			p.paths = db.RemovePath(p.paths, p.confirmItem.path)
-			if p.db != nil {
-				_ = db.DBRemovePath(p.db, p.confirmItem.path)
-			}
-			p.newList.SetItems(p.buildNewItems())
+		p.paths = db.RemovePath(p.paths, p.confirmItem.path)
+		if p.db != nil {
+			_ = db.DBRemovePath(p.db, p.confirmItem.path)
 		}
+		p.newList.SetItems(p.buildNewItems())
 	}
 
 	switch msg.String() {
@@ -962,98 +913,6 @@ func (p *Plugin) handleConfirming(msg tea.KeyMsg) plugin.Action {
 	case "left", "right", "tab":
 		p.confirmYes = !p.confirmYes
 		return plugin.NoopAction()
-	}
-	return plugin.NoopAction()
-}
-
-func (p *Plugin) handleActiveTab(msg tea.KeyMsg) plugin.Action {
-	switch msg.String() {
-	case "up", "k":
-		if p.active != nil {
-			p.active.MoveUp()
-		}
-		return plugin.NoopAction()
-	case "down", "j":
-		if p.active != nil {
-			p.active.MoveDown()
-		}
-		return plugin.NoopAction()
-
-	case "enter":
-		if p.active == nil {
-			return plugin.NoopAction()
-		}
-		sel := p.active.SelectedSession()
-		if sel == nil {
-			return plugin.NoopAction()
-		}
-		dir := sel.Project
-		if sel.WorktreePath != "" {
-			dir = sel.WorktreePath
-		}
-		return plugin.Action{
-			Type: plugin.ActionLaunch,
-			Args: map[string]string{
-				"dir":       dir,
-				"resume_id": sel.SessionID,
-			},
-		}
-
-	case "b":
-		if p.active == nil {
-			return plugin.NoopAction()
-		}
-		sel := p.active.SelectedSession()
-		if sel == nil {
-			return plugin.NoopAction()
-		}
-		if p.db != nil {
-			label := sel.Topic
-			if label == "" {
-				label = sel.Branch
-			}
-			bk := db.Session{
-				SessionID:    sel.SessionID,
-				Project:      sel.Project,
-				Repo:         sel.Repo,
-				Branch:       sel.Branch,
-				Created:      parseTime(sel.RegisteredAt),
-				Summary:      sel.Topic,
-				WorktreePath: sel.WorktreePath,
-			}
-			_ = db.DBInsertBookmark(p.db, bk, label)
-			// Reload bookmark list
-			sessions, _ := db.DBLoadBookmarks(p.db)
-			p.resumeList.SetItems(buildSessionItems(sessions))
-		}
-		p.flashMessage = "Bookmarked: " + sel.SessionID[:8]
-		p.flashMessageAt = time.Now()
-		return plugin.ConsumedAction()
-
-	case "d":
-		if p.active == nil {
-			return plugin.NoopAction()
-		}
-		sel := p.active.SelectedSession()
-		if sel == nil {
-			return plugin.NoopAction()
-		}
-		if sel.State == "active" || sel.State == "running" {
-			p.flashMessage = "Can't dismiss active session"
-			p.flashMessageAt = time.Now()
-			return plugin.ConsumedAction()
-		}
-		// Archive via daemon RPC
-		if p.active.daemonClient != nil {
-			client := p.active.daemonClient()
-			if client != nil {
-				_ = client.ArchiveSession(daemon.ArchiveSessionParams{SessionID: sel.SessionID})
-			}
-		}
-		p.active.RemoveSession(sel.SessionID)
-		p.flashMessage = "Dismissed: " + sel.SessionID[:8]
-		p.flashMessageAt = time.Now()
-		return plugin.ConsumedAction()
 	}
 	return plugin.NoopAction()
 }
@@ -1216,13 +1075,12 @@ func gitRepoRootFor(dir string) string {
 // Internal: views
 // ---------------------------------------------------------------------------
 
-func (p *Plugin) viewActiveTab() string {
-	if p.active == nil {
+func (p *Plugin) viewSessionsTab() string {
+	if p.unified == nil {
 		return p.styles.hint.Render("  Daemon not connected.")
 	}
-	listView := p.active.View(p.width, p.height)
+	listView := p.unified.View(p.width, p.height)
 	hints := p.renderHints()
-	// Show flash message if recent (within 3 seconds)
 	if p.flashMessage != "" && time.Since(p.flashMessageAt) < 3*time.Second {
 		flash := p.styles.sectionHeader.Render("  " + p.flashMessage)
 		return lipgloss.JoinVertical(lipgloss.Left, listView, "", flash, "", hints)
@@ -1242,17 +1100,6 @@ func (p *Plugin) viewNewTab() string {
 	if banner != "" {
 		return lipgloss.JoinVertical(lipgloss.Left, banner, "", listView, "", hints)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, listView, "", hints)
-}
-
-func (p *Plugin) viewResumeTab() string {
-	var listView string
-	if p.loading {
-		listView = "  " + p.spinner.View() + " Loading sessions..."
-	} else {
-		listView = p.resumeList.View()
-	}
-	hints := p.renderHints()
 	return lipgloss.JoinVertical(lipgloss.Left, listView, "", hints)
 }
 
@@ -1297,6 +1144,21 @@ func (p *Plugin) viewWorktreesTab() string {
 	return lipgloss.JoinVertical(lipgloss.Left, listView, "", hints)
 }
 
+// parseTime parses an RFC3339 time string, returning zero time on failure.
+func parseTime(s string) time.Time {
+	t, _ := time.Parse(time.RFC3339, s)
+	return t
+}
+
+// sessionAge returns a human-readable age string from an RFC3339 timestamp.
+func sessionAge(registered string) string {
+	t := parseTime(registered)
+	if t.IsZero() {
+		return ""
+	}
+	return timeAgo(t)
+}
+
 // timeAgo returns a human-readable duration since t.
 func timeAgo(t time.Time) string {
 	d := time.Since(t)
@@ -1327,12 +1189,7 @@ func timeAgo(t time.Time) string {
 func (p *Plugin) renderHints() string {
 	var hints string
 	if p.confirming {
-		var label string
-		if p.confirmResume != nil {
-			label = p.confirmResume.session.Repo + " (" + p.confirmResume.session.Branch + ")"
-		} else {
-			label = p.confirmItem.label
-		}
+		label := p.confirmItem.label
 		yesStr := "yes"
 		noStr := "no"
 		if p.confirmYes {
@@ -1357,24 +1214,22 @@ func (p *Plugin) renderHints() string {
 		}
 	} else {
 		switch p.subTab {
-		case "active":
-			hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   up/down navigate   a active   n new   r resume   t worktrees   esc back")
+		case "sessions":
+			if p.unified != nil && p.unified.archiveMode {
+				hints = p.styles.hint.Render("enter resume   b save   d delete   j/k navigate   a back   s sessions   n new   t worktrees")
+			} else {
+				hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   j/k navigate   a archive   s sessions   n new   t worktrees")
+			}
 		case "new":
 			if p.filterText != "" {
 				hints = p.styles.hint.Render(fmt.Sprintf("filter: %s   enter launch   esc clear   backspace edit", p.filterText))
 			} else {
-				hints = p.styles.hint.Render("type to filter   enter launch   w worktree   a active   n new   r resume   t worktrees   shift+up/down reorder   del remove   esc quit")
-			}
-		case "resume":
-			if p.filterText != "" {
-				hints = p.styles.hint.Render(fmt.Sprintf("filter: %s   enter resume   esc clear   backspace edit", p.filterText))
-			} else {
-				hints = p.styles.hint.Render("type to filter   enter resume   a active   n new   r resume   t worktrees   del remove   esc quit")
+				hints = p.styles.hint.Render("type to filter   enter launch   w worktree   s sessions   n new   t worktrees   shift+up/down reorder   del remove   esc quit")
 			}
 		case "worktrees":
-			hints = p.styles.hint.Render("enter launch   d delete   p prune   a active   n new   r resume   esc back")
+			hints = p.styles.hint.Render("enter launch   d delete   p prune   s sessions   n new   esc back")
 		default:
-			hints = p.styles.hint.Render("a active   n new   r resume   t worktrees   esc quit")
+			hints = p.styles.hint.Render("s sessions   n new   t worktrees   esc quit")
 		}
 	}
 	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hints)
@@ -1447,22 +1302,6 @@ func (p *Plugin) movePathDown() plugin.Action {
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
 		return db.DBSwapPathOrder(database, pathA, pathB)
 	})}
-}
-
-func buildSessionItems(sessions []db.Session) []list.Item {
-	items := make([]list.Item, len(sessions))
-	for i, s := range sessions {
-		items[i] = sessionItem{session: s}
-	}
-	return items
-}
-
-func (p *Plugin) loadSessionsCmd() tea.Cmd {
-	database := p.db
-	return func() tea.Msg {
-		sessions, _ := db.DBLoadBookmarks(database)
-		return sessionsLoadedMsg{sessions: sessions}
-	}
 }
 
 // SetPendingLaunchTodo sets a todo whose context will be written before launch.

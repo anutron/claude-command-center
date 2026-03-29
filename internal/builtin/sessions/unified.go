@@ -451,6 +451,25 @@ func (uv *unifiedView) Refresh() {
 	}
 }
 
+// SetSavedSessions replaces the saved (bookmark) session list.
+func (uv *unifiedView) SetSavedSessions(sessions []db.Session) {
+	uv.savedSessions = sessions
+}
+
+// SetArchivedSessions replaces the archived session list.
+func (uv *unifiedView) SetArchivedSessions(sessions []db.ArchivedSession) {
+	uv.archivedSessions = sessions
+}
+
+// ReloadArchived loads archived sessions from the database.
+func (uv *unifiedView) ReloadArchived() {
+	if uv.db == nil {
+		return
+	}
+	sessions, _ := db.DBLoadArchivedSessions(uv.db)
+	uv.archivedSessions = sessions
+}
+
 // isSessionBlocked checks if a session has a CCC-spawned agent in "blocked" state.
 func (uv *unifiedView) isSessionBlocked(sessionID string) bool {
 	if len(uv.agentsByID) == 0 || sessionID == "" {
