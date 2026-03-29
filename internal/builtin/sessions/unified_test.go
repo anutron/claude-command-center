@@ -233,6 +233,69 @@ func TestUnifiedViewNavigation(t *testing.T) {
 	}
 }
 
+func TestUnifiedViewAutoArchive(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
+	database, err := db.OpenDB(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	uv := newTestUnifiedView()
+	uv.db = database
+
+	now := time.Now()
+
+	// Simulate: previous refresh had s1 running
+	uv.liveSessions = []daemon.SessionInfo{
+		{SessionID: "s1", Topic: "Was running", Project: "/proj", Repo: "repo", Branch: "main", State: "active", RegisteredAt: now.Add(-10 * time.Minute).Format(time.RFC3339)},
+	}
+
+	// Now s1 has ended
+	uv.archiveEndedSessions([]daemon.SessionInfo{
+		{SessionID: "s1", Topic: "Was running", Project: "/proj", Repo: "repo", Branch: "main", State: "ended", RegisteredAt: now.Add(-10 * time.Minute).Format(time.RFC3339), EndedAt: now.Format(time.RFC3339)},
+	})
+
+	// Should be in archived sessions table
+	archived, _ := db.DBLoadArchivedSessions(database)
+	if len(archived) != 1 {
+		t.Fatalf("expected 1 archived, got %d", len(archived))
+	}
+	if archived[0].SessionID != "s1" {
+		t.Fatalf("expected s1 archived, got %s", archived[0].SessionID)
+	}
+}
+
+func TestUnifiedViewAutoArchiveSkipsBookmarked(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
+	database, err := db.OpenDB(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	// Pre-bookmark s1
+	_ = db.DBInsertBookmark(database, db.Session{SessionID: "s1", Project: "/proj", Branch: "main", Created: time.Now()}, "test")
+
+	uv := newTestUnifiedView()
+	uv.db = database
+
+	now := time.Now()
+	uv.liveSessions = []daemon.SessionInfo{
+		{SessionID: "s1", Topic: "Bookmarked", Project: "/proj", State: "active", RegisteredAt: now.Add(-5 * time.Minute).Format(time.RFC3339)},
+	}
+
+	uv.archiveEndedSessions([]daemon.SessionInfo{
+		{SessionID: "s1", Topic: "Bookmarked", Project: "/proj", State: "ended", RegisteredAt: now.Add(-5 * time.Minute).Format(time.RFC3339), EndedAt: now.Format(time.RFC3339)},
+	})
+
+	// Should NOT be archived (it's bookmarked)
+	archived, _ := db.DBLoadArchivedSessions(database)
+	if len(archived) != 0 {
+		t.Fatalf("expected 0 archived (bookmarked session), got %d", len(archived))
+	}
+}
+
 // TestUnifiedViewSelectedItem verifies SelectedItem returns the correct
 // UnifiedItem with the correct Tier.
 func TestUnifiedViewSelectedItem(t *testing.T) {

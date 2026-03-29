@@ -1,10 +1,12 @@
 package sessions
 
 import (
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
@@ -58,6 +60,7 @@ type unifiedView struct {
 	archiveMode      bool
 	daemonClient     func() *daemon.Client
 	styles           sessionStyles
+	db               *sql.DB
 }
 
 // NewUnifiedView creates a new unified view. clientFn may be nil when the
@@ -363,6 +366,62 @@ func (uv *unifiedView) clampCursor() {
 	}
 }
 
+// archiveEndedSessions compares the new session list against the previous one
+// and auto-archives any newly ended sessions that aren't bookmarked.
+func (uv *unifiedView) archiveEndedSessions(newSessions []daemon.SessionInfo) {
+	if uv.db == nil {
+		return
+	}
+
+	// Build set of previously running session IDs
+	prevRunning := make(map[string]daemon.SessionInfo, len(uv.liveSessions))
+	for _, s := range uv.liveSessions {
+		if s.State == "running" || s.State == "active" {
+			prevRunning[s.SessionID] = s
+		}
+	}
+
+	// Build set of bookmarked IDs
+	bookmarks, _ := db.DBLoadBookmarks(uv.db)
+	bookmarkedIDs := make(map[string]bool, len(bookmarks))
+	for _, b := range bookmarks {
+		bookmarkedIDs[b.SessionID] = true
+	}
+
+	// Find sessions that were previously running but are now ended
+	newByID := make(map[string]daemon.SessionInfo, len(newSessions))
+	for _, s := range newSessions {
+		newByID[s.SessionID] = s
+	}
+
+	for id, prev := range prevRunning {
+		newState, exists := newByID[id]
+		ended := !exists || newState.State == "ended"
+		if !ended {
+			continue
+		}
+		if bookmarkedIDs[id] {
+			continue
+		}
+
+		endedAt := time.Now().Format(time.RFC3339)
+		if exists && newState.EndedAt != "" {
+			endedAt = newState.EndedAt
+		}
+
+		_ = db.DBInsertArchivedSession(uv.db, db.ArchivedSession{
+			SessionID:    id,
+			Topic:        prev.Topic,
+			Project:      prev.Project,
+			Repo:         prev.Repo,
+			Branch:       prev.Branch,
+			WorktreePath: prev.WorktreePath,
+			RegisteredAt: prev.RegisteredAt,
+			EndedAt:      endedAt,
+		})
+	}
+}
+
 // Refresh fetches the latest session and agent data from the daemon.
 func (uv *unifiedView) Refresh() {
 	if uv.daemonClient == nil {
@@ -375,6 +434,8 @@ func (uv *unifiedView) Refresh() {
 
 	sessions, err := client.ListSessions()
 	if err == nil {
+		// Auto-archive newly ended sessions before updating the live list
+		uv.archiveEndedSessions(sessions)
 		uv.liveSessions = sessions
 	}
 	uv.clampCursor()
