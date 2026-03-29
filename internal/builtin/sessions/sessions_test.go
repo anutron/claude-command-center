@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
@@ -50,6 +51,14 @@ func setupPlugin(t *testing.T) *Plugin {
 	return p
 }
 
+// setupSessionsPlugin returns a plugin with subTab set to "sessions".
+func setupSessionsPlugin(t *testing.T) *Plugin {
+	t.Helper()
+	p := setupPlugin(t)
+	p.subTab = "sessions"
+	return p
+}
+
 func TestInitLoadsPaths(t *testing.T) {
 	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
 	database, err := db.OpenDB(t.TempDir() + "/test.db")
@@ -89,6 +98,7 @@ func TestInitLoadsPaths(t *testing.T) {
 
 func TestHandleKeyEnterOnPathReturnsLaunch(t *testing.T) {
 	p := setupPlugin(t)
+	p.subTab = "new"
 
 	// Add a path so there's something beyond home
 	_ = db.DBAddPath(p.db, "/tmp/myproject")
@@ -108,10 +118,9 @@ func TestHandleKeyEnterOnPathReturnsLaunch(t *testing.T) {
 }
 
 func TestHandleKeyEnterOnSessionReturnsResume(t *testing.T) {
-	p := setupPlugin(t)
+	p := setupSessionsPlugin(t)
 
-	// Switch to resume tab and load a session
-	p.subTab = "resume"
+	// Load a saved session into the unified view
 	sessions := []db.Session{
 		{
 			SessionID: "sess-abc",
@@ -123,9 +132,8 @@ func TestHandleKeyEnterOnSessionReturnsResume(t *testing.T) {
 			Type:      db.SessionBookmark,
 		},
 	}
-	p.loading = false
-	p.resumeList.SetItems(buildSessionItems(sessions))
-	p.resumeList.Select(0)
+	p.unified.SetSavedSessions(sessions)
+	// cursor starts at 0 which will hit the saved session
 
 	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if action.Type != "launch" {
@@ -141,6 +149,7 @@ func TestHandleKeyEnterOnSessionReturnsResume(t *testing.T) {
 
 func TestHandleKeyDeleteEntersConfirming(t *testing.T) {
 	p := setupPlugin(t)
+	p.subTab = "new"
 
 	_ = db.DBAddPath(p.db, "/tmp/deleteme")
 	p.paths = append(p.paths, "/tmp/deleteme")
@@ -192,25 +201,27 @@ func TestConfirmingYRemovesItem(t *testing.T) {
 func TestSubTabSwitching(t *testing.T) {
 	p := setupPlugin(t)
 
-	if p.subTab != "new" {
-		t.Fatalf("expected initial subTab 'new', got %s", p.subTab)
+	// After Init, subTab defaults to "sessions"
+	if p.subTab != "sessions" {
+		t.Fatalf("expected initial subTab 'sessions', got %s", p.subTab)
 	}
 
-	// Switch to resume
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-	if p.subTab != "resume" {
-		t.Fatalf("expected subTab 'resume', got %s", p.subTab)
-	}
-
-	// Switch back to new
+	// Switch to new
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	if p.subTab != "new" {
 		t.Fatalf("expected subTab 'new', got %s", p.subTab)
+	}
+
+	// Switch to sessions
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if p.subTab != "sessions" {
+		t.Fatalf("expected subTab 'sessions', got %s", p.subTab)
 	}
 }
 
 func TestHandleKeyDeleteOnFirstPathEntersConfirming(t *testing.T) {
 	p := setupPlugin(t)
+	p.subTab = "new"
 
 	// Add a path and select it
 	_ = db.DBAddPath(p.db, "/tmp/firstpath")
@@ -233,25 +244,24 @@ func TestHandleKeyDeleteOnFirstPathEntersConfirming(t *testing.T) {
 func TestViewRendersWithoutPanic(t *testing.T) {
 	p := setupPlugin(t)
 
-	// Should not panic for either sub-tab
+	// Should not panic for any sub-tab
+	p.subTab = "new"
 	output := p.View(120, 40, 0)
 	if output == "" {
 		t.Fatal("expected non-empty view for new tab")
 	}
 
-	p.subTab = "resume"
+	p.subTab = "sessions"
 	output = p.View(120, 40, 0)
 	if output == "" {
-		t.Fatal("expected non-empty view for resume tab")
+		t.Fatal("expected non-empty view for sessions tab")
 	}
 }
 
-func TestSessionsLoadedMsg(t *testing.T) {
-	p := setupPlugin(t)
-
-	if !p.loading {
-		t.Fatal("expected loading to be true initially")
-	}
+// TestUnifiedViewLoadsSavedSessions verifies that SetSavedSessions populates
+// the unified view and SelectedItem returns the right session.
+func TestUnifiedViewLoadsSavedSessions(t *testing.T) {
+	p := setupSessionsPlugin(t)
 
 	sessions := []db.Session{
 		{
@@ -262,24 +272,27 @@ func TestSessionsLoadedMsg(t *testing.T) {
 			Type:      db.SessionBookmark,
 		},
 	}
-	handled, _ := p.HandleMessage(sessionsLoadedMsg{sessions: sessions})
-	if !handled {
-		t.Fatal("expected sessionsLoadedMsg to be handled")
+	p.unified.SetSavedSessions(sessions)
+
+	if len(p.unified.savedSessions) != 1 {
+		t.Fatalf("expected 1 saved session, got %d", len(p.unified.savedSessions))
 	}
-	if p.loading {
-		t.Fatal("expected loading to be false after sessionsLoadedMsg")
+
+	sel := p.unified.SelectedItem()
+	if sel == nil {
+		t.Fatal("expected selected item, got nil")
 	}
-	if len(p.resumeList.Items()) != 1 {
-		t.Fatalf("expected 1 resume item, got %d", len(p.resumeList.Items()))
+	if sel.SessionID != "s1" {
+		t.Fatalf("expected session ID s1, got %s", sel.SessionID)
 	}
 }
 
 func TestNavigateTo(t *testing.T) {
 	p := setupPlugin(t)
 
-	p.NavigateTo("resume", nil)
-	if p.subTab != "resume" {
-		t.Fatalf("expected subTab 'resume', got %s", p.subTab)
+	p.NavigateTo("sessions", nil)
+	if p.subTab != "sessions" {
+		t.Fatalf("expected subTab 'sessions', got %s", p.subTab)
 	}
 
 	p.NavigateTo("new", nil)
@@ -290,6 +303,7 @@ func TestNavigateTo(t *testing.T) {
 
 func TestEscWithPendingTodoNavigatesToCommand(t *testing.T) {
 	p := setupPlugin(t)
+	p.subTab = "new"
 	p.pendingLaunchTodo = &db.Todo{Title: "test task"}
 
 	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEscape})
@@ -336,54 +350,35 @@ func searchString(s, substr string) bool {
 }
 
 func TestFilterFromFirstCharacter(t *testing.T) {
-	p := setupPlugin(t)
+	p := setupSessionsPlugin(t)
 
-	// Switch to resume tab with 3 sessions whose summaries contain
-	// scattered c/l/a characters (which would fuzzy-match "cla" but
-	// should NOT substring-match it).
-	p.subTab = "resume"
+	// Load 3 saved sessions with different repos
 	sessions := []db.Session{
 		{SessionID: "s1", Project: "/home/user/claude-command-center", Repo: "claude-command-center", Branch: "main", Summary: "Working on the command center dashboard", Created: time.Now(), Type: db.SessionBookmark},
 		{SessionID: "s2", Project: "/home/user/sherlock", Repo: "sherlock", Branch: "main", Summary: "Building the investigation dashboard with complex queries", Created: time.Now(), Type: db.SessionBookmark},
 		{SessionID: "s3", Project: "/home/user/merchant-ui", Repo: "merchant-ui", Branch: "main", Summary: "Merchant portal UI with Tailwind CSS layout improvements", Created: time.Now(), Type: db.SessionBookmark},
 	}
-	p.loading = false
-	p.resumeList.SetItems(buildSessionItems(sessions))
+	p.unified.SetSavedSessions(sessions)
 
-	// Verify 3 items visible before filtering
-	if len(p.resumeList.VisibleItems()) != 3 {
-		t.Fatalf("expected 3 visible items before filtering, got %d", len(p.resumeList.VisibleItems()))
+	// Verify 3 items visible via displayItems
+	items := p.unified.displayItems()
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items before filtering, got %d", len(items))
 	}
 
-	// Test progressive filtering: each additional character should narrow results
-	tests := []struct {
-		term     string
-		expected int
-	}{
-		{"c", 3}, // all three contain "c" somewhere in their FilterValue
-		{"cl", 1}, // only "claude-command-center" contains "cl" as substring
-		{"cla", 1},
-		{"clau", 1},
-	}
-
-	for _, tc := range tests {
-		p.resumeList.SetFilterText(tc.term)
-		visible := p.resumeList.VisibleItems()
-		if len(visible) != tc.expected {
-			var names []string
-			for _, item := range visible {
-				if si, ok := item.(sessionItem); ok {
-					names = append(names, si.session.Repo)
-				}
-			}
-			t.Errorf("filter %q: expected %d visible items, got %d %v",
-				tc.term, tc.expected, len(visible), names)
-		}
+	// Unified view doesn't do text filtering — just verify all items are present
+	// and can be navigated. The unified view uses cursor-based navigation.
+	p.unified.MoveDown()
+	sel := p.unified.SelectedItem()
+	if sel == nil {
+		t.Fatal("expected selected item after MoveDown")
 	}
 }
 
 func TestTypeToFilterNewTab(t *testing.T) {
 	p := setupPlugin(t)
+	// Switch to new tab explicitly so we can test filter behavior
+	p.subTab = "new"
 
 	// Add paths so we have items to filter
 	_ = db.DBAddPath(p.db, "/tmp/alpha-project")
@@ -392,7 +387,7 @@ func TestTypeToFilterNewTab(t *testing.T) {
 	p.newList.SetItems(p.buildNewItems())
 
 	// Typing a character should immediately start filtering (no '/' needed)
-	// Note: 'a' is a sub-tab shortcut, so use 'b' which is not a shortcut.
+	// Note: 's' and 'n' are sub-tab shortcuts on new tab, so use 'b' which is not.
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
 	if p.filterText != "b" {
 		t.Fatalf("expected filterText 'b', got %q", p.filterText)
@@ -426,6 +421,8 @@ func TestTypeToFilterNewTab(t *testing.T) {
 
 func TestTypeToFilterShortcutsDisabledWhileFiltering(t *testing.T) {
 	p := setupPlugin(t)
+	// Must be on new tab for type-to-filter to work
+	p.subTab = "new"
 
 	// Start filtering
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
@@ -433,19 +430,19 @@ func TestTypeToFilterShortcutsDisabledWhileFiltering(t *testing.T) {
 		t.Fatalf("expected filterText 'c', got %q", p.filterText)
 	}
 
-	// Pressing 'r' while filtering should append to filter, not switch to resume tab
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	// Pressing 's' while filtering should append to filter, not switch to sessions tab
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	if p.subTab != "new" {
 		t.Fatalf("expected subTab 'new' while filtering, got %s", p.subTab)
 	}
-	if p.filterText != "cr" {
-		t.Fatalf("expected filterText 'cr', got %q", p.filterText)
+	if p.filterText != "cs" {
+		t.Fatalf("expected filterText 'cs', got %q", p.filterText)
 	}
 
 	// Same for 'n' and 't'
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
-	if p.filterText != "crn" {
-		t.Fatalf("expected filterText 'crn', got %q", p.filterText)
+	if p.filterText != "csn" {
+		t.Fatalf("expected filterText 'csn', got %q", p.filterText)
 	}
 }
 
@@ -457,6 +454,7 @@ func TestEnterDirectlyLaunchesOnNewTab(t *testing.T) {
 	p.paths = append(p.paths, "/tmp/myproject")
 	p.newList.SetItems(p.buildNewItems())
 	p.newList.Select(0)
+	p.subTab = "new"
 
 	// Single Enter should launch directly
 	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -479,12 +477,12 @@ func TestSubstringFilter(t *testing.T) {
 		term     string
 		expected int
 	}{
-		{"c", 3},  // all three contain "c" somewhere
-		{"cl", 1}, // only claude-command-center
-		{"sh", 1}, // only sherlock
-		{"main", 3}, // all contain "main"
-		{"xyz", 0},  // nothing matches
-		{"CLAUDE", 1}, // case-insensitive
+		{"c", 3},       // all three contain "c" somewhere
+		{"cl", 1},      // only claude-command-center
+		{"sh", 1},      // only sherlock
+		{"main", 3},    // all contain "main"
+		{"xyz", 0},     // nothing matches
+		{"CLAUDE", 1},  // case-insensitive
 	}
 
 	for _, tc := range tests {
@@ -492,5 +490,138 @@ func TestSubstringFilter(t *testing.T) {
 		if len(ranks) != tc.expected {
 			t.Errorf("substringFilter(%q): expected %d matches, got %d", tc.term, tc.expected, len(ranks))
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// New integration tests for unified view
+// ---------------------------------------------------------------------------
+
+func TestSessionsArchiveToggle(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Add archived sessions directly
+	p.unified.archivedSessions = []db.ArchivedSession{
+		{
+			SessionID:    "arch-1",
+			Topic:        "Archived session",
+			Project:      "/home/user/proj",
+			Repo:         "proj",
+			Branch:       "main",
+			RegisteredAt: time.Now().Add(-2 * time.Hour).Format(time.RFC3339),
+			EndedAt:      time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	if p.unified.archiveMode {
+		t.Fatal("expected archiveMode to be false initially")
+	}
+
+	// Press 'a' — should enter archive mode
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if !p.unified.archiveMode {
+		t.Fatal("expected archiveMode to be true after pressing 'a'")
+	}
+
+	// Press 'a' again — should leave archive mode
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if p.unified.archiveMode {
+		t.Fatal("expected archiveMode to be false after pressing 'a' again")
+	}
+}
+
+func TestSessionsEnterLaunchesLive(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Add a live session
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-sess-001",
+			Topic:        "My live session",
+			Project:      "/home/user/myproject",
+			Repo:         "myproject",
+			Branch:       "main",
+			State:        "ended",
+			RegisteredAt: time.Now().Add(-30 * time.Minute).Format(time.RFC3339),
+		},
+	}
+	// cursor is at 0, which hits the live session
+
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if action.Type != "launch" {
+		t.Fatalf("expected launch action, got %s", action.Type)
+	}
+	if action.Args["resume_id"] != "live-sess-001" {
+		t.Fatalf("expected resume_id live-sess-001, got %s", action.Args["resume_id"])
+	}
+	if action.Args["dir"] != "/home/user/myproject" {
+		t.Fatalf("expected dir /home/user/myproject, got %s", action.Args["dir"])
+	}
+}
+
+func TestSessionsBookmarkSavesToDB(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Add a live ended session
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-sess-bk1",
+			Topic:        "Session to bookmark",
+			Project:      "/home/user/project",
+			Repo:         "project",
+			Branch:       "feature",
+			State:        "ended",
+			RegisteredAt: time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	// Press 'b' to bookmark
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if action.Type != "consumed" && action.Type != "noop" {
+		t.Fatalf("unexpected action type: %s", action.Type)
+	}
+
+	// Verify the bookmark was saved to DB
+	bookmarks, err := db.DBLoadBookmarks(p.db)
+	if err != nil {
+		t.Fatalf("load bookmarks: %v", err)
+	}
+	if len(bookmarks) != 1 {
+		t.Fatalf("expected 1 bookmark, got %d", len(bookmarks))
+	}
+	if bookmarks[0].SessionID != "live-sess-bk1" {
+		t.Fatalf("expected session ID live-sess-bk1, got %s", bookmarks[0].SessionID)
+	}
+}
+
+func TestSessionsDismissRunningBlocked(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Add a running (active) session — dismiss should be blocked
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "running-sess-001",
+			Topic:        "Active session",
+			Project:      "/home/user/active",
+			Repo:         "active",
+			Branch:       "main",
+			State:        "running",
+			RegisteredAt: time.Now().Add(-5 * time.Minute).Format(time.RFC3339),
+		},
+	}
+
+	// Press 'd' — should show flash message, not dismiss
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+	if p.flashMessage == "" {
+		t.Fatal("expected flash message set after 'd' on running session")
+	}
+	if !contains(p.flashMessage, "Can't dismiss") {
+		t.Fatalf("expected 'Can't dismiss' in flash message, got %q", p.flashMessage)
+	}
+
+	// Session should still be in the list
+	if len(p.unified.liveSessions) != 1 {
+		t.Fatalf("expected session to still be present, got %d sessions", len(p.unified.liveSessions))
 	}
 }
