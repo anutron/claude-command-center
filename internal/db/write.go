@@ -751,3 +751,22 @@ func DBClearPendingActions(d *sql.DB) error {
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// Write methods -- Archived Sessions
+// ---------------------------------------------------------------------------
+
+// DBInsertArchivedSession inserts or replaces an archived session.
+func DBInsertArchivedSession(db *sql.DB, s ArchivedSession) error {
+	_, err := db.Exec(`INSERT OR REPLACE INTO cc_archived_sessions
+		(session_id, topic, project, repo, branch, worktree_path, registered_at, ended_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.SessionID, s.Topic, s.Project, s.Repo, s.Branch, s.WorktreePath, s.RegisteredAt, s.EndedAt)
+	return err
+}
+
+// DBDeleteArchivedSession removes an archived session by ID.
+func DBDeleteArchivedSession(db *sql.DB, sessionID string) error {
+	_, err := db.Exec(`DELETE FROM cc_archived_sessions WHERE session_id = ?`, sessionID)
+	return err
+}

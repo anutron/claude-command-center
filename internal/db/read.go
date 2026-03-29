@@ -648,3 +648,27 @@ func DBIsEmpty(db *sql.DB) bool {
 	err := db.QueryRow(`SELECT COUNT(*) FROM cc_todos`).Scan(&count)
 	return err != nil || count == 0
 }
+
+// ---------------------------------------------------------------------------
+// Read methods -- Archived Sessions
+// ---------------------------------------------------------------------------
+
+// DBLoadArchivedSessions loads all archived sessions, most recent first.
+func DBLoadArchivedSessions(db *sql.DB) ([]ArchivedSession, error) {
+	rows, err := db.Query(`SELECT session_id, topic, project, repo, branch, worktree_path, registered_at, ended_at
+		FROM cc_archived_sessions ORDER BY ended_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []ArchivedSession
+	for rows.Next() {
+		var s ArchivedSession
+		if err := rows.Scan(&s.SessionID, &s.Topic, &s.Project, &s.Repo, &s.Branch, &s.WorktreePath, &s.RegisteredAt, &s.EndedAt); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, s)
+	}
+	return sessions, rows.Err()
+}

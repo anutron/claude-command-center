@@ -300,6 +300,18 @@ func migrateSchema(db *sql.DB) error {
 		updated_at TEXT NOT NULL
 	)`)
 
+	// Archived sessions table (auto-saved ended sessions for the unified sessions view)
+	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_archived_sessions (
+		session_id    TEXT PRIMARY KEY,
+		topic         TEXT,
+		project       TEXT,
+		repo          TEXT,
+		branch        TEXT,
+		worktree_path TEXT,
+		registered_at TEXT NOT NULL,
+		ended_at      TEXT NOT NULL
+	)`)
+
 	return nil
 }
 

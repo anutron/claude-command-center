@@ -31,6 +31,18 @@ type Session struct {
 	SourceRepo   string // main repo path for worktree sessions (bookmarks only)
 }
 
+// ArchivedSession represents an auto-saved ended session in cc_archived_sessions.
+type ArchivedSession struct {
+	SessionID    string
+	Topic        string
+	Project      string
+	Repo         string
+	Branch       string
+	WorktreePath string
+	RegisteredAt string
+	EndedAt      string
+}
+
 // Bookmark is the JSON structure stored in bookmarks.json.
 type Bookmark struct {
 	SessionID    string `json:"session_id"`
