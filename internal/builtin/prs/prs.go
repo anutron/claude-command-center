@@ -84,16 +84,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	}
 	p.rowStyle = newPRRowStyle(&p.styles)
 
-	// Reload PR data from DB when ai-cron finishes a refresh.
-	if p.bus != nil {
-		p.bus.Subscribe("data.refreshed", func(e plugin.Event) {
-			if p.database != nil {
-				prs, _ := db.DBLoadPullRequests(p.database)
-				p.prs = prs
-				p.lastLoaded = time.Now()
-			}
-		})
-	}
+	// NOTE: data.refreshed is handled via plugin.NotifyMsg in HandleMessage,
+	// which dispatches an async Refresh() cmd. This avoids mutating shared
+	// state directly in event bus handlers.
 
 	return nil
 }
@@ -174,6 +167,14 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
 		return true, plugin.NoopAction()
+
+	case plugin.NotifyMsg:
+		if msg.Event == "data.refreshed" {
+			if cmd := p.Refresh(); cmd != nil {
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+			}
+		}
+		return false, plugin.NoopAction()
 
 	case agent.SessionStartedMsg:
 		if p.isPRAgent(msg.ID) {

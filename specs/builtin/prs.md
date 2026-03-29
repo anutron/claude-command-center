@@ -181,11 +181,11 @@ Accessible via Settings > PLUGINS > PRs:
 
 None — `cc_pull_requests` table is created in core `schema.go`.
 
-## Event Bus
+## Event Handling
 
-**Subscribes to:**
+**Handles `plugin.NotifyMsg`:**
 
-- `data.refreshed` — reloads PR data from DB when ai-cron completes a refresh cycle; also triggers agent evaluation (scan for PRs needing agent spawn)
+- `data.refreshed` — dispatches async `Refresh()` cmd to reload PR data from DB; also triggers agent evaluation (scan for PRs needing agent spawn)
 
 ## Agent Automation
 

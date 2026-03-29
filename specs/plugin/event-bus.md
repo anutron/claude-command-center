@@ -26,6 +26,7 @@ type EventBus interface {
 - Events are delivered synchronously in the order handlers were registered.
 - Publishing to a topic with no subscribers is a no-op (no error).
 - Handlers should not block (long operations should return tea.Cmd via Action).
+- **Concurrency rule:** Event bus handlers MUST NOT mutate shared plugin state that is also accessed by tea.Cmd goroutines or View(). For daemon events (`data.refreshed`, `session.*`), use `plugin.NotifyMsg` in `HandleMessage` to dispatch async `Refresh()` cmds instead — this ensures all state mutations happen on the main bubbletea loop.
 
 ## Event Catalog
 
@@ -40,7 +41,7 @@ type EventBus interface {
 | `todo.promoted` | `{id, title}` | settings (log) | Todo promoted to top |
 | `todo.edited` | `{id, title}` | settings (log) | Todo edited via LLM |
 | `pending.todo` | `{todo_id, title, context, detail, who_waiting, due, effort}` | sessions | User selected a todo for launch without a project dir |
-| `data.refreshed` | `{source}` | sessions | ai-cron completed |
+| `data.refreshed` | `{source}` | — (via NotifyMsg) | ai-cron completed |
 
 ### Sessions Events
 

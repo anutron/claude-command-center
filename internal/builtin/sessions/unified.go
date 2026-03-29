@@ -366,23 +366,33 @@ func (uv *unifiedView) clampCursor() {
 	}
 }
 
-// archiveEndedSessions compares the new session list against the previous one
-// and auto-archives any newly ended sessions that aren't bookmarked.
-func (uv *unifiedView) archiveEndedSessions(newSessions []daemon.SessionInfo) {
-	if uv.db == nil {
+// sessionsRefreshMsg carries fetched session data from a background goroutine
+// back to the main bubbletea loop for safe state mutation.
+type sessionsRefreshMsg struct {
+	liveSessions     []daemon.SessionInfo
+	savedSessions    []db.Session
+	archivedSessions []db.ArchivedSession
+	agentsByID       map[string]daemon.AgentStatusResult
+}
+
+// archiveNewlyEndedSessions compares previous live sessions with fresh ones and
+// archives any that transitioned to ended and aren't bookmarked. Safe to call
+// from background goroutines — takes all needed state as parameters.
+func archiveNewlyEndedSessions(database *sql.DB, prevLive, newSessions []daemon.SessionInfo) {
+	if database == nil {
 		return
 	}
 
 	// Build set of previously running session IDs
-	prevRunning := make(map[string]daemon.SessionInfo, len(uv.liveSessions))
-	for _, s := range uv.liveSessions {
+	prevRunning := make(map[string]daemon.SessionInfo, len(prevLive))
+	for _, s := range prevLive {
 		if s.State == "running" || s.State == "active" {
 			prevRunning[s.SessionID] = s
 		}
 	}
 
 	// Build set of bookmarked IDs
-	bookmarks, _ := db.DBLoadBookmarks(uv.db)
+	bookmarks, _ := db.DBLoadBookmarks(database)
 	bookmarkedIDs := make(map[string]bool, len(bookmarks))
 	for _, b := range bookmarks {
 		bookmarkedIDs[b.SessionID] = true
@@ -409,7 +419,7 @@ func (uv *unifiedView) archiveEndedSessions(newSessions []daemon.SessionInfo) {
 			endedAt = newState.EndedAt
 		}
 
-		_ = db.DBInsertArchivedSession(uv.db, db.ArchivedSession{
+		_ = db.DBInsertArchivedSession(database, db.ArchivedSession{
 			SessionID:    id,
 			Topic:        prev.Topic,
 			Project:      prev.Project,
@@ -435,7 +445,7 @@ func (uv *unifiedView) Refresh() {
 	sessions, err := client.ListSessions()
 	if err == nil {
 		// Auto-archive newly ended sessions before updating the live list
-		uv.archiveEndedSessions(sessions)
+		archiveNewlyEndedSessions(uv.db, uv.liveSessions, sessions)
 		uv.liveSessions = sessions
 	}
 	uv.clampCursor()

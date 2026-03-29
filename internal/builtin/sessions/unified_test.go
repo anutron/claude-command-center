@@ -252,7 +252,7 @@ func TestUnifiedViewAutoArchive(t *testing.T) {
 	}
 
 	// Now s1 has ended
-	uv.archiveEndedSessions([]daemon.SessionInfo{
+	archiveNewlyEndedSessions(uv.db, uv.liveSessions, []daemon.SessionInfo{
 		{SessionID: "s1", Topic: "Was running", Project: "/proj", Repo: "repo", Branch: "main", State: "ended", RegisteredAt: now.Add(-10 * time.Minute).Format(time.RFC3339), EndedAt: now.Format(time.RFC3339)},
 	})
 
@@ -285,7 +285,7 @@ func TestUnifiedViewAutoArchiveSkipsBookmarked(t *testing.T) {
 		{SessionID: "s1", Topic: "Bookmarked", Project: "/proj", State: "active", RegisteredAt: now.Add(-5 * time.Minute).Format(time.RFC3339)},
 	}
 
-	uv.archiveEndedSessions([]daemon.SessionInfo{
+	archiveNewlyEndedSessions(uv.db, uv.liveSessions, []daemon.SessionInfo{
 		{SessionID: "s1", Topic: "Bookmarked", Project: "/proj", State: "ended", RegisteredAt: now.Add(-5 * time.Minute).Format(time.RFC3339), EndedAt: now.Format(time.RFC3339)},
 	})
 

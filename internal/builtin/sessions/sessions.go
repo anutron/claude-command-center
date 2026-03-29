@@ -356,24 +356,10 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 			}
 			p.subTab = "new"
 		})
-		p.bus.Subscribe("data.refreshed", func(e plugin.Event) {
-			// Reload bookmarks and archived sessions when data is refreshed
-			if p.db != nil {
-				sessions, _ := db.DBLoadBookmarks(p.db)
-				p.unified.SetSavedSessions(sessions)
-				p.unified.ReloadArchived()
-			}
-		})
-
-		// Subscribe to daemon session events for live updates
-		for _, topic := range []string{"session.registered", "session.updated", "session.ended"} {
-			p.bus.Subscribe(topic, func(e plugin.Event) {
-				if p.unified != nil {
-					p.unified.Refresh()
-					p.unified.ReloadArchived()
-				}
-			})
-		}
+		// NOTE: data.refreshed and session.* events are handled via
+		// plugin.NotifyMsg in HandleMessage, which dispatches an async
+		// Refresh() cmd. This avoids mutating shared state directly in
+		// event bus handlers (which would race with tea.Cmd goroutines).
 	}
 
 	return nil
@@ -414,10 +400,7 @@ func (p *Plugin) NavigateTo(route string, args map[string]string) {
 	switch route {
 	case "sessions":
 		p.subTab = "sessions"
-		if p.unified != nil {
-			p.unified.Refresh()
-			p.unified.ReloadArchived()
-		}
+		// Refresh dispatched asynchronously via TabViewMsg → HandleMessage.
 	case "new":
 		p.subTab = "new"
 		p.applyFilter()
@@ -433,18 +416,42 @@ func (p *Plugin) NavigateTo(route string, args map[string]string) {
 // RefreshInterval returns how often the plugin should auto-refresh.
 func (p *Plugin) RefreshInterval() time.Duration { return 0 }
 
-// Refresh returns a tea.Cmd for refreshing session data.
+// Refresh returns a tea.Cmd that fetches session data in a background goroutine
+// and returns it as a sessionsRefreshMsg for safe application on the main loop.
 func (p *Plugin) Refresh() tea.Cmd {
+	if p.unified == nil {
+		return nil
+	}
+	// Snapshot state needed by the background goroutine. These reads happen on
+	// the main loop and won't race with View().
+	prevLive := p.unified.liveSessions
+	daemonClientFn := p.unified.daemonClient
+	database := p.db
+
 	return func() tea.Msg {
-		if p.unified != nil {
-			p.unified.Refresh()
-			p.unified.ReloadArchived()
-			if p.db != nil {
-				sessions, _ := db.DBLoadBookmarks(p.db)
-				p.unified.SetSavedSessions(sessions)
+		var msg sessionsRefreshMsg
+
+		if daemonClientFn != nil {
+			if client := daemonClientFn(); client != nil {
+				if sessions, err := client.ListSessions(); err == nil {
+					archiveNewlyEndedSessions(database, prevLive, sessions)
+					msg.liveSessions = sessions
+				}
+				if agents, err := client.ListAgents(); err == nil && len(agents) > 0 {
+					msg.agentsByID = make(map[string]daemon.AgentStatusResult, len(agents))
+					for _, a := range agents {
+						msg.agentsByID[a.ID] = a
+					}
+				}
 			}
 		}
-		return nil
+
+		if database != nil {
+			msg.savedSessions, _ = db.DBLoadBookmarks(database)
+			msg.archivedSessions, _ = db.DBLoadArchivedSessions(database)
+		}
+
+		return msg
 	}
 }
 
@@ -490,9 +497,8 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		if !filtering {
 			p.subTab = "sessions"
 			p.filterText = ""
-			if p.unified != nil {
-				p.unified.Refresh()
-				p.unified.ReloadArchived()
+			if cmd := p.Refresh(); cmd != nil {
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 			}
 			return plugin.NoopAction()
 		}
@@ -556,6 +562,39 @@ func (p *Plugin) applyFilter() {
 // HandleMessage processes non-key messages.
 func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	switch msg := msg.(type) {
+	case sessionsRefreshMsg:
+		if p.unified != nil {
+			if msg.liveSessions != nil {
+				p.unified.liveSessions = msg.liveSessions
+			}
+			p.unified.agentsByID = msg.agentsByID
+			if msg.savedSessions != nil {
+				p.unified.savedSessions = msg.savedSessions
+			}
+			if msg.archivedSessions != nil {
+				p.unified.archivedSessions = msg.archivedSessions
+			}
+			p.unified.clampCursor()
+		}
+		return true, plugin.NoopAction()
+
+	case plugin.NotifyMsg:
+		switch msg.Event {
+		case "data.refreshed", "session.registered", "session.updated", "session.ended":
+			if cmd := p.Refresh(); cmd != nil {
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+			}
+		}
+		return false, plugin.NoopAction()
+
+	case plugin.TabViewMsg:
+		if msg.Route == "active" || msg.Route == "sessions" {
+			if cmd := p.Refresh(); cmd != nil {
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+			}
+		}
+		return true, plugin.NoopAction()
+
 	case fzfFinishedMsg:
 		if msg.err != nil || msg.path == "" {
 			return true, plugin.NoopAction()

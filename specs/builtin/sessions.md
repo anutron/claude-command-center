@@ -64,6 +64,8 @@ Two modes toggled by `a`:
 
 When `Refresh()` polls the daemon, it compares the current session list against the previous snapshot. Sessions that were previously running but are now ended (and not bookmarked) are auto-archived to `cc_archived_sessions`. If the daemon is disconnected, no archiving occurs.
 
+**Concurrency model:** `Refresh()` returns a `tea.Cmd` that fetches data (daemon RPC, DB reads, auto-archiving) in a background goroutine and returns it as a `sessionsRefreshMsg`. State is only mutated in `HandleMessage` on the main bubbletea loop, never from background goroutines. This prevents data races between tea.Cmd goroutines and `View()`.
+
 ## Key Bindings
 
 ### Global (available from any sub-tab, when not in overlay)
@@ -156,8 +158,8 @@ Each sub-tab displays a hint bar at the bottom:
 - Publishes: `project.selected` with {path, prompt} when user picks a project
 - Publishes: `pending.todo.cancel` when user cancels a pending todo launch
 - Subscribes: `pending.todo` to set a pending launch context
-- Subscribes: `data.refreshed` to reload bookmarks and archived sessions
-- Subscribes: `session.registered`, `session.updated`, `session.ended` to refresh live sessions
+- Handles `plugin.NotifyMsg` for `data.refreshed`, `session.registered`, `session.updated`, `session.ended` — dispatches async `Refresh()` cmd
+- Subscribes (event bus): `pending.todo` to set a pending launch context
 
 ## Storage
 

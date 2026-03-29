@@ -489,10 +489,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.bus != nil {
 			routeDaemonEvent(m.bus, msg.Event)
 		}
-		// For data.refreshed, also trigger plugin Refresh() to reload from DB.
-		if msg.Event.Type == "data.refreshed" {
-			var cmds []tea.Cmd
-			m.broadcastMessage(plugin.NotifyMsg{Event: "reload"}, &cmds)
+		// Broadcast NotifyMsg for all daemon events so plugins can dispatch
+		// async refresh commands via HandleMessage (instead of mutating state
+		// directly in event bus handlers, which risks data races with tea.Cmd
+		// goroutines).
+		var cmds []tea.Cmd
+		m.broadcastMessage(plugin.NotifyMsg{Event: msg.Event.Type}, &cmds)
+		if len(cmds) > 0 {
 			return m, tea.Batch(cmds...)
 		}
 		return m, nil

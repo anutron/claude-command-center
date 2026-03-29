@@ -74,6 +74,8 @@ Each tab maps a label to a plugin and a route within that plugin. Multiple tabs 
 
 Non-key messages (ticks, window resize, `NotifyMsg`, custom plugin messages) are broadcast to all unique plugins via `HandleMessage`. Each plugin slug is visited once.
 
+**Daemon events:** When a `DaemonEventMsg` arrives, the host routes it through the event bus AND broadcasts `plugin.NotifyMsg{Event: evt.Type}` to all plugins. This allows plugins to handle daemon events via `HandleMessage` (dispatching async tea.Cmds) instead of mutating state directly in event bus handlers, which would race with concurrent tea.Cmd goroutines.
+
 ### Action Processing
 
 Plugins return `plugin.Action` values. The host processes them:
