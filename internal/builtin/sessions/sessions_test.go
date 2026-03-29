@@ -594,6 +594,116 @@ func TestSessionsBookmarkSavesToDB(t *testing.T) {
 	}
 }
 
+func TestSessionsBookmarkArchivedPromotesToSaved(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Add an archived session and switch to archive mode
+	now := time.Now()
+	_ = db.DBInsertArchivedSession(p.db, db.ArchivedSession{
+		SessionID:    "arch-promote-001",
+		Topic:        "Archived to promote",
+		Project:      "/home/user/proj",
+		Repo:         "proj",
+		Branch:       "main",
+		RegisteredAt: now.Add(-2 * time.Hour).Format(time.RFC3339),
+		EndedAt:      now.Add(-1 * time.Hour).Format(time.RFC3339),
+	})
+	p.unified.ReloadArchived()
+	p.unified.ToggleArchive() // enter archive mode
+
+	// Press 'b' to promote to saved
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if action.Type != "consumed" {
+		t.Fatalf("expected consumed action, got %s", action.Type)
+	}
+
+	// Verify bookmark was created
+	bookmarks, err := db.DBLoadBookmarks(p.db)
+	if err != nil {
+		t.Fatalf("load bookmarks: %v", err)
+	}
+	if len(bookmarks) != 1 {
+		t.Fatalf("expected 1 bookmark, got %d", len(bookmarks))
+	}
+	if bookmarks[0].SessionID != "arch-promote-001" {
+		t.Fatalf("expected session ID arch-promote-001, got %s", bookmarks[0].SessionID)
+	}
+
+	// Verify archived session was removed
+	archived, _ := db.DBLoadArchivedSessions(p.db)
+	if len(archived) != 0 {
+		t.Fatalf("expected 0 archived sessions after promotion, got %d", len(archived))
+	}
+}
+
+func TestSessionsDismissSavedRemovesBookmark(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Insert a bookmark directly into DB
+	_ = db.DBInsertBookmark(p.db, db.Session{
+		SessionID: "saved-dismiss-001",
+		Project:   "/home/user/proj",
+		Repo:      "proj",
+		Branch:    "main",
+		Summary:   "Session to dismiss",
+		Created:   time.Now(),
+	}, "test label")
+
+	// Reload saved sessions into unified view
+	sessions, _ := db.DBLoadBookmarks(p.db)
+	p.unified.SetSavedSessions(sessions)
+
+	// Cursor is at 0 → saved session (no live sessions)
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if action.Type != "consumed" {
+		t.Fatalf("expected consumed action, got %s", action.Type)
+	}
+
+	// Verify bookmark was removed from DB
+	bookmarks, err := db.DBLoadBookmarks(p.db)
+	if err != nil {
+		t.Fatalf("load bookmarks: %v", err)
+	}
+	if len(bookmarks) != 0 {
+		t.Fatalf("expected 0 bookmarks after dismiss, got %d", len(bookmarks))
+	}
+}
+
+func TestSessionsDismissArchivedDeletesFromDB(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Insert an archived session
+	now := time.Now()
+	_ = db.DBInsertArchivedSession(p.db, db.ArchivedSession{
+		SessionID:    "arch-delete-001",
+		Topic:        "Archived to delete",
+		Project:      "/home/user/proj",
+		Repo:         "proj",
+		Branch:       "main",
+		RegisteredAt: now.Add(-2 * time.Hour).Format(time.RFC3339),
+		EndedAt:      now.Add(-1 * time.Hour).Format(time.RFC3339),
+	})
+	p.unified.ReloadArchived()
+	p.unified.ToggleArchive() // enter archive mode
+
+	// Press 'd' to delete
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if action.Type != "consumed" {
+		t.Fatalf("expected consumed action, got %s", action.Type)
+	}
+
+	// Verify archived session was removed from DB
+	archived, _ := db.DBLoadArchivedSessions(p.db)
+	if len(archived) != 0 {
+		t.Fatalf("expected 0 archived sessions after delete, got %d", len(archived))
+	}
+
+	// Verify flash message
+	if p.flashMessage == "" {
+		t.Fatal("expected flash message after delete")
+	}
+}
+
 func TestSessionsDismissRunningBlocked(t *testing.T) {
 	p := setupSessionsPlugin(t)
 
