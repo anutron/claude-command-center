@@ -188,9 +188,17 @@ func TestEscQuits(t *testing.T) {
 	defer database.Close()
 
 	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	// Default sub-tab is "sessions". First Esc navigates sessions→new (not quit).
+	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Error("first esc should navigate to new tab, not quit")
+	}
+
+	// Second Esc from the new sub-tab should quit.
+	_, cmd = newM.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
-		t.Error("expected non-nil cmd (tea.Quit) on esc")
+		t.Error("expected non-nil cmd (tea.Quit) on second esc")
 	}
 }
 
