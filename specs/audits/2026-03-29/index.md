@@ -126,13 +126,33 @@
 | 18 | Blocked session rendering (sessions.md) | Spec fix — added yellow dot + "Blocked" detail | `4488ff0` |
 | 19 | ActiveTodos vs VisibleTodos (db.md) | Spec fix — documented VisibleTodos and merge-based filtering | `4488ff0` |
 
-### Behavioral Gaps — 0/142 resolved
+### Behavioral Gaps — 139/142 resolved (2026-03-30)
 
-Not yet started.
+| Cluster | Gaps | Resolved | Commit | Notes |
+|---------|------|----------|--------|-------|
+| CLI subcommands | 20 | 18 | `162fedf` | `daemon logs` doesn't exist in code; `paths --list` is default behavior |
+| Database operations | 25 | 25 | `162fedf` | 1 [NEEDS INPUT]: `DBInsertMerge` mergeNote param not persisted |
+| TUI host layer | 19 | 19 | `162fedf` | — |
+| Refresh pipeline | 24 | 24 | `162fedf` | — |
+| Command center | 16 | 16 | `162fedf` | — |
+| Config expansion | 16 | 16 | `162fedf` | — |
+| Plugin framework | 10 | 10 | `162fedf` | 1 [NEEDS INPUT]: logger ring buffer never compacts |
+| Settings panes | 8 | 8 | `162fedf` | 1 [NEEDS INPUT]: PRs pane read-only vs design spec's interactive removal |
+| Sessions plugin | 5 | 5 | `162fedf` | — |
+| Automation runner | 4 | 4 | `162fedf` | — |
+| Worktree | 3 | 3 | `162fedf` | — |
 
-### Unimplemented Spec Promises — 0/3 resolved
+3 items need user input (specs written, but flagged for design decisions).
 
-Not yet started.
+### Unimplemented Spec Promises — 3/3 resolved (2026-03-30)
+
+All 3 daemon promises removed as not needed (documented as conscious exclusions in `specs/core/daemon.md`):
+
+| # | Promise | Resolution | Commit |
+|---|---------|-----------|--------|
+| 1 | Socket file permissions checked on connect | Removed — umask sufficient for single-user macOS | `162fedf` |
+| 2 | Graceful drain on SIGTERM | Removed — Shutdown() already drains agents; RPCs are fast | `162fedf` |
+| 3 | Connection timeout | Removed — Unix sockets handle dead fds via kernel; 5s write deadline handles slow consumers | `162fedf` |
 
 ## Delta from Last Audit
 
