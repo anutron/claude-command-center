@@ -423,7 +423,9 @@ func (p *Plugin) Refresh() tea.Cmd {
 		return nil
 	}
 	// Snapshot state needed by the background goroutine. These reads happen on
-	// the main loop and won't race with View().
+	// the main loop and won't race with View(). prevLive is a slice header
+	// copy — safe because HandleMessage always replaces the slice wholesale
+	// (never appends in-place to the shared backing array).
 	prevLive := p.unified.liveSessions
 	daemonClientFn := p.unified.daemonClient
 	database := p.db
@@ -593,6 +595,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 			}
 		}
+		// Returns true for all routes (including "new", "worktrees") because
+		// this plugin owns them. broadcastMessage doesn't use the handled bool,
+		// so the value has no effect on other plugins.
 		return true, plugin.NoopAction()
 
 	case fzfFinishedMsg:
