@@ -15,7 +15,10 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | File | Responsibility |
 |------|---------------|
 | `commandcenter.go` | Main plugin struct, Init, NavigateTo, HandleMessage, Refresh, state management |
-| `cc_keys.go` | All key handling: `HandleKey`, sub-handlers for command tab, detail view, rich todo creation, booking mode |
+| `cc_keys.go` | All key handling: `HandleKey`, sub-handlers for command tab, detail view, rich todo creation, quick todo entry, booking mode |
+| `cc_keys_detail.go` | Detail view key handling: field editing, status/path selection, command input, training input, unmerge |
+| `cc_keys_wizard.go` | Task runner wizard: 3-step flow, path picker, AI refinement, review loop, launch |
+| `cc_keys_session.go` | Session viewer key handling: scroll, message input, join session |
 | `cc_messages.go` | Message handling for async results (Claude responses, refresh finished, DB writes) |
 | `cc_view.go` | Command center rendering: calendar panel, todo panel, warnings, suggestions, help overlay, detail view, booking UI |
 | `styles.go` | Local style/gradient types populated from `config.Palette` (avoids circular imports with tui) |
@@ -42,6 +45,10 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 - `bookingMode bool` — calendar event booking flow
 - `ccExpanded bool` — expanded multi-column todo view
 - `triageFilter string` — active triage filter tab in expanded view (default: "todo")
+- `addingTodoQuick bool` — quick textarea for LLM-enriched todo creation
+- `gPending bool` — chord state: `g` was pressed, awaiting second key
+- `mergeSourceCursor int` — selected source index in synthesis todo detail view
+- `wizardSelections map[string]wizardSelection` — per-todo wizard selections persisted across open/close
 - `undoStack []undoEntry` — stack of undo-able todo actions
 - `pendingLaunchTodo *db.Todo` — todo awaiting session navigation
 
@@ -70,6 +77,8 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `r` | normal | Manual refresh (spawns ai-cron) |
 | `enter` | normal | Open detail view for selected todo |
 | `o` | normal | Launch session for todo (by session_id, project_dir, or navigate to sessions) |
+| `t` | normal | Quick todo add (opens lightweight textarea, `ctrl+d` submits for LLM enrichment) |
+| `g` | normal | Chord prefix for Gmail-style shortcuts (`gi` = go inbox / return to list, `gu` = go up / return to list) |
 | `?` | any | Toggle help overlay |
 | `tab` | expanded | Cycle triage filter forward |
 | `shift+tab` | expanded | Cycle triage filter backward |
@@ -92,12 +101,18 @@ Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectD
 | `shift+tab` | detail:viewing | Cycle to previous editable field |
 | `enter` | detail:viewing | Edit selected field (Status opens inline selector; Due opens text input; ProjectDir opens scrollable path picker) |
 | `enter` | detail:editing | Confirm field edit |
-| `c` | detail:viewing | Open command input to edit todo via Claude LLM |
+| `c` | detail:viewing | Open command input to edit todo via Claude LLM (blocked when agent is active on this todo) |
 | `o` | detail:viewing | Join session (if session_id exists and session file is live) or open task runner |
 | `r` | detail:viewing | Resume/re-launch agent (skips ResumeID if session expired) |
-| `w` | detail:viewing | Open live session viewer (active sessions only) |
-| `j` | detail:viewing | Navigate to next active todo |
-| `k` | detail:viewing | Navigate to previous active todo |
+| `T` | detail:viewing | Train routing/prompt rules (opens training input textarea) |
+| `U` | detail:viewing | Unmerge: detach the selected source from a synthesis todo |
+| `w` | detail:viewing | Open live session viewer (active sessions only), or replay saved session log |
+| `delete`/`backspace` | detail:viewing | Kill running agent session for this todo |
+| `g` | detail:viewing | Chord prefix for Gmail-style shortcuts (`gi`/`gu` = return to list view) |
+| `up`/`down` | detail:viewing | Scroll detail viewport |
+| `pgup`/`pgdown` | detail:viewing | Half-page scroll detail viewport |
+| `j` | detail:viewing | Navigate to next active todo (or next source in synthesis todo) |
+| `k` | detail:viewing | Navigate to previous active todo (or previous source in synthesis todo) |
 | `x` | detail:viewing | Complete todo (shows notice banner, auto-advances after 1s) |
 | `X` | detail:viewing | Dismiss todo (shows notice banner, auto-advances after 1s) |
 | `esc` | detail:viewing | Return to list |
@@ -111,6 +126,15 @@ While a notice banner is showing (1s after complete/dismiss), all keys except `e
 |-----|---------|-------------|
 | `ctrl+d` | rich | Submit text to Claude for processing |
 | `esc` | rich | Cancel and return to list |
+
+### Quick Todo Entry
+
+| Key | Context | Description |
+|-----|---------|-------------|
+| `ctrl+d` | quick | Submit text to LLM for enrichment (title, due, context, dedup detection) |
+| `esc` | quick | Cancel and return to list |
+
+Quick todo entry (`t`) opens a lightweight textarea. On submit, the text is sent to the LLM via `buildEnrichPrompt` which enriches the raw text into structured fields (title, due, who_waiting, effort, context, detail, project_dir, proposed_prompt). The LLM also checks for duplicates by returning a `merge_into` field — if a match is found, synthesis is triggered automatically. Todos created this way enter as `backlog` status directly (skip `new`).
 
 ### Booking Mode
 
@@ -237,6 +261,117 @@ Instead of polling on a timer, the command center uses lifecycle messages to rel
 - **Incremental sync**: Granola and Slack sources check `cc_source_sync` for their last successful sync time and skip already-processed meetings/messages, reducing LLM calls
 - **Deterministic source_ref (Granola)**: Source refs use `{meeting_id}-{sha256(title)[:8]}` instead of LLM-generated values, making deduplication reliable
 - **Merge preserves completed todos**: Refresh merge logic preserves completed todos as-is rather than overwriting them with fresh data
+
+### Chord Keybindings (`g` prefix)
+
+The `g` key sets a `gPending` flag. The next keypress completes the chord:
+
+| Chord | Context | Description |
+|-------|---------|-------------|
+| `gi` | any view | "Go inbox" — exit detail/task runner/session viewer, return to list view |
+| `gu` | any view | "Go up" — same behavior as `gi` |
+
+Any other key after `g` clears `gPending` and falls through to normal key handling. The chord is available in both the command tab and detail view.
+
+### Edit Guards (Agent Active)
+
+When a headless agent session is actively running on a todo (checked via `agentRunner.Session(todo.ID)`), the detail view blocks mutation operations:
+
+- **`enter` (edit field)**: Shows flash message "Todo is being updated by agent" instead of entering edit mode
+- **`c` (command input)**: Shows the same flash message instead of opening command input
+- **`r` (resume)**: Only available when `!agentActive` (no running session for this todo)
+
+Other non-mutation keys (navigation, `w` watch, `o` join, `x`/`X` complete/dismiss) are not blocked.
+
+### Training Routing Rules (`T`)
+
+From the detail view, pressing `T` opens a training input textarea (`detailMode = "trainingInput"`). The user writes an instruction about how this type of todo should be routed. On `enter`, the instruction is sent to the LLM via `claudeTrainCmd` along with the todo's context.
+
+The LLM returns structured JSON containing:
+
+- `project_dir` — corrected project directory
+- `use_for_rules` — routing rules to add (path + rule pairs) indicating when a project should be used
+- `not_for_rules` — routing rules indicating when a project should NOT be used
+- `prompt_hint` — hint text to improve future prompt generation for this project
+- `prompt_hint_project` — which project the hint applies to
+- `regenerated_prompt` — an improved proposed_prompt incorporating the training
+
+On success, routing rules are persisted to `routing-rules.yaml`, prompt hints are saved, and the todo's project_dir and proposed_prompt are updated. Flash message shows what was trained (e.g., "Trained: +use_for on my-project, hint on my-project").
+
+### Merge/Synthesis: Duplicate Detection and Display
+
+#### Auto-Detection During Enrichment (Quick Todo `t`)
+
+When creating a todo via quick entry (`t`), the LLM enrichment prompt includes existing active todos and asks the LLM to return a `merge_into` field if the new item is semantically the same as an existing todo. If `merge_into` is non-empty and points to a valid todo:
+
+1. The new todo is inserted into the DB
+2. `claudeSynthesizeCmd` is triggered, which calls the synthesis LLM to combine the originals into a single synthesized todo
+3. If the merge target is itself a synthesis todo (source = "merge"), all its original sources are gathered and included
+
+#### Auto-Detection During Refresh
+
+During the refresh cycle (`dedupTodos` in `internal/refresh/refresh.go`), the routing LLM can flag todos as duplicates via `merge_into`. Todos flagged as duplicates of the same target are grouped, and `Synthesize` is called to produce a combined synthesis todo. The synthesis todo gets `Source = "merge"` and merge records are stored in `cc_todo_merges`.
+
+#### Display of Merged Items
+
+In the detail view, synthesis todos (where `todo.Source == "merge"`) show a **SOURCES** section listing all original todos with:
+
+- `#display_id — title (source)` for each original
+- A cursor (`mergeSourceCursor`) navigable with `j`/`k` within the sources list
+- When viewing a synthesis todo, `j`/`k` navigate within the sources list instead of between todos (falls through to next/prev todo navigation only when there are no sources)
+- Hint bar shows "j/k select source . U unmerge selected"
+
+#### Unmerge (`U`)
+
+Pressing `U` on a synthesis todo detaches the currently selected source:
+
+1. Sets the merge record as "vetoed" in the DB via `DBSetMergeVetoed`
+2. Counts remaining non-vetoed originals
+3. If only 0-1 originals remain, deletes the synthesis todo and its merge records entirely (the remaining original stands alone)
+
+### Session Viewer
+
+The session viewer is a sub-view of the detail view (`sessionViewerActive = true`) that displays real-time or replayed agent session output.
+
+#### Opening
+
+- **Live session** (`w` when an active agent session exists): Initializes the viewer with the session's event channel for real-time updates
+- **Saved log** (`w` when `todo.SessionLogPath` is set but no active session): Replays events from the saved log file on disk
+- **No session**: Shows flash "No active session for this todo"
+
+#### Key Bindings
+
+| Key | Context | Description |
+|-----|---------|-------------|
+| `j`/`down` | viewer | Scroll down (disables auto-scroll) |
+| `k`/`up` | viewer | Scroll up (disables auto-scroll) |
+| `G` | viewer | Jump to bottom, re-enable auto-scroll |
+| `g` | viewer | Jump to top, disable auto-scroll |
+| `c` | viewer | Open message input textarea |
+| `o` | viewer | Join session interactively (resume with session_id) |
+| `esc` | viewer | Exit viewer, return to detail view |
+
+#### Clarifying Question UX / Sending Messages to Agent
+
+When an agent is blocked (detected via stream-JSON `tool_use` events with `SendUserMessage` or `AskUser`), the user can respond from the session viewer:
+
+1. Press `c` to open the message input textarea
+2. Type a response
+3. Press `enter` to send — routes through daemon RPC first (`dc.SendAgentInput`), falls back to local `agent.SendUserMessage` which writes to the agent's stdin
+4. `esc` cancels the input
+
+The sent message is appended as a user event to the session's event list for display. Empty messages are not sent.
+
+### SIGINT Before Resume (Graceful Agent Handoff)
+
+When joining a session (`o` with `resume_id`), the system gracefully stops any running headless agent that owns that session before launching the interactive resume. In `handleLaunchMsg`:
+
+1. Finds the active session matching the `resume_id`
+2. Sends `SIGINT` to the agent process (not `SIGKILL`) so Claude CLI can save session state
+3. Waits up to 5 seconds for the process to exit via the `Done()` channel
+4. Cleans up the finished session via `agentRunner.CleanupFinished`
+
+This ensures the interactive session finds a consistent session file rather than competing with a still-running headless agent.
 
 ### Cross-Plugin Navigation
 
@@ -398,9 +533,24 @@ The task runner is a 3-step linear wizard for configuring and launching a Claude
 
 #### Defaults
 
-- **Budget**: $5 (hardcoded)
-- **Permission**: "auto"
+- **Budget**: from `cfg.Agent.DefaultBudget`, falls back to $5
+- **Permission**: "auto" (hardcoded for headless agents)
+- **Mode**: from `cfg.Agent.DefaultMode`, falls back to "normal"
 - **Launch cursor**: 0 (Run Claude)
+
+#### Selection Persistence
+
+Wizard selections (project path cursor and mode) persist across open/close cycles within a session via `wizardSelections map[string]wizardSelection` keyed by todo ID. When reopening the wizard for the same todo:
+
+1. In-memory cache is checked first (`wizardSelections[todo.ID]`)
+2. Falls back to `todo.LaunchMode` from the DB (persisted on launch)
+3. Falls back to config defaults
+
+Selections are saved to the in-memory cache whenever the wizard is exited via `esc` (at any step) or after launching. The path cursor and mode are also persisted to the DB on launch (`persistProjectDir`, `persistLaunchMode`).
+
+#### Auto-Open Path Picker
+
+When a todo has no `project_dir` and no saved wizard selection exists, the path picker opens automatically on wizard entry (if learned paths are available). This avoids a blank project step for unrouted todos.
 
 #### Key Bindings (Step 3)
 
@@ -416,9 +566,13 @@ The task runner is a 3-step linear wizard for configuring and launching a Claude
 
 #### AI Prompt Refinement (`c`)
 
-1. Sets `taskRunnerRefining = true` (shows spinner in UI)
-2. Sends current prompt to LLM asking it to improve clarity, structure, and actionability
-3. On response: updates prompt viewport, persists to DB, flashes "Prompt refined", clears spinner
+1. Opens an instruction input textarea (`taskRunnerInputting = true`) where the user types guidance for the LLM
+2. On `enter`: sends instructions + current prompt to LLM via `claudeRefinePromptWithInstructionCmd`
+3. Sets `taskRunnerRefining = true` (shows spinner in UI)
+4. On response: updates prompt viewport, persists updated `proposed_prompt` to DB, flashes "Prompt refined", clears spinner
+5. On error: flashes error message, clears spinner
+6. On empty response: flashes "Refine returned empty result"
+7. `esc` cancels the instruction input without triggering refinement
 
 #### Review Loop (`r`)
 
@@ -509,3 +663,35 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Focus suggestion: always visible after data load (never empty banner)
 - Focus suggestion: zero active todos generates LLM-powered witty remark with calendar context
 - Focus suggestion: data load with empty focus triggers generation automatically
+- Quick todo (`t`): opens lightweight textarea, `ctrl+d` submits for LLM enrichment
+- Quick todo (`t`): empty submit cancels without LLM call
+- Quick todo (`t`): enriched todo enters as `backlog` status (skips `new`)
+- Quick todo (`t`): LLM merge_into triggers synthesis with existing todo
+- Chord `g`: sets gPending, `gi` returns to list from detail/task runner/session viewer
+- Chord `g`: sets gPending, `gu` returns to list (same as `gi`)
+- Chord `g`: unrecognized second key clears gPending and falls through
+- Training (`T`): opens training input in detail view, `enter` submits, `esc` cancels
+- Training (`T`): LLM response applies use_for/not_for routing rules and prompt hints
+- Training (`T`): updates todo project_dir and proposed_prompt from LLM result
+- Unmerge (`U`): detaches selected source from synthesis todo
+- Unmerge (`U`): when 0-1 sources remain, deletes synthesis todo entirely
+- Unmerge (`U`): no-op when todo is not a synthesis (source != "merge")
+- Edit guards: `enter` (edit field) blocked when agent is active, shows flash message
+- Edit guards: `c` (command input) blocked when agent is active, shows flash message
+- Edit guards: `r` (resume) only available when no active agent session
+- Detail view `delete`/`backspace`: kills running agent session, shows flash
+- Detail view `delete`/`backspace`: shows "No running agent" when no session active
+- Session viewer: `w` opens live viewer for active session, replay for saved log, flash for no session
+- Session viewer: `c` opens message input, `enter` sends to agent via daemon or local stdin
+- Session viewer: `o` joins session interactively (extracts session_id from log if missing)
+- Session viewer: `G` jumps to bottom and re-enables auto-scroll
+- SIGINT before resume: joining a session sends SIGINT to headless agent, waits up to 5s
+- SIGINT before resume: cleans up finished session before launching interactive resume
+- Wizard selection persistence: reopening wizard restores previous path and mode choices
+- Wizard selection persistence: `esc` at any step saves selections to in-memory cache
+- Wizard auto-open path picker: opens when todo has no project_dir and no saved selection
+- AI prompt refinement: opens instruction textarea first, then sends instructions + prompt to LLM
+- Merge display: synthesis todos show SOURCES section with navigable source list
+- Merge display: j/k navigate source list when viewing synthesis todo (not between todos)
+- Merge auto-detection: enrichment LLM returns merge_into for duplicate detection
+- Merge auto-detection: refresh dedupTodos groups flagged duplicates and calls Synthesize

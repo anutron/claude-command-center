@@ -87,9 +87,40 @@ Implements every method of `plugin.Plugin`:
 
 When the subprocess crashes or fails to respond:
 - `errState` is set to a description of the failure
-- `View()` returns an error panel: plugin name, error message, "press r to restart"
+- `View()` returns an error panel via `errorView()`
 - `HandleKey()` only responds to "r" (restart), returns noop for everything else
 - `HandleMessage()` skips async drain
+
+### Error View Rendering
+
+`errorView()` renders two distinct UI states depending on the error type:
+
+**Plugin name resolution** (in priority order):
+1. `slug` (set during init handshake)
+2. `tabName` (set from config entry `Name`)
+3. `command` (the raw command string)
+
+**"Not installed" variant** — shown when `errState` contains `"not found on PATH"` or `"exit status 127"`:
+```
+  Plugin "<name>" — not installed
+
+  Command: <command>
+  Error: <errState>
+
+  Press 'r' to retry
+```
+
+**"Crashed" variant** — shown for all other errors:
+```
+  Plugin "<name>" crashed
+
+  Command: <command>
+  Error: <errState>
+
+  Press 'r' to restart
+```
+
+The distinction between "retry" (not installed) and "restart" (crashed) reflects that "not installed" may be a transient PATH issue the user can fix without restarting the plugin process.
 
 ### Loader
 
@@ -120,3 +151,8 @@ The error view includes the command that failed. For exit status 127, a hint is 
 - Migration validation: CREATE TABLE with slug prefix passes
 - Migration validation: CREATE TABLE without slug prefix is rejected
 - Migration validation: INSERT/UPDATE/DELETE statements are rejected
+- Error view: "not found on PATH" error shows "not installed" variant with "retry"
+- Error view: exit status 127 error shows "not installed" variant
+- Error view: other errors show "crashed" variant with "restart"
+- Error view: name falls back to tabName when slug is empty
+- Error view: name falls back to command when both slug and tabName are empty

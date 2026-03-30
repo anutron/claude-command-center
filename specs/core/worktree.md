@@ -28,7 +28,7 @@ When launching Claude in a project, optionally create a git worktree so the sess
 |----------|-----------|-------------|
 | `LoadProjectConfig` | `(repoRoot string) (*ProjectConfig, error)` | Reads `.ccc/config.yaml` from repo root. Returns `nil, nil` if file does not exist. Returns error for invalid YAML. |
 | `PrepareWorktree` | `(dir string) (worktreePath, branch string, err error)` | Accepts any path and internally resolves to the git repo root. Creates worktree in `.claude/worktrees/`, checks out new branch, runs setup. |
-| `ListWorktrees` | `(repoRoot string) ([]WorktreeInfo, error)` | Lists CCC-created worktrees (branches matching `ccc/` prefix). |
+| `ListWorktrees` | `(repoRoot string) ([]WorktreeInfo, error)` | Lists CCC-created worktrees (branches matching `ccc/` prefix), sorted newest first. |
 | `RemoveWorktree` | `(repoRoot, worktreePath string) error` | Removes a worktree directory and deletes its branch. |
 | `PruneWorktrees` | `(repoRoot string) ([]string, error)` | Removes all CCC worktrees for the repo. Returns list of removed paths. |
 
@@ -121,18 +121,34 @@ Setup runs in two phases after worktree creation:
   - Timeout: 120 seconds
   - If script fails (non-zero exit): log warning with stderr, continue
 
+### Symlink Resolution
+
+Several functions resolve symlinks via `filepath.EvalSymlinks` to ensure consistent path matching, particularly on macOS where `/var` is a symlink to `/private/var`:
+
+- **`gitRepoRoot`**: After `git rev-parse --show-toplevel` returns the repo root, it is resolved through `EvalSymlinks`. If resolution fails, the unresolved path is returned (no error). This resolved root propagates to `PrepareWorktree` and all downstream operations.
+- **`ListWorktrees`**: Each worktree directory entry under `.claude/worktrees/` is resolved through `EvalSymlinks` before matching against the `git worktree list` output (which uses absolute real paths). If resolution fails, the unresolved path is used as fallback. This prevents mismatches where git reports `/private/var/...` but the directory listing shows `/var/...`.
+- **`RemoveWorktree`**: The worktree path is resolved through `EvalSymlinks` before looking up its branch in the parsed `git worktree list` output. If resolution fails, the unresolved path is used as fallback. The unresolved path is still passed to `git worktree remove`.
+
+### Pre-Existing Symlink Target in Setup
+
+During the symlink phase of `runSetup`, if the target path already exists (whether as a regular file, directory, or symlink), `os.Symlink` returns an error and the runner logs a warning: `"failed to create symlink <dst> -> <src>: <error>"`. There is no explicit pre-check for target existence — the behavior relies on `os.Symlink` failing. The effect matches the spec's "log warning, skip" intent, but the warning message is generic rather than specific to "target already exists".
+
 ### ListWorktrees
 
 1. Run `git worktree list --porcelain`
 2. Parse output for worktree paths and branch names
-3. Filter to branches matching the `ccc/` prefix (or configured prefix)
-4. Return `[]WorktreeInfo{Path, Branch, CreatedAt}` where `CreatedAt` is the file modification time (mtime) of the worktree directory
+3. Read directory entries under `.claude/worktrees/`, resolving each through `EvalSymlinks` for matching (see Symlink Resolution)
+4. Filter to branches matching the `ccc/` prefix (or configured prefix)
+5. Return `[]WorktreeInfo{Path, Branch, RepoRoot, CreatedAt}` where `CreatedAt` is the file modification time (mtime) of the worktree directory
+6. Sort results newest first by `CreatedAt`
 
 ### RemoveWorktree
 
-1. Run `git worktree remove <worktreePath> --force`
-2. Delete the branch: `git branch -D <branch>`
-3. If worktree path doesn't exist, return error
+1. Parse `git worktree list` to build path-to-branch map
+2. Resolve `worktreePath` through `EvalSymlinks` to match against the map (see Symlink Resolution)
+3. Run `git worktree remove <worktreePath> --force`
+4. Delete the branch: `git branch -D <branch>` (only if branch was found in step 2)
+5. If worktree path doesn't exist, return error
 
 ### PruneWorktrees
 
@@ -185,10 +201,24 @@ Setup runs in two phases after worktree creation:
 ### ListWorktrees
 - Returns only CCC-prefixed worktrees (ignores other worktrees)
 - Returns empty list when no CCC worktrees exist
+- Results sorted newest first by `CreatedAt`
+- Symlinked worktree directories resolve correctly for branch matching
 
 ### RemoveWorktree
 - Removes worktree directory and deletes branch
 - Returns error for non-existent worktree
+- Skips branch deletion if branch not found in worktree list (no error)
+- Symlinked worktree paths resolve correctly for branch lookup
+
+### Symlink Resolution
+- `gitRepoRoot` resolves symlinks in the path returned by `git rev-parse` (e.g., `/var/folders/...` becomes `/private/var/folders/...` on macOS)
+- `gitRepoRoot` returns unresolved path if `EvalSymlinks` fails (graceful fallback)
+- `ListWorktrees` matches resolved directory paths against `git worktree list` output
+- `RemoveWorktree` resolves worktree path before looking up branch
+
+### Pre-Existing Symlink Target
+- Target path already exists as a regular file — `os.Symlink` fails, warning logged, continues
+- Target path already exists as a symlink — `os.Symlink` fails, warning logged, continues
 
 ### PruneWorktrees
 - Removes all CCC worktrees for the repo

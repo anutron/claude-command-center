@@ -81,6 +81,135 @@ Updates fields on an existing todo. Designed for headless agents to submit struc
 
 Alias for default (launches TUI).
 
+### `ccc daemon start`
+
+Spawns a detached background daemon process. The daemon handles data refresh on a configurable interval, agent lifecycle management, and session tracking via a unix socket.
+
+- Re-execs the `ccc` binary with `--daemon-internal` in a new session (survives parent exit)
+- Writes PID to `~/.config/ccc/daemon.pid`
+- Logs to `~/.config/ccc/data/daemon.log`
+- Listens on `~/.config/ccc/daemon.sock`
+- Refresh interval from `config.daemon.refresh_interval` (default 5m, minimum 1m)
+- Errors if daemon is already running (checks PID file + signal 0 liveness)
+- Prints PID, socket path, and log path on success
+
+### `ccc daemon stop`
+
+Sends SIGTERM to the running daemon.
+
+- Reads PID from `~/.config/ccc/daemon.pid`
+- Sends SIGTERM to the process
+- Removes PID file
+- No-op message if daemon is not running (cleans up stale PID file)
+
+### `ccc daemon status`
+
+Prints whether the daemon is running and checks socket health.
+
+- Reads PID file and checks process liveness via signal 0
+- If running, attempts a ping via the daemon socket
+- Reports: `stopped`, `running (PID: N)`, and socket health (`healthy` or `unreachable`)
+- Cleans up stale PID files referencing dead processes
+
+### `ccc register`
+
+Registers a Claude session with the daemon for lifecycle tracking.
+
+- Flags: `--session-id` (required), `--pid` (required), `--project` (required), `--worktree-path` (optional)
+- Tries daemon socket first; falls back to direct DB insert if daemon is not running
+- Inserts a `SessionRecord` with state `active` and current timestamp
+- Used by shell hooks when a new Claude session starts
+
+### `ccc update-session`
+
+Updates metadata on a registered session.
+
+- Flags: `--session-id` (required), `--topic` (optional)
+- Requires the daemon to be running (no direct-DB fallback)
+- Sends update via daemon socket client
+- Used by Claude agents to set the session topic for the TUI status line
+
+### `ccc stop-all`
+
+Emergency stop: kills all running agents managed by the daemon.
+
+- Requires the daemon to be running
+- Sends stop-all command via daemon socket
+- Prints count of agents killed
+- Designed for runaway-agent scenarios
+
+### `ccc refresh`
+
+Triggers an immediate data refresh via the daemon.
+
+- Requires the daemon to be running
+- Sends refresh command via daemon socket
+- Prints confirmation on success
+
+### `ccc add-todo`
+
+Creates a new todo in the Command Center database.
+
+- Flags: `--title` (required), `--source` (default `cli`), `--source-ref`, `--context`, `--detail`, `--who-waiting`, `--project-dir`, `--session-id`, `--due` (YYYY-MM-DD), `--effort`
+- Generates a unique ID and sets status to `active`
+- Sends `reload` notification to all running CCC instances after insert
+- Prints the created todo title and ID
+
+### `ccc add-bookmark`
+
+Saves a session bookmark for later resume.
+
+- Flags: `--session-id` (required), `--project` (required), `--repo` (required), `--branch` (required), `--summary` (required), `--label` (optional), `--worktree-path` (optional), `--source-repo` (optional)
+- Inserts a bookmark record linked to a session
+- Sends `reload` notification to all running CCC instances after insert
+- Used by the `/bookmark` or `/wind-down` skills to persist session context
+
+### `ccc todo --get <display_id>`
+
+Retrieves a single todo by its display ID and prints it as JSON.
+
+- `--get` takes an integer display ID (the short numeric ID shown in the TUI, not the UUID)
+- Outputs pretty-printed JSON to stdout
+- Exits with error if no todo matches
+
+### `ccc todo --fetch-context <display_id>`
+
+Fetches the original source context for a todo (e.g., the Slack message, GitHub issue, or Granola meeting that generated it).
+
+- `--fetch-context` takes an integer display ID
+- Builds a context registry with available source fetchers (Granola, GitHub, Slack, Gmail)
+- Fetches live context from the original source and saves it to the DB
+- Prints the fetched content to stdout
+- Times out after 2 minutes
+
+### `ccc paths`
+
+Lists learned project paths. Default output is plain text (one path per line with description if available).
+
+- `--json` — Outputs full JSON with path metadata, per-project skills, global skills, and routing rules
+- `--auto-describe` — Generates descriptions for paths that lack one, using LLM if available (falls back to heuristic)
+- `--refresh-skills` — Forces skill cache refresh when used with `--json`
+- `--add-rule <path>` — Adds routing rules for a project path. Requires at least one of:
+  - `--use-for <description>` — Marks the path as suitable for a category of work
+  - `--not-for <description>` — Marks the path as unsuitable for a category of work
+  - `--prompt-hint <text>` — Sets a prompt generation hint for the path
+
+### `ccc worktrees`
+
+Lists CCC-managed git worktrees across all known project paths.
+
+- Default (no subcommand): scans all learned paths, resolves to git repo roots, deduplicates, and lists worktrees grouped by repo with branch name, relative path, and age
+- Prints "No CCC worktrees found" if none exist
+
+### `ccc worktrees prune [path]`
+
+Removes CCC-managed worktrees with interactive confirmation.
+
+- No argument: collects all CCC worktrees across all known repos
+- With `[path]`: prunes worktrees only for the specified repo path
+- Lists targets and prompts for `y/N` confirmation before removing
+- Prints each removed worktree branch on success
+
 ### `ccc help` / `ccc -h` / `ccc --help`
 
 Prints usage information.
@@ -101,3 +230,36 @@ Prints usage information.
 - Notify: SendNotify with no instances returns error
 - Notify: SendNotify reaches a listening socket
 - Notify: stale socket files are cleaned up on failed connection
+- Daemon start: spawns detached process and writes PID file
+- Daemon start: errors if daemon already running
+- Daemon stop: sends SIGTERM and removes PID file
+- Daemon stop: no-op if not running, cleans stale PID file
+- Daemon status: reports running/stopped with socket health
+- Daemon status: cleans up stale PID file for dead process
+- Register: creates session record via daemon socket
+- Register: falls back to direct DB insert when daemon not running
+- Register: errors if required flags missing
+- Update-session: updates topic via daemon socket
+- Update-session: errors if daemon not running
+- Stop-all: returns count of killed agents
+- Stop-all: errors if daemon not running
+- Refresh: triggers refresh via daemon socket
+- Add-todo: creates todo with generated ID and status `active`
+- Add-todo: errors if --title missing
+- Add-todo: sends reload notification after insert
+- Add-bookmark: creates bookmark with required session/project/repo/branch/summary
+- Add-bookmark: errors if any required flag missing
+- Add-bookmark: sends reload notification after insert
+- Todo --get: returns JSON for valid display_id
+- Todo --get: errors for non-existent display_id
+- Todo --get: errors for non-integer display_id
+- Todo --fetch-context: fetches live source context and prints to stdout
+- Todo --fetch-context: times out after 2 minutes
+- Paths: plain text listing with descriptions
+- Paths --json: includes skills, routing rules, global skills
+- Paths --auto-describe: generates descriptions for undescribed paths
+- Paths --add-rule: requires at least one of --use-for, --not-for, --prompt-hint
+- Worktrees: lists worktrees grouped by repo with age
+- Worktrees: prints message if no worktrees found
+- Worktrees prune: prompts for confirmation before removing
+- Worktrees prune [path]: scopes to single repo

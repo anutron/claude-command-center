@@ -210,6 +210,35 @@ CREATE INDEX IF NOT EXISTS idx_automation_runs_name_started
 - **DB access**: The DB path is provided for read access. Automations should not write to CCC tables (the host tracks run results). If an automation needs its own persistent state, it should use its own namespaced table or external storage.
 - **No network restrictions**: Automations can make any network calls the user's account permits.
 
+## Log Rotation
+
+The `Runner` has a `LogPath` field pointing to the automation log file (e.g., `~/.config/ccc/data/automation.log`). On each `RunAll` invocation, before executing any automations, the runner calls `rotateLog()`:
+
+- If `LogPath` is empty, rotation is skipped
+- If the log file does not exist yet, rotation is skipped (no error)
+- If the file's modification time is older than 7 days **or** the file exceeds 5 MB, it is rotated:
+  - The previous rotation (`<LogPath>.1`) is deleted if it exists
+  - The current log file is renamed to `<LogPath>.1`
+  - Only one previous rotation is kept
+
+**Directory creation**: The log directory is created by `NewFileLogger` (in `internal/plugin/logger.go`), which calls `os.MkdirAll` on the parent directory of `LogPath` before opening the file. The `Runner` itself does not create directories — it relies on the caller having created the logger first, which ensures the directory exists.
+
+**`LogDir()` helper**: The `automation.LogDir()` function returns `<DataDir>/logs` as the canonical log directory path for automation logs.
+
+## Init-Phase Log Messages
+
+The protocol spec shows `log` messages being sent between `ready` and `result`, but automations may also send `log` messages **before** sending `ready` (during their init phase). The runner handles this by looping in the ready-wait phase: any `log` message received while waiting for `ready` is forwarded to the logger with the appropriate level, and the runner continues waiting. The 5-second init timeout still applies across all init-phase messages — it is not reset by each `log` message.
+
+## Process Group Kill on Timeout
+
+When killing an automation subprocess (via the `kill()` method on `process`), the runner uses process group termination:
+
+1. Close the stdout pipe (to unblock any goroutine waiting on `Scan()`)
+2. Send `SIGKILL` to the **negative PID** (`syscall.Kill(-pid, SIGKILL)`), which kills the entire process group — including any child processes spawned by the automation (e.g., `sleep`, subshells)
+3. Also call `cmd.Process.Kill()` as a fallback
+
+This is enabled by setting `SysProcAttr.Setpgid = true` when spawning the subprocess, which puts it in its own process group. Without this, child processes of the automation could outlive the timeout and become orphans.
+
 ## Behavior
 
 Given a `ai-cron` cycle:
@@ -269,3 +298,10 @@ Disabled automations show "disabled" in dim text. Automations that have never ru
 - **Scoped config**: Automation with `config_scopes: ["slack"]` — receives only Slack config, not calendar or GitHub
 - **Empty automations list**: No automations configured — runner completes immediately with no errors
 - **Sequential execution**: Three automations configured — they run one after another, not concurrently
+- **Log rotation (age)**: Log file older than 7 days — rotated to `.1`, original removed
+- **Log rotation (size)**: Log file exceeds 5 MB — rotated to `.1`, original removed
+- **Log rotation (no file)**: Log file does not exist yet — rotation is a no-op, no error
+- **Log rotation (keeps one)**: Previous `.1` file exists — deleted before new rotation
+- **Init-phase logs**: Automation sends `log` messages before `ready` — forwarded to logger, ready-wait continues
+- **Init-phase log then timeout**: Automation sends `log` during init but never sends `ready` — logs captured, then init timeout error after 5s
+- **Process group kill**: Automation spawns child processes and times out — `SIGKILL` sent to process group, children also terminated

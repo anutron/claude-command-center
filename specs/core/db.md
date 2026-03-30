@@ -9,7 +9,7 @@ Provides all data persistence for the Claude Command Center (CCC). Manages SQLit
 ### Inputs
 - **Database path**: Passed to `OpenDB(dbPath string)` -- creates parent directories as needed
 - **JSON file paths**: Passed to `MigrateFromJSON(db, ccPath, bookmarksPath, pathsPath)` for legacy migration
-- **Domain objects**: `Todo`, `PullRequest`, `TodoMerge`, `Session`, `PendingAction`, `CalendarData` passed to DB write functions
+- **Domain objects**: `Todo`, `PullRequest`, `TodoMerge`, `Session`, `PendingAction`, `CalendarData`, `SessionRecord`, `ArchivedSession` passed to DB write functions
 
 ### Outputs
 - `*sql.DB` connection (WAL mode, 5s busy timeout, NORMAL synchronous, max 1 conn)
@@ -28,7 +28,8 @@ Provides all data persistence for the Claude Command Center (CCC). Manages SQLit
 | `types.go` | All exported domain types, ID generation, time helpers, in-memory `CommandCenter` mutation methods, file-based path CRUD |
 | `read.go` | `LoadCommandCenterFromDB` and all `dbLoad*` query functions, `DBLoadBookmarks`, `DBLoadPaths`, `DBIsEmpty` |
 | `write.go` | All `DB*` write functions for todos, calendar, suggestions, pending actions, bookmarks, paths, meta; `DBSaveRefreshResult` bulk write |
-| `sessions.go` | Session types, file-based session parsing (`ParseSessionFile`, `LoadWinddownSessions`, `LoadBookmarks`, `LoadAllSessions`, `RemoveBookmark`) -- used by sessions plugin only |
+| `sessions.go` | Session types (`ArchivedSession`), file-based session parsing (`ParseSessionFile`, `LoadWinddownSessions`, `LoadBookmarks`, `LoadAllSessions`, `RemoveBookmark`) -- used by sessions plugin only |
+| `agent_costs.go` | Agent cost tracking (`DBInsertAgentCost`, `DBUpdateAgentCostFinished`, `DBSumCostsSince`, `DBCountLaunchesSince`, `DBLastAgentLaunch`, `DBCountRecentFailures`) and budget state (`DBGetBudgetState`, `DBSetBudgetState`) |
 | `migrate.go` | `MigrateFromJSON` -- one-time import from legacy JSON/text files into SQLite |
 | `skill_discover.go` | `SkillInfo`, `SkillCache` types, `DiscoverSkills`, `DiscoverGlobalSkills`, disk cache read/write, `GetProjectSkills`, `GetGlobalSkills` |
 | `routing_rules.go` | `RoutingRule` type, file-based routing rules CRUD (`LoadRoutingRules`, `SaveRoutingRules`, `AddRoutingRule`) |
@@ -53,6 +54,14 @@ All types are exported for use by other packages:
 - `SkillInfo` -- name + description parsed from a SKILL.md frontmatter
 - `SkillCache` -- list of `SkillInfo` with a `ScannedAt` timestamp for TTL-based disk caching
 - `RoutingRule` -- `use_for` and `not_for` string lists, `PromptHint` string describing which tasks a path handles
+- `SessionRecord` -- daemon session registry row: session_id, topic, pid, project, repo, branch, worktree_path, state (active/ended/archived), registered_at, ended_at
+- `ArchivedSession` -- auto-saved ended session: session_id, topic, project, repo, branch, worktree_path, registered_at, ended_at
+- `SourceSync` -- tracks per-source sync status: source name, last_success time (nullable), last_error string, updated_at
+- `TodoMerge` -- tracks synthesis/original relationships for duplicate detection: synthesis_id, original_id, vetoed flag, created_at
+- Todo status constants: `StatusNew`, `StatusBacklog`, `StatusEnqueued`, `StatusRunning`, `StatusBlocked`, `StatusReview`, `StatusFailed`, `StatusCompleted`, `StatusDismissed`
+- `ValidTransition(from, to)` -- state machine guard; universal exits to completed/dismissed always allowed
+- `IsTerminalStatus(status)` -- returns true for completed and dismissed
+- `IsAgentStatus(status)` -- returns true for enqueued, running, blocked
 
 ## Behavior
 
@@ -64,14 +73,24 @@ All types are exported for use by other packages:
 5. Post-DDL migration fixes duplicate `sort_order` values on `cc_learned_paths` using `ROW_NUMBER()` window function
 
 ### Todo Operations
-- `DBInsertTodo` -- auto-assigns sort_order = max+1
+- `DBInsertTodo` -- auto-assigns sort_order = max+1 and display_id = max+1
 - `DBCompleteTodo` -- sets status=completed, completed_at=now
 - `DBDismissTodo` -- sets status=dismissed
 - `DBRestoreTodo` -- restores to given status and completed_at (for undo)
 - `DBDeferTodo` -- sets sort_order to max+1 (moves to bottom)
 - `DBPromoteTodo` -- sets sort_order to min-1 (moves to top)
 - `DBUpdateTodo` -- updates all fields except sort_order
+- `DBAcceptTodo` -- transitions a todo from "new" to "backlog"
+- `DBUpdateTodoStatus` -- updates only the status column
+- `DBUpdateTodoProjectDir` -- updates only the project_dir column (NULLIF empty)
+- `DBUpdateTodoLaunchMode` -- updates only the launch_mode column (NULLIF empty)
+- `DBUpdateTodoSessionID` -- updates only the session_id column (NULLIF empty)
+- `DBUpdateTodoSessionSummary` -- updates only the session_summary column (NULLIF empty)
 - `DBUpdateTodoSourceContext` -- focused update for source_context and source_context_at columns
+- `DBDeleteTodo` -- hard deletes a todo row by ID
+- `DBSwapTodoOrder` -- swaps sort_order of two todos by ID within a transaction
+- `DBLoadTodoByID` -- loads a single todo by its internal ID; returns nil, nil if not found
+- `DBLoadTodoByDisplayID` -- loads a single todo by its display_id; returns nil, nil if not found
 
 ### Calendar & Suggestions
 - **Calendar day-clamping on load**: `dbLoadCalendar` clamps multi-day event times to their day boundaries. Events whose start is before the day start are clamped to midnight; events whose end extends past the day end are clamped to end-of-day. Events are then re-sorted by effective start time. This ensures multi-day events sort and display correctly (e.g., a 3-day conference shows as starting at midnight today, not at its original start time days ago).
@@ -95,12 +114,22 @@ All types are exported for use by other packages:
 - `DBLoadIgnoredRepos(db)` — returns all repos in `cc_ignored_repos` as `[]string`
 - `DBLoadIgnoredPRs(db)` — returns all non-archived PRs with `ignored = 1`
 
+### Todo Merges (Duplicate Detection)
+- **Schema**: `cc_todo_merges` table with composite primary key `(synthesis_id, original_id)`, plus `vetoed` (INTEGER, default 0) and `created_at` (TEXT)
+- `DBLoadMerges(db)` -- loads all merge records; used by `LoadCommandCenterFromDB` to populate `cc.Merges`
+- `DBInsertMerge(db, synthesisID, originalID, mergeNote)` -- inserts or replaces a merge record with `vetoed=0`; note: `mergeNote` parameter is accepted but not persisted (no column in schema)
+- `DBSetMergeVetoed(db, synthesisID, originalID, vetoed)` -- sets the vetoed flag on a specific merge record
+- `DBDeleteSynthesisMerges(db, synthesisID)` -- deletes all merge records for a given synthesis todo
+- `DBGetOriginalIDs(merges, synthesisID)` -- in-memory helper: returns non-vetoed original IDs for a synthesis from a pre-loaded merges slice
+- `WerePreviouslyMergedAndVetoed(merges, idA, idB)` -- in-memory helper: checks if two todo IDs were ever in the same synthesis group and one was vetoed out. Prevents re-merging a specific pair while allowing each ID to merge with unrelated todos.
+
 ### Bulk Refresh
 - `DBSaveRefreshResult` -- atomically replaces all refresh-managed data (todos, pull requests, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`.
 
 ### Bookmarks & Paths (DB)
 - `DBLoadBookmarks`, `DBInsertBookmark`, `DBRemoveBookmark`
 - `DBLoadPaths` (returns `[]string`), `DBLoadPathsFull` (returns `[]PathEntry` with description, added_at, sort_order), `DBAddPath` (INSERT OR IGNORE), `DBRemovePath`, `DBUpdatePathDescription`
+- `DBSwapPathOrder` -- swaps sort_order of two paths by path string within a transaction
 
 ### Path Descriptions
 - `AutoDescribePath(dir)` -- heuristic description from project files (go.mod, package.json, Cargo.toml, pyproject.toml, setup.py, Gemfile, pom.xml, build.gradle, Package.swift)
@@ -126,6 +155,40 @@ All types are exported for use by other packages:
 - `SaveRoutingRules(rules)` -- writes full map to YAML, creates parent directories
 - `AddRoutingRule(path, ruleType, text)` -- appends a single entry; ruleType must be `"use_for"` or `"not_for"`
 - Rules inform the LLM routing prompt but are not hard constraints
+
+### Source Sync
+- **Schema**: `cc_source_sync` table with `source` (TEXT PRIMARY KEY), `last_success` (TEXT, nullable), `last_error` (TEXT), `updated_at` (TEXT)
+- `DBLoadSourceSync(db, source)` -- loads sync status for a single data source by name; returns `*SourceSync` or `nil, nil` if no record exists
+- `DBLoadAllSourceSync(db)` -- loads sync status for all tracked sources; returns `map[string]*SourceSync`
+- `DBUpsertSourceSync(db, source, syncErr)` -- records a sync result: on success (`syncErr == nil`), sets `last_success` to now and clears `last_error`; on failure, keeps existing `last_success` and updates `last_error` with the error message
+
+### Sessions (Daemon Registry)
+- **Schema**: `cc_sessions` table with `session_id` (TEXT PRIMARY KEY), `topic`, `pid` (INTEGER), `project`, `repo`, `branch`, `worktree_path`, `state` (TEXT, default 'active'), `registered_at` (TEXT), `ended_at` (TEXT)
+- `DBLoadSessions(db)` -- loads all sessions ordered by `registered_at DESC`; returns `[]SessionRecord`
+- `DBLoadVisibleSessions(db)` -- loads sessions where `state IN ('active', 'ended')`, ordered by `registered_at DESC`; excludes archived sessions
+- `DBInsertSession(db, s)` -- inserts or replaces a session record (INSERT OR REPLACE)
+- `DBUpdateSession(db, sessionID, fields)` -- updates specific fields on a session; only whitelisted field names accepted (topic, pid, project, repo, branch, worktree_path, state, ended_at) to prevent SQL injection
+- `DBUpdateSessionState(db, sessionID, state)` -- convenience wrapper: updates state; if state is "ended", automatically sets `ended_at` to now
+
+### Archived Sessions
+- **Schema**: `cc_archived_sessions` table with `session_id` (TEXT PRIMARY KEY), `topic`, `project`, `repo`, `branch`, `worktree_path`, `registered_at` (TEXT), `ended_at` (TEXT)
+- `DBLoadArchivedSessions(db)` -- loads all archived sessions ordered by `ended_at DESC`; returns `[]ArchivedSession`
+- `DBInsertArchivedSession(db, s)` -- inserts or replaces an archived session (INSERT OR REPLACE)
+- `DBDeleteArchivedSession(db, sessionID)` -- removes an archived session by ID
+
+### Agent Costs
+- **Schema**: `cc_agent_costs` table with auto-increment `id`, `agent_id` (TEXT), `automation` (TEXT), `started_at` (TEXT), `finished_at` (TEXT, nullable), `duration_sec` (INTEGER, nullable), `budget_usd` (REAL, default 0), `cost_usd` (REAL, default 0), `input_tokens` (INTEGER, default 0), `output_tokens` (INTEGER, default 0), `cost_source` (TEXT, default 'estimate'), `exit_code` (INTEGER, nullable), `status` (TEXT, default 'running'). Indexed on `started_at`.
+- `DBInsertAgentCost(db, agentID, automation, budget, startedAt)` -- inserts a new cost row with `status='running'`; returns the auto-generated row ID
+- `DBUpdateAgentCostFinished(db, rowID, durationSec, costUSD, exitCode, status)` -- marks a cost row as finished with final metrics (`finished_at` set to now)
+- `DBSumCostsSince(db, since)` -- returns total `cost_usd` for all agent runs started since the given time; returns 0 if no rows match
+- `DBCountLaunchesSince(db, automation, since)` -- returns number of agent launches for a specific automation since the given time
+- `DBLastAgentLaunch(db, agentID)` -- returns the most recent `started_at` for a given agent ID; returns zero time if no launches found
+- `DBCountRecentFailures(db, automation, since)` -- returns number of failed agent runs (`status='failed'`) for a specific automation since the given time
+
+### Budget State
+- **Schema**: `cc_budget_state` table with `key` (TEXT PRIMARY KEY), `value_num` (REAL, default 0), `value_text` (TEXT, default ''), `updated_at` (TEXT)
+- `DBGetBudgetState(db, key)` -- retrieves a budget state value; returns `(valueNum, valueText, nil)` or `(0, "", nil)` if key does not exist
+- `DBSetBudgetState(db, key, valueNum, valueText)` -- upserts a budget state key-value pair (ON CONFLICT DO UPDATE)
 
 ### Meta & Pending Actions
 - `DBSetMeta` -- upserts a key-value pair in `cc_meta`
@@ -216,3 +279,34 @@ All types are exported for use by other packages:
 - `DBRemoveIgnoredRepo` restores PRs from that repo to query results
 - `DBLoadIgnoredRepos` returns all ignored repos
 - `DBLoadIgnoredPRs` returns non-archived PRs with `ignored = 1`
+- Todo merge insert and load round-trip
+- Todo merge veto sets/clears flag
+- `DBDeleteSynthesisMerges` removes all merges for a synthesis
+- `DBGetOriginalIDs` returns non-vetoed originals, excludes vetoed
+- `WerePreviouslyMergedAndVetoed` detects vetoed pair in same synthesis group
+- `WerePreviouslyMergedAndVetoed` returns false for unrelated merges
+- `VisibleTodos` excludes todos hidden by non-vetoed merges
+- Source sync: upsert success clears last_error
+- Source sync: upsert failure preserves last_success, sets last_error
+- Source sync: load single source returns nil for unknown source
+- Source sync: load all returns map keyed by source name
+- Session record insert and load round-trip
+- `DBLoadVisibleSessions` excludes archived sessions
+- `DBUpdateSession` rejects disallowed field names
+- `DBUpdateSessionState` auto-sets ended_at for "ended" state
+- Archived session insert and load round-trip
+- `DBDeleteArchivedSession` removes by session ID
+- Agent cost: insert returns valid row ID
+- Agent cost: update finished sets all metric fields
+- `DBSumCostsSince` aggregates cost_usd for matching window
+- `DBCountLaunchesSince` filters by automation and time window
+- `DBLastAgentLaunch` returns zero time when no launches exist
+- `DBCountRecentFailures` counts only status='failed' rows
+- Budget state: get returns (0, "", nil) for missing key
+- Budget state: set and get round-trip for numeric and text values
+- `DBLoadTodoByID` returns nil for nonexistent ID
+- `DBLoadTodoByDisplayID` returns matching todo
+- `DBSwapTodoOrder` swaps sort_order transactionally
+- `DBSwapPathOrder` swaps sort_order transactionally
+- `DBAcceptTodo` transitions status from new to backlog
+- `DBDeleteTodo` removes the row entirely

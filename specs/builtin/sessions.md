@@ -225,6 +225,71 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 15. If `config.HomeDir` is set, auto-added to paths list on Init
 16. `esc` from sessions/worktrees returns to new sub-tab
 
+### LLM Path Descriptions
+
+When a new path is added (via Browse or `config.HomeDir`), the plugin generates a project description:
+
+1. `LLMDescribePath(llm, dir)` reads the first 200 lines of `README.md` and 100 lines of `CLAUDE.md` from the directory
+2. If both files are missing/empty, falls back to `db.AutoDescribePath(dir)` (heuristic based on directory contents)
+3. If files exist, builds a prompt asking for a 1-2 sentence summary (what it does, tech stack, domain) and calls `llm.Complete`
+4. On LLM error or empty response, falls back to heuristic
+5. The description is persisted via `db.DBUpdatePathDescription`
+
+**Invocation paths:**
+- **Browse flow (fzf):** On `fzfFinishedMsg`, writes the heuristic description immediately to DB, then fires `backgroundDescribe` in a goroutine to upgrade it via LLM. The goroutine write is fire-and-forget since the TUI is about to quit for launch.
+- **pathDescribeCmd:** Returns a `tea.Cmd` wrapping `LLMDescribePath` for async use within the bubbletea loop. On completion (`pathDescribeFinishedMsg`), writes the description to DB.
+
+### Browse Flow (New Sub-Tab)
+
+The "Browse..." item is always the last entry in the New sub-tab list (`isBrowse: true`).
+
+1. User selects "Browse..." and presses `enter`
+2. Plugin launches `fzf` via `tea.Exec` (full-screen takeover) with:
+   - `--walker=dir` — directory-only results
+   - `--walker-root=$HOME` — starts from home directory
+   - `--walker-skip=.git,node_modules,.venv,__pycache__,.cache,.Trash,Library`
+   - `--scheme=path`, `--exact`, `--layout=reverse`
+3. On `fzfFinishedMsg` (user selected a path):
+   - Adds path to the in-memory paths list and persists via `db.DBAddPath`
+   - Writes heuristic description immediately, fires background LLM description upgrade
+   - Returns `ActionLaunch` with the selected path — the session launches immediately after browse
+4. On error or empty selection (user pressed `esc` in fzf): no-op
+
+### Daemon Archive RPC on Session Dismiss
+
+When the user presses `d` on an **ended** live session:
+
+1. If the session is still active/running, dismiss is blocked with flash message "Can't dismiss running session"
+2. For ended sessions, the plugin calls `client.ArchiveSession(ArchiveSessionParams{SessionID: sel.SessionID})` via the daemon RPC
+3. The daemon removes the session from its live list
+4. The plugin also calls `unified.RemoveSession(sel.SessionID)` to remove it from the local view immediately
+5. Flash message: "Dismissed: <first 8 chars of session ID>"
+
+This is separate from auto-archiving (which writes to `cc_archived_sessions` in the DB). The daemon `ArchiveSession` RPC tells the daemon to stop tracking the session — it does NOT write to the local archive DB. Auto-archiving to DB happens during `Refresh()` when the plugin detects sessions that transitioned from live to ended.
+
+### NavigateTo Args (pending_todo_title)
+
+`NavigateTo(route, args)` accepts an optional `pending_todo_title` key in the `args` map:
+
+- If `args["pending_todo_title"]` is present, sets `pendingLaunchTodo` to a `db.Todo` with that title
+- This triggers the pending launch banner in the New sub-tab: "Select project for: <title>"
+- When the user selects a path while `pendingLaunchTodo` is set, the launch includes `initial_prompt` with formatted todo context
+- Pressing `esc` while a pending todo is active clears it, publishes `pending.todo.cancel` on the event bus, and navigates to the command-center plugin
+
+**Full pending todo fields (via event bus):** The `pending.todo` event bus subscription populates a richer `db.Todo` with `Title`, `Context`, `Detail`, `WhoWaiting`, `Due`, and `Effort`. The `NavigateTo` args path only sets `Title`.
+
+### Blocked Session Rendering
+
+Blocked sessions are detected by cross-referencing live sessions with daemon agent statuses:
+
+1. On each `Refresh()`, the unified view calls `client.ListAgents()` to fetch all active `AgentStatusResult` entries
+2. `isSessionBlocked(sessionID)` checks if any agent has `Status == "blocked"` and matches either `a.SessionID == sessionID` or `a.ID == sessionID`
+3. Blocked sessions that are otherwise active/running render with:
+   - **Yellow dot** (`●` in `#f1fa8c`) instead of the green dot for active sessions
+   - **"Blocked" text** (yellow, `#f1fa8c`) prepended to the age suffix
+4. Non-blocked active/running sessions render with a green dot (`●` in `#50fa7b`)
+5. Ended sessions render with a muted hollow dot (`○`) regardless of block state
+
 ## Test Cases
 
 - Init loads paths, bookmarks, and archived sessions
@@ -251,3 +316,15 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 - HandleKey "w" on a non-git path shows worktree warning
 - Worktree confirmation y executes action, n/esc cancels
 - Esc from sessions/worktrees sub-tab returns to new
+- LLMDescribePath with README.md returns LLM-generated summary
+- LLMDescribePath without README.md or CLAUDE.md falls back to heuristic
+- LLMDescribePath on LLM error falls back to heuristic
+- Browse (fzf) selection adds path to DB, writes heuristic description, fires background LLM upgrade, launches session
+- Browse (fzf) cancellation (esc/error) is a no-op
+- `d` on ended live session calls daemon ArchiveSession RPC and removes from view
+- `d` on active/running session shows "Can't dismiss" flash
+- NavigateTo with `pending_todo_title` arg sets pending launch context and shows banner
+- Esc with pending todo clears it, publishes `pending.todo.cancel`, navigates to command-center
+- Blocked session (agent status == "blocked") renders yellow dot and "Blocked" text
+- Active non-blocked session renders green dot
+- Ended session renders muted hollow dot

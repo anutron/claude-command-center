@@ -32,8 +32,9 @@ See `specs/core/datasource.md` for full details. Each source implements `Name()`
 7. **Execute pending actions**: Process booking requests by creating calendar events in free slots (loads calendar auth independently)
 8. **Generate suggestions**: LLM-based priority ranking of todos (if `opts.LLM` is non-nil)
 9. **Generate proposed prompts**: Route eligible todos (active, has source, no prompt yet) using `RoutingLLM` (sonnet). The routing step validates ownership — a task is Aaron's if he committed to it OR if someone else assigned it to him by name (see `specs/core/todo-extraction.md`). If the LLM returns `project_dir: "REJECT"`, the todo is auto-dismissed. Otherwise, it assigns a project directory and generates an actionable prompt.
-10. **Fetch source context**: For todos with a `source_ref`, fetch raw source content (transcripts, threads, PR comments) via `ContextRegistry` and cache in `source_context`/`source_context_at` columns.
-11. Save merged state to SQLite via `db.DBSaveRefreshResult(opts.DB, merged)` (or print to stdout if DryRun)
+10. **Dedup pass**: After routing, `dedupTodos` processes merge suggestions. For each todo where routing set `merge_into`, the system checks veto history via `WerePreviouslyMergedAndVetoed`, then synthesizes combined todos via LLM (see Todo Synthesis below).
+11. **Fetch source context**: For todos with a `source_ref`, fetch raw source content (transcripts, threads, PR comments) via `ContextRegistry` and cache in `source_context`/`source_context_at` columns.
+12. Save merged state to SQLite via `db.DBSaveRefreshResult(opts.DB, merged)` (or print to stdout if DryRun)
 
 ## Types
 
@@ -156,6 +157,95 @@ Refresh locking uses `syscall.Flock()` for atomic advisory file locking (`intern
 - Pending actions preserved
 - Nil existing state handled gracefully
 
+### Source Context
+
+- `shouldRefresh` returns true when `source_context` is empty
+- `shouldRefresh` returns false for TTL=0 fetcher with existing context (immutable)
+- `shouldRefresh` returns true when `source_context_at` is older than TTL
+- `FetchContextBestEffort` logs errors without propagating them
+- `FetchAndSave` persists context to DB and updates in-memory todo
+
+### Routing
+
+- Eligible todos: active, has source, not manual, no proposed_prompt
+- Rejected todos get `status: "dismissed"` and `proposed_prompt: "REJECTED: ..."`
+- `merge_into` from routing triggers dedup pass
+- Legacy fallback generates prompts without project assignment when no paths exist
+
+### Todo Synthesis (Dedup)
+
+- Vetoed pair (via `WerePreviouslyMergedAndVetoed`) clears `merge_into` and skips merge
+- Veto is pair-specific: vetoing A+B does not prevent A+C
+- Synthesis of existing merge target expands to original IDs before re-synthesizing
+- Old synthesis todo and merge records are cleaned up when re-synthesizing
+- `BuildSynthesisTodo` inherits status from merge target, non-LLM fields from newest original
+- Synthesis todo gets `source: "merge"` and a fresh UUID
+
+## Todo Routing Prompt Generation
+
+### Path Context Assembly (`loadPathContext`)
+
+Before generating prompts, the system assembles a `PathContext` struct from multiple sources:
+
+1. **Learned paths**: Loaded via `db.DBLoadPathsFull(database)` — each path has a directory and description
+2. **Routing rules**: Loaded via `db.LoadRoutingRules()` from config file — per-path `use_for`, `not_for`, and `prompt_hint` directives
+3. **Project skills**: Loaded via `db.GetProjectSkills(path, false)` — per-project skills discovered from disk (cached with 1hr TTL)
+4. **Global skills**: Loaded via `db.GetGlobalSkills(false)` — skills available in all projects
+
+If no learned paths exist, falls back to `generateProposedPromptsLegacy` which does batch prompt-only generation without project assignment.
+
+### Routing Prompt Structure (`buildRoutingPrompt`)
+
+The routing prompt sent to sonnet includes these sections:
+
+1. **Task**: Title, detail, context, source, who_waiting, due
+2. **Source Context**: If `source_context` is populated, included in `<source_context>` XML tags with source name and fetch timestamp
+3. **Available Projects**: Each path with description, project-specific skills (name + description), and routing rules (use_for, not_for, prompt_hint)
+4. **Global Skills**: Listed with a note not to prefer projects just because they share global skills
+5. **Existing Todos**: Up to 50 active todos listed with display ID, internal ID, title, and due date — enables `merge_into` detection
+6. **User Instructions**: Optional `todo_instructions.md` loaded from working directory or `~/.config/ccc/todo_instructions.md`
+7. **Instructions**: Ownership validation rules and output format specification
+
+### Routing Result (`TodoPromptResult`)
+
+The LLM returns JSON with:
+- `project_dir`: path or `"REJECT"`
+- `proposed_prompt`: markdown prompt for agent execution
+- `reasoning`: one-sentence explanation
+- `merge_into`: existing todo ID if this is a duplicate (optional)
+- `merge_note`: reason for merge (optional)
+
+## Todo Synthesis (Dedup)
+
+### Flow (`dedupTodos` in `refresh.go`)
+
+1. Build a lookup map of todos by ID
+2. Group todos by their `merge_into` target
+3. For each group, check veto history via `WerePreviouslyMergedAndVetoed` — if vetoed, clear the `merge_into` field and skip
+4. Collect originals: if the target is already a `source:"merge"` todo, expand to its non-vetoed original IDs via `DBGetOriginalIDs`; otherwise use the target itself. Append the new todos to the originals list.
+5. Call `Synthesize` (LLM) to combine all originals into one
+6. Call `BuildSynthesisTodo` to create the synthesis todo
+7. Insert the synthesis todo into the DB, record merge relationships via `DBInsertMerge`
+8. If the target was itself a synthesis, delete the old synthesis and its merge records
+
+### WerePreviouslyMergedAndVetoed
+
+Prevents re-merging a specific pair that was previously split. Groups all merges by `synthesis_id`, then checks if both IDs appear in the same group with at least one vetoed. This is pair-specific — vetoing A from a merge with B does not prevent A from merging with unrelated todo C.
+
+### BuildSynthesisTodo
+
+Creates a new `db.Todo` with:
+- **Source**: `"merge"` (identifies synthesized todos)
+- **Status**: Inherited from the merge target (preserves triage decisions)
+- **LLM fields**: Title, detail, context, who_waiting, due, effort from `SynthesisResult`
+- **Non-LLM fields**: `project_dir`, `proposed_prompt`, `source_context`, `source_context_at` from the newest original
+- **ID**: Fresh UUID via `db.GenID()`
+- **DisplayID**: 0 (DB auto-assigns via `MAX(display_id)+1` on insert)
+
+### Synthesis Prompt
+
+The LLM receives all originals (oldest first) with display ID, title, source, due, who_waiting, effort, and detail. Instructed that the newest entry is the source of truth where information overlaps. Returns a single JSON object with the combined fields.
+
 ## Key Changes from AI-RON Original
 
 - Package `refresh` (not `main`); exposes `Run(opts Options) error`
@@ -193,9 +283,34 @@ Maps source names to `ContextFetcher` implementations. Registered at startup in 
 | GitHub | 24h | PR/issue body + comments via `gh` CLI |
 | Gmail | 24h | Full email thread via Gmail API |
 
+### TTL Behavior
+
+`shouldRefresh(todo, fetcher)` determines whether a todo's cached context is stale:
+
+1. If `source_context` is empty, always refresh
+2. If `ContextTTL()` returns 0, the content is immutable — never refresh after the first fetch (Granola transcripts)
+3. If `source_context_at` is missing or unparseable, refresh
+4. Otherwise, refresh only if `time.Since(source_context_at) > TTL`
+
+### FetchContextBestEffort (Fire-and-Forget)
+
+`FetchContextBestEffort` is a wrapper around `FetchAndSave` that logs errors instead of returning them. It is called **sequentially** (not in parallel) for each todo after prompt generation. Errors in one todo do not block context fetching for others.
+
+`FetchAndSave` performs the full cycle: checks TTL, calls `fetcher.FetchContext(sourceRef)`, persists via `db.DBUpdateTodoSourceContext`, and updates the in-memory todo struct.
+
+### Source-Specific Context Fetchers
+
+**Slack** (`sources/slack/context.go`): Parses the `source_ref` permalink (`https://app.slack.com/archives/{channelID}/p{ts}`), extracts channel ID and timestamp, then fetches `conversations.history` in a +/-24h window around the target message (up to 100 messages). For each message, also fetches thread replies via `conversations.replies`. Output includes timestamps: `[{ts}] {text}` with thread replies indented.
+
+**Gmail** (`sources/gmail/context.go`): The `source_ref` is a Gmail message ID. Fetches the message metadata to obtain the `threadId`, then calls `GetThread` to retrieve the full thread. Each message is formatted with Subject/From/To/Date headers and the plain-text body. Messages are joined with `---` separators.
+
+**Granola** (`sources/granola/context.go`): The `source_ref` format is `{meeting_id}-{title_hash}`. The meeting ID is extracted by splitting at the last dash. Fetches the transcript via `granolaGetTranscript` with `[Aaron]:`/`[Other]:` speaker labels.
+
+**GitHub** (`sources/github/context.go`): Fetches PR/issue body and comments via the `gh` CLI.
+
 ### Speaker Attribution (Granola)
 
-Granola transcript chunks include a `source` field: `"microphone"` = Aaron, `"system"` = other participants. Transcripts are formatted with `[Aaron]:` and `[Other]:` labels, enabling the LLM to determine who made each commitment.
+Granola transcript chunks include a `source` field: `"microphone"` = Aaron, `"system"` = other participants. Transcripts are formatted with `[Aaron]:` and `[Other]:` labels, enabling the LLM to determine who made each commitment. Consecutive chunks from the same speaker are concatenated (no duplicate label). An `[Unknown]:` label is used for unrecognized source values.
 
 ### Refresh Integration
 

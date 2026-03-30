@@ -97,6 +97,19 @@ A custom huh theme (`huhThemeFromPalette`) maps the CCC palette colors to huh's 
 
 The theme rebuilds when the palette changes.
 
+## RegisterProvider API
+
+```go
+func (p *Plugin) RegisterProvider(slug string, sp plugin.SettingsProvider)
+```
+
+Allows external callers (e.g., data source packages, external plugins) to register a `plugin.SettingsProvider` for a given slug. The provider's view is rendered above the huh form in the content pane, and its `HandleSettingsKey` receives key events before the form. Providers registered via this method are stored in `p.providers[slug]` alongside the built-in providers (calendar, github, granola) that are registered during `Init()`.
+
+Built-in providers registered in `Init()`:
+- `calendar` — `calendar.NewSettings(cfg, pal, logger)`
+- `github` — `ghsettings.NewSettings(cfg, pal, logger)`
+- `granola` — `granola.NewSettings(cfg, pal)`
+
 ## Pane Details
 
 ### Banner (appearance)
@@ -135,6 +148,12 @@ Content layout (top to bottom):
 **Async message routing**: Provider async results (CalendarFetchResultMsg, ghRepoFetchResult) are routed to providers BEFORE the form's Update, so fetch results arrive even when a form is active.
 
 **Credential verification**: "Verify credentials" always does a live API check. For Slack, calls `auth.test`. Results respect the `Live` flag — a live "ok" skips the sync-aware downgrade that would otherwise show stale DB errors.
+
+**Credential reuse on re-authentication**: When the user selects "Authenticate" for a Google data source (calendar, gmail), the system first checks for existing client credentials in the token file via `loadExistingGoogleCreds(slug)`. If valid `clientId` and `clientSecret` are found, the OAuth flow starts immediately using those credentials — the client credential form is skipped entirely. This avoids requiring users to re-enter credentials when re-authenticating (e.g., to upgrade scopes). Token file paths checked:
+- Calendar: `~/.config/google-calendar-mcp/credentials.json`
+- Gmail: `~/.gmail-mcp/work.json`
+
+If no existing credentials are found, the standard client credential form is shown.
 
 **After credential save**: The datasource form is rebuilt so the pane stays fully populated (not just title/subtitle).
 
@@ -179,6 +198,50 @@ Editable budget configuration with live spend display and read-only rate limits.
 
 Saves to `config.Agent.*` on field transition (auto-save via `saveBudgetValues()`) and on form completion. Publishes `config.saved` event with source `"agent-budget"`. Warning threshold is stored as a 0-1 float internally but displayed/edited as a 0-100 percentage.
 
+### Sandbox (agent-sandbox)
+
+Read-only huh form displaying the current agent sandbox configuration. Three Note sections:
+
+- **Write Learned Paths** — shows on/off status of `config.Agent.TodoWriteLearnedPathsEnabled()`. When enabled, todo agents can write to paths discovered during sessions.
+- **Additional Write Paths** — lists `config.Agent.TodoExtraWritePaths` (bullet list), or "none configured" if empty.
+- **Autonomous Allowed Domains** — lists `config.Agent.AutonomousAllowedDomains` (bullet list), or "none configured" if empty.
+
+All values are read from config and displayed as notes — there are no editable fields. Configuration changes must be made in `config.yaml`.
+
+### Automations (system-automations)
+
+Custom-rendered pane (not a huh form). Displays a table of all automations from `config.Automations` with dynamically sized columns:
+
+| Column | Source | Max Width |
+|--------|--------|-----------|
+| NAME | `automation.Name` | 30 |
+| SCHEDULE | `automation.Schedule` | 15 |
+| STATUS | Last run status or "disabled" | 8 |
+| LAST RUN | Relative time from `cc_automation_runs` | 12 |
+| MESSAGE | Last run message (fills remaining width, min 10) | dynamic |
+
+**Status values and styles:**
+- `success` — green (enabled style)
+- `error` — red (logError style)
+- `skipped` — muted
+- `disabled` — muted (when `automation.Enabled` is false)
+- `—` — muted (when enabled but never run)
+
+**Last run data** is queried per-automation from the `cc_automation_runs` table (`SELECT started_at, status, message ... ORDER BY started_at DESC LIMIT 1`). Relative time formatting: "just now" (<1m), "Nm ago", "Nh ago", "yesterday", "Nd ago".
+
+When no automations are configured, shows: "No automations configured. Add automations to config.yaml under the 'automations:' section."
+
+The automations pane has no form — `buildFormForSlug` returns `(nil, nil)` for `system-automations`. It renders directly via `viewAutomationsContent` when the sidebar highlights or opens this item.
+
+### PRs (plugin — prs)
+
+Read-only huh form showing the user's PR ignore lists. Two Note sections:
+
+- **Ignored Repos** — lists repos from `cc_ignored_repos` table (bullet list). Empty state: "No repos ignored. Press I on a PR to ignore its repo."
+- **Ignored PRs** — lists individually ignored PRs from `cc_pull_requests` where `ignored = 1` (shows ID + muted title). Empty state: "No PRs ignored. Press i on a PR to ignore it."
+
+This pane is view-only — removing ignored repos/PRs is done from the PR plugin tab, not from settings. [NEEDS INPUT] The design spec (2026-03-22) describes interactive removal (press `x` or enter to remove/restore), but the implementation is read-only Notes. Should the settings pane support interactive removal?
+
 ### System Panes (schedule, mcp, skills, shell)
 
 Each system pane has:
@@ -200,12 +263,36 @@ The **only** non-form pane. Uses FocusLogs zone with custom scrollable view:
 - `/` — enter filter mode
 - `esc` — clear filter or return to nav
 
+## Event Subscriptions
+
+During `Init()`, the settings plugin subscribes to todo lifecycle events for logging. The following topics are subscribed:
+- `todo.completed`
+- `todo.created`
+- `todo.dismissed`
+- `todo.deferred`
+- `todo.promoted`
+- `todo.edited`
+
+Each subscription logs the event topic and the todo's `title` field (extracted from `event.Payload["title"]`) via the plugin logger at Info level. This provides a settings-tab log trail of all todo activity.
+
 ## Sidebar Toggle Behavior
 
 - `space` toggles enable/disable on the selected item in FocusNav
 - Built-in plugins: saves to `config.DisabledPlugins`, flashes "Restart CCC to apply"
 - External plugins: saves config, flashes "Restart CCC to apply"
 - Data sources: validates credentials first; reverts on failure
+
+**Data source toggle event**: When a data source is toggled, the plugin publishes a `datasource.toggled` event on the event bus after saving config:
+
+```go
+plugin.Event{
+    Source:  "settings",
+    Topic:   "datasource.toggled",
+    Payload: map[string]interface{}{"name": slug, "enabled": enabled},
+}
+```
+
+This event currently has no built-in subscribers but is available for external plugins to react to data source enable/disable changes.
 
 Enabled states sync from live config at the start of each `View()` call.
 

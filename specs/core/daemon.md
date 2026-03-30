@@ -267,3 +267,6 @@ The subscriber system provides push delivery of server events to connected TUI c
 - Session persistence across daemon restart — sessions loaded from SQLite on startup
 - `ShutdownDaemon` RPC — response is sent before shutdown (100ms delay before `Shutdown()`)
 - Socket file security — umask `0177` ensures socket is never world-accessible, even briefly
+- No client-side socket permission check — umask-on-create is sufficient for single-user macOS; client-side ownership verification is unnecessary (audit 2026-03-30)
+- No graceful drain on SIGTERM — `Shutdown()` stops agents cleanly via `runner.Shutdown()`, cancels context, and closes connections; a drain period adds complexity with no practical benefit for fast RPCs (audit 2026-03-30)
+- No configurable connection timeout — Unix domain sockets clean up dead fds via kernel lifecycle; subscriber write deadlines (5s) handle slow consumers; idle timeout config adds surface area for no gain (audit 2026-03-30)

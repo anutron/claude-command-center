@@ -47,10 +47,21 @@ Created via `NewMemoryLogger()`. Same as FileLogger but with no file backing -- 
 ## Behavior
 
 1. All log methods (`Info`, `Warn`, `Error`) create a `LogEntry` with the current time
-2. Entry is appended to the in-memory ring buffer (mutex-protected)
+2. Entry is appended to the in-memory slice (mutex-protected)
 3. If memory entries exceed `maxMem` (500), oldest entries are trimmed
 4. If a file is open, the formatted log line is written to it
 5. `Recent(n)` returns the last `n` entries (or fewer if less are available), as a copy
+
+### Ring Buffer Semantics
+
+The in-memory buffer is implemented as a slice with tail-trimming (not a true circular buffer):
+
+- **Append**: new entries are appended to the end of the slice
+- **Trim**: when `len(entries) > maxMem`, the slice is resliced to keep only the last `maxMem` entries: `entries = entries[len(entries)-maxMem:]`
+- **Read**: `Recent(n)` copies the last `n` entries from the slice. The returned slice is a copy, so callers cannot mutate the buffer.
+- **Capacity**: `maxMem` is fixed at 500 for both `FileLogger` and `MemoryLogger`. It is not configurable at runtime.
+- **Memory**: trimming reslices but does not reallocate. Over time, the underlying array grows and the prefix becomes unreachable but is not freed until GC collects the array. [NEEDS INPUT: should trimming compact the slice to bound memory?]
+- **Ordering**: entries are always in chronological order (oldest first). `Recent(n)` returns entries in the same order (oldest of the N first, newest last).
 
 ## Test Cases
 

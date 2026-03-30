@@ -143,7 +143,28 @@ REJECT only if:
 - The commitment was made by someone else about themselves (not Aaron)
 - Aaron is not mentioned or involved in the commitment
 
-If rejected, `project_dir` is set to `"REJECT"` and the todo is auto-dismissed.
+If rejected, `project_dir` is set to `"REJECT"` and the todo is auto-dismissed. The rejection reasoning is stored as `proposed_prompt` with a `REJECTED: ` prefix.
+
+### Routing Prompt Assembly
+
+The routing prompt (`buildRoutingPrompt` in `todo_agent.go`) assembles context from multiple sources:
+
+1. **Task fields**: Title, detail, context, source, who_waiting, due
+2. **Source context**: If `source_context` is cached, included in `<source_context>` XML tags
+3. **Path context**: Each learned project path with description, project-specific skills (name + description), and routing rules (`use_for`, `not_for`, `prompt_hint`)
+4. **Global skills**: Listed separately with guidance not to use them for project preference
+5. **Active todos**: Up to 50 non-terminal todos with display ID, internal ID, title, and due — enables merge detection
+6. **User instructions**: Optional `todo_instructions.md` from working directory or `~/.config/ccc/todo_instructions.md`
+
+See `specs/core/refresh.md` "Todo Routing Prompt Generation" for full details on path context assembly.
+
+### Routing LLM Output
+
+Returns JSON with: `project_dir`, `proposed_prompt`, `reasoning`, and optionally `merge_into` + `merge_note`. The `merge_into` field triggers the dedup pass (see `specs/core/refresh.md` "Todo Synthesis").
+
+### Legacy Fallback
+
+When no learned paths are available, `generateProposedPromptsLegacy` generates prompts in a single batch LLM call without project assignment. All eligible todos are sent as a JSON array and the LLM returns a map of `{todo_id: prompt_string}`.
 
 ## Test Cases
 
@@ -187,6 +208,16 @@ If rejected, `project_dir` is set to `"REJECT"` and the todo is auto-dismissed.
 
 - Preceding DM: "Can you send me the mockup?" → Aaron: "I'll get this to you by EOD" → extracted with title referencing the mockup, not just "this"
 - Preceding channel message about a PR → Aaron: "I'll handle it" → extracted with title referencing the PR
+
+### Routing Prompt
+
+- Todo with source_context includes context in `<source_context>` tags
+- Todo without source_context omits the section entirely
+- Routing with no learned paths falls back to legacy batch prompt
+- Routing with learned paths sends per-todo prompts with project skills and routing rules
+- `merge_into` set by LLM triggers dedup pass
+- Rejected todo gets `status: "dismissed"` and `proposed_prompt: "REJECTED: {reasoning}"`
+- `todo_instructions.md` in `~/.config/ccc/` is included in prompt when present
 
 ### Edge Cases
 
