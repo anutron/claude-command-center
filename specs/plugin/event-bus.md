@@ -43,6 +43,8 @@ type EventBus interface {
 | `pending.todo` | `{todo_id, title, context, detail, who_waiting, due, effort}` | sessions | User selected a todo for launch without a project dir |
 | `data.refreshed` | `{source}` | — (via NotifyMsg) | ai-cron completed |
 
+**Note:** Daemon events (`session.registered`, `session.updated`, `session.ended`) are also routed through the event bus via `routeDaemonEvent`, and broadcast as `plugin.NotifyMsg` to all plugins. They are documented in the daemon spec.
+
 ### Sessions Events
 
 | Topic | Payload | Subscribers | Description |

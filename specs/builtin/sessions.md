@@ -64,7 +64,7 @@ Two modes toggled by `a`:
 
 When `Refresh()` polls the daemon, it compares the current session list against the previous snapshot. Sessions that were previously running but are now ended (and not bookmarked) are auto-archived to `cc_archived_sessions`. If the daemon is disconnected, no archiving occurs.
 
-**Concurrency model:** `Refresh()` returns a `tea.Cmd` that fetches data (daemon RPC, DB reads, auto-archiving) in a background goroutine and returns it as a `sessionsRefreshMsg`. State is only mutated in `HandleMessage` on the main bubbletea loop, never from background goroutines. This prevents data races between tea.Cmd goroutines and `View()`.
+**Concurrency model:** `Refresh()` returns a `tea.Cmd` that fetches data (daemon RPC, DB reads, auto-archiving) in a background goroutine and returns it as a `sessionsRefreshMsg`. State is only mutated in `HandleMessage` on the main bubbletea loop, never from background goroutines. This prevents data races between tea.Cmd goroutines and `View()`. Exception: `unifiedView.Refresh()` (the direct method) is called once from `SetDaemonClientFunc()` before the bubbletea loop starts — this is safe because no concurrent access exists at that point.
 
 ## Key Bindings
 

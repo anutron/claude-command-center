@@ -173,9 +173,11 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		}
 		return true, plugin.NoopAction()
 
-	// Handle external notifications by reloading from DB
+	// Handle external notifications by reloading from DB.
+	// Only react to data.refreshed — other daemon events (session.*, etc.)
+	// are irrelevant to command center data.
 	default:
-		if _, ok := msg.(plugin.NotifyMsg); ok && p.database != nil {
+		if nm, ok := msg.(plugin.NotifyMsg); ok && nm.Event == "data.refreshed" && p.database != nil {
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
 		}
 
