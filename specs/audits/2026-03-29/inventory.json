@@ -1,0 +1,886 @@
+{
+  "date": "2026-03-29",
+  "scope": "full",
+  "code_files": [
+    {
+      "path": "cmd/ai-cron/main.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "cmd/ccc/add_bookmark.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "cmd/ccc/add_todo.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "cmd/ccc/daemon_cmd.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "cmd/ccc/main.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "cmd/ccc/paths.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "cmd/ccc/session_cmd.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "cmd/ccc/todo.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "cmd/ccc/update_todo.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "cmd/ccc/worktrees.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/agent/budget.go",
+      "language": "go",
+      "exports": ["BudgetTracker", "BudgetStatus", "NewBudgetTracker", "CanLaunch", "RecordLaunch", "RecordCost", "RecordFinished", "EmergencyStop", "Resume", "Status"]
+    },
+    {
+      "path": "internal/agent/governed_runner.go",
+      "language": "go",
+      "exports": ["LaunchDeniedMsg", "GovernedRunner", "NewGovernedRunner", "BudgetTracker", "LaunchOrQueue", "Kill", "SendMessage", "Status", "Active", "QueueLen", "Session", "CheckProcesses", "DrainQueue", "CleanupFinished", "Watch", "Shutdown"]
+    },
+    {
+      "path": "internal/agent/impl.go",
+      "language": "go",
+      "exports": ["NewRunner", "LaunchOrQueue", "Kill", "SendMessage", "Status", "Active", "QueueLen", "Session", "DrainQueue", "CheckProcesses", "Watch", "Shutdown", "CleanupFinished", "SendUserMessage", "DetectBlockingEvent", "ExtractBlockingQuestion", "ParseSessionEvent", "ExtractTextFromContent", "ExtractSessionSummary", "SessionLogDir", "SessionLogPath", "LogSessionError", "OpenSessionLog", "ListenForSessionEvent"]
+    },
+    {
+      "path": "internal/agent/logtail.go",
+      "language": "go",
+      "exports": ["NativeLogPath"]
+    },
+    {
+      "path": "internal/agent/ratelimit.go",
+      "language": "go",
+      "exports": ["RateLimiter", "NewRateLimiter", "CanLaunch"]
+    },
+    {
+      "path": "internal/agent/runner.go",
+      "language": "go",
+      "exports": ["CostCallback", "Runner", "Request", "Session", "Done", "ExitCode", "Output", "SessionStatus", "SessionInfo", "SessionEvent", "SessionStartedMsg", "SessionFinishedMsg", "SessionIDCapturedMsg", "SessionBlockedMsg", "SessionEventMsg", "SessionEventsDoneMsg"]
+    },
+    {
+      "path": "internal/auth/config.go",
+      "language": "go",
+      "exports": ["LoadGoogleOAuth2Config", "LoadCalendarCredsFromClaudeConfig"]
+    },
+    {
+      "path": "internal/auth/env.go",
+      "language": "go",
+      "exports": ["LoadEnvFile", "ReadEnv", "WriteEnvValue"]
+    },
+    {
+      "path": "internal/auth/flow.go",
+      "language": "go",
+      "exports": ["ValidateClientCredentials", "AuthFlowResultMsg", "AuthFlowOpts", "AuthFlowCmd"]
+    },
+    {
+      "path": "internal/auth/pkce.go",
+      "language": "go",
+      "exports": ["PKCEParams", "GeneratePKCE", "AuthURLParams", "ExchangeParams"]
+    },
+    {
+      "path": "internal/auth/types.go",
+      "language": "go",
+      "exports": ["GoogleTokenFile", "ToOAuth2Token"]
+    },
+    {
+      "path": "internal/automation/process.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/automation/protocol.go",
+      "language": "go",
+      "exports": ["HostMsg", "ResultMsg"]
+    },
+    {
+      "path": "internal/automation/runner.go",
+      "language": "go",
+      "exports": ["Runner", "RunResult", "RunAll", "EnsureTable", "LogDir"]
+    },
+    {
+      "path": "internal/automation/schedule.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/agent_runner.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/cc_keys_detail.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/cc_keys_session.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/cc_keys_wizard.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/cc_keys.go",
+      "language": "go",
+      "exports": ["HandleKey"]
+    },
+    {
+      "path": "internal/builtin/commandcenter/cc_messages.go",
+      "language": "go",
+      "exports": ["HandleMessage"]
+    },
+    {
+      "path": "internal/builtin/commandcenter/cc_view_detail.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/cc_view_session.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/cc_view_wizard.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/cc_view.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/claude_exec.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/commandcenter.go",
+      "language": "go",
+      "exports": ["Plugin", "New", "StartCmds", "Slug", "TabName", "Migrations", "Routes", "NavigateTo", "RefreshInterval", "Refresh", "KeyBindings", "Init", "Shutdown", "PendingLaunchTodo", "SetPendingLaunchTodo", "View", "SetDaemonClientFunc", "SubView", "SetSubView"]
+    },
+    {
+      "path": "internal/builtin/commandcenter/plannotator.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/refresh.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/session_events.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/commandcenter/styles.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/prs/category.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/prs/keys.go",
+      "language": "go",
+      "exports": ["HandleKey", "KeyBindings"]
+    },
+    {
+      "path": "internal/builtin/prs/messages.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/prs/prs.go",
+      "language": "go",
+      "exports": ["Plugin", "Slug", "TabName", "RefreshInterval", "Init", "Shutdown", "SetDaemonClientFunc", "Migrations", "Routes", "NavigateTo", "Refresh", "HandleMessage"]
+    },
+    {
+      "path": "internal/builtin/prs/styles.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/prs/trigger.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/prs/view.go",
+      "language": "go",
+      "exports": ["View"]
+    },
+    {
+      "path": "internal/builtin/sessions/describe.go",
+      "language": "go",
+      "exports": ["LLMDescribePath"]
+    },
+    {
+      "path": "internal/builtin/sessions/sessions.go",
+      "language": "go",
+      "exports": ["Plugin", "Slug", "TabName", "Init", "SetDaemonClientFunc", "StartCmds", "Shutdown", "Migrations", "Routes", "NavigateTo", "RefreshInterval", "Refresh", "KeyBindings", "HandleKey", "HandleMessage", "View", "SetPendingLaunchTodo"]
+    },
+    {
+      "path": "internal/builtin/sessions/unified.go",
+      "language": "go",
+      "exports": ["UnifiedItem", "NewUnifiedView", "ToggleArchive", "View", "MoveDown", "MoveUp", "SelectedItem", "RemoveSession", "Refresh", "SetSavedSessions", "SetArchivedSessions", "ReloadArchived"]
+    },
+    {
+      "path": "internal/builtin/settings/auth_form.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_agent.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_appearance.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_automations.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_budget.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_daemon.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_datasources.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_logs.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_plugins.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_prs.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content_system.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/content.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/builtin/settings/nav.go",
+      "language": "go",
+      "exports": ["FocusZone", "Category", "NavItem"]
+    },
+    {
+      "path": "internal/builtin/settings/settings.go",
+      "language": "go",
+      "exports": ["Plugin", "New", "Slug", "TabName", "Migrations", "Routes", "NavigateTo", "RefreshInterval", "Refresh", "Shutdown", "Init", "SetDaemonClientFunc", "RegisterProvider", "StartCmds", "KeyBindings", "HandleKey", "HandleMessage", "View"]
+    },
+    {
+      "path": "internal/builtin/settings/styles.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/config/config.go",
+      "language": "go",
+      "exports": ["Config", "PluginEnabled", "SetPluginEnabled", "DefaultRefreshInterval", "ParseRefreshInterval", "CustomColors", "CalendarConfig", "CalendarEntry", "IsEnabled", "SetEnabled", "GitHubConfig", "IsTrackMyPRs", "SetTrackMyPRs", "TodosConfig", "GranolaConfig", "SlackConfig", "EffectiveToken", "GmailConfig", "ExternalPluginConfig", "AutomationConfig", "AgentConfig", "TodoWriteLearnedPathsEnabled", "DaemonConfig", "RefreshConfig", "RefreshEnabled", "BannerVisible", "SetShowBanner", "GetBannerTopPadding", "SetBannerTopPadding", "DefaultConfig"]
+    },
+    {
+      "path": "internal/config/palettes.go",
+      "language": "go",
+      "exports": ["Palette", "GetPalette", "PaletteNames"]
+    },
+    {
+      "path": "internal/config/schedule.go",
+      "language": "go",
+      "exports": ["IsScheduleInstalled", "InstallSchedule", "UninstallSchedule"]
+    },
+    {
+      "path": "internal/config/setup.go",
+      "language": "go",
+      "exports": ["IsMCPBuilt", "GenerateMCPConfig", "BuildAndConfigureMCP"]
+    },
+    {
+      "path": "internal/config/shell.go",
+      "language": "go",
+      "exports": ["IsShellHookInstalled", "InstallShellHook", "UninstallShellHook"]
+    },
+    {
+      "path": "internal/config/skills.go",
+      "language": "go",
+      "exports": ["SkillNames", "IsSkillInstalled", "InstallSkills", "UninstallSkills"]
+    },
+    {
+      "path": "internal/config/validate.go",
+      "language": "go",
+      "exports": ["ValidateCalendar", "ValidateGitHub", "ValidateSlack", "LoadSlackToken", "ValidateGmail", "ValidateGranola"]
+    },
+    {
+      "path": "internal/daemon/agents.go",
+      "language": "go",
+      "exports": ["LaunchAgentParams", "StopAgentParams", "AgentStatusParams", "SendAgentInputParams", "AgentStatusResult"]
+    },
+    {
+      "path": "internal/daemon/budget.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/daemon/client.go",
+      "language": "go",
+      "exports": ["Client", "NewClient", "Close", "Ping", "Refresh", "RegisterSession", "UpdateSession", "ArchiveSession", "ListSessions", "LaunchAgent", "StopAgent", "AgentStatus", "ListAgents", "SendAgentInput", "GetBudgetStatus", "StopAllAgents", "ResumeAgents", "PauseDaemon", "ResumeDaemon", "ShutdownDaemon", "GetDaemonStatus", "Subscribe"]
+    },
+    {
+      "path": "internal/daemon/daemon.go",
+      "language": "go",
+      "exports": ["ServerConfig", "Server", "NewServer", "Serve", "Shutdown", "Paused"]
+    },
+    {
+      "path": "internal/daemon/refresh.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/daemon/rpc.go",
+      "language": "go",
+      "exports": ["WriteMessage", "ReadMessage"]
+    },
+    {
+      "path": "internal/daemon/sessions.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/daemon/start.go",
+      "language": "go",
+      "exports": ["StartProcess"]
+    },
+    {
+      "path": "internal/daemon/subscribers.go",
+      "language": "go",
+      "exports": ["Broadcast"]
+    },
+    {
+      "path": "internal/daemon/types.go",
+      "language": "go",
+      "exports": ["RPCRequest", "RPCResponse", "RPCError", "Event", "RegisterSessionParams", "UpdateSessionParams", "ArchiveSessionParams", "SessionInfo", "BudgetStatusResult", "StopAllAgentsResult", "ResumeAgentsResult", "DaemonStatusResult"]
+    },
+    {
+      "path": "internal/db/agent_costs.go",
+      "language": "go",
+      "exports": ["DBInsertAgentCost", "DBUpdateAgentCostFinished", "DBSumCostsSince", "DBCountLaunchesSince", "DBLastAgentLaunch", "DBCountRecentFailures", "DBGetBudgetState", "DBSetBudgetState"]
+    },
+    {
+      "path": "internal/db/migrate.go",
+      "language": "go",
+      "exports": ["MigrateFromJSON"]
+    },
+    {
+      "path": "internal/db/path_describe.go",
+      "language": "go",
+      "exports": ["AutoDescribePath"]
+    },
+    {
+      "path": "internal/db/read.go",
+      "language": "go",
+      "exports": ["LoadCommandCenterFromDB", "DBLoadPullRequests", "DBLoadBookmarks", "DBLoadPaths", "DBLoadPathsFull", "DBLoadSourceSync", "DBLoadAllSourceSync", "DBLoadTodoByID", "DBLoadTodoByDisplayID", "DBLoadMerges", "DBLoadSessions", "DBLoadVisibleSessions", "DBLoadIgnoredRepos", "DBLoadIgnoredPRs", "DBIsEmpty", "DBLoadArchivedSessions"]
+    },
+    {
+      "path": "internal/db/routing_rules.go",
+      "language": "go",
+      "exports": ["RoutingRule", "LoadRoutingRules", "SaveRoutingRules", "AddRoutingRule", "SetPromptHint"]
+    },
+    {
+      "path": "internal/db/schema.go",
+      "language": "go",
+      "exports": ["OpenDB", "FormatTime", "ParseTime"]
+    },
+    {
+      "path": "internal/db/sessions.go",
+      "language": "go",
+      "exports": ["SessionType", "Session", "ArchivedSession", "Bookmark", "ParseSessionFile", "LoadWinddownSessions", "LoadBookmarks", "LoadAllSessions", "RemoveBookmark"]
+    },
+    {
+      "path": "internal/db/skill_discover.go",
+      "language": "go",
+      "exports": ["SkillInfo", "SkillCache", "DiscoverSkills", "DiscoverGlobalSkills", "LoadCachedSkills", "WriteCachedSkills", "GetProjectSkills", "GetGlobalSkills"]
+    },
+    {
+      "path": "internal/db/types.go",
+      "language": "go",
+      "exports": ["CommandCenter", "PullRequest", "Warning", "CalendarData", "CalendarConflict", "FindConflicts", "CalendarEvent", "ValidTransition", "IsTerminalStatus", "IsAgentStatus", "Todo", "TodoMerge", "DBGetOriginalIDs", "WerePreviouslyMergedAndVetoed", "FindTodo", "Suggestions", "PendingAction", "SourceSync", "GenID", "RelativeTime", "DueUrgency", "FormatDueLabel", "CompleteTodo", "RestoreTodo", "AcceptTodo", "AddTodo", "RemoveTodo", "DeferTodo", "PromoteTodo", "SwapTodos"]
+    },
+    {
+      "path": "internal/db/write.go",
+      "language": "go",
+      "exports": ["DBCompleteTodo", "DBDismissTodo", "DBRestoreTodo", "DBDeferTodo", "DBPromoteTodo", "DBInsertTodo", "DBUpdateTodo", "DBAcceptTodo", "DBUpdateTodoStatus", "DBUpdateTodoProjectDir", "DBUpdateTodoLaunchMode", "DBUpdateTodoSessionID", "DBUpdateTodoSessionSummary", "DBUpdateTodoSourceContext", "DBReplaceCalendar", "DBSaveFocus", "DBInsertPendingAction", "DBInsertBookmark", "DBRemoveBookmark", "DBAddPath", "DBRemovePath", "DBUpdatePathDescription", "DBSwapPathOrder", "DBSwapTodoOrder", "DBSavePullRequests", "DBSetPRIgnored", "DBAddIgnoredRepo", "DBRemoveIgnoredRepo", "DBUpdatePRAgentStatus", "DBSaveRefreshResult"]
+    },
+    {
+      "path": "internal/doctor/doctor.go",
+      "language": "go",
+      "exports": ["RunDoctor", "DoctorCheck"]
+    },
+    {
+      "path": "internal/external/external.go",
+      "language": "go",
+      "exports": ["ExternalPlugin", "Slug", "TabName", "Routes", "KeyBindings", "Migrations", "RefreshInterval", "Init", "Shutdown", "View", "HandleKey", "HandleMessage", "Refresh", "NavigateTo"]
+    },
+    {
+      "path": "internal/external/loader.go",
+      "language": "go",
+      "exports": ["LoadExternalPlugins"]
+    },
+    {
+      "path": "internal/external/process.go",
+      "language": "go",
+      "exports": ["Process", "Start", "Send", "Receive", "DrainAsync", "Alive", "Kill"]
+    },
+    {
+      "path": "internal/external/protocol.go",
+      "language": "go",
+      "exports": ["HostMsg", "PluginMsg", "RouteMsg", "KeyBindingMsg", "MigrationMsg"]
+    },
+    {
+      "path": "internal/llm/claude_cli.go",
+      "language": "go",
+      "exports": ["ClaudeCLI", "Complete", "ParseClaudeError"]
+    },
+    {
+      "path": "internal/llm/failure_log.go",
+      "language": "go",
+      "exports": ["FailureEntry", "LogFailure"]
+    },
+    {
+      "path": "internal/llm/llm.go",
+      "language": "go",
+      "exports": ["LLM", "Available"]
+    },
+    {
+      "path": "internal/llm/noop.go",
+      "language": "go",
+      "exports": ["NoopLLM", "Complete"]
+    },
+    {
+      "path": "internal/lockfile/lockfile.go",
+      "language": "go",
+      "exports": ["ErrAlreadyLocked", "AcquireLock", "IsLocked"]
+    },
+    {
+      "path": "internal/plugin/doctor.go",
+      "language": "go",
+      "exports": ["ValidationResult", "DoctorCheck", "DoctorOpts", "DoctorProvider"]
+    },
+    {
+      "path": "internal/plugin/eventbus.go",
+      "language": "go",
+      "exports": ["Event", "EventBus", "Bus", "NewBus", "Subscribe", "Publish"]
+    },
+    {
+      "path": "internal/plugin/lifecycle.go",
+      "language": "go",
+      "exports": ["TabViewMsg", "TabLeaveMsg", "LaunchMsg", "ReturnMsg"]
+    },
+    {
+      "path": "internal/plugin/logger.go",
+      "language": "go",
+      "exports": ["Logger", "LogEntry", "FileLogger", "NewFileLogger", "NewMemoryLogger", "Info", "Warn", "Error", "Recent", "Close"]
+    },
+    {
+      "path": "internal/plugin/migrations.go",
+      "language": "go",
+      "exports": ["ValidateExternalMigrationSQL", "RunMigrations"]
+    },
+    {
+      "path": "internal/plugin/plugin.go",
+      "language": "go",
+      "exports": ["Context", "Action", "NoopAction", "ConsumedAction", "Route", "Migration", "KeyBinding", "Plugin", "Starter", "SettingsProvider", "NotifyMsg"]
+    },
+    {
+      "path": "internal/plugin/registry.go",
+      "language": "go",
+      "exports": ["Registry", "NewRegistry", "Register", "All", "BySlug", "Count", "IndexOf"]
+    },
+    {
+      "path": "internal/plugin/scope.go",
+      "language": "go",
+      "exports": ["ScopeConfig"]
+    },
+    {
+      "path": "internal/refresh/context.go",
+      "language": "go",
+      "exports": ["ContextFetcher", "ContextRegistry", "NewContextRegistry", "Register", "Get", "FetchAndSave", "FetchContextBestEffort"]
+    },
+    {
+      "path": "internal/refresh/datasource.go",
+      "language": "go",
+      "exports": ["DataSource", "PostMerger", "SourceResult"]
+    },
+    {
+      "path": "internal/refresh/llm.go",
+      "language": "go",
+      "exports": ["CleanJSON"]
+    },
+    {
+      "path": "internal/refresh/merge.go",
+      "language": "go",
+      "exports": ["Merge"]
+    },
+    {
+      "path": "internal/refresh/refresh.go",
+      "language": "go",
+      "exports": ["Options", "Run"]
+    },
+    {
+      "path": "internal/refresh/sources/calendar/actions.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/refresh/sources/calendar/auth.go",
+      "language": "go",
+      "exports": ["LoadAuth", "RunCalendarAuth", "MigrateCalendarCredentials"]
+    },
+    {
+      "path": "internal/refresh/sources/calendar/calendar.go",
+      "language": "go",
+      "exports": ["CalendarSource", "New", "Name", "Enabled", "Fetch", "PostMerge", "CalendarInfo", "ListAvailableCalendars"]
+    },
+    {
+      "path": "internal/refresh/sources/calendar/doctor.go",
+      "language": "go",
+      "exports": ["ValidateCalendarResult", "DoctorChecks"]
+    },
+    {
+      "path": "internal/refresh/sources/calendar/settings.go",
+      "language": "go",
+      "exports": ["CalendarFetchResultMsg", "Settings", "NewSettings", "FetchLoading", "FetchError", "FetchedCalendars", "ResetEditing", "SettingsView", "HandleSettingsKey", "SettingsOpenCmd", "HandleSettingsMsg"]
+    },
+    {
+      "path": "internal/refresh/sources/github/context.go",
+      "language": "go",
+      "exports": ["ContextFetcherImpl", "NewContextFetcher", "ContextTTL", "FetchContext"]
+    },
+    {
+      "path": "internal/refresh/sources/github/github.go",
+      "language": "go",
+      "exports": ["GitHubSource", "New", "Name", "Enabled", "Fetch"]
+    },
+    {
+      "path": "internal/refresh/sources/github/pr_fetch.go",
+      "language": "go",
+      "exports": ["RawPR", "PRDetail"]
+    },
+    {
+      "path": "internal/refresh/sources/github/settings.go",
+      "language": "go",
+      "exports": ["Settings", "NewSettings", "ResetEditing", "SettingsView", "SettingsOpenCmd", "HandleSettingsMsg", "DoctorChecks", "HandleSettingsKey"]
+    },
+    {
+      "path": "internal/refresh/sources/gmail/client.go",
+      "language": "go",
+      "exports": ["SafeGmailClient", "NewSafeClient", "ListMessages", "GetMessage", "GetMessageBody", "GetThread", "ModifyLabels", "GetLabelID"]
+    },
+    {
+      "path": "internal/refresh/sources/gmail/context.go",
+      "language": "go",
+      "exports": ["ContextFetcherImpl", "NewContextFetcher", "ContextTTL", "FetchContext"]
+    },
+    {
+      "path": "internal/refresh/sources/gmail/doctor.go",
+      "language": "go",
+      "exports": ["GmailDoctor", "NewDoctor", "ValidateGmailResult", "DoctorChecks"]
+    },
+    {
+      "path": "internal/refresh/sources/gmail/gmail.go",
+      "language": "go",
+      "exports": ["GmailSource", "New", "Name", "Enabled", "Fetch", "PostMerge"]
+    },
+    {
+      "path": "internal/refresh/sources/gmail/llm.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/refresh/sources/granola/context.go",
+      "language": "go",
+      "exports": ["ContextFetcherImpl", "NewContextFetcher", "ContextTTL", "FetchContext"]
+    },
+    {
+      "path": "internal/refresh/sources/granola/granola.go",
+      "language": "go",
+      "exports": ["RawMeeting", "GranolaSource", "New", "Name", "Enabled", "Fetch"]
+    },
+    {
+      "path": "internal/refresh/sources/granola/llm.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/refresh/sources/granola/settings.go",
+      "language": "go",
+      "exports": ["Settings", "NewSettings", "SettingsView", "DoctorChecks", "SettingsOpenCmd", "HandleSettingsMsg", "HandleSettingsKey"]
+    },
+    {
+      "path": "internal/refresh/sources/slack/context.go",
+      "language": "go",
+      "exports": ["ContextFetcherImpl", "NewContextFetcher", "ContextTTL", "FetchContext"]
+    },
+    {
+      "path": "internal/refresh/sources/slack/llm.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/refresh/sources/slack/slack.go",
+      "language": "go",
+      "exports": ["SlackSource", "New", "Name", "Enabled", "Fetch"]
+    },
+    {
+      "path": "internal/refresh/todo_agent.go",
+      "language": "go",
+      "exports": ["PathContext", "PathWithMeta", "TodoPromptResult", "GenerateTodoPrompt"]
+    },
+    {
+      "path": "internal/refresh/todo_synthesis.go",
+      "language": "go",
+      "exports": ["SynthesisResult", "Synthesize", "BuildSynthesisTodo"]
+    },
+    {
+      "path": "internal/sanitize/sanitize.go",
+      "language": "go",
+      "exports": ["StripANSI"]
+    },
+    {
+      "path": "internal/tui/banner.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/tui/daemon.go",
+      "language": "go",
+      "exports": ["DaemonEventMsg", "DaemonDisconnectedMsg", "NewDaemonConn", "Connect", "StartDaemonConnection", "DaemonConn", "Client", "Connected", "Close", "Reconnect"]
+    },
+    {
+      "path": "internal/tui/effects.go",
+      "language": "go",
+      "exports": ["GradientColors", "NewGradientColors"]
+    },
+    {
+      "path": "internal/tui/launch.go",
+      "language": "go",
+      "exports": ["LaunchAction", "RunClaude"]
+    },
+    {
+      "path": "internal/tui/model.go",
+      "language": "go",
+      "exports": ["Model", "NewModel", "SetReturnedFromLaunch", "SetReturnContext", "SetDaemonConn", "DaemonClient", "DaemonConnected", "SetOnboarding", "Shutdown", "Init", "Update", "View"]
+    },
+    {
+      "path": "internal/tui/notify.go",
+      "language": "go",
+      "exports": ["SocketPath", "StartNotifyListener", "SendNotify"]
+    },
+    {
+      "path": "internal/tui/onboarding.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/tui/stub_plugin.go",
+      "language": "go",
+      "exports": []
+    },
+    {
+      "path": "internal/tui/styles.go",
+      "language": "go",
+      "exports": ["Styles", "NewStyles"]
+    },
+    {
+      "path": "internal/ui/effects.go",
+      "language": "go",
+      "exports": ["GradientColors", "NewGradientColors", "TickMsg", "TickCmd", "GradientColor", "FadeMultiplier", "ApplyFade", "PulsingPointerStyle"]
+    },
+    {
+      "path": "internal/ui/styles.go",
+      "language": "go",
+      "exports": ["ContentMaxWidth", "Styles", "NewStyles", "DueStyle"]
+    },
+    {
+      "path": "internal/ui/text.go",
+      "language": "go",
+      "exports": ["WrapText", "TruncateToWidth", "FlattenTitle"]
+    },
+    {
+      "path": "internal/worktree/worktree.go",
+      "language": "go",
+      "exports": ["ProjectConfig", "WorktreeConfig", "SetupConfig", "WorktreeInfo", "LoadProjectConfig", "PrepareWorktree", "ListWorktrees", "RemoveWorktree", "PruneWorktrees"]
+    }
+  ],
+  "spec_files": [
+    {
+      "path": "specs/builtin/command-center.md",
+      "sections": ["Purpose", "Slug", "Routes", "File Organization", "State", "Key Bindings", "Key Bindings > Command Center Tab", "Key Bindings > Detail View", "Key Bindings > Rich Todo Creation", "Key Bindings > Booking Mode", "Event Bus", "Migrations", "Migrations > Display IDs", "Behavior", "Behavior > Command Center View", "Behavior > Todo Lifecycle", "Behavior > Triage Workflow", "Behavior > Claude Integration", "Behavior > Data Loading", "Behavior > Refresh", "Behavior > Cross-Plugin Navigation", "Behavior > Agent Sessions", "Behavior > Todo-Agent Prompt Generation Pipeline", "Behavior > Task Runner Wizard", "Test Cases"]
+    },
+    {
+      "path": "specs/builtin/pomodoro.md",
+      "sections": ["Purpose", "Slug", "Routes", "State", "Key Bindings", "Event Bus", "Migrations", "Behavior", "Configuration", "Test Cases"]
+    },
+    {
+      "path": "specs/builtin/prs.md",
+      "sections": ["Purpose", "Slug", "Routes", "File Organization", "State", "Data Flow", "Category Assignment", "Key Bindings", "Ignore", "Hint Bar", "View", "Settings Pane", "Migrations", "Event Handling", "Agent Automation", "Test Cases"]
+    },
+    {
+      "path": "specs/builtin/session-viewer.md",
+      "sections": ["Purpose", "Parent Plugin", "Entry Points", "State", "Event Types", "Key Bindings", "Hint Bars", "Bidirectional Communication", "Layout", "Auto-Scroll Behavior", "Resume Agent", "Session Logging", "Detail View", "Agent Lifecycle", "Agent Lifecycle > Kill on Summary", "Agent Lifecycle > Kill on Todo Completion", "Help Overlay", "Test Cases"]
+    },
+    {
+      "path": "specs/builtin/sessions.md",
+      "sections": ["Purpose", "Slug", "Routes", "State", "Sessions Tab Three-Tier Model", "Key Bindings", "Hint Bar", "Event Bus", "Storage", "Behavior", "Test Cases"]
+    },
+    {
+      "path": "specs/builtin/settings.md",
+      "sections": ["Purpose", "Layout", "Focus Zones", "Form-Based Content Panes", "Pane Details", "Sidebar Toggle Behavior", "Quit Behavior", "Key Bindings", "Constructor", "Dependencies"]
+    },
+    {
+      "path": "specs/core/agent.md",
+      "sections": ["Purpose", "Interface", "Behavior", "Behavior > Runner", "Behavior > GovernedRunner", "Behavior > BudgetTracker", "Behavior > RateLimiter", "Behavior > Cost Estimation", "Behavior > Session Event Parsing", "Behavior > Session Logging", "Behavior > Database Schema", "Configuration", "Test Cases"]
+    },
+    {
+      "path": "specs/core/automations.md",
+      "sections": ["Purpose", "Interface", "Config Schema", "Protocol Messages", "Lifecycle", "Scheduling", "Security Model", "Behavior", "Settings Page", "Test Cases"]
+    },
+    {
+      "path": "specs/core/cli.md",
+      "sections": ["Purpose", "Subcommands", "Subcommands > ccc", "Subcommands > setup", "Subcommands > doctor", "Subcommands > install-schedule", "Subcommands > uninstall-schedule", "Subcommands > notify", "Subcommands > update-todo", "Subcommands > sessions", "Subcommands > help", "Test Cases"]
+    },
+    {
+      "path": "specs/core/config.md",
+      "sections": ["Purpose", "Interface", "Behavior", "Behavior > Loading", "Behavior > Saving", "Behavior > Path Resolution", "Behavior > HomeDir", "Behavior > Default Config", "Behavior > Palettes", "Behavior > Repo Path Resolution", "File Permissions", "Test Cases"]
+    },
+    {
+      "path": "specs/core/daemon.md",
+      "sections": ["Purpose", "Interface", "Behavior", "Behavior > Wire Protocol", "Behavior > Process Lifecycle", "Behavior > Socket Security", "Behavior > Connection Handling", "Behavior > Session Registry", "Behavior > Refresh Loop", "Behavior > Agent RPCs", "Behavior > Budget RPCs", "Behavior > Event Subscription", "Behavior > Wire Types", "Test Cases"]
+    },
+    {
+      "path": "specs/core/datasource.md",
+      "sections": ["Purpose", "Interface", "Package Structure", "Implementations", "Behavior", "Behavior > refresh.Run flow", "Behavior > combineResults", "Behavior > LLM extraction", "Behavior > Gmail label-based todos", "Behavior > SettingsProvider", "Test Cases", "Key Design Decisions", "Data Safety"]
+    },
+    {
+      "path": "specs/core/db.md",
+      "sections": ["Purpose", "Interface", "File Organization", "Types", "Behavior", "Behavior > Database Lifecycle", "Behavior > Todo Operations", "Behavior > Thread Operations", "Behavior > Calendar & Suggestions", "Behavior > Pull Requests", "Behavior > Bulk Refresh", "Behavior > Bookmarks & Paths", "Behavior > Path Descriptions", "Behavior > Skills Discovery", "Behavior > Routing Rules", "Behavior > Meta & Pending Actions", "Behavior > File-Based Session Functions", "Behavior > File-Based Path Functions", "Behavior > Migration Legacy", "Behavior > Dismissed-Todo Filtering", "Behavior > In-Memory Mutations", "Behavior > Helpers", "Test Cases"]
+    },
+    {
+      "path": "specs/core/host.md",
+      "sections": ["Purpose", "Interface", "Architecture", "Behavior", "Behavior > Initialization", "Behavior > Input Dispatch", "Behavior > Message Broadcast", "Behavior > Action Processing", "Behavior > Cross-Plugin Communication", "Behavior > Rendering", "Behavior > Animation", "Behavior > Cross-Instance Notification", "Behavior > Shutdown & Error Handling", "Key Design Decisions", "Test Cases"]
+    },
+    {
+      "path": "specs/core/llm.md",
+      "sections": ["Purpose", "Interface", "Implementations", "Error Parsing", "Failure Logging", "Integration Points", "Behavior", "Two-Tier Architecture", "Test Cases"]
+    },
+    {
+      "path": "specs/core/onboarding.md",
+      "sections": ["Purpose", "Interface", "Detection", "Behavior", "Behavior > Model State", "Behavior > Steps 0-3", "Behavior > Transition", "Navigation Summary", "Test Cases"]
+    },
+    {
+      "path": "specs/core/refresh.md",
+      "sections": ["Purpose", "Interface", "Behavior", "Types", "Locking", "Configurable Refresh Interval", "Refresh Status Indicator", "Auto-Refresh on Startup", "ai-cron Binary", "Background Scheduling", "Security", "Data Sources", "Merge Rules", "Test Cases", "Source Context"]
+    },
+    {
+      "path": "specs/core/todo-extraction.md",
+      "sections": ["Purpose", "Interface", "Behavior", "Behavior > Gmail Label-Based Title", "Behavior > Pre-Filter", "Behavior > Conversation Context", "Behavior > LLM Extraction", "Behavior > Routing Validation", "Test Cases"]
+    },
+    {
+      "path": "specs/core/worktree.md",
+      "sections": ["Purpose", "Interface", "Functions", "Config Format", "Behavior", "Error Handling", "Test Cases"]
+    },
+    {
+      "path": "specs/plugin/event-bus.md",
+      "sections": ["Purpose", "Interface", "Behavior", "Event Catalog", "Starter Interface", "Test Cases"]
+    },
+    {
+      "path": "specs/plugin/external-adapter.md",
+      "sections": ["Purpose", "Interface", "Architecture", "Behavior", "Behavior > Init Handshake", "Behavior > Error State", "Behavior > Loader", "Test Cases"]
+    },
+    {
+      "path": "specs/plugin/interface.md",
+      "sections": ["Purpose", "Interface", "Registry", "Behavior", "Test Cases"]
+    },
+    {
+      "path": "specs/plugin/lifecycle.md",
+      "sections": ["Purpose", "Types", "Behavior", "Integration with Command Center Plugin", "Test Cases"]
+    },
+    {
+      "path": "specs/plugin/logger.md",
+      "sections": ["Purpose", "Interface", "Implementations", "Behavior", "Test Cases"]
+    },
+    {
+      "path": "specs/plugin/migrations.md",
+      "sections": ["Purpose", "Interface", "Behavior", "Key Design Decisions", "External Plugin Migration Security", "Test Cases"]
+    },
+    {
+      "path": "specs/plugin/protocol.md",
+      "sections": ["Purpose", "Transport", "Startup Sequence", "Protocol", "Security", "Edge Cases", "Error Recovery", "Test Cases"]
+    },
+    {
+      "path": "specs/plugin/registry.md",
+      "sections": ["Purpose", "Interface", "Behavior", "Test Cases"]
+    }
+  ],
+  "counts": {
+    "code_files": 141,
+    "spec_files": 27,
+    "exports": 580
+  }
+}

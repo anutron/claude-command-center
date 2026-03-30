@@ -1,0 +1,728 @@
+{
+  "code_to_spec": {
+    "cmd/ai-cron/main.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["ai-cron Binary", "Behavior"]},
+      {"spec": "specs/core/datasource.md", "sections": ["Behavior"]}
+    ],
+    "cmd/ccc/main.go": [
+      {"spec": "specs/core/cli.md", "sections": ["ccc (default)"]},
+      {"spec": "specs/core/onboarding.md", "sections": ["First-Run Detection", "Transition to Normal TUI"]}
+    ],
+    "cmd/ccc/daemon_cmd.go": [
+      {"spec": "specs/core/cli.md", "sections": ["Subcommands"]},
+      {"spec": "specs/core/daemon.md", "sections": ["Process Lifecycle"]}
+    ],
+    "cmd/ccc/session_cmd.go": [
+      {"spec": "specs/core/cli.md", "sections": ["ccc sessions"]}
+    ],
+    "cmd/ccc/worktrees.go": [
+      {"spec": "specs/core/cli.md", "sections": ["Subcommands"]},
+      {"spec": "specs/core/worktree.md", "sections": ["Behavior"]}
+    ],
+    "cmd/ccc/paths.go": [
+      {"spec": "specs/core/cli.md", "sections": ["Subcommands"]},
+      {"spec": "specs/core/config.md", "sections": ["Path Resolution"]}
+    ],
+    "cmd/ccc/update_todo.go": [
+      {"spec": "specs/core/cli.md", "sections": ["ccc update-todo"]}
+    ],
+    "cmd/ccc/add_bookmark.go": [
+      {"spec": "specs/builtin/sessions.md", "sections": ["Storage", "CLI: ccc add-bookmark"]}
+    ],
+    "cmd/ccc/add_todo.go": [
+      {"spec": "specs/core/cli.md", "sections": ["Subcommands"]}
+    ],
+    "cmd/ccc/todo.go": [
+      {"spec": "specs/core/cli.md", "sections": ["Subcommands"]}
+    ],
+    "internal/agent/budget.go": [
+      {"spec": "specs/core/agent.md", "sections": ["BudgetTracker", "Database Schema"]}
+    ],
+    "internal/agent/governed_runner.go": [
+      {"spec": "specs/core/agent.md", "sections": ["GovernedRunner (budget + rate limit enforcement)"]}
+    ],
+    "internal/agent/impl.go": [
+      {"spec": "specs/core/agent.md", "sections": ["Runner (core process lifecycle)", "Session Event Parsing", "Session Logging"]}
+    ],
+    "internal/agent/logtail.go": [
+      {"spec": "specs/core/agent.md", "sections": ["Session Logging"]}
+    ],
+    "internal/agent/ratelimit.go": [
+      {"spec": "specs/core/agent.md", "sections": ["RateLimiter"]}
+    ],
+    "internal/agent/runner.go": [
+      {"spec": "specs/core/agent.md", "sections": ["Runner (core process lifecycle)"]}
+    ],
+    "internal/auth/config.go": [
+      {"spec": "specs/core/config.md", "sections": ["Interface"]},
+      {"spec": "specs/core/datasource.md", "sections": ["Implementations"]}
+    ],
+    "internal/auth/env.go": [
+      {"spec": "specs/core/config.md", "sections": ["Config Loading"]}
+    ],
+    "internal/auth/flow.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["OAuth Hardening"]}
+    ],
+    "internal/auth/pkce.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["OAuth Hardening"]}
+    ],
+    "internal/auth/types.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["OAuth Hardening"]}
+    ],
+    "internal/automation/runner.go": [
+      {"spec": "specs/core/automations.md", "sections": ["Behavior", "Lifecycle", "Scheduling"]}
+    ],
+    "internal/automation/protocol.go": [
+      {"spec": "specs/core/automations.md", "sections": ["Protocol Messages"]}
+    ],
+    "internal/automation/process.go": [
+      {"spec": "specs/core/automations.md", "sections": ["Lifecycle"]}
+    ],
+    "internal/automation/schedule.go": [
+      {"spec": "specs/core/automations.md", "sections": ["Scheduling"]}
+    ],
+    "internal/builtin/commandcenter/commandcenter.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Slug", "State", "Behavior", "Migrations", "Routes"]}
+    ],
+    "internal/builtin/commandcenter/cc_keys.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Key Bindings"]}
+    ],
+    "internal/builtin/commandcenter/cc_keys_detail.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Key Bindings"]}
+    ],
+    "internal/builtin/commandcenter/cc_keys_session.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Agent Sessions"]},
+      {"spec": "specs/builtin/session-viewer.md", "sections": ["Key Bindings"]}
+    ],
+    "internal/builtin/commandcenter/cc_keys_wizard.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Task Runner Wizard"]}
+    ],
+    "internal/builtin/commandcenter/cc_messages.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Data Loading (Lifecycle Messages)", "Agent Sessions"]}
+    ],
+    "internal/builtin/commandcenter/cc_view.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Command Center View", "Todo Lifecycle"]}
+    ],
+    "internal/builtin/commandcenter/cc_view_detail.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Command Center View"]}
+    ],
+    "internal/builtin/commandcenter/cc_view_session.go": [
+      {"spec": "specs/builtin/session-viewer.md", "sections": ["Layout", "Auto-Scroll Behavior", "Detail View", "Status Bar"]}
+    ],
+    "internal/builtin/commandcenter/cc_view_wizard.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Task Runner Wizard"]}
+    ],
+    "internal/builtin/commandcenter/claude_exec.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Claude Integration"]}
+    ],
+    "internal/builtin/commandcenter/agent_runner.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Agent Sessions"]},
+      {"spec": "specs/builtin/session-viewer.md", "sections": ["Bidirectional Communication", "Agent Lifecycle"]}
+    ],
+    "internal/builtin/commandcenter/plannotator.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Behavior"]}
+    ],
+    "internal/builtin/commandcenter/refresh.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Refresh (ai-cron)"]}
+    ],
+    "internal/builtin/commandcenter/session_events.go": [
+      {"spec": "specs/builtin/session-viewer.md", "sections": ["Event Types", "Bidirectional Communication"]}
+    ],
+    "internal/builtin/commandcenter/styles.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Behavior"]}
+    ],
+    "internal/builtin/prs/prs.go": [
+      {"spec": "specs/builtin/prs.md", "sections": ["Slug", "State", "Routes", "Migrations"]}
+    ],
+    "internal/builtin/prs/keys.go": [
+      {"spec": "specs/builtin/prs.md", "sections": ["Key Bindings"]}
+    ],
+    "internal/builtin/prs/messages.go": [
+      {"spec": "specs/builtin/prs.md", "sections": ["Event Handling"]}
+    ],
+    "internal/builtin/prs/category.go": [
+      {"spec": "specs/builtin/prs.md", "sections": ["Category Assignment"]}
+    ],
+    "internal/builtin/prs/trigger.go": [
+      {"spec": "specs/builtin/prs.md", "sections": ["Agent Automation"]}
+    ],
+    "internal/builtin/prs/view.go": [
+      {"spec": "specs/builtin/prs.md", "sections": ["View"]}
+    ],
+    "internal/builtin/prs/styles.go": [
+      {"spec": "specs/builtin/prs.md", "sections": ["View"]}
+    ],
+    "internal/builtin/sessions/sessions.go": [
+      {"spec": "specs/builtin/sessions.md", "sections": ["State", "Behavior", "Key Bindings", "Routes"]}
+    ],
+    "internal/builtin/sessions/unified.go": [
+      {"spec": "specs/builtin/sessions.md", "sections": ["Sessions Tab: Three-Tier Model"]}
+    ],
+    "internal/builtin/sessions/describe.go": [
+      {"spec": "specs/core/db.md", "sections": ["Path Descriptions"]},
+      {"spec": "specs/core/llm.md", "sections": ["Integration Points"]}
+    ],
+    "internal/builtin/settings/settings.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Layout", "Focus Zones", "Sidebar Toggle Behavior", "Quit Behavior", "Key Bindings"]}
+    ],
+    "internal/builtin/settings/nav.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Sidebar Categories", "NavItem"]}
+    ],
+    "internal/builtin/settings/content.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Form-Based Content Panes"]}
+    ],
+    "internal/builtin/settings/auth_form.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Form-Based Content Panes"]}
+    ],
+    "internal/builtin/settings/content_agent.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/builtin/settings/content_appearance.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/builtin/settings/content_automations.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]},
+      {"spec": "specs/core/automations.md", "sections": ["Settings Page"]}
+    ],
+    "internal/builtin/settings/content_budget.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/builtin/settings/content_daemon.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/builtin/settings/content_datasources.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/builtin/settings/content_logs.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/builtin/settings/content_plugins.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/builtin/settings/content_prs.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/builtin/settings/content_system.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/builtin/settings/styles.go": [
+      {"spec": "specs/builtin/settings.md", "sections": ["Layout"]}
+    ],
+    "internal/config/config.go": [
+      {"spec": "specs/core/config.md", "sections": ["Config Loading", "Config Saving", "Default Config"]}
+    ],
+    "internal/config/palettes.go": [
+      {"spec": "specs/core/config.md", "sections": ["Palettes"]}
+    ],
+    "internal/config/schedule.go": [
+      {"spec": "specs/core/cli.md", "sections": ["ccc install-schedule", "ccc uninstall-schedule"]},
+      {"spec": "specs/core/refresh.md", "sections": ["Background Scheduling (crontab)"]}
+    ],
+    "internal/config/setup.go": [
+      {"spec": "specs/core/config.md", "sections": ["Behavior"]}
+    ],
+    "internal/config/validate.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Implementations"]}
+    ],
+    "internal/daemon/daemon.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Wire Protocol", "Process Lifecycle", "Connection Handling"]}
+    ],
+    "internal/daemon/client.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Wire Protocol"]}
+    ],
+    "internal/daemon/rpc.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Wire Protocol"]}
+    ],
+    "internal/daemon/types.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Wire Types"]}
+    ],
+    "internal/daemon/agents.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Agent RPCs"]}
+    ],
+    "internal/daemon/budget.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Budget RPCs"]}
+    ],
+    "internal/daemon/sessions.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Session Registry"]}
+    ],
+    "internal/daemon/refresh.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Refresh Loop"]}
+    ],
+    "internal/daemon/subscribers.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Event Subscription"]}
+    ],
+    "internal/daemon/start.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Process Lifecycle"]}
+    ],
+    "internal/db/schema.go": [
+      {"spec": "specs/core/db.md", "sections": ["Database Lifecycle"]}
+    ],
+    "internal/db/types.go": [
+      {"spec": "specs/core/db.md", "sections": ["Types", "In-Memory Mutations", "Helpers"]}
+    ],
+    "internal/db/read.go": [
+      {"spec": "specs/core/db.md", "sections": ["Todo Operations", "Calendar & Suggestions", "Pull Requests", "Bookmarks & Paths (DB)"]}
+    ],
+    "internal/db/write.go": [
+      {"spec": "specs/core/db.md", "sections": ["Todo Operations", "Calendar & Suggestions", "Pull Requests", "Bookmarks & Paths (DB)", "Path Descriptions", "Bulk Refresh", "Meta & Pending Actions"]}
+    ],
+    "internal/db/sessions.go": [
+      {"spec": "specs/core/db.md", "sections": ["File-Based Session Functions"]}
+    ],
+    "internal/db/migrate.go": [
+      {"spec": "specs/core/db.md", "sections": ["Migration (Legacy)"]}
+    ],
+    "internal/db/skill_discover.go": [
+      {"spec": "specs/core/db.md", "sections": ["Skills Discovery"]}
+    ],
+    "internal/db/routing_rules.go": [
+      {"spec": "specs/core/db.md", "sections": ["Routing Rules"]}
+    ],
+    "internal/db/agent_costs.go": [
+      {"spec": "specs/core/agent.md", "sections": ["Database Schema"]},
+      {"spec": "specs/core/db.md", "sections": ["Behavior"]}
+    ],
+    "internal/db/path_describe.go": [
+      {"spec": "specs/core/db.md", "sections": ["Path Descriptions"]}
+    ],
+    "internal/doctor/doctor.go": [
+      {"spec": "specs/core/cli.md", "sections": ["ccc doctor"]}
+    ],
+    "internal/external/external.go": [
+      {"spec": "specs/plugin/external-adapter.md", "sections": ["Architecture", "Behavior", "ExternalPlugin"]}
+    ],
+    "internal/external/loader.go": [
+      {"spec": "specs/plugin/external-adapter.md", "sections": ["Loader"]}
+    ],
+    "internal/external/process.go": [
+      {"spec": "specs/plugin/external-adapter.md", "sections": ["Process"]}
+    ],
+    "internal/external/protocol.go": [
+      {"spec": "specs/plugin/protocol.md", "sections": ["Protocol"]}
+    ],
+    "internal/llm/llm.go": [
+      {"spec": "specs/core/llm.md", "sections": ["Interface"]}
+    ],
+    "internal/llm/claude_cli.go": [
+      {"spec": "specs/core/llm.md", "sections": ["ClaudeCLI", "Error Parsing"]}
+    ],
+    "internal/llm/noop.go": [
+      {"spec": "specs/core/llm.md", "sections": ["NoopLLM"]}
+    ],
+    "internal/llm/failure_log.go": [
+      {"spec": "specs/core/llm.md", "sections": ["Failure Logging"]}
+    ],
+    "internal/lockfile/lockfile.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["Locking"]}
+    ],
+    "internal/plugin/eventbus.go": [
+      {"spec": "specs/plugin/event-bus.md", "sections": ["Interface", "Behavior"]}
+    ],
+    "internal/plugin/plugin.go": [
+      {"spec": "specs/plugin/interface.md", "sections": ["Plugin Interface", "Context", "Action", "Route", "Migration", "KeyBinding"]}
+    ],
+    "internal/plugin/lifecycle.go": [
+      {"spec": "specs/plugin/lifecycle.md", "sections": ["Types", "Behavior"]}
+    ],
+    "internal/plugin/logger.go": [
+      {"spec": "specs/plugin/logger.md", "sections": ["Interface", "Implementations", "Behavior"]}
+    ],
+    "internal/plugin/migrations.go": [
+      {"spec": "specs/plugin/migrations.md", "sections": ["Interface", "Behavior"]}
+    ],
+    "internal/plugin/registry.go": [
+      {"spec": "specs/plugin/registry.md", "sections": ["Interface", "Behavior"]}
+    ],
+    "internal/plugin/scope.go": [
+      {"spec": "specs/plugin/interface.md", "sections": ["Context"]}
+    ],
+    "internal/plugin/doctor.go": [
+      {"spec": "specs/core/cli.md", "sections": ["ccc doctor"]}
+    ],
+    "internal/refresh/datasource.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Interface", "SourceResult", "PostMerger"]}
+    ],
+    "internal/refresh/refresh.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["Behavior", "Configurable Refresh Interval"]},
+      {"spec": "specs/core/datasource.md", "sections": ["Behavior"]}
+    ],
+    "internal/refresh/merge.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["Merge Rules"]}
+    ],
+    "internal/refresh/types.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Interface"]}
+    ],
+    "internal/refresh/llm.go": [
+      {"spec": "specs/core/todo-extraction.md", "sections": ["Stage 2: LLM Extraction (Haiku)", "Stage 3: Routing Validation (Sonnet)"]}
+    ],
+    "internal/refresh/context.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["Source Context"]},
+      {"spec": "specs/core/datasource.md", "sections": ["Behavior"]}
+    ],
+    "internal/refresh/todo_agent.go": [
+      {"spec": "specs/builtin/command-center.md", "sections": ["Todo-Agent Prompt Generation Pipeline"]}
+    ],
+    "internal/refresh/todo_synthesis.go": [
+      {"spec": "specs/core/todo-extraction.md", "sections": ["Behavior"]}
+    ],
+    "internal/refresh/sources/calendar/calendar.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Implementations"]}
+    ],
+    "internal/refresh/sources/calendar/auth.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["OAuth Hardening"]}
+    ],
+    "internal/refresh/sources/calendar/settings.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["SettingsProvider"]},
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/refresh/sources/calendar/doctor.go": [
+      {"spec": "specs/core/cli.md", "sections": ["ccc doctor"]}
+    ],
+    "internal/refresh/sources/calendar/actions.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["PostMerger"]}
+    ],
+    "internal/refresh/sources/github/github.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Implementations"]}
+    ],
+    "internal/refresh/sources/github/pr_fetch.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Implementations"]},
+      {"spec": "specs/builtin/prs.md", "sections": ["Data Flow"]}
+    ],
+    "internal/refresh/sources/github/settings.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["SettingsProvider"]},
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/refresh/sources/github/context.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["Source Context"]}
+    ],
+    "internal/refresh/sources/gmail/gmail.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Implementations", "Gmail label-based todos"]}
+    ],
+    "internal/refresh/sources/gmail/client.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Gmail label-based todos"]}
+    ],
+    "internal/refresh/sources/gmail/doctor.go": [
+      {"spec": "specs/core/cli.md", "sections": ["ccc doctor"]}
+    ],
+    "internal/refresh/sources/gmail/context.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["Source Context"]}
+    ],
+    "internal/refresh/sources/gmail/llm.go": [
+      {"spec": "specs/core/todo-extraction.md", "sections": ["Gmail: Label-Based Title Generation (Haiku)"]}
+    ],
+    "internal/refresh/sources/granola/granola.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Implementations"]}
+    ],
+    "internal/refresh/sources/granola/settings.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["SettingsProvider"]},
+      {"spec": "specs/builtin/settings.md", "sections": ["Pane Details"]}
+    ],
+    "internal/refresh/sources/granola/context.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["Source Context"]}
+    ],
+    "internal/refresh/sources/granola/llm.go": [
+      {"spec": "specs/core/todo-extraction.md", "sections": ["Stage 2: LLM Extraction (Haiku)"]}
+    ],
+    "internal/refresh/sources/slack/slack.go": [
+      {"spec": "specs/core/datasource.md", "sections": ["Implementations"]}
+    ],
+    "internal/refresh/sources/slack/context.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["Source Context"]}
+    ],
+    "internal/refresh/sources/slack/llm.go": [
+      {"spec": "specs/core/todo-extraction.md", "sections": ["Stage 2: LLM Extraction (Haiku)"]}
+    ],
+    "internal/sanitize/sanitize.go": [
+      {"spec": "specs/core/refresh.md", "sections": ["Data Sanitization"]}
+    ],
+    "internal/tui/model.go": [
+      {"spec": "specs/core/host.md", "sections": ["Model", "Initialization", "Input Dispatch", "Message Broadcast", "Action Processing", "Rendering"]}
+    ],
+    "internal/tui/banner.go": [
+      {"spec": "specs/core/host.md", "sections": ["Rendering"]},
+      {"spec": "specs/core/onboarding.md", "sections": ["Step 0: Welcome + Banner Configuration"]}
+    ],
+    "internal/tui/daemon.go": [
+      {"spec": "specs/core/daemon.md", "sections": ["Behavior"]}
+    ],
+    "internal/tui/effects.go": [
+      {"spec": "specs/core/host.md", "sections": ["Animation"]}
+    ],
+    "internal/tui/launch.go": [
+      {"spec": "specs/core/host.md", "sections": ["Key Design Decisions"]}
+    ],
+    "internal/tui/notify.go": [
+      {"spec": "specs/core/host.md", "sections": ["Cross-Instance Notification"]},
+      {"spec": "specs/core/cli.md", "sections": ["ccc notify [event]"]}
+    ],
+    "internal/tui/onboarding.go": [
+      {"spec": "specs/core/onboarding.md", "sections": ["Detection", "Behavior", "Step 0", "Step 1", "Step 2", "Sub-Flows", "Step 3", "Transition to Normal TUI"]}
+    ],
+    "internal/tui/styles.go": [
+      {"spec": "specs/core/host.md", "sections": ["Rendering"]}
+    ],
+    "internal/tui/stub_plugin.go": [
+      {"spec": "specs/plugin/interface.md", "sections": ["Plugin Interface"]}
+    ],
+    "internal/ui/effects.go": [
+      {"spec": "specs/core/host.md", "sections": ["Animation"]}
+    ],
+    "internal/ui/styles.go": [
+      {"spec": "specs/core/host.md", "sections": ["Rendering"]}
+    ],
+    "internal/ui/text.go": [],
+    "internal/worktree/worktree.go": [
+      {"spec": "specs/core/worktree.md", "sections": ["Functions", "Config Format", "Behavior"]}
+    ]
+  },
+  "spec_to_code": {
+    "specs/core/agent.md": {
+      "Runner (core process lifecycle)": ["internal/agent/runner.go", "internal/agent/impl.go"],
+      "GovernedRunner (budget + rate limit enforcement)": ["internal/agent/governed_runner.go"],
+      "BudgetTracker": ["internal/agent/budget.go"],
+      "RateLimiter": ["internal/agent/ratelimit.go"],
+      "Cost Estimation": ["internal/agent/budget.go", "internal/db/agent_costs.go"],
+      "Session Event Parsing": ["internal/agent/impl.go"],
+      "Session Logging": ["internal/agent/impl.go", "internal/agent/logtail.go"],
+      "Database Schema": ["internal/agent/budget.go", "internal/db/agent_costs.go"]
+    },
+    "specs/core/automations.md": {
+      "Lifecycle": ["internal/automation/runner.go", "internal/automation/process.go"],
+      "Protocol Messages": ["internal/automation/protocol.go"],
+      "Scheduling": ["internal/automation/runner.go", "internal/automation/schedule.go"],
+      "Behavior": ["internal/automation/runner.go"],
+      "Settings Page": ["internal/builtin/settings/content_automations.go"]
+    },
+    "specs/core/cli.md": {
+      "ccc (default)": ["cmd/ccc/main.go"],
+      "ccc setup": ["cmd/ccc/main.go", "internal/tui/onboarding.go"],
+      "ccc doctor": ["internal/doctor/doctor.go", "internal/plugin/doctor.go"],
+      "ccc install-schedule": ["internal/config/schedule.go"],
+      "ccc uninstall-schedule": ["internal/config/schedule.go"],
+      "ccc notify [event]": ["internal/tui/notify.go"],
+      "ccc update-todo": ["cmd/ccc/update_todo.go"],
+      "ccc sessions": ["cmd/ccc/session_cmd.go"]
+    },
+    "specs/core/config.md": {
+      "Config Loading": ["internal/config/config.go"],
+      "Config Saving": ["internal/config/config.go"],
+      "Path Resolution": ["internal/config/config.go", "cmd/ccc/paths.go"],
+      "HomeDir": ["internal/config/config.go"],
+      "Default Config": ["internal/config/config.go"],
+      "Palettes": ["internal/config/palettes.go"],
+      "Repo Path Resolution": ["internal/config/config.go"]
+    },
+    "specs/core/daemon.md": {
+      "Wire Protocol": ["internal/daemon/daemon.go", "internal/daemon/client.go", "internal/daemon/rpc.go"],
+      "Process Lifecycle": ["internal/daemon/daemon.go", "internal/daemon/start.go", "cmd/ccc/daemon_cmd.go"],
+      "Socket Security": ["internal/daemon/daemon.go"],
+      "Connection Handling": ["internal/daemon/daemon.go"],
+      "Session Registry": ["internal/daemon/sessions.go"],
+      "Refresh Loop": ["internal/daemon/refresh.go"],
+      "Agent RPCs": ["internal/daemon/agents.go"],
+      "Budget RPCs": ["internal/daemon/budget.go"],
+      "Event Subscription": ["internal/daemon/subscribers.go"],
+      "Wire Types": ["internal/daemon/types.go"]
+    },
+    "specs/core/datasource.md": {
+      "Interface": ["internal/refresh/datasource.go"],
+      "SourceResult": ["internal/refresh/datasource.go"],
+      "PostMerger": ["internal/refresh/datasource.go", "internal/refresh/sources/calendar/actions.go"],
+      "Implementations": ["internal/refresh/sources/calendar/calendar.go", "internal/refresh/sources/github/github.go", "internal/refresh/sources/gmail/gmail.go", "internal/refresh/sources/granola/granola.go", "internal/refresh/sources/slack/slack.go"],
+      "Behavior": ["internal/refresh/refresh.go"],
+      "LLM extraction": ["internal/refresh/llm.go"],
+      "Gmail label-based todos": ["internal/refresh/sources/gmail/gmail.go", "internal/refresh/sources/gmail/client.go"],
+      "SettingsProvider": ["internal/refresh/sources/calendar/settings.go", "internal/refresh/sources/github/settings.go", "internal/refresh/sources/granola/settings.go"],
+      "Data Safety": ["internal/sanitize/sanitize.go"]
+    },
+    "specs/core/db.md": {
+      "Database Lifecycle": ["internal/db/schema.go"],
+      "Types": ["internal/db/types.go"],
+      "Todo Operations": ["internal/db/read.go", "internal/db/write.go"],
+      "Calendar & Suggestions": ["internal/db/read.go", "internal/db/write.go"],
+      "Pull Requests": ["internal/db/read.go", "internal/db/write.go"],
+      "Bulk Refresh": ["internal/db/write.go"],
+      "Bookmarks & Paths (DB)": ["internal/db/read.go", "internal/db/write.go"],
+      "Path Descriptions": ["internal/db/write.go", "internal/db/path_describe.go"],
+      "Skills Discovery": ["internal/db/skill_discover.go"],
+      "Routing Rules": ["internal/db/routing_rules.go"],
+      "Meta & Pending Actions": ["internal/db/write.go"],
+      "File-Based Session Functions": ["internal/db/sessions.go"],
+      "Migration (Legacy)": ["internal/db/migrate.go"],
+      "In-Memory Mutations": ["internal/db/types.go"],
+      "Helpers": ["internal/db/types.go"]
+    },
+    "specs/core/host.md": {
+      "Model": ["internal/tui/model.go"],
+      "Initialization": ["internal/tui/model.go"],
+      "Input Dispatch": ["internal/tui/model.go"],
+      "Message Broadcast": ["internal/tui/model.go"],
+      "Action Processing": ["internal/tui/model.go"],
+      "Cross-Plugin Communication": ["internal/tui/model.go"],
+      "Rendering": ["internal/tui/model.go", "internal/tui/styles.go", "internal/tui/banner.go", "internal/ui/styles.go"],
+      "Animation": ["internal/tui/effects.go", "internal/ui/effects.go"],
+      "Cross-Instance Notification": ["internal/tui/notify.go"],
+      "Shutdown & Error Handling": ["internal/tui/model.go"]
+    },
+    "specs/core/llm.md": {
+      "Interface": ["internal/llm/llm.go"],
+      "ClaudeCLI": ["internal/llm/claude_cli.go"],
+      "NoopLLM": ["internal/llm/noop.go"],
+      "Error Parsing": ["internal/llm/claude_cli.go"],
+      "Failure Logging": ["internal/llm/failure_log.go"]
+    },
+    "specs/core/onboarding.md": {
+      "Detection": ["internal/tui/onboarding.go", "cmd/ccc/main.go"],
+      "Behavior": ["internal/tui/onboarding.go"],
+      "Step 0: Welcome + Banner Configuration": ["internal/tui/onboarding.go", "internal/tui/banner.go"],
+      "Step 1: Palette Selection": ["internal/tui/onboarding.go"],
+      "Step 2: Data Sources Hub": ["internal/tui/onboarding.go"],
+      "Sub-Flows": ["internal/tui/onboarding.go"],
+      "Step 3: Done": ["internal/tui/onboarding.go"],
+      "Transition to Normal TUI": ["internal/tui/onboarding.go", "cmd/ccc/main.go"]
+    },
+    "specs/core/refresh.md": {
+      "Behavior": ["internal/refresh/refresh.go", "cmd/ai-cron/main.go"],
+      "Types": ["internal/refresh/types.go"],
+      "Locking": ["internal/lockfile/lockfile.go"],
+      "Configurable Refresh Interval": ["internal/refresh/refresh.go"],
+      "Refresh Status Indicator": ["internal/builtin/commandcenter/commandcenter.go"],
+      "Auto-Refresh on Startup": ["internal/tui/model.go"],
+      "ai-cron Binary": ["cmd/ai-cron/main.go"],
+      "Background Scheduling (crontab)": ["internal/config/schedule.go"],
+      "Data Sanitization": ["internal/sanitize/sanitize.go"],
+      "OAuth Hardening": ["internal/auth/flow.go", "internal/auth/pkce.go"],
+      "Merge Rules": ["internal/refresh/merge.go"],
+      "Source Context": ["internal/refresh/context.go", "internal/refresh/sources/github/context.go", "internal/refresh/sources/gmail/context.go", "internal/refresh/sources/granola/context.go", "internal/refresh/sources/slack/context.go"]
+    },
+    "specs/core/todo-extraction.md": {
+      "Gmail: Label-Based Title Generation (Haiku)": ["internal/refresh/sources/gmail/llm.go"],
+      "Stage 1: Pre-Filter (Keyword Match)": ["internal/refresh/llm.go"],
+      "Stage 1b: Conversation Context": ["internal/refresh/context.go"],
+      "Stage 2: LLM Extraction (Haiku)": ["internal/refresh/llm.go", "internal/refresh/sources/granola/llm.go", "internal/refresh/sources/slack/llm.go"],
+      "Stage 3: Routing Validation (Sonnet)": ["internal/refresh/llm.go"]
+    },
+    "specs/core/worktree.md": {
+      "Functions": ["internal/worktree/worktree.go"],
+      "Config Format": ["internal/worktree/worktree.go"],
+      "Behavior": ["internal/worktree/worktree.go", "cmd/ccc/worktrees.go"]
+    },
+    "specs/plugin/event-bus.md": {
+      "Interface": ["internal/plugin/eventbus.go"],
+      "Behavior": ["internal/plugin/eventbus.go"],
+      "Event Catalog": ["internal/plugin/eventbus.go"],
+      "Starter Interface": ["internal/plugin/plugin.go"]
+    },
+    "specs/plugin/external-adapter.md": {
+      "Architecture": ["internal/external/external.go", "internal/external/process.go", "internal/external/protocol.go", "internal/external/loader.go"],
+      "Process": ["internal/external/process.go"],
+      "ExternalPlugin": ["internal/external/external.go"],
+      "Loader": ["internal/external/loader.go"],
+      "Behavior": ["internal/external/external.go"]
+    },
+    "specs/plugin/interface.md": {
+      "Plugin Interface": ["internal/plugin/plugin.go"],
+      "Context": ["internal/plugin/plugin.go", "internal/plugin/scope.go"],
+      "Action": ["internal/plugin/plugin.go"],
+      "Route": ["internal/plugin/plugin.go"],
+      "Migration": ["internal/plugin/plugin.go"],
+      "KeyBinding": ["internal/plugin/plugin.go"],
+      "Registry": ["internal/plugin/registry.go"],
+      "Behavior": ["internal/plugin/plugin.go"]
+    },
+    "specs/plugin/lifecycle.md": {
+      "Types": ["internal/plugin/lifecycle.go"],
+      "Behavior": ["internal/plugin/lifecycle.go"]
+    },
+    "specs/plugin/logger.md": {
+      "Interface": ["internal/plugin/logger.go"],
+      "Implementations": ["internal/plugin/logger.go"],
+      "Behavior": ["internal/plugin/logger.go"]
+    },
+    "specs/plugin/migrations.md": {
+      "Interface": ["internal/plugin/migrations.go"],
+      "Behavior": ["internal/plugin/migrations.go"]
+    },
+    "specs/plugin/protocol.md": {
+      "Protocol": ["internal/external/protocol.go"],
+      "Security": ["internal/external/external.go"]
+    },
+    "specs/plugin/registry.md": {
+      "Interface": ["internal/plugin/registry.go"],
+      "Behavior": ["internal/plugin/registry.go"]
+    },
+    "specs/builtin/command-center.md": {
+      "Slug": ["internal/builtin/commandcenter/commandcenter.go"],
+      "State": ["internal/builtin/commandcenter/commandcenter.go"],
+      "Key Bindings": ["internal/builtin/commandcenter/cc_keys.go", "internal/builtin/commandcenter/cc_keys_detail.go", "internal/builtin/commandcenter/cc_keys_session.go", "internal/builtin/commandcenter/cc_keys_wizard.go"],
+      "Command Center View": ["internal/builtin/commandcenter/cc_view.go", "internal/builtin/commandcenter/cc_view_detail.go"],
+      "Todo Lifecycle": ["internal/builtin/commandcenter/cc_view.go", "internal/builtin/commandcenter/cc_keys.go"],
+      "Triage Workflow": ["internal/builtin/commandcenter/cc_keys.go", "internal/builtin/commandcenter/cc_view.go"],
+      "Claude Integration": ["internal/builtin/commandcenter/claude_exec.go"],
+      "Data Loading (Lifecycle Messages)": ["internal/builtin/commandcenter/cc_messages.go"],
+      "Refresh (ai-cron)": ["internal/builtin/commandcenter/refresh.go"],
+      "Cross-Plugin Navigation": ["internal/builtin/commandcenter/cc_keys.go"],
+      "Agent Sessions": ["internal/builtin/commandcenter/agent_runner.go", "internal/builtin/commandcenter/cc_keys_session.go", "internal/builtin/commandcenter/cc_messages.go"],
+      "Todo-Agent Prompt Generation Pipeline": ["internal/refresh/todo_agent.go"],
+      "Task Runner Wizard": ["internal/builtin/commandcenter/cc_keys_wizard.go", "internal/builtin/commandcenter/cc_view_wizard.go"]
+    },
+    "specs/builtin/pomodoro.md": {
+      "All": []
+    },
+    "specs/builtin/prs.md": {
+      "State": ["internal/builtin/prs/prs.go"],
+      "Data Flow": ["internal/refresh/sources/github/pr_fetch.go"],
+      "Category Assignment": ["internal/builtin/prs/category.go"],
+      "Key Bindings": ["internal/builtin/prs/keys.go"],
+      "View": ["internal/builtin/prs/view.go"],
+      "Ignore": ["internal/builtin/prs/keys.go", "internal/builtin/prs/prs.go"],
+      "Settings Pane": ["internal/builtin/settings/content_prs.go"],
+      "Migrations": ["internal/builtin/prs/prs.go"],
+      "Event Handling": ["internal/builtin/prs/messages.go"],
+      "Agent Automation": ["internal/builtin/prs/trigger.go"]
+    },
+    "specs/builtin/session-viewer.md": {
+      "Entry Points": ["internal/builtin/commandcenter/commandcenter.go"],
+      "State": ["internal/builtin/commandcenter/commandcenter.go"],
+      "Event Types": ["internal/builtin/commandcenter/session_events.go"],
+      "Key Bindings": ["internal/builtin/commandcenter/cc_keys_session.go"],
+      "Bidirectional Communication": ["internal/builtin/commandcenter/agent_runner.go", "internal/builtin/commandcenter/session_events.go"],
+      "Layout": ["internal/builtin/commandcenter/cc_view_session.go"],
+      "Auto-Scroll Behavior": ["internal/builtin/commandcenter/cc_view_session.go"],
+      "Resume Agent": ["internal/builtin/commandcenter/cc_keys_session.go"],
+      "Session Logging": ["internal/agent/impl.go"],
+      "Detail View": ["internal/builtin/commandcenter/cc_view_session.go"],
+      "Agent Lifecycle": ["internal/builtin/commandcenter/agent_runner.go"]
+    },
+    "specs/builtin/sessions.md": {
+      "Routes": ["internal/builtin/sessions/sessions.go"],
+      "State": ["internal/builtin/sessions/sessions.go"],
+      "Sessions Tab: Three-Tier Model": ["internal/builtin/sessions/unified.go"],
+      "Key Bindings": ["internal/builtin/sessions/sessions.go"],
+      "Event Bus": ["internal/builtin/sessions/sessions.go"],
+      "Storage": ["internal/db/sessions.go", "internal/db/write.go"],
+      "Behavior": ["internal/builtin/sessions/sessions.go", "internal/builtin/sessions/unified.go"],
+      "CLI: ccc add-bookmark": ["cmd/ccc/add_bookmark.go"]
+    },
+    "specs/builtin/settings.md": {
+      "Layout": ["internal/builtin/settings/settings.go", "internal/builtin/settings/nav.go", "internal/builtin/settings/styles.go"],
+      "Sidebar Categories": ["internal/builtin/settings/nav.go"],
+      "NavItem": ["internal/builtin/settings/nav.go"],
+      "Focus Zones": ["internal/builtin/settings/settings.go"],
+      "Form-Based Content Panes": ["internal/builtin/settings/content.go", "internal/builtin/settings/auth_form.go"],
+      "Pane Details": ["internal/builtin/settings/content_agent.go", "internal/builtin/settings/content_appearance.go", "internal/builtin/settings/content_automations.go", "internal/builtin/settings/content_budget.go", "internal/builtin/settings/content_daemon.go", "internal/builtin/settings/content_datasources.go", "internal/builtin/settings/content_logs.go", "internal/builtin/settings/content_plugins.go", "internal/builtin/settings/content_prs.go", "internal/builtin/settings/content_system.go"],
+      "Sidebar Toggle Behavior": ["internal/builtin/settings/settings.go"],
+      "Quit Behavior": ["internal/builtin/settings/settings.go"],
+      "Key Bindings": ["internal/builtin/settings/settings.go"]
+    }
+  },
+  "unmapped_code": [
+    "internal/ui/text.go",
+    "internal/config/skills.go",
+    "internal/config/shell.go",
+    "internal/config/setup.go"
+  ],
+  "unmapped_spec_sections": [
+    {"spec": "specs/builtin/pomodoro.md", "section": "All sections", "status": "pomodoro is an external plugin — no internal Go implementation"}
+  ]
+}
