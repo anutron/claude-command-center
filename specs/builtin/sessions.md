@@ -33,7 +33,7 @@ The sessions tab displays sessions in three tiers:
 
 | Tier | Source | Visibility | Description |
 |------|--------|------------|-------------|
-| **Live** | Daemon RPC | Always (main mode) | Running, active, or blocked sessions |
+| **Live** | Daemon RPC | Always (main mode) | Running, active, or blocked sessions. Blocked sessions render with a yellow dot indicator and "Blocked" text. |
 | **Saved** | `cc_bookmarks` table | Always (main mode) | User-bookmarked sessions |
 | **Archived** | `cc_archived_sessions` table | Archive mode only | Auto-saved ended sessions |
 

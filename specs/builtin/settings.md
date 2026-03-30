@@ -15,7 +15,7 @@ Sidebar (left) + content pane (right). The sidebar lists items grouped by catego
 ### Sidebar Categories
 
 1. **APPEARANCE** — Banner, Palette
-2. **PLUGINS** — Sessions, Command Center, Threads, Pomodoro, external plugins
+2. **PLUGINS** — Sessions, Command Center, PRs, Pomodoro, external plugins
 3. **DATA SOURCES** — Calendar, GitHub, Granola, Slack, Gmail
 4. **AGENT** — Daemon, Budget, Sandbox
 5. **SYSTEM** — Automations, Schedule, MCP Servers, Skills, Shell Integration, Logs

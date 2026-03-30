@@ -9,7 +9,7 @@ Provides all data persistence for the Claude Command Center (CCC). Manages SQLit
 ### Inputs
 - **Database path**: Passed to `OpenDB(dbPath string)` -- creates parent directories as needed
 - **JSON file paths**: Passed to `MigrateFromJSON(db, ccPath, bookmarksPath, pathsPath)` for legacy migration
-- **Domain objects**: `Todo`, `Thread`, `Session`, `PendingAction`, `CalendarData` passed to DB write functions
+- **Domain objects**: `Todo`, `PullRequest`, `TodoMerge`, `Session`, `PendingAction`, `CalendarData` passed to DB write functions
 
 ### Outputs
 - `*sql.DB` connection (WAL mode, 5s busy timeout, NORMAL synchronous, max 1 conn)
@@ -27,7 +27,7 @@ Provides all data persistence for the Claude Command Center (CCC). Manages SQLit
 | `schema.go` | `OpenDB`, `migrateSchema` (table DDL), `FormatTime`, `ParseTime` helpers |
 | `types.go` | All exported domain types, ID generation, time helpers, in-memory `CommandCenter` mutation methods, file-based path CRUD |
 | `read.go` | `LoadCommandCenterFromDB` and all `dbLoad*` query functions, `DBLoadBookmarks`, `DBLoadPaths`, `DBIsEmpty` |
-| `write.go` | All `DB*` write functions for todos, threads, calendar, suggestions, pending actions, bookmarks, paths, meta; `DBSaveRefreshResult` bulk write |
+| `write.go` | All `DB*` write functions for todos, calendar, suggestions, pending actions, bookmarks, paths, meta; `DBSaveRefreshResult` bulk write |
 | `sessions.go` | Session types, file-based session parsing (`ParseSessionFile`, `LoadWinddownSessions`, `LoadBookmarks`, `LoadAllSessions`, `RemoveBookmark`) -- used by sessions plugin only |
 | `migrate.go` | `MigrateFromJSON` -- one-time import from legacy JSON/text files into SQLite |
 | `skill_discover.go` | `SkillInfo`, `SkillCache` types, `DiscoverSkills`, `DiscoverGlobalSkills`, disk cache read/write, `GetProjectSkills`, `GetGlobalSkills` |
@@ -38,12 +38,11 @@ Provides all data persistence for the Claude Command Center (CCC). Manages SQLit
 
 All types are exported for use by other packages:
 
-- `CommandCenter` -- top-level aggregate: calendar, todos, threads, suggestions, pending actions, warnings, generated_at
+- `CommandCenter` -- top-level aggregate: calendar, todos, pull requests, merges, suggestions, pending actions, warnings, generated_at
 - `CalendarData` -- today/tomorrow event lists
 - `CalendarEvent` -- title, start/end times, all-day, declined, calendar_id
 - `CalendarConflict` -- overlap between two events
 - `Todo` -- task with status, source, due date, effort, project_dir, session_id, source_context, source_context_at, etc.
-- `Thread` -- PR/issue/conversation tracker with pause/resume/close lifecycle
 - `Suggestions` -- AI-generated focus and ranked todo ordering with per-todo reasons
 - `PendingAction` -- queued actions (e.g., calendar bookings)
 - `Warning` -- system warnings (source, message, timestamp)
@@ -53,14 +52,14 @@ All types are exported for use by other packages:
 - `PathEntry` -- full metadata for a learned path row: path, description, added_at, sort_order
 - `SkillInfo` -- name + description parsed from a SKILL.md frontmatter
 - `SkillCache` -- list of `SkillInfo` with a `ScannedAt` timestamp for TTL-based disk caching
-- `RoutingRule` -- `use_for` and `not_for` string lists describing which tasks a path handles
+- `RoutingRule` -- `use_for` and `not_for` string lists, `PromptHint` string describing which tasks a path handles
 
 ## Behavior
 
 ### Database Lifecycle
 1. `OpenDB(dbPath)` creates directories, opens SQLite, sets WAL + busy_timeout + synchronous=NORMAL, max 1 connection, runs `migrateSchema`
-2. Schema creates 8 tables: `cc_todos`, `cc_threads`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`
-3. Unique indexes on `source_ref` for todos and threads (WHERE NOT NULL/empty)
+2. Schema creates 16 tables: `cc_todos`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`, `cc_source_sync`, `cc_todo_merges`, `cc_pull_requests`, `cc_sessions`, `cc_automation_runs`, `cc_agent_costs`, `cc_budget_state`, `cc_archived_sessions`, `cc_ignored_repos`
+3. Unique indexes on `source_ref` for todos and pull requests (WHERE NOT NULL/empty)
 4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos
 5. Post-DDL migration fixes duplicate `sort_order` values on `cc_learned_paths` using `ROW_NUMBER()` window function
 
@@ -73,12 +72,6 @@ All types are exported for use by other packages:
 - `DBPromoteTodo` -- sets sort_order to min-1 (moves to top)
 - `DBUpdateTodo` -- updates all fields except sort_order
 - `DBUpdateTodoSourceContext` -- focused update for source_context and source_context_at columns
-
-### Thread Operations
-- `DBInsertThread` -- creates with status=active
-- `DBPauseThread` -- sets status=paused, paused_at=now
-- `DBStartThread` -- sets status=active, clears paused_at
-- `DBCloseThread` -- sets status=completed, completed_at=now
 
 ### Calendar & Suggestions
 - **Calendar day-clamping on load**: `dbLoadCalendar` clamps multi-day event times to their day boundaries. Events whose start is before the day start are clamped to midnight; events whose end extends past the day end are clamped to end-of-day. Events are then re-sorted by effective start time. This ensures multi-day events sort and display correctly (e.g., a 3-day conference shows as starting at midnight today, not at its original start time days ago).
@@ -103,7 +96,7 @@ All types are exported for use by other packages:
 - `DBLoadIgnoredPRs(db)` — returns all non-archived PRs with `ignored = 1`
 
 ### Bulk Refresh
-- `DBSaveRefreshResult` -- atomically replaces all refresh-managed data (todos, threads, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`.
+- `DBSaveRefreshResult` -- atomically replaces all refresh-managed data (todos, pull requests, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`.
 
 ### Bookmarks & Paths (DB)
 - `DBLoadBookmarks`, `DBInsertBookmark`, `DBRemoveBookmark`
@@ -162,8 +155,8 @@ All types are exported for use by other packages:
 ### In-Memory Mutations (on CommandCenter)
 - `CompleteTodo`, `RestoreTodo`, `AddTodo`, `RemoveTodo`, `DeferTodo`, `PromoteTodo`
 - `DeferTodo` inserts after the last active (non-terminal) item in the slice — terminal items retain their original sort_order so they can appear anywhere in `cc.Todos`
-- `PauseThread`, `StartThread`, `CloseThread`, `AddThread`
-- `ActiveTodos`, `CompletedTodos`, `ActiveThreads`, `PausedThreads` -- filtered/sorted views
+- `ActiveTodos`, `CompletedTodos` -- filtered/sorted views
+- `VisibleTodos` -- returns `ActiveTodos` further filtered to exclude merge-hidden todos (todos whose IDs appear in active `cc_todo_merges` entries). This is the primary view used by the UI.
 - `AddPendingBooking` -- appends a booking action
 - `FindConflicts` -- detects overlapping calendar events (skips declined, all-day, ended)
 
@@ -180,14 +173,13 @@ All types are exported for use by other packages:
 
 - DB open/close and table creation
 - Todo CRUD round-trip (insert, complete, dismiss, defer, promote, restore)
-- Thread lifecycle (insert, pause, start, close)
 - Path CRUD (add, duplicate ignore, remove)
 - Bookmark CRUD (insert, load, remove)
 - JSON migration (full data, idempotent re-run, empty DB guard)
 - DBIsEmpty on fresh vs populated DB
 - DBSaveRefreshResult round-trip
-- In-memory mutations (complete, remove, add, defer, promote, pause, start, close, add thread)
-- ActiveTodos/CompletedTodos/ActiveThreads/PausedThreads filtering
+- In-memory mutations (complete, remove, add, defer, promote)
+- ActiveTodos/CompletedTodos filtering
 - DueUrgency for overdue/soon/later/none/bad-date
 - RelativeTime for minutes/hours/days
 - FindConflicts with overlaps and no overlaps

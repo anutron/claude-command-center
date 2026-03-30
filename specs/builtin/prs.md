@@ -105,7 +105,7 @@ A PR gets exactly one category. The first matching rule wins.
 | Agent completed | Resume bookmarked session (`--resume <agent_session_id>`) |
 | Agent running | Attach to live session |
 | Agent pending | Flash: "Agent queued, waiting for slot..." |
-| Agent failed | Resume session to see what went wrong |
+| Agent failed | Resume session to see what went wrong. Requires a local repo directory to be configured; silently no-ops if the directory is missing. |
 | No agent (review tab) | Launch `/pr-review-toolkit:review-pr <url>` (manual) |
 | No agent (respond tab) | Launch `/pr-respond <url>` (interactive, no --apply) |
 | No local repo | Flash: "No local repo found — add a session path first" |

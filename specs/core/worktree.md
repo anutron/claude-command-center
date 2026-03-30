@@ -27,7 +27,7 @@ When launching Claude in a project, optionally create a git worktree so the sess
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `LoadProjectConfig` | `(repoRoot string) (*ProjectConfig, error)` | Reads `.ccc/config.yaml` from repo root. Returns `nil, nil` if file does not exist. Returns error for invalid YAML. |
-| `PrepareWorktree` | `(repoRoot string) (worktreePath, branch string, err error)` | Creates worktree in `.claude/worktrees/`, checks out new branch, runs setup. |
+| `PrepareWorktree` | `(dir string) (worktreePath, branch string, err error)` | Accepts any path and internally resolves to the git repo root. Creates worktree in `.claude/worktrees/`, checks out new branch, runs setup. |
 | `ListWorktrees` | `(repoRoot string) ([]WorktreeInfo, error)` | Lists CCC-created worktrees (branches matching `ccc/` prefix). |
 | `RemoveWorktree` | `(repoRoot, worktreePath string) error` | Removes a worktree directory and deletes its branch. |
 | `PruneWorktrees` | `(repoRoot string) ([]string, error)` | Removes all CCC worktrees for the repo. Returns list of removed paths. |
@@ -126,7 +126,7 @@ Setup runs in two phases after worktree creation:
 1. Run `git worktree list --porcelain`
 2. Parse output for worktree paths and branch names
 3. Filter to branches matching the `ccc/` prefix (or configured prefix)
-4. Return `[]WorktreeInfo{Path, Branch, CreatedAt}` where `CreatedAt` is parsed from the branch name date
+4. Return `[]WorktreeInfo{Path, Branch, CreatedAt}` where `CreatedAt` is the file modification time (mtime) of the worktree directory
 
 ### RemoveWorktree
 

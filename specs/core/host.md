@@ -43,10 +43,11 @@ Each tab maps a label to a plugin and a route within that plugin. Multiple tabs 
 
 | Tab | Plugin | Route |
 |-----|--------|-------|
+| Active | sessions | `active` |
 | New Session | sessions | `new` |
 | Resume | sessions | `resume` |
 | Command Center | commandcenter | `commandcenter` |
-| Threads | commandcenter | `commandcenter/threads` |
+| PRs | prs | `waiting` |
 | *(external plugin tabs)* | *(external)* | *(plugin-defined)* |
 | Settings | settings | `settings` |
 
@@ -128,7 +129,7 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 
 ## Key Design Decisions
 
-1. **No domain logic in host** — The host knows nothing about todos, threads, calendar, or sessions. It only knows about tabs, plugins, and actions.
+1. **No domain logic in host** — The host knows nothing about todos, pull requests, calendar, or sessions. It only knows about tabs, plugins, and actions.
 2. **Colors from palette** — No hardcoded color constants. All colors derived from `config.Palette` via `NewStyles()`.
 3. **Multiple tabs per plugin** — A single plugin can power multiple tabs via different routes.
 4. **Plugin registration order** — Tab order is defined by the host, not the plugins.

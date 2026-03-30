@@ -18,7 +18,7 @@ type TabViewMsg struct{ Route string }
 ```
 
 Sent to a plugin when its tab becomes the active tab. The `Route` field contains
-the tab's route slug (e.g., `"commandcenter"`, `"commandcenter/threads"`).
+the tab's route slug (e.g., `"commandcenter"`, `"sessions/sessions"`).
 
 - **Sent by:** Host, during `activateTab`
 - **Received by:** The plugin that owns the newly-active tab
@@ -52,7 +52,7 @@ Broadcast to all plugins just before the TUI quits to launch a Claude session.
 ### ReturnMsg
 
 ```go
-type ReturnMsg struct{}
+type ReturnMsg struct{ TodoID string; WasResumeJoin bool }
 ```
 
 Broadcast to all plugins when the TUI starts up after returning from a Claude

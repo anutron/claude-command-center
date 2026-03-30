@@ -27,7 +27,7 @@ See `specs/core/datasource.md` for full details. Each source implements `Name()`
 2. Load existing state from SQLite via `db.LoadCommandCenterFromDB(opts.DB)`
 3. Migrate calendar credentials if needed (one-time)
 4. **Parallel data fetch**: Iterate `opts.Sources`; for each enabled source, spawn a goroutine calling `Fetch(ctx)`. Each source loads its own auth; auth failures produce warnings, not fatal errors. LLM extraction for Slack/Granola happens inside `Fetch()`. See `specs/core/todo-extraction.md` for extraction rules.
-5. **Combine results**: Merge all `SourceResult` values into a single `FreshData` (calendar from first non-nil, todos/threads concatenated)
+5. **Combine results**: Merge all `SourceResult` values into a single `FreshData` (calendar from first non-nil, todos/pull requests concatenated)
 6. **Merge**: Combine fresh data with existing state preserving IDs, statuses, dismissed items, manual items, and pause states
 7. **Execute pending actions**: Process booking requests by creating calendar events in free slots (loads calendar auth independently)
 8. **Generate suggestions**: LLM-based priority ranking of todos (if `opts.LLM` is non-nil)
@@ -138,8 +138,7 @@ Refresh locking uses `syscall.Flock()` for atomic advisory file locking (`intern
 
 - **Calendar**: Replaced entirely each refresh
 - **Todos**: Matched by `source_ref`; dismissed = tombstone (never recreated); existing items preserve ID/status/created_at while updating title/detail/context; new items get generated IDs; manual items always preserved
-- **Threads**: Matched by URL; completed/dismissed never recreated; paused state preserved; summary updated from fresh data
-- **PullRequests**: Merge-based upsert (was replace-all). Each fresh PR is upserted by ID — GitHub-sourced fields are updated while agent tracking columns (`agent_session_id`, `agent_status`, `agent_category`, `agent_head_sha`, `agent_summary`) are preserved. PRs missing from the fresh batch are archived (`state = "archived"`), not deleted. Archived PRs reappearing are reactivated (`state = "open"`).
+- **PullRequests**: Merge-based upsert. Each fresh PR is upserted by ID — GitHub-sourced fields are updated while agent tracking columns (`agent_session_id`, `agent_status`, `agent_category`, `agent_head_sha`, `agent_summary`) are preserved. PRs missing from the fresh batch are archived (`state = "archived"`), not deleted. Archived PRs reappearing are reactivated (`state = "open"`).
 - **PendingActions**: Preserved from existing state
 
 ## Test Cases
@@ -152,10 +151,8 @@ Refresh locking uses `syscall.Flock()` for atomic advisory file locking (`intern
 - Calendar replaced entirely on merge
 - Dismissed todo never recreated from fresh data
 - Existing todo updated (preserves ID, status, created_at)
-- New todo gets generated ID and "active" status
+- New todo gets generated ID and "new" status
 - Manual todos preserved across merges
-- Dismissed thread not recreated
-- Paused thread state preserved, summary updated
 - Pending actions preserved
 - Nil existing state handled gracefully
 

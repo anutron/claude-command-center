@@ -10,7 +10,7 @@ Provide a typed pub/sub event bus for inter-plugin communication. Plugins publis
 type Event struct {
     Source  string
     Topic   string
-    Payload map[string]interface{}
+    Payload any
 }
 
 type EventBus interface {

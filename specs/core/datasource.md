@@ -26,7 +26,7 @@ type DataSource interface {
 type SourceResult struct {
     Calendar *db.CalendarData
     Todos    []db.Todo
-    Threads  []db.Thread
+    PullRequests []db.PullRequest
     Warnings []db.Warning
 }
 ```
@@ -83,7 +83,7 @@ internal/refresh/
 | `refresh.go` | Run() orchestrator | Source-agnostic coordination |
 | `merge.go` | Merge() logic | Source-agnostic |
 | `types.go` | FreshData | Shared type |
-| `llm.go` | generateSuggestions(), CleanJSON(), activeTodos(), activeThreads() | Post-merge global logic |
+| `llm.go` | generateSuggestions(), CleanJSON(), activeTodos() | Post-merge global logic |
 | `auth.go` | GoogleTokenFile, LoadGoogleOAuth2Config(), LoadEnvFile(), LoadCalendarCredsFromClaudeConfig() | Shared by calendar + gmail |
 
 ## Implementations
@@ -91,8 +91,8 @@ internal/refresh/
 | Package | Name | Returns | Config | PostMerger |
 |---------|------|---------|--------|------------|
 | sources/calendar | "calendar" | Calendar | CalendarIDs, AutoAcceptDomains, enabled | Yes (pending actions) |
-| sources/gmail | "gmail" | Threads + Todos (if todo_label set) | GmailConfig (enabled, todo_label, advanced), llm.LLM | Yes (label removal on completion) |
-| sources/github | "github" | Threads, PullRequests | Repos, Username, enabled | No |
+| sources/gmail | "gmail" | Todos (if todo_label set) | GmailConfig (enabled, todo_label, advanced), llm.LLM | Yes (label removal on completion) |
+| sources/github | "github" | PullRequests | Repos, Username, enabled | No |
 | sources/slack | "slack" | Todos (via LLM) | llm.LLM | No |
 | sources/granola | "granola" | Todos (via LLM) | llm.LLM, enabled | No |
 
@@ -116,7 +116,7 @@ Each source struct holds its configuration (passed at construction time). Auth l
 Merges all `SourceResult` values into a single `FreshData`:
 - Calendar: uses first non-nil `*db.CalendarData` (only CalendarSource provides it)
 - Todos: concatenates all source todos
-- Threads: concatenates all source threads
+- PullRequests: concatenates all source pull requests
 
 Note: `FreshData` does not carry warnings. Source warnings (from `SourceResult.Warnings`) and fetch-error warnings are collected separately in `Run()` after `combineResults` and set on the merged result.
 
@@ -145,7 +145,7 @@ Calendar, GitHub, and Granola source packages also export `Settings` types imple
 - Source returning error produces a warning, not a fatal error
 - Multiple sources' results are combined correctly
 - Calendar field uses first non-nil value
-- Todos and threads from multiple sources are concatenated
+- Todos and pull requests from multiple sources are concatenated
 - Warnings from sources are preserved
 - PostMerger is called after merge for sources that implement it
 - matchesDomain correctly matches email domains (calendar)

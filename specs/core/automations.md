@@ -232,7 +232,7 @@ Given a `ai-cron` cycle:
 
 ### Execution Order
 
-Automations run **after** the main refresh data has been saved to the database. This ensures automations can read fresh data (calendar events, todos, threads) from the DB.
+Automations run **after** the main refresh data has been saved to the database. This ensures automations can read fresh data (calendar events, todos, pull requests) from the DB.
 
 ### Error Handling
 

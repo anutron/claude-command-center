@@ -34,7 +34,7 @@ Provides user-configurable settings for the CCC TUI, including color palettes, d
 - No special styling or behavior — treated as a regular path entry that can be reordered or deleted
 
 ### Default Config
-- Name: "Command Center"
+- Name: "Claude Command"
 - HomeDir: "" (empty, defaults to $HOME via ResolveHomeDir)
 - Palette: "aurora"
 - Todos: enabled
