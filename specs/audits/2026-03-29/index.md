@@ -100,6 +100,40 @@
 2. **specs/core/daemon.md** — "Graceful drain on SIGTERM" — code calls `Shutdown()` directly on signal, no drain.
 3. **specs/core/daemon.md** — "Connection timeout" — no configurable timeout on client connections.
 
+## Resolution Status
+
+### Contradictions — 19/19 resolved (2026-03-30)
+
+| # | Issue | Resolution | Commit |
+|---|-------|-----------|--------|
+| 1 | Threads removal (db, host, settings, refresh, datasource) | Spec fix — removed all Threads references | `4488ff0` |
+| 2 | PR merge strategy (refresh.md) | Audit false positive — spec was correct; in-memory `Merge()` passes through, `DBSavePullRequests` does upsert | — |
+| 3 | New todo status (refresh.md) | Spec fix — "active" → "new" | `4488ff0` |
+| 4 | Triage filter tabs (command-center.md) | Spec rewrite — three-field model replaced with single Status FSM | `4488ff0` |
+| 5 | CC migrations (command-center.md) | Spec fix — "none" → 2 migrations | `4488ff0` |
+| 6 | CC routes (command-center.md) | Spec fix — "both routes" → "one route" | `4488ff0` |
+| 7 | DB schema table list (db.md) | Spec fix — 8 → 16 tables | `4488ff0` |
+| 8 | LoadCommandCenterFromDB return shape (db.md) | Spec fix — threads/warnings → PRs/merges | `4488ff0` |
+| 9 | RoutingRule fields (db.md) | Spec fix — added PromptHint | `4488ff0` |
+| 10 | Event.Payload type (event-bus.md) | Spec fix — `map[string]interface{}` → `any` | `4488ff0` |
+| 11 | ReturnMsg fields (lifecycle.md) | Spec fix — added TodoID, WasResumeJoin | `4488ff0` |
+| 12 | Default config name (config.md) | Spec fix — "Command Center" → "Claude Command" | `4488ff0` |
+| 13 | PrepareWorktree parameter (worktree.md) | Spec fix — `repoRoot` → `dir` | `4488ff0` |
+| 14 | WorktreeInfo.CreatedAt source (worktree.md) | Spec fix — branch name → file mtime | `4488ff0` |
+| 15 | PR Enter key behavior (prs.md) | Spec fix — documented local-repo requirement and no-op fallback | `4488ff0` |
+| 16 | TUI esc behavior (host.md) | Audit false positive — code is double-esc, spec was correct | — |
+| 17 | Host typed plugin references (host.md) | Code fix — added `daemonAware` interface, removed typed fields | `54235ab` |
+| 18 | Blocked session rendering (sessions.md) | Spec fix — added yellow dot + "Blocked" detail | `4488ff0` |
+| 19 | ActiveTodos vs VisibleTodos (db.md) | Spec fix — documented VisibleTodos and merge-based filtering | `4488ff0` |
+
+### Behavioral Gaps — 0/142 resolved
+
+Not yet started.
+
+### Unimplemented Spec Promises — 0/3 resolved
+
+Not yet started.
+
 ## Delta from Last Audit
 
 First audit — no delta available.
