@@ -98,11 +98,7 @@ type Model struct {
 	db *sql.DB
 
 	// Daemon connection for session registry and event subscription.
-	daemonConn   *DaemonConn
-	sessionsPlug *sessions.Plugin
-	ccPlug       *commandcenter.Plugin
-	prsPlug      *prs.Plugin
-	settingsPlug *settings.Plugin
+	daemonConn *DaemonConn
 	bus          plugin.EventBus
 
 	// Budget widget state — polled from daemon.
@@ -206,12 +202,8 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		allTabs:      allTabs,
 		activeTab:    0,
 		allPlugins:   allPlugins,
-		db:           database,
-		sessionsPlug: sessPlug,
-		ccPlug:       ccPlug,
-		prsPlug:      prsPlug,
-		settingsPlug: settingsPlug,
-		bus:          bus,
+		db:  database,
+		bus: bus,
 	}
 	m.rebuildTabs()
 	return m
@@ -279,22 +271,19 @@ func (m *Model) SetReturnContext(todoID string, wasResumeJoin bool) {
 	m.returnWasResumeJoin = wasResumeJoin
 }
 
+// daemonAware is implemented by plugins that need a daemon client reference.
+type daemonAware interface {
+	SetDaemonClientFunc(fn func() *daemon.Client)
+}
+
 // SetDaemonConn attaches the daemon connection to the model.
 // Must be called before the program is run.
 func (m *Model) SetDaemonConn(dc *DaemonConn) {
 	m.daemonConn = dc
-	// Wire daemon client getter into the sessions plugin for the active view.
-	if m.sessionsPlug != nil {
-		m.sessionsPlug.SetDaemonClientFunc(dc.Client)
-	}
-	if m.ccPlug != nil {
-		m.ccPlug.SetDaemonClientFunc(dc.Client)
-	}
-	if m.prsPlug != nil {
-		m.prsPlug.SetDaemonClientFunc(dc.Client)
-	}
-	if m.settingsPlug != nil {
-		m.settingsPlug.SetDaemonClientFunc(dc.Client)
+	for _, p := range m.allPlugins {
+		if da, ok := p.(daemonAware); ok {
+			da.SetDaemonClientFunc(dc.Client)
+		}
 	}
 }
 
