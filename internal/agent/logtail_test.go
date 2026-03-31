@@ -30,25 +30,25 @@ func TestNativeLogPath(t *testing.T) {
 			name:       "simple path",
 			projectDir: "/Users/aaron/project",
 			sessionID:  "abc-123",
-			wantSuffix: filepath.Join(".claude", "projects", "Users-aaron-project", "abc-123.jsonl"),
+			wantSuffix: filepath.Join(".claude", "projects", "-Users-aaron-project", "abc-123.jsonl"),
 		},
 		{
 			name:       "deep nested path",
 			projectDir: "/Users/aaron/Personal/claude-command-center",
 			sessionID:  "sess-456",
-			wantSuffix: filepath.Join(".claude", "projects", "Users-aaron-Personal-claude-command-center", "sess-456.jsonl"),
+			wantSuffix: filepath.Join(".claude", "projects", "-Users-aaron-Personal-claude-command-center", "sess-456.jsonl"),
 		},
 		{
 			name:       "root-level path",
 			projectDir: "/tmp",
 			sessionID:  "root-sess",
-			wantSuffix: filepath.Join(".claude", "projects", "tmp", "root-sess.jsonl"),
+			wantSuffix: filepath.Join(".claude", "projects", "-tmp", "root-sess.jsonl"),
 		},
 		{
 			name:       "single depth",
 			projectDir: "/opt",
 			sessionID:  "s1",
-			wantSuffix: filepath.Join(".claude", "projects", "opt", "s1.jsonl"),
+			wantSuffix: filepath.Join(".claude", "projects", "-opt", "s1.jsonl"),
 		},
 	}
 
