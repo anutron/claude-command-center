@@ -539,16 +539,88 @@ func TestSessionsArchiveToggle(t *testing.T) {
 		t.Fatal("expected archiveMode to be false initially")
 	}
 
-	// Press 'a' — should enter archive mode
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	// Press 'A' (shift-a) — should enter archive mode
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
 	if !p.unified.archiveMode {
-		t.Fatal("expected archiveMode to be true after pressing 'a'")
+		t.Fatal("expected archiveMode to be true after pressing 'A'")
 	}
 
-	// Press 'a' again — should leave archive mode
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	// Press 'A' again — should leave archive mode
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
 	if p.unified.archiveMode {
-		t.Fatal("expected archiveMode to be false after pressing 'a' again")
+		t.Fatal("expected archiveMode to be false after pressing 'A' again")
+	}
+}
+
+func TestSessionsArchiveActionOnEndedLive(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Add an ended live session
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-ended-001",
+			Topic:        "Ended session",
+			Project:      "/home/user/proj",
+			Repo:         "proj",
+			Branch:       "main",
+			State:        "ended",
+			RegisteredAt: time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
+			EndedAt:      time.Now().Add(-10 * time.Minute).Format(time.RFC3339),
+		},
+	}
+
+	// Press 'a' to archive the selected session
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if action.Type != "consumed" {
+		t.Fatalf("expected consumed action, got %s", action.Type)
+	}
+
+	// Verify session was archived to DB
+	archived, _ := db.DBLoadArchivedSessions(p.db)
+	if len(archived) != 1 {
+		t.Fatalf("expected 1 archived session, got %d", len(archived))
+	}
+	if archived[0].SessionID != "live-ended-001" {
+		t.Fatalf("expected session ID live-ended-001, got %s", archived[0].SessionID)
+	}
+
+	// Verify flash message
+	if p.flashMessage == "" {
+		t.Fatal("expected flash message after archiving")
+	}
+}
+
+func TestSessionsArchiveActionOnRunningBlocked(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Add a running live session
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-running-001",
+			Topic:        "Running session",
+			Project:      "/home/user/proj",
+			Repo:         "proj",
+			Branch:       "main",
+			State:        "running",
+			RegisteredAt: time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	// Press 'a' to archive — should be blocked
+	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if action.Type != "consumed" {
+		t.Fatalf("expected consumed action, got %s", action.Type)
+	}
+
+	// Verify no archived sessions
+	archived, _ := db.DBLoadArchivedSessions(p.db)
+	if len(archived) != 0 {
+		t.Fatalf("expected 0 archived sessions, got %d", len(archived))
+	}
+
+	// Verify flash message indicates blocking
+	if p.flashMessage != "Can't archive running session" {
+		t.Fatalf("expected 'Can't archive running session' flash, got %q", p.flashMessage)
 	}
 }
 
