@@ -20,6 +20,9 @@ func extractSlackCommitments(ctx context.Context, l llm.LLM, candidates []slackC
 	var sb strings.Builder
 	for i, c := range candidates {
 		sb.WriteString(fmt.Sprintf("## Message %d (from #%s)\n", i+1, c.Channel))
+		if c.Author != "" {
+			sb.WriteString(fmt.Sprintf("Author: %s\n", c.Author))
+		}
 		sb.WriteString(fmt.Sprintf("Permalink: %s\n", c.Permalink))
 		if c.ConversationContext != "" {
 			sb.WriteString(fmt.Sprintf("Preceding conversation:\n%s\n", c.ConversationContext))
@@ -43,7 +46,12 @@ In both cases:
 1. There must be a concrete next action with a clear outcome
 2. You can write an actionable title starting with a verb (Send, Review, Schedule, Build, Write, Follow up, etc.)
 
+Each message has an Author field showing who wrote it. Use this to determine attribution:
+- If the Author is NOT Aaron and the message uses first-person ("I will", "I'll"), that is the OTHER person's commitment, not Aaron's — REJECT it
+- If the Author is NOT Aaron but the message assigns work to Aaron ("Aaron will...", "Aaron to..."), that IS a todo for Aaron
+
 REJECT messages that are:
+- First-person commitments by someone other than Aaron (check the Author field!)
 - Conversational responses ("done", "good process!", "sounds good")
 - Observations, tips, shared links, compliments
 - Descriptions of past actions ("I just...", "I found that...")

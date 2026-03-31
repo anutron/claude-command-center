@@ -98,6 +98,7 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 // slackCandidate is a Slack message that may contain a commitment.
 type slackCandidate struct {
 	Message             string
+	Author              string // display name of the message author
 	Permalink           string
 	Channel             string
 	ChannelID           string
@@ -484,6 +485,7 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 
 			c := slackCandidate{
 				Message:   msg.Text,
+				Author:    names.resolve(msg.User),
 				Permalink: buildPermalink(ch.ID, msg.TS),
 				Channel:   displayName,
 				ChannelID: ch.ID,
@@ -551,6 +553,7 @@ type slackSearchResponse struct {
 
 type slackSearchMatch struct {
 	Text      string `json:"text"`
+	Username  string `json:"username"`
 	Timestamp string `json:"ts"`
 	Permalink string `json:"permalink"`
 	Channel   struct {
@@ -626,6 +629,7 @@ func fetchSlackCandidatesViaSearch(ctx context.Context, token string) ([]slackCa
 
 			allCandidates = append(allCandidates, slackCandidate{
 				Message:   match.Text,
+				Author:    match.Username,
 				Permalink: permalink,
 				Channel:   channelName,
 				ChannelID: match.Channel.ID,
