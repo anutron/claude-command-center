@@ -1683,6 +1683,188 @@ func TestHandleDaemonAgentFinishedInvalidPayload(t *testing.T) {
 	}
 }
 
+// ==========================================
+// VIEW-LEVEL REGRESSION TESTS
+// ==========================================
+
+func TestBUG113_DownArrowAutoExpandsView(t *testing.T) {
+	p := testPlugin(t)
+	p.height = 30
+	p.width = 120
+	maxVisible := p.normalMaxVisibleTodos()
+
+	// Create enough todos to overflow the visible area.
+	var todos []db.Todo
+	for i := 0; i < maxVisible+5; i++ {
+		todos = append(todos, db.Todo{
+			ID:        fmt.Sprintf("t%d", i),
+			Title:     fmt.Sprintf("Todo item %d", i),
+			Status:    db.StatusBacklog,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+		})
+	}
+	p.cc = &db.CommandCenter{GeneratedAt: time.Now(), Todos: todos}
+
+	// Navigate down to one before the limit.
+	for i := 0; i < maxVisible-1; i++ {
+		p.HandleKey(keyMsg("j"))
+	}
+
+	// Should still be in normal (non-expanded) view.
+	if p.ccExpanded {
+		t.Fatal("BUG-113 regression: should not be expanded yet")
+	}
+
+	// One more down should trigger auto-expand.
+	p.HandleKey(keyMsg("j"))
+
+	if !p.ccExpanded {
+		t.Error("BUG-113 regression: ccExpanded should be true after auto-expand")
+	}
+	if p.ccExpandedCols != 2 {
+		t.Errorf("BUG-113 regression: expandedCols = %d, want 2", p.ccExpandedCols)
+	}
+
+	// Render expanded view — the expanded tab bar uses format "ToDo (N)"
+	// which uniquely identifies the expanded view.
+	view := p.View(120, 30, 0)
+	expectedTab := fmt.Sprintf("ToDo (%d)", maxVisible+5)
+	if !strings.Contains(view, expectedTab) {
+		t.Errorf("BUG-113 regression: expanded view should show tab bar with %q, but not found in rendered output", expectedTab)
+	}
+	// All todos should be accessible in the expanded view.
+	lastTodo := fmt.Sprintf("Todo item %d", maxVisible)
+	if !strings.Contains(view, lastTodo) {
+		t.Errorf("BUG-113 regression: todo beyond normal visible area (%q) should be visible in expanded view", lastTodo)
+	}
+}
+
+func TestBUG115_SearchEnterOpensItem(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	// Enter search mode.
+	p.HandleKey(keyMsg("/"))
+	if !p.searchActive {
+		t.Fatal("expected searchActive after /")
+	}
+
+	// Type a search query matching the first todo.
+	p.searchInput.SetValue("First")
+	p.ccCursor = 0
+
+	// Press Enter — should open detail view directly.
+	p.HandleKey(keyMsg("enter"))
+
+	if p.searchActive {
+		t.Error("BUG-115 regression: searchActive should be false after enter")
+	}
+	if !p.detailView {
+		t.Fatal("BUG-115 regression: enter in search mode should open detail view directly")
+	}
+
+	// Render and check that the detail view content appears (not the todo list).
+	view := p.View(120, 40, 0)
+	// The detail view renders the todo title and field labels like "Status", "Due", "Project".
+	if !strings.Contains(view, "First todo") {
+		t.Error("BUG-115 regression: detail view should show the selected todo title 'First todo'")
+	}
+	// The detail view should NOT show the search filter bar.
+	if strings.Contains(view, "filter:") {
+		t.Error("BUG-115 regression: detail view should not show 'filter:' text — item should be opened, not frozen")
+	}
+}
+
+func TestBUG116_RunningTodoVisibleInView(t *testing.T) {
+	p := testPluginWithCC(t)
+	// Set a todo to StatusRunning — before the fix, this was filtered OUT.
+	p.cc.Todos[0].Status = db.StatusRunning
+
+	// Normal (non-expanded) view should include running todos.
+	view := p.View(120, 40, 0)
+	if !strings.Contains(view, "First todo") {
+		t.Error("BUG-116 regression: running todo 'First todo' should be visible in normal view")
+	}
+	if !strings.Contains(view, "agent working") {
+		t.Error("BUG-116 regression: running todo should show 'agent working' status indicator")
+	}
+}
+
+func TestBUG116_RunningTodoVisibleInExpandedAgentsTab(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].Status = db.StatusRunning
+
+	// Enter expanded view and switch to agents tab.
+	p.HandleKey(keyMsg(" ")) // expand
+	if !p.ccExpanded {
+		t.Fatal("expected expanded view")
+	}
+	// Cycle to "agents" tab: todo -> inbox -> agents
+	p.HandleKey(specialKeyMsg(tea.KeyTab))
+	p.HandleKey(specialKeyMsg(tea.KeyTab))
+	if p.triageFilter != "agents" {
+		t.Fatalf("expected triageFilter 'agents', got %q", p.triageFilter)
+	}
+
+	view := p.View(120, 40, 0)
+	if !strings.Contains(view, "First todo") {
+		t.Error("BUG-116 regression: running todo should appear under Agents tab in expanded view")
+	}
+}
+
+func TestBUG117_DaemonAgentFinishedTransitionsToReview(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].Status = db.StatusRunning
+	p.cc.Todos[0].SessionID = "sess-abc"
+
+	// Simulate daemon broadcasting agent.finished.
+	msg := plugin.NotifyMsg{
+		Event: "agent.finished",
+		Data:  []byte(`{"id":"t1","exit_code":0}`),
+	}
+	handled, _ := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("BUG-117 regression: agent.finished NotifyMsg should be handled")
+	}
+
+	// Verify in-memory status transitioned.
+	if p.cc.Todos[0].Status != db.StatusReview {
+		t.Errorf("BUG-117 regression: expected status %q, got %q", db.StatusReview, p.cc.Todos[0].Status)
+	}
+
+	// Render normal view — the todo should show "ready for review" indicator.
+	view := p.View(120, 40, 0)
+	if !strings.Contains(view, "ready for review") {
+		t.Error("BUG-117 regression: todo should show 'ready for review' status in rendered view after agent.finished")
+	}
+	if strings.Contains(view, "agent working") {
+		t.Error("BUG-117 regression: todo should NOT show 'agent working' after transitioning to review")
+	}
+}
+
+func TestBUG117_DaemonAgentFinishedFailureShowsFailed(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].Status = db.StatusRunning
+	p.cc.Todos[0].SessionID = "sess-abc"
+
+	// Simulate daemon broadcasting agent.finished with non-zero exit code.
+	msg := plugin.NotifyMsg{
+		Event: "agent.finished",
+		Data:  []byte(`{"id":"t1","exit_code":1}`),
+	}
+	p.HandleMessage(msg)
+
+	if p.cc.Todos[0].Status != db.StatusFailed {
+		t.Errorf("BUG-117 regression: expected status %q for non-zero exit, got %q", db.StatusFailed, p.cc.Todos[0].Status)
+	}
+
+	// Render — should show "failed" indicator.
+	view := p.View(120, 40, 0)
+	if !strings.Contains(view, "failed") {
+		t.Error("BUG-117 regression: todo should show 'failed' indicator for non-zero exit code")
+	}
+}
+
 func TestNotifyMsgAgentFinishedRouting(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].Status = db.StatusRunning
