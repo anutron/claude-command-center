@@ -1550,3 +1550,79 @@ func TestSearchEnterOpensSelectedItem(t *testing.T) {
 	}
 }
 
+func TestHandleDaemonAgentFinished(t *testing.T) {
+	p := testPluginWithCC(t)
+	// Set the todo to "running" to simulate a daemon-managed agent in progress.
+	p.cc.Todos[0].Status = db.StatusRunning
+
+	// Simulate the daemon broadcasting agent.finished with exit code 0.
+	data := []byte(`{"id":"t1","exit_code":0}`)
+	handled, action := p.handleDaemonAgentFinished(data)
+	if !handled {
+		t.Fatal("expected handleDaemonAgentFinished to return handled=true")
+	}
+	if action.TeaCmd == nil {
+		t.Fatal("expected non-nil TeaCmd for DB persistence")
+	}
+
+	// The in-memory status should be "review" for a successful exit.
+	if p.cc.Todos[0].Status != db.StatusReview {
+		t.Errorf("expected todo status %q, got %q", db.StatusReview, p.cc.Todos[0].Status)
+	}
+}
+
+func TestHandleDaemonAgentFinishedFailure(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].Status = db.StatusRunning
+
+	// Simulate daemon broadcasting agent.finished with non-zero exit code.
+	data := []byte(`{"id":"t1","exit_code":1}`)
+	handled, _ := p.handleDaemonAgentFinished(data)
+	if !handled {
+		t.Fatal("expected handleDaemonAgentFinished to return handled=true")
+	}
+
+	// The in-memory status should be "failed" for a non-zero exit.
+	if p.cc.Todos[0].Status != db.StatusFailed {
+		t.Errorf("expected todo status %q, got %q", db.StatusFailed, p.cc.Todos[0].Status)
+	}
+}
+
+func TestHandleDaemonAgentFinishedInvalidPayload(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	// Invalid JSON should return handled=false.
+	handled, _ := p.handleDaemonAgentFinished([]byte(`not json`))
+	if handled {
+		t.Error("expected handled=false for invalid JSON")
+	}
+
+	// Empty ID should return handled=false.
+	handled, _ = p.handleDaemonAgentFinished([]byte(`{"id":"","exit_code":0}`))
+	if handled {
+		t.Error("expected handled=false for empty ID")
+	}
+}
+
+func TestNotifyMsgAgentFinishedRouting(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].Status = db.StatusRunning
+
+	// Send a NotifyMsg with agent.finished event — this is what the host
+	// broadcasts when a daemon event arrives.
+	msg := plugin.NotifyMsg{
+		Event: "agent.finished",
+		Data:  []byte(`{"id":"t1","exit_code":0}`),
+	}
+	handled, action := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("expected HandleMessage to handle agent.finished NotifyMsg")
+	}
+	if action.TeaCmd == nil {
+		t.Fatal("expected non-nil TeaCmd")
+	}
+	if p.cc.Todos[0].Status != db.StatusReview {
+		t.Errorf("expected todo status %q, got %q", db.StatusReview, p.cc.Todos[0].Status)
+	}
+}
+

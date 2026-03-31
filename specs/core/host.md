@@ -96,7 +96,7 @@ The host maintains a `DaemonConn` that wraps two daemon RPC connections: one for
 4. **Event subscription**: `Connect()` opens a second socket connection and starts a goroutine that calls `subClient.Subscribe()`. Each daemon event is injected into the bubbletea program as a `DaemonEventMsg`.
 5. **DaemonEventMsg routing**: When a `DaemonEventMsg` arrives in `Update()`, the host does two things:
    - Publishes to the event bus via `routeDaemonEvent()` (converts to `plugin.Event{Source: "daemon", Topic: evt.Type, Payload: evt.Data}`)
-   - Broadcasts `plugin.NotifyMsg{Event: evt.Type}` to all plugins so they can dispatch async tea.Cmds via `HandleMessage` (instead of mutating state directly in event bus handlers, which would race with tea.Cmd goroutines)
+   - Broadcasts `plugin.NotifyMsg{Event: evt.Type, Data: evt.Data}` to all plugins so they can dispatch async tea.Cmds via `HandleMessage` (instead of mutating state directly in event bus handlers, which would race with tea.Cmd goroutines)
 6. **Disconnect detection**: When the subscription goroutine exits (connection lost), it sends `DaemonDisconnectedMsg`. The host sets `connected` to false and schedules a reconnect attempt.
 7. **Reconnect**: On `daemonReconnectMsg` (fired after a 10-second delay), the host calls `DaemonConn.Reconnect()` which closes stale connections, re-establishes both RPC and subscription connections, and restarts the subscription goroutine. If reconnection fails, another attempt is scheduled.
 8. **Shutdown**: `Model.Shutdown()` calls `DaemonConn.Close()` which closes both connections.

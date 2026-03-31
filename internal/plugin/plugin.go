@@ -133,4 +133,5 @@ type SettingsProvider interface {
 // importing tui (which would cause a circular dependency).
 type NotifyMsg struct {
 	Event string
+	Data  []byte // optional JSON payload from daemon events
 }

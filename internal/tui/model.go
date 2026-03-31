@@ -483,7 +483,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// directly in event bus handlers, which risks data races with tea.Cmd
 		// goroutines).
 		var cmds []tea.Cmd
-		m.broadcastMessage(plugin.NotifyMsg{Event: msg.Event.Type}, &cmds)
+		m.broadcastMessage(plugin.NotifyMsg{Event: msg.Event.Type, Data: msg.Event.Data}, &cmds)
 		if len(cmds) > 0 {
 			return m, tea.Batch(cmds...)
 		}
