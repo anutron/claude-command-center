@@ -72,6 +72,8 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `space` | normal | Cycle expanded view: collapsed → 2-col → 1-col → collapsed |
 | `c` | normal | Create todo via rich textarea (AI-powered) |
 | `/` | normal | Search/filter todos (case insensitive) |
+| `enter` | search | Open the selected item from the filtered list directly (no intermediate freeze state) |
+| `esc` | search | Clear search query and exit search mode |
 | `b` | normal | Toggle backlog (completed items) |
 | `s` | normal | Enter booking mode for selected todo |
 | `r` | normal | Manual refresh (spawns ai-cron) |
@@ -660,6 +662,10 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Todo-agent pipeline: loadPathContext assembles path descriptions, project skills, global skills, and routing rules
 - Todo-agent pipeline: partial context failures (missing skills, missing rules) are logged but don't block other paths
 - Todo-agent pipeline: LLM parse failure for one todo is logged and skipped, other todos still processed
+- Search: `/` activates search mode, typing filters todos
+- Search: `enter` in search mode opens the selected item directly (exits search and enters detail view in one keystroke)
+- Search: `esc` in search mode clears the query and exits search
+- Search: display_id exact match filters correctly
 - Focus suggestion: always visible after data load (never empty banner)
 - Focus suggestion: zero active todos generates LLM-powered witty remark with calendar context
 - Focus suggestion: data load with empty focus triggers generation automatically

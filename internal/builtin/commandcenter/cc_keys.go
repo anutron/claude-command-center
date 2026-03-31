@@ -736,6 +736,16 @@ func (p *Plugin) handleSearchInput(msg tea.KeyMsg) plugin.Action {
 		}
 		p.ccScrollOffset = 0
 		p.ccExpandedOffset = 0
+		// Open the selected item directly — skip the intermediate "frozen filter" state
+		if len(filtered) > 0 && p.ccCursor < len(filtered) {
+			p.detailView = true
+			p.detailTodoID = filtered[p.ccCursor].ID
+			p.detailMode = "viewing"
+			p.detailSelectedField = 0
+			p.textInput.Reset()
+			p.textInput.Placeholder = "Tell me what changed..."
+			p.detailFieldInput.Reset()
+		}
 		return plugin.NoopAction()
 	case "esc":
 		p.searchActive = false
