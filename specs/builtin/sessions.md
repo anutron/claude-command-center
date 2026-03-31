@@ -55,7 +55,7 @@ A session that is both live in the daemon AND bookmarked appears in **Live** onl
 
 ### View Modes
 
-The Active and Resume tabs each have their own view filter. The `a` key toggles archive mode within the current tab.
+The Active and Resume tabs each have their own view filter. The `A` key (shift-a) toggles archive mode within the current tab. The `a` key (lowercase) archives the selected session.
 
 | Tab / Mode | Contents | Default |
 |------------|----------|---------|
@@ -90,7 +90,8 @@ When `Refresh()` polls the daemon, it compares the current session list against 
 | enter | Resume selected session | yes |
 | b | Bookmark live session → Saved | yes |
 | d | Dismiss/remove (tier-dependent) | yes |
-| a | Toggle archive mode | yes |
+| a | Archive selected session (verb action) | yes |
+| A | View archive list (toggle archive mode) | yes |
 | j/k or up/down | Navigate list | yes |
 
 ### Sessions sub-tab (archive mode)
@@ -100,7 +101,7 @@ When `Refresh()` polls the daemon, it compares the current session list against 
 | enter | Resume archived session | yes |
 | b | Promote to Saved (bookmark) | yes |
 | d | Permanently delete | yes |
-| a | Return to main mode | yes |
+| A | Return to main mode | yes |
 | j/k or up/down | Navigate list | yes |
 
 ### New sub-tab
@@ -151,8 +152,8 @@ When `Refresh()` polls the daemon, it compares the current session list against 
 
 Each sub-tab displays a hint bar at the bottom:
 
-- **Sessions (main):** `enter resume   b bookmark   d dismiss   j/k navigate   a archive   s sessions   n new   t worktrees`
-- **Sessions (archive):** `enter resume   b save   d delete   j/k navigate   a back   s sessions   n new   t worktrees`
+- **Sessions (main):** `enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive   s sessions   n new   t worktrees`
+- **Sessions (archive):** `enter resume   b save   d delete   j/k navigate   A back   s sessions   n new   t worktrees`
 - **New:** `type to filter   enter launch   w worktree   s sessions   n new   t worktrees   shift+up/down reorder   del remove   esc quit`
 - **Worktrees:** `enter launch   d delete   p prune   s sessions   n new   esc back`
 - **Worktree warning:** `⚠ Not a git repository — worktrees require git.` + `[enter] Launch directly in this directory   [esc] Cancel`
@@ -221,7 +222,7 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 6. Enter on a project path launches Claude in that directory
 7. `b` on a live session bookmarks it; on an archived session promotes it to Saved
 8. `d` dismisses live ended sessions, removes bookmarks, or deletes archived sessions (tier-dependent)
-9. `a` in sessions sub-tab toggles between main and archive modes
+9. `a` in sessions sub-tab archives the selected session (writes to `cc_archived_sessions`, removes from current view); `A` toggles between main and archive modes
 10. `w` on a path in new sub-tab launches Claude in a new worktree
     - If the path is not a git repo, shows a warning overlay
 11. Worktrees sub-tab scans all saved paths for git repos, lists their worktrees grouped by project
@@ -335,3 +336,8 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 - Blocked session (agent status == "blocked") renders yellow dot and "Blocked" text
 - Active non-blocked session renders green dot
 - Ended session renders muted hollow dot
+- `a` on ended live session archives it to DB and removes from view
+- `a` on running/active live session shows "Can't archive running session" flash
+- `a` on saved session archives it to DB, removes bookmark, removes from view
+- `A` toggles archive mode (view archive list)
+- `A` in archive mode returns to main mode

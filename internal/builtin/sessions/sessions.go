@@ -474,7 +474,8 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "s", Description: "Sessions sub-tab", Promoted: true},
 		{Key: "n", Description: "New session sub-tab", Promoted: true},
 		{Key: "t", Description: "Worktrees sub-tab", Promoted: true},
-		{Key: "a", Description: "Toggle archived sessions", Promoted: true},
+		{Key: "a", Description: "Archive session", Promoted: true},
+		{Key: "A", Description: "View archive", Promoted: true},
 		{Key: "w", Description: "Launch in worktree", Promoted: true},
 		{Key: "enter", Description: "Launch/resume session", Promoted: true},
 		{Key: "b", Description: "Bookmark session", Promoted: true},
@@ -840,6 +841,71 @@ func (p *Plugin) handleSessionsTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "a":
+		// Archive the selected session (verb action).
+		if p.unified == nil {
+			return plugin.NoopAction()
+		}
+		sel := p.unified.SelectedItem()
+		if sel == nil {
+			return plugin.NoopAction()
+		}
+		switch sel.Tier {
+		case TierLive:
+			if sel.State == "active" || sel.State == "running" {
+				p.flashMessage = "Can't archive running session"
+				p.flashMessageAt = time.Now()
+				return plugin.ConsumedAction()
+			}
+			// Write to archived DB, then dismiss from daemon.
+			if p.db != nil {
+				_ = db.DBInsertArchivedSession(p.db, db.ArchivedSession{
+					SessionID:    sel.SessionID,
+					Topic:        sel.Topic,
+					Project:      sel.Project,
+					Repo:         sel.Repo,
+					Branch:       sel.Branch,
+					WorktreePath: sel.WorktreePath,
+					RegisteredAt: sel.RegisteredAt,
+					EndedAt:      sel.EndedAt,
+				})
+				p.unified.ReloadArchived()
+			}
+			if p.unified.daemonClient != nil {
+				client := p.unified.daemonClient()
+				if client != nil {
+					_ = client.ArchiveSession(daemon.ArchiveSessionParams{SessionID: sel.SessionID})
+				}
+			}
+			p.unified.RemoveSession(sel.SessionID)
+			p.flashMessage = "Archived: " + sel.SessionID[:min(8, len(sel.SessionID))]
+		case TierSaved:
+			// Archive the saved session: write to archive DB, remove bookmark.
+			if p.db != nil {
+				_ = db.DBInsertArchivedSession(p.db, db.ArchivedSession{
+					SessionID:    sel.SessionID,
+					Topic:        sel.Topic,
+					Project:      sel.Project,
+					Repo:         sel.Repo,
+					Branch:       sel.Branch,
+					WorktreePath: sel.WorktreePath,
+					RegisteredAt: sel.RegisteredAt,
+				})
+				_ = db.DBRemoveBookmark(p.db, sel.SessionID)
+				sessions, _ := db.DBLoadBookmarks(p.db)
+				p.unified.SetSavedSessions(sessions)
+				p.unified.ReloadArchived()
+			}
+			p.unified.RemoveSession(sel.SessionID)
+			p.flashMessage = "Archived: " + sel.SessionID[:min(8, len(sel.SessionID))]
+		case TierArchived:
+			// Already archived — no-op.
+			p.flashMessage = "Already archived"
+		}
+		p.flashMessageAt = time.Now()
+		return plugin.ConsumedAction()
+
+	case "A":
+		// View archive list (toggle archive mode).
 		if p.unified != nil {
 			p.unified.ToggleArchive()
 		}
@@ -1274,9 +1340,9 @@ func (p *Plugin) renderHints() string {
 		switch p.subTab {
 		case "sessions":
 			if p.unified != nil && p.unified.archiveMode {
-				hints = p.styles.hint.Render("enter resume   b save   d delete   j/k navigate   a back   s sessions   n new   t worktrees")
+				hints = p.styles.hint.Render("enter resume   b save   d delete   j/k navigate   A back   s sessions   n new   t worktrees")
 			} else {
-				hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   j/k navigate   a archive   s sessions   n new   t worktrees")
+				hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive   s sessions   n new   t worktrees")
 			}
 		case "new":
 			if p.filterText != "" {
