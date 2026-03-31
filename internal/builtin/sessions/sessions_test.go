@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -517,6 +518,126 @@ func TestSubstringFilter(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // New integration tests for unified view
+// ---------------------------------------------------------------------------
+// BUG regression tests (view-level)
+// ---------------------------------------------------------------------------
+
+// TestBUG118_ActiveTabOnlyShowsLiveSessions is a regression test for BUG-118.
+// Before the fix, saved sessions leaked into the Active tab. The fix added
+// viewFilter to unifiedView so Active shows only live and Resume shows only saved.
+func TestBUG118_ActiveTabOnlyShowsLiveSessions(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	now := time.Now()
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-1",
+			Topic:        "Live Session",
+			Project:      "/proj",
+			State:        "active",
+			RegisteredAt: now.Format(time.RFC3339),
+		},
+	}
+	p.unified.savedSessions = []db.Session{
+		{
+			SessionID: "saved-1",
+			Project:   "/proj",
+			Repo:      "proj",
+			Branch:    "main",
+			Summary:   "Saved Session",
+			Created:   now.Add(-1 * time.Hour),
+			Type:      db.SessionBookmark,
+		},
+	}
+
+	// Active tab mode: only live sessions should be visible.
+	p.unified.viewFilter = ViewFilterLiveOnly
+	view := p.View(120, 38, 0)
+	if !strings.Contains(view, "Live Session") {
+		t.Errorf("BUG-118 regression: Active tab should show live session.\nView:\n%s", view)
+	}
+	if strings.Contains(view, "Saved Session") {
+		t.Errorf("BUG-118 regression: Active tab should NOT show saved session.\nView:\n%s", view)
+	}
+
+	// Resume tab mode: only saved sessions should be visible.
+	p.unified.viewFilter = ViewFilterSavedOnly
+	view = p.View(120, 38, 0)
+	if !strings.Contains(view, "Saved Session") {
+		t.Errorf("BUG-118 regression: Resume tab should show saved session.\nView:\n%s", view)
+	}
+	if strings.Contains(view, "Live Session") {
+		t.Errorf("BUG-118 regression: Resume tab should NOT show live session.\nView:\n%s", view)
+	}
+}
+
+// TestBUG119_TabSwitchingDoesNotCorruptViews is a regression test for BUG-119.
+// Before the fix, NavigateTo did not handle "active" and "resume" routes
+// correctly, causing the Resume tab to show New Session content and tab
+// switching to corrupt all tabs. This test verifies at the VIEW level.
+func TestBUG119_TabSwitchingDoesNotCorruptViews(t *testing.T) {
+	p := setupPlugin(t)
+
+	// Populate data for all three tabs.
+	_ = db.DBAddPath(p.db, "/home/user/project-a")
+	p.paths = append(p.paths, "/home/user/project-a")
+	p.newList.SetItems(p.buildNewItems())
+
+	now := time.Now()
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-1",
+			Topic:        "My Active Session",
+			Project:      "/home/user/project-a",
+			State:        "active",
+			RegisteredAt: now.Format(time.RFC3339),
+		},
+	}
+	p.unified.savedSessions = []db.Session{
+		{
+			SessionID: "saved-1",
+			Project:   "/home/user/project-b",
+			Repo:      "project-b",
+			Branch:    "main",
+			Summary:   "My Saved Session",
+			Created:   now.Add(-1 * time.Hour),
+			Type:      db.SessionBookmark,
+		},
+	}
+
+	// 1. Navigate to Active tab, verify live session is visible.
+	p.NavigateTo("active", nil)
+	p.HandleMessage(plugin.TabViewMsg{Route: "active"})
+	view := p.View(120, 38, 0)
+	if !strings.Contains(view, "My Active Session") {
+		t.Errorf("BUG-119 regression: Active tab should show live session.\nView:\n%s", view)
+	}
+
+	// 2. Navigate to New tab, verify project path content.
+	p.NavigateTo("new", nil)
+	p.HandleMessage(plugin.TabViewMsg{Route: "new"})
+	view = p.View(120, 38, 0)
+	if !strings.Contains(view, "project-a") {
+		t.Errorf("BUG-119 regression: New tab should show project path.\nView:\n%s", view)
+	}
+
+	// 3. Navigate to Resume tab, verify saved session is visible.
+	p.NavigateTo("resume", nil)
+	p.HandleMessage(plugin.TabViewMsg{Route: "resume"})
+	view = p.View(120, 38, 0)
+	if !strings.Contains(view, "My Saved Session") {
+		t.Errorf("BUG-119 regression: Resume tab should show saved session.\nView:\n%s", view)
+	}
+
+	// 4. Key corruption check: navigate BACK to Active and verify it still works.
+	p.NavigateTo("active", nil)
+	p.HandleMessage(plugin.TabViewMsg{Route: "active"})
+	view = p.View(120, 38, 0)
+	if !strings.Contains(view, "My Active Session") {
+		t.Errorf("BUG-119 regression: Active tab corrupted after tab switching — live session not visible.\nView:\n%s", view)
+	}
+}
+
 // ---------------------------------------------------------------------------
 
 func TestSessionsArchiveToggle(t *testing.T) {
