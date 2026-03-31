@@ -335,3 +335,7 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 - Blocked session (agent status == "blocked") renders yellow dot and "Blocked" text
 - Active non-blocked session renders green dot
 - Ended session renders muted hollow dot
+- NavigateTo("resume") sets subTab to "sessions" (not left unchanged)
+- NavigateTo("active") sets subTab to "sessions" (not left unchanged)
+- Switching from New Session tab to Resume tab renders sessions content, not project list
+- Tab switching does not corrupt other tabs' content (each NavigateTo resets subTab correctly)

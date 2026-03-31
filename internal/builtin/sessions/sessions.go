@@ -604,7 +604,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		return false, plugin.NoopAction()
 
 	case plugin.TabViewMsg:
-		if msg.Route == "active" || msg.Route == "sessions" {
+		if msg.Route == "active" || msg.Route == "sessions" || msg.Route == "resume" {
 			if cmd := p.Refresh(); cmd != nil {
 				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 			}
