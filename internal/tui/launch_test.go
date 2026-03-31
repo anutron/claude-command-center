@@ -202,6 +202,66 @@ func TestResolveSessionDir_SessionInExpectedDir(t *testing.T) {
 	}
 }
 
+// TestRunClaudeOnStartCallbackFires verifies that RunClaude invokes the
+// onStart callback with a non-zero PID. Uses "true" (or "echo") as a
+// stand-in for "claude" — we override via PATH so exec.Command finds our
+// wrapper instead of the real binary.
+func TestRunClaudeOnStartCallbackFires(t *testing.T) {
+	// Create a fake "claude" script that exits immediately.
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeScript := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(fakeScript, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Prepend binDir to PATH so exec.Command("claude") finds our fake.
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	launchDir := t.TempDir()
+	action := LaunchAction{
+		Dir: launchDir,
+	}
+
+	var callbackPID int
+	callbackCalled := false
+
+	_, err := RunClaude(action, func(pid int) {
+		callbackCalled = true
+		callbackPID = pid
+	})
+	if err != nil {
+		t.Fatalf("RunClaude returned error: %v", err)
+	}
+	if !callbackCalled {
+		t.Fatal("onStart callback was not called")
+	}
+	if callbackPID == 0 {
+		t.Fatal("onStart callback received PID 0, expected non-zero")
+	}
+}
+
+// TestRunClaudeNilOnStartNoPanic verifies that passing nil for onStart
+// does not cause a panic.
+func TestRunClaudeNilOnStartNoPanic(t *testing.T) {
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeScript := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(fakeScript, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+
+	action := LaunchAction{Dir: t.TempDir()}
+	_, err := RunClaude(action, nil)
+	if err != nil {
+		t.Fatalf("RunClaude with nil onStart returned error: %v", err)
+	}
+}
+
 func TestValidateLaunchDir_PathTraversal(t *testing.T) {
 	database, err := db.OpenDB(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {

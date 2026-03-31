@@ -108,6 +108,99 @@ func TestListSessionsExcludesArchived(t *testing.T) {
 	}
 }
 
+func TestEndSessionViaClient(t *testing.T) {
+	_, client, _ := startTestDaemon(t)
+
+	// Register a session.
+	err := client.RegisterSession(daemon.RegisterSessionParams{
+		SessionID: "sess-end",
+		PID:       os.Getpid(),
+		Project:   "/tmp/endproject",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// End the session.
+	err = client.EndSession(daemon.EndSessionParams{
+		SessionID: "sess-end",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// List sessions — the ended session should still appear with State="ended".
+	sessions, err := client.ListSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].State != "ended" {
+		t.Fatalf("expected state 'ended', got '%s'", sessions[0].State)
+	}
+}
+
+func TestEndSessionIdempotent(t *testing.T) {
+	_, client, _ := startTestDaemon(t)
+
+	client.RegisterSession(daemon.RegisterSessionParams{
+		SessionID: "sess-idem",
+		PID:       os.Getpid(),
+		Project:   "/tmp/idem",
+	})
+
+	// End twice — second call should be a no-op (already ended).
+	if err := client.EndSession(daemon.EndSessionParams{SessionID: "sess-idem"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.EndSession(daemon.EndSessionParams{SessionID: "sess-idem"}); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, _ := client.ListSessions()
+	if len(sessions) != 1 || sessions[0].State != "ended" {
+		t.Fatalf("expected 1 ended session, got %v", sessions)
+	}
+}
+
+func TestEndSessionNotFound(t *testing.T) {
+	_, client, _ := startTestDaemon(t)
+
+	err := client.EndSession(daemon.EndSessionParams{
+		SessionID: "nonexistent",
+	})
+	if err == nil {
+		t.Fatal("expected error for nonexistent session, got nil")
+	}
+}
+
+func TestEndThenArchiveSession(t *testing.T) {
+	_, client, _ := startTestDaemon(t)
+
+	client.RegisterSession(daemon.RegisterSessionParams{
+		SessionID: "sess-archive",
+		PID:       os.Getpid(),
+		Project:   "/tmp/archive",
+	})
+
+	// End, then archive.
+	client.EndSession(daemon.EndSessionParams{SessionID: "sess-archive"})
+	err := client.ArchiveSession(daemon.ArchiveSessionParams{SessionID: "sess-archive"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Archived sessions should not appear in list.
+	sessions, _ := client.ListSessions()
+	for _, s := range sessions {
+		if s.SessionID == "sess-archive" {
+			t.Fatal("archived session should not appear in list")
+		}
+	}
+}
+
 func TestRegisterSessionPersistsToDB(t *testing.T) {
 	// Register a session via daemon, then start a fresh daemon on same DB
 	// and verify the session is still there.
