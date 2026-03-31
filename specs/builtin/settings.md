@@ -235,12 +235,26 @@ The automations pane has no form — `buildFormForSlug` returns `(nil, nil)` for
 
 ### PRs (plugin — prs)
 
-Read-only huh form showing the user's PR ignore lists. Two Note sections:
+Custom-rendered interactive pane (not a huh form) for managing ignored repos and PRs. Two sections with a shared flat cursor:
 
-- **Ignored Repos** — lists repos from `cc_ignored_repos` table (bullet list). Empty state: "No repos ignored. Press I on a PR to ignore its repo."
-- **Ignored PRs** — lists individually ignored PRs from `cc_pull_requests` where `ignored = 1` (shows ID + muted title). Empty state: "No PRs ignored. Press i on a PR to ignore it."
+- **IGNORED REPOS** — lists repos from `cc_ignored_repos` table. Each row shows the repo name with an `[x remove]` hint. Empty state: "No repos ignored. Press I on a PR to ignore its repo."
+- **IGNORED PRS** — lists individually ignored PRs from `cc_pull_requests` where `ignored = 1` (shows ID + muted title) with an `[x restore]` hint. Empty state: "No PRs ignored. Press i on a PR to ignore it."
 
-This pane is view-only — removing ignored repos/PRs is done from the PR plugin tab, not from settings. [NEEDS INPUT] The design spec (2026-03-22) describes interactive removal (press `x` or enter to remove/restore), but the implementation is read-only Notes. Should the settings pane support interactive removal?
+**Interactive removal**: When focused, the user navigates with `j`/`k` (or `up`/`down`) and presses `x`, `delete`, or `backspace` to remove the selected item:
+- Removing an ignored repo calls `DBRemoveIgnoredRepo`, restoring all PRs from that repo on next load
+- Removing an ignored PR calls `DBSetPRIgnored(id, false)`, restoring the PR immediately
+
+The cursor highlights the selected row. After removal, the list refreshes and the cursor clamps to the remaining items. A flash message confirms each action ("repo restored" or "PR restored").
+
+**Key bindings** (when pane is focused):
+
+| Key | Action |
+|-----|--------|
+| j/k, up/down | Navigate list |
+| x, delete, backspace | Remove selected item |
+| esc, left, h | Return to sidebar |
+
+A help line (`j/k navigate  x/delete remove  esc back`) appears at the bottom when the pane is focused and items exist.
 
 ### System Panes (schedule, mcp, skills, shell)
 

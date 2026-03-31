@@ -450,10 +450,12 @@ func (p *Plugin) handleNavKey(msg tea.KeyMsg) plugin.Action {
 		var cmds []tea.Cmd
 
 		// Build a huh form for the selected item (if one exists for this slug).
+		// Always set activeFormSlug so custom panes (e.g., PRs) can handle
+		// keys in FocusForm without a huh form.
 		if item != nil {
+			p.activeFormSlug = item.Slug
 			if form, formCmd := p.buildFormForSlug(item); form != nil {
 				p.activeForm = form
-				p.activeFormSlug = item.Slug
 				if formCmd != nil {
 					cmds = append(cmds, formCmd)
 				}

@@ -14,6 +14,7 @@ func (p *Plugin) viewContent(width, height int) string {
 	// even from FocusNav so scrolling via forwarded keys is visible.
 	isLogs := selected != nil && selected.Slug == "system-logs"
 	isAutomations := selected != nil && selected.Slug == "system-automations"
+	isPRs := selected != nil && selected.Slug == "prs"
 
 	// Build header from the currently selected nav item.
 	var header string
@@ -28,6 +29,8 @@ func (p *Plugin) viewContent(width, height int) string {
 		body = p.viewActiveFormContent(width, height)
 	case isAutomations:
 		body = p.viewAutomationsContent(width, height)
+	case isPRs:
+		body = p.viewPRSettingsContent(width, height)
 	case p.focusZone == FocusLogs || isLogs:
 		body = p.viewLogsContent(width, height)
 	default:

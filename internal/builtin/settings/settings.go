@@ -95,6 +95,9 @@ type Plugin struct {
 	// Pending Slack token state
 	pendingSlackToken *slackTokenValue
 
+	// PRs settings pane cursor (for interactive ignored repo/PR removal)
+	prCursor int
+
 	// Flash message
 	flashMessage   string
 	flashMessageAt time.Time
@@ -215,6 +218,17 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		// If a huh form is active, route keys to the form handler.
 		if p.activeForm != nil {
 			return p.handleFormKey(msg)
+		}
+		// PRs pane has its own interactive key handling (no huh form).
+		if p.activeFormSlug == "prs" {
+			switch msg.String() {
+			case "esc", "left", "h":
+				p.activeFormSlug = ""
+				p.focusZone = FocusNav
+			default:
+				p.handlePRSettingsKey(msg.String())
+			}
+			return plugin.ConsumedAction()
 		}
 		// No active form — esc/left/h returns to nav.
 		switch msg.String() {
@@ -992,8 +1006,8 @@ func (p *Plugin) buildFormForSlug(item *NavItem) (*huh.Form, tea.Cmd) {
 			return form, form.Init()
 		case "plugin":
 			if item.Slug == "prs" {
-				form := p.buildPRSettingsForm()
-				return form, form.Init()
+				// PRs pane is custom-rendered (interactive list, not a huh form).
+				return nil, nil
 			}
 			form := p.buildPluginForm(item)
 			if form != nil {
