@@ -1523,3 +1523,30 @@ func TestCanLaunchAgentWithDaemon(t *testing.T) {
 	}
 }
 
+func TestSearchEnterOpensSelectedItem(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	// Activate search mode with "/"
+	p.HandleKey(keyMsg("/"))
+	if !p.searchActive {
+		t.Fatal("expected searchActive after pressing /")
+	}
+
+	// Type a search query that matches "First todo"
+	p.searchInput.SetValue("First")
+	p.ccCursor = 0
+
+	// Press Enter while in search mode — should open detail view directly
+	p.HandleKey(keyMsg("enter"))
+
+	if p.searchActive {
+		t.Error("searchActive should be false after enter")
+	}
+	if !p.detailView {
+		t.Error("detailView should be true — enter in search mode should open the selected item directly")
+	}
+	if p.detailTodoID != "t1" {
+		t.Errorf("detailTodoID = %q, want %q — should open the first filtered item", p.detailTodoID, "t1")
+	}
+}
+
