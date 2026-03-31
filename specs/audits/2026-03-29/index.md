@@ -126,23 +126,23 @@
 | 18 | Blocked session rendering (sessions.md) | Spec fix — added yellow dot + "Blocked" detail | `4488ff0` |
 | 19 | ActiveTodos vs VisibleTodos (db.md) | Spec fix — documented VisibleTodos and merge-based filtering | `4488ff0` |
 
-### Behavioral Gaps — 139/142 resolved (2026-03-30)
+### Behavioral Gaps — 142/142 resolved (2026-03-30)
 
 | Cluster | Gaps | Resolved | Commit | Notes |
 |---------|------|----------|--------|-------|
-| CLI subcommands | 20 | 18 | `162fedf` | `daemon logs` doesn't exist in code; `paths --list` is default behavior |
-| Database operations | 25 | 25 | `162fedf` | 1 [NEEDS INPUT]: `DBInsertMerge` mergeNote param not persisted |
+| CLI subcommands | 20 | 18 | `162fedf` | `daemon logs` doesn't exist in code; `paths --list` is default behavior (2 audit overcounts) |
+| Database operations | 25 | 25 | `162fedf`, `45d3c00` | Dead `mergeNote` param removed from `DBInsertMerge` |
 | TUI host layer | 19 | 19 | `162fedf` | — |
 | Refresh pipeline | 24 | 24 | `162fedf` | — |
 | Command center | 16 | 16 | `162fedf` | — |
 | Config expansion | 16 | 16 | `162fedf` | — |
-| Plugin framework | 10 | 10 | `162fedf` | 1 [NEEDS INPUT]: logger ring buffer never compacts |
-| Settings panes | 8 | 8 | `162fedf` | 1 [NEEDS INPUT]: PRs pane read-only vs design spec's interactive removal |
+| Plugin framework | 10 | 10 | `162fedf`, `00907ef` | Logger compaction not needed (~60KB at 500 entries) |
+| Settings panes | 8 | 8 | `162fedf`, `09edea0` | PRs pane interactive removal implemented |
 | Sessions plugin | 5 | 5 | `162fedf` | — |
 | Automation runner | 4 | 4 | `162fedf` | — |
 | Worktree | 3 | 3 | `162fedf` | — |
 
-3 items need user input (specs written, but flagged for design decisions).
+All gaps resolved. 3 follow-up items (mergeNote, logger compaction, PRs pane) addressed in separate commits.
 
 ### Unimplemented Spec Promises — 3/3 resolved (2026-03-30)
 
