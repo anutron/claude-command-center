@@ -226,7 +226,7 @@ On completion (Enter), onboarding mode is cleared and `deferredPluginInit()` fir
 The TUI runs in a loop managed by `main.go`:
 
 1. Create `Model`, set flags (`returnedFromLaunch`, onboarding), attach `DaemonConn`
-2. Run `tea.NewProgram` with alt screen, focus reporting, and mouse cell motion
+2. Run `tea.NewProgram` with alt screen and focus reporting (mouse mode is intentionally disabled to allow terminal text selection for copying)
 3. Start unix socket listener for cross-instance notifications
 4. Connect to daemon (auto-starts if needed)
 5. When the program exits:
