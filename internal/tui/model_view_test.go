@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -209,4 +210,88 @@ func TestView_EmptyDimensionsProducesOutput(t *testing.T) {
 	if v == "" {
 		t.Error("expected non-empty view even with zero dimensions")
 	}
+}
+
+func TestView_BudgetWidgetNormal(t *testing.T) {
+	m := newTestModel(t)
+	// No daemonConn — should show "not running".
+	m.daemonConn = nil
+	v := m.View()
+	assertViewContains(t, v, "not running")
+}
+
+func TestView_BudgetWidgetConnectedShowsSpend(t *testing.T) {
+	m := newTestModel(t)
+	dc := &DaemonConn{}
+	dc.connected.Store(true)
+	m.daemonConn = dc
+	m.budgetAvailable = true
+	m.budgetStatus = daemon.BudgetStatusResult{
+		HourlySpent:  5.00,
+		HourlyLimit:  20.00,
+		ActiveAgents: 0,
+	}
+	v := m.View()
+	assertViewContains(t, v, "$5.00")
+	assertViewContains(t, v, "$20")
+}
+
+func TestView_BudgetWidgetWarningLevel(t *testing.T) {
+	m := newTestModel(t)
+	dc := &DaemonConn{}
+	dc.connected.Store(true)
+	m.daemonConn = dc
+	m.budgetAvailable = true
+	m.budgetStatus = daemon.BudgetStatusResult{
+		HourlySpent:  17.00,
+		HourlyLimit:  20.00,
+		ActiveAgents: 0,
+		WarningLevel: "warning",
+	}
+	v := m.View()
+	assertViewContains(t, v, "$17.00")
+}
+
+func TestView_BudgetWidgetCriticalLevel(t *testing.T) {
+	m := newTestModel(t)
+	dc := &DaemonConn{}
+	dc.connected.Store(true)
+	m.daemonConn = dc
+	m.budgetAvailable = true
+	m.budgetStatus = daemon.BudgetStatusResult{
+		HourlySpent:  19.50,
+		HourlyLimit:  20.00,
+		ActiveAgents: 0,
+		WarningLevel: "critical",
+	}
+	v := m.View()
+	assertViewContains(t, v, "CRITICAL")
+}
+
+func TestView_BudgetWidgetEmergencyStop(t *testing.T) {
+	m := newTestModel(t)
+	dc := &DaemonConn{}
+	dc.connected.Store(true)
+	m.daemonConn = dc
+	m.budgetAvailable = true
+	m.budgetStatus = daemon.BudgetStatusResult{
+		EmergencyStopped: true,
+	}
+	v := m.View()
+	assertViewContains(t, v, "EMERGENCY STOP")
+}
+
+func TestView_BudgetWidgetAgentCount(t *testing.T) {
+	m := newTestModel(t)
+	dc := &DaemonConn{}
+	dc.connected.Store(true)
+	m.daemonConn = dc
+	m.budgetAvailable = true
+	m.budgetStatus = daemon.BudgetStatusResult{
+		HourlySpent:  5.00,
+		HourlyLimit:  20.00,
+		ActiveAgents: 3,
+	}
+	v := m.View()
+	assertViewContains(t, v, "3 agents")
 }
