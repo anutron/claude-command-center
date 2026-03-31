@@ -410,9 +410,10 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 3. **Process start**: `launchAgent` spawns `claude --print --output-format stream-json --verbose [flags] <prompt>` as a subprocess. The session's `done` channel and exit code are managed by a background goroutine.
 4. **Monitoring**: A background goroutine reads stdout line-by-line, parsing stream-JSON events. It detects blocking events (tool_use with `SendUserMessage` or `AskUser`) and updates `sess.Status` to `"blocked"` with the question text.
 5. **Tick polling**: `checkAgentProcesses` runs on every UI tick. It checks the `done` channel for finished processes and reads `sess.Status` (protected by mutex) for status changes like `"blocked"`.
-6. **Completion**: When the process exits, `onAgentFinished` sets status to `"review"` (exit 0) or `"failed"` (non-zero). It checks the DB for an agent-authored summary (submitted via `ccc update-todo` during the session). If none exists, falls back to `extractSessionSummary()` which parses the stream-json output. Persists status and summary to DB. Emits `plugin.AgentStateChangedMsg` to refresh the budget widget.
-7. **Queue drain**: After a session finishes, `onAgentFinished` checks the queue and auto-launches the next `AutoStart` session if capacity is available.
-8. **Shutdown cleanup**: `Plugin.Shutdown()` cancels all active sessions to prevent zombie processes.
+6. **Completion (local runner)**: When the process exits, `onAgentFinished` sets status to `"review"` (exit 0) or `"failed"` (non-zero). It checks the DB for an agent-authored summary (submitted via `ccc update-todo` during the session). If none exists, falls back to `extractSessionSummary()` which parses the stream-json output. Persists status and summary to DB. Emits `plugin.AgentStateChangedMsg` to refresh the budget widget.
+7. **Completion (daemon)**: When a daemon-managed agent exits, the daemon broadcasts `agent.finished` with `{id, exit_code}`. The plugin receives this as a `NotifyMsg{Event: "agent.finished", Data: ...}`, parses the payload, and calls the same `onAgentFinished` logic as the local runner path. This ensures daemon-managed agents transition to `"review"`/`"failed"` status.
+8. **Queue drain**: After a session finishes, `onAgentFinished` checks the queue and auto-launches the next `AutoStart` session if capacity is available.
+9. **Shutdown cleanup**: `Plugin.Shutdown()` cancels all active sessions to prevent zombie processes.
 
 #### Launch Options
 
@@ -645,6 +646,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Agent sessions: stream-JSON blocking event sets session_status to "blocked" with question text
 - Agent sessions: successful completion (exit 0) sets session_status to "review" with summary
 - Agent sessions: failed completion (non-zero exit) sets session_status to "failed" with summary
+- Agent sessions: daemon-managed agent.finished event triggers onAgentFinished (same as local runner)
 - Agent sessions: queue drains FIFO — next AutoStart session launches when capacity frees
 - Agent sessions: `o` on todo with session_id returns launch action with resume_id
 - Agent sessions: `o` on todo without session_id opens task runner wizard

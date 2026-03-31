@@ -133,6 +133,7 @@ type SettingsProvider interface {
 // importing tui (which would cause a circular dependency).
 type NotifyMsg struct {
 	Event string
+	Data  []byte // optional JSON payload from daemon events
 }
 
 // AgentStateChangedMsg is sent by plugins when agent sessions are launched,

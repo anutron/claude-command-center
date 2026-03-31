@@ -173,12 +173,19 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		}
 		return true, plugin.NoopAction()
 
-	// Handle external notifications by reloading from DB.
-	// Only react to data.refreshed — other daemon events (session.*, etc.)
-	// are irrelevant to command center data.
+	// Handle external notifications from daemon events.
 	default:
-		if nm, ok := msg.(plugin.NotifyMsg); ok && nm.Event == "data.refreshed" && p.database != nil {
-			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
+		if nm, ok := msg.(plugin.NotifyMsg); ok {
+			switch nm.Event {
+			case "data.refreshed":
+				if p.database != nil {
+					return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
+				}
+			case "agent.finished":
+				// Daemon-managed agent completed. Parse the event data and run
+				// the same completion logic as locally-managed agents.
+				return p.handleDaemonAgentFinished(nm.Data)
+			}
 		}
 
 	case ui.TickMsg:
@@ -927,6 +934,23 @@ func (p *Plugin) handleAgentSessionID(msg agent.SessionIDCapturedMsg) (bool, plu
 
 func (p *Plugin) handleAgentFinished(msg agent.SessionFinishedMsg) (bool, plugin.Action) {
 	cmd := p.onAgentFinished(msg.ID, msg.ExitCode)
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+// handleDaemonAgentFinished processes an agent.finished event from the daemon.
+// The daemon broadcasts this when a daemon-managed agent session exits.
+// Without this handler, the todo status would never transition to "review"/"failed"
+// for daemon-managed agents.
+func (p *Plugin) handleDaemonAgentFinished(data []byte) (bool, plugin.Action) {
+	var payload struct {
+		ID       string `json:"id"`
+		ExitCode int    `json:"exit_code"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.ID == "" {
+		return false, plugin.NoopAction()
+	}
+
+	cmd := p.onAgentFinished(payload.ID, payload.ExitCode)
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
