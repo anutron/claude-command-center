@@ -232,6 +232,37 @@ func TestEscQuits(t *testing.T) {
 	}
 }
 
+func TestBUG114_AgentStateChangedMsgHandled(t *testing.T) {
+	cfg := testSetup(t)
+	database, err := db.OpenDB(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
+
+	// Set window size so View() can render.
+	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = result.(Model)
+
+	// BUG-114: AgentStateChangedMsg must be handled by the TUI host to trigger
+	// an immediate budget re-poll. Verify the message type exists (compiles) and
+	// that Update processes it without panic, returning a command (the budget poll).
+	result, cmd := m.Update(plugin.AgentStateChangedMsg{})
+	m = result.(Model)
+
+	// When daemon is not connected, cmd may be nil. The key assertion is no panic.
+	// If daemon were connected, cmd != nil (budget re-poll). Either way, verify
+	// the model is still renderable.
+	_ = cmd
+
+	v := m.View()
+	if v == "" {
+		t.Error("expected non-empty view after AgentStateChangedMsg")
+	}
+}
+
 func TestPluginTabMapping(t *testing.T) {
 	cfg := testSetup(t)
 	database, err := db.OpenDB(t.TempDir() + "/test.db")

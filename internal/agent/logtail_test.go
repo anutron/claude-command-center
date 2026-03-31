@@ -63,6 +63,25 @@ func TestNativeLogPath(t *testing.T) {
 	}
 }
 
+func TestBUG122_NativeLogPathLeadingDash(t *testing.T) {
+	// BUG-122: NativeLogPath must produce a leading dash in the encoded project
+	// directory name. Claude CLI encodes "/Users/aaron/Personal/project" as
+	// "-Users-aaron-Personal-project" (leading dash from the root slash).
+	// Without the leading dash, the session viewer cannot find log files.
+	got := NativeLogPath("/Users/aaron/Personal/project", "test-session")
+
+	// The encoded directory component must start with a dash.
+	if !strings.Contains(got, "-Users-aaron-Personal-project") {
+		t.Errorf("BUG-122 regression: NativeLogPath output missing leading dash in encoded path\n  got: %s", got)
+	}
+
+	// Make sure it does NOT contain the version without the leading dash
+	// (i.e., "projects/Users-aaron-Personal-project" would be wrong).
+	if strings.Contains(got, "projects/Users-aaron-Personal-project") {
+		t.Errorf("BUG-122 regression: encoded path lacks leading dash\n  got: %s", got)
+	}
+}
+
 func TestTailNativeLog_ParsesJSONL(t *testing.T) {
 	// Write fake JSONL to a temp file, verify events come through the channel.
 	dir := t.TempDir()
