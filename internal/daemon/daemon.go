@@ -24,6 +24,8 @@ type ServerConfig struct {
 	RefreshInterval time.Duration
 	AgentRunner     agent.Runner
 	GovernedRunner  *agent.GovernedRunner // optional; enables budget RPCs
+	BinaryPath      string               // path to the daemon binary (for staleness detection)
+	BinaryMtime     time.Time            // mtime of the binary at startup
 }
 
 // Server listens on a Unix socket and dispatches JSON-RPC requests.
@@ -83,6 +85,11 @@ func (s *Server) Serve() error {
 
 	s.refresh.start()
 
+	// Start binary staleness monitor.
+	if s.cfg.BinaryPath != "" && !s.cfg.BinaryMtime.IsZero() {
+		go s.monitorBinaryStaleness()
+	}
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -99,6 +106,39 @@ func (s *Server) Serve() error {
 		s.mu.Unlock()
 
 		go s.handleConn(conn)
+	}
+}
+
+// monitorBinaryStaleness checks every 30 seconds whether the daemon binary has
+// been updated on disk. If the binary's mtime is newer than at startup, the
+// daemon shuts down and re-execs itself.
+func (s *Server) monitorBinaryStaleness() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+			info, err := os.Stat(s.cfg.BinaryPath)
+			if err != nil {
+				// Binary deleted or unreadable — skip silently.
+				continue
+			}
+			if info.ModTime().After(s.cfg.BinaryMtime) {
+				fmt.Printf("Binary updated (was %s, now %s), restarting...\n",
+					s.cfg.BinaryMtime.Format(time.RFC3339),
+					info.ModTime().Format(time.RFC3339))
+				s.Shutdown()
+				// Re-exec ourselves with the same arguments.
+				if err := syscall.Exec(s.cfg.BinaryPath, os.Args, os.Environ()); err != nil {
+					fmt.Printf("Re-exec failed: %v\n", err)
+					os.Exit(1)
+				}
+				return // unreachable after successful Exec
+			}
+		}
 	}
 }
 

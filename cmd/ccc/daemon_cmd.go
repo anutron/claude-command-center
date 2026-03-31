@@ -224,6 +224,21 @@ func runDaemonInternal() error {
 	innerRunner := agent.NewRunner(maxConcurrent)
 	governedRunner := agent.NewGovernedRunner(innerRunner, database, &cfg.Agent)
 
+	// Record binary path and mtime for staleness detection.
+	var binaryPath string
+	var binaryMtime time.Time
+	if exe, err := os.Executable(); err == nil {
+		// Resolve symlinks so we stat the actual binary, not the symlink.
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			binaryPath = resolved
+		} else {
+			binaryPath = exe
+		}
+		if info, err := os.Stat(binaryPath); err == nil {
+			binaryMtime = info.ModTime()
+		}
+	}
+
 	srv := daemon.NewServer(daemon.ServerConfig{
 		SocketPath:      socketPath(),
 		DB:              database,
@@ -231,6 +246,8 @@ func runDaemonInternal() error {
 		RefreshInterval: interval,
 		AgentRunner:     governedRunner,
 		GovernedRunner:  governedRunner,
+		BinaryPath:      binaryPath,
+		BinaryMtime:     binaryMtime,
 	})
 
 	// Handle shutdown signals.

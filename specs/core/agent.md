@@ -10,7 +10,7 @@ Manages headless Claude Code agent sessions from within CCC. Provides process li
 
 - **Request**: describes an agent to spawn
   - `ID` — unique identifier (e.g., todo ID), used for dedup and cooldown tracking
-  - `Prompt` — initial text sent to the agent via PTY stdin
+  - `Prompt` — initial text sent to the agent (via stdin pipe for new sessions, PTY for resume sessions)
   - `ProjectDir` — working directory for the agent process
   - `Worktree` — if true, passes `--worktree` to `claude`
   - `Permission` — permission mode string (`"default"`, `"plan"`, `"auto"`)
@@ -33,11 +33,11 @@ Manages headless Claude Code agent sessions from within CCC. Provides process li
 
 ### Dependencies
 
-- **Claude CLI** (`claude`) — must be on PATH; launched via PTY with `--verbose` and optional `--session-id`, `--resume`, `--permission-mode`, `--worktree` flags
+- **Claude CLI** (`claude`) — must be on PATH. New sessions use `-p --verbose --output-format stream-json --session-id UUID [--permission-mode MODE] [--worktree] [--max-budget-usd N]` with stdin pipe. Resume sessions use `--verbose --resume ID` via PTY.
 - **SQLite database** (`cc_agent_costs`, `cc_budget_state` tables) — for cost tracking, budget state, and rate limit queries
 - **`config.AgentConfig`** — budget limits, rate limit parameters, concurrency cap
-- **`github.com/creack/pty`** — PTY allocation for agent processes
-- **Claude native log files** (`~/.claude/projects/<encoded-path>/<session-id>.jsonl`) — source of truth for event parsing, token usage, and cost estimation. The encoded path is the project directory with all `/` replaced by `-` (including the leading slash, so `/Users/aaron/project` becomes `-Users-aaron-project`).
+- **`github.com/creack/pty`** — PTY allocation for resume sessions (not needed for new sessions)
+- **Claude native log files** (`~/.claude/projects/<encoded-path>/<session-id>.jsonl`) — used for event parsing in resume sessions. New sessions read stream-json directly from stdout instead. The encoded path is the project directory with all `/` replaced by `-` (including the leading slash, so `/Users/aaron/project` becomes `-Users-aaron-project`).
 
 ## Behavior
 
@@ -50,28 +50,47 @@ The `Runner` interface is the low-level session manager. `NewRunner(maxConcurren
 1. `LaunchOrQueue(req)` is called with a `Request`.
 2. Dedup check: if the request ID is already active or queued, returns `(false, nil)` — silently ignored.
 3. If under the concurrency limit, launches immediately via `launchSession`. Otherwise, appends to a FIFO queue and returns `(true, nil)`.
-4. `launchSession` runs in a `tea.Cmd` goroutine:
+4. `launchSession` runs in a `tea.Cmd` goroutine. Behavior differs by session type:
+
+   **New sessions (no ResumeID):**
    - Generates a UUID for the Claude session ID upfront.
-   - Builds CLI args: `claude --verbose [--session-id UUID | --resume ID] [--permission-mode MODE] [--worktree]`.
-   - Starts the process via PTY (`pty.Start`).
-   - Drains PTY stdout to `/dev/null` (events come from the native log, not stdout).
-   - Writes the prompt as plain text to the PTY.
+   - Builds CLI args: `claude -p --verbose --output-format stream-json --session-id UUID [--permission-mode MODE] [--worktree] [--max-budget-usd N]`.
+   - Passes the prompt via stdin pipe (`cmd.Stdin = strings.NewReader(prompt)`).
+   - Captures stdout via `cmd.StdoutPipe()` for stream-json event parsing.
+   - Starts the process via `cmd.Start()` (no PTY needed).
    - Registers the session in the active map.
-   - Starts `monitorSessionFromLog` in a goroutine.
+   - Starts `monitorSessionFromStdout` in a goroutine.
    - Returns `SessionStartedMsg`.
 
-**Monitoring (native log tailing):**
+   **Resume sessions (ResumeID set):**
+   - Builds CLI args: `claude --verbose --resume ID [--permission-mode MODE] [--worktree]`.
+   - Starts the process via PTY (`pty.Start`) — needed for `SendMessage` to write to stdin.
+   - Drains PTY stdout to `/dev/null` (events come from the native log, not stdout).
+   - Registers the session in the active map.
+   - Starts `monitorSessionFromLog` in a goroutine (tails the native log file).
+   - Returns `SessionStartedMsg`.
+
+**Monitoring (two modes):**
+
+*Stdout monitoring (new sessions using `-p` mode):*
+
+1. `monitorSessionFromStdout` reads stream-json JSONL directly from the process stdout pipe.
+2. Uses a `bufio.Scanner` — no polling, no file creation race. Events arrive as soon as Claude emits them.
+3. For each event:
+   - Writes to CCC's own session log file and the session output buffer.
+   - Parses into `SessionEvent` structs and pushes to `EventsCh` (buffered channel, capacity 64).
+   - Detects blocking events: `tool_use` with name `SendUserMessage` or `AskUser` sets session status to `"blocked"`.
+   - Extracts token usage and invokes the `CostCallback`.
+   - **Per-session budget enforcement:** if cumulative cost exceeds `Budget`, sends `SIGINT` to the process.
+4. When stdout closes (process exits), calls `cmd.Wait()`, records exit code, and closes the `done` channel.
+
+*Native log tailing (resume sessions):*
 
 1. `tailNativeLog` polls the Claude native JSONL log file at `~/.claude/projects/<encoded-path>/<session-id>.jsonl`.
 2. Waits up to 30 seconds for the file to appear (polling every 200ms).
 3. Once open, reads JSONL lines and sends parsed `map[string]interface{}` events to a channel.
 4. When no new lines are available, polls every 200ms.
-5. `monitorSessionFromLog` consumes these events:
-   - Serializes each event to CCC's own session log file and the session output buffer.
-   - Parses events into `SessionEvent` structs and pushes them to `EventsCh` (buffered channel, capacity 64).
-   - Detects blocking events: `tool_use` with name `SendUserMessage` or `AskUser` sets session status to `"blocked"`.
-   - Extracts token usage from assistant events with `stop_reason` and invokes the `CostCallback`.
-   - **Per-session budget enforcement:** if cumulative cost exceeds `Budget`, sends `SIGINT` to the process.
+5. `monitorSessionFromLog` consumes these events with the same processing as stdout monitoring (log, parse, detect blocking, track cost, enforce budget).
 6. When the process exits, drains remaining log events for up to 2 seconds, then records the exit code and closes the `done` channel.
 
 **Killing:**
@@ -236,7 +255,8 @@ All settings live under the `agent:` key in `~/.config/ccc/config.yaml` via `con
 
 ### Happy path
 
-- Launch a session under concurrency limit: returns `SessionStartedMsg`, process starts via PTY
+- Launch a new session under concurrency limit: returns `SessionStartedMsg`, process starts via `-p` mode with pipe I/O
+- Launch a resume session: returns `SessionStartedMsg`, process starts via PTY with `--resume`
 - Launch when at concurrency limit: request is queued, `DrainQueue` returns it when capacity opens
 - Budget check passes when spend + request < hourly and daily limits
 - Rate limit passes when agent is not in cooldown and automation is under cap
@@ -246,7 +266,8 @@ All settings live under the `agent:` key in `~/.config/ccc/config.yaml` via `con
 
 ### Error cases
 
-- PTY start fails: emits `SessionFinishedMsg` with exit code -1, logs error
+- PTY start fails (resume session): emits `SessionFinishedMsg` with exit code -1, logs error
+- Stdout pipe or process start fails (new session): emits `SessionFinishedMsg` with exit code -1, logs error
 - Emergency stop active: `CanLaunch` returns false, `LaunchDeniedMsg` emitted
 - Hourly budget exceeded: `CanLaunch` returns false with spend breakdown
 - Daily budget exceeded: same pattern
@@ -259,7 +280,7 @@ All settings live under the `agent:` key in `~/.config/ccc/config.yaml` via `con
 ### Edge cases
 
 - Duplicate request ID (already active or queued): silently ignored, returns `(false, nil)`
-- Native log file does not appear within 30 seconds: monitoring goroutine exits, session runs blind
+- Native log file does not appear within 30 seconds (resume sessions only): monitoring goroutine exits, session runs blind. New sessions read from stdout and are not affected by native log availability.
 - `NativeLogPath` encodes project dir with leading `-` (e.g., `/Users/aaron/project` → `-Users-aaron-project`) matching Claude CLI's actual directory naming; incorrect encoding causes session viewer to show "Waiting for events..." indefinitely (BUG-122)
 - Event channel full (64 capacity): events dropped silently (non-blocking send)
 - Process exits before `CheckProcesses` runs: `SessionIDCapturedMsg` emitted before `SessionFinishedMsg` to ensure session ID is persisted

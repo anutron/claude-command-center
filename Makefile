@@ -29,7 +29,14 @@ else
 		rm -f $(HOME)/.claude/skills/$$skill; \
 		ln -sf $$(pwd)/.claude/skills/$$skill $(HOME)/.claude/skills/$$skill; \
 	done
+	@$(MAKE) restart-daemon
 endif
+
+restart-daemon:
+	@echo "Restarting daemon..."
+	@$(BINARY) daemon stop 2>/dev/null || true
+	@sleep 1
+	@$(BINARY) daemon start 2>/dev/null || echo "  (daemon will auto-start on next TUI launch)"
 
 servers-gmail:
 	cd servers/gmail && npm install && npm run build

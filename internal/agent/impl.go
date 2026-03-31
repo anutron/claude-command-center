@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -278,19 +279,25 @@ func (r *defaultRunner) CleanupFinished(id string) *Session {
 	return r.onSessionFinished(id)
 }
 
-// launchSession starts a headless Claude Code session via PTY and returns a
-// tea.Cmd that sends SessionStartedMsg.
+// launchSession starts a headless Claude Code session and returns a tea.Cmd
+// that sends SessionStartedMsg. New sessions use -p (print) mode with
+// stream-json output for reliable headless operation. Resume sessions use
+// PTY-based interactive mode since they need stdin for user messages.
 func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 	return func() tea.Msg {
 		// Generate session ID upfront so we can immediately report it and
 		// know the native log path before the process starts.
 		sessionUUID := uuid.New().String()
 
-		args := []string{"--verbose"}
+		isResume := req.ResumeID != ""
 
-		if req.ResumeID != "" {
-			args = append(args, "--resume", req.ResumeID)
+		var args []string
+		if isResume {
+			// Resume uses interactive mode via PTY (needs stdin for messages).
+			args = append(args, "--verbose", "--resume", req.ResumeID)
 		} else {
+			// New sessions use -p mode: reliable, no PTY race conditions.
+			args = append(args, "-p", "--verbose", "--output-format", "stream-json")
 			args = append(args, "--session-id", sessionUUID)
 		}
 
@@ -300,26 +307,13 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 		if req.Worktree {
 			args = append(args, "--worktree")
 		}
+		if req.Budget >= 0.50 {
+			args = append(args, "--max-budget-usd", fmt.Sprintf("%.2f", req.Budget))
+		}
 
 		cmd := exec.Command("claude", args...)
 		if req.ProjectDir != "" {
 			cmd.Dir = req.ProjectDir
-		}
-
-		// Launch via PTY instead of pipes.
-		ptmx, err := pty.Start(cmd)
-		if err != nil {
-			LogSessionError(req.ID, "pty start: %v", err)
-			return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
-		}
-
-		// Drain PTY output to prevent the child process from blocking on
-		// a full PTY buffer. We read events from the native log instead.
-		go io.Copy(io.Discard, ptmx)
-
-		// Write the initial prompt as plain text to the PTY.
-		if req.Prompt != "" {
-			ptmx.Write([]byte(req.Prompt + "\n"))
 		}
 
 		logPath := SessionLogPath(req.ID)
@@ -328,6 +322,59 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 		projectDir := req.ProjectDir
 		if projectDir == "" {
 			projectDir, _ = os.Getwd()
+		}
+
+		var ptmx *os.File
+
+		if isResume {
+			// Resume: launch via PTY for interactive stdin.
+			var err error
+			ptmx, err = pty.Start(cmd)
+			if err != nil {
+				LogSessionError(req.ID, "pty start: %v", err)
+				return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
+			}
+			// Drain PTY output to prevent blocking.
+			go io.Copy(io.Discard, ptmx)
+		} else {
+			// New session: use pipes. Pass prompt via stdin.
+			cmd.Stdin = strings.NewReader(req.Prompt)
+			// Capture stdout for stream-json event parsing.
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				LogSessionError(req.ID, "stdout pipe: %v", err)
+				return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
+			}
+			cmd.Stderr = os.Stderr // Let errors through for debugging.
+
+			if err := cmd.Start(); err != nil {
+				LogSessionError(req.ID, "start: %v", err)
+				return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
+			}
+
+			sess := &Session{
+				ID:        req.ID,
+				SessionID: sessionUUID,
+				Cmd:       cmd,
+				Status:    "processing",
+				StartedAt: time.Now(),
+				LogPath:   logPath,
+				EventsCh:  make(chan SessionEvent, 64),
+				done:      make(chan struct{}),
+				output:    &strings.Builder{},
+			}
+
+			r.mu.Lock()
+			r.activeSessions[req.ID] = sess
+			r.mu.Unlock()
+
+			// Parse stream-json from stdout directly (more reliable than tailing native log).
+			go monitorSessionFromStdout(sess, stdout, req.CostCallback, req.Budget)
+
+			return SessionStartedMsg{
+				ID:      req.ID,
+				Session: sess,
+			}
 		}
 
 		sess := &Session{
@@ -510,6 +557,94 @@ func monitorSessionFromLog(sess *Session, nativeLogPath string, costCb CostCallb
 			return
 		}
 	}
+}
+
+// monitorSessionFromStdout reads stream-json events directly from the claude
+// process stdout. Used for -p mode sessions where output comes via pipe rather
+// than native log file. This is more reliable than tailing the log file because
+// there's no race condition with file creation or polling delays.
+func monitorSessionFromStdout(sess *Session, stdout io.ReadCloser, costCb CostCallback, budgetUSD float64) {
+	logFile := OpenSessionLog(sess.LogPath)
+	if logFile != nil {
+		defer logFile.Close()
+	}
+
+	var cumulativeCost float64
+
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+
+		var event map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			continue
+		}
+
+		if logFile != nil {
+			fmt.Fprintln(logFile, line)
+		}
+
+		sess.Mu.Lock()
+		sess.output.WriteString(line)
+		sess.output.WriteString("\n")
+		sess.Mu.Unlock()
+
+		parsedEvents := ParseSessionEvent(event)
+		for _, parsed := range parsedEvents {
+			sess.Mu.Lock()
+			sess.Events = append(sess.Events, parsed)
+			sess.Mu.Unlock()
+			select {
+			case sess.EventsCh <- parsed:
+			default:
+			}
+		}
+
+		if DetectBlockingEvent(event) {
+			question := ExtractBlockingQuestion(event)
+			sess.Mu.Lock()
+			sess.Status = "blocked"
+			sess.Question = question
+			sess.Mu.Unlock()
+		}
+
+		if inputTok, outputTok, hasUsage := extractUsageFromEvent(event); hasUsage {
+			cost := estimateCost(event, inputTok, outputTok)
+			cumulativeCost += cost
+			if costCb != nil {
+				costCb(inputTok, outputTok, cost)
+			}
+			if budgetUSD > 0 && cumulativeCost > budgetUSD {
+				if sess.Cmd != nil && sess.Cmd.Process != nil {
+					sess.Cmd.Process.Signal(syscall.SIGINT)
+				}
+			}
+		}
+	}
+
+	// stdout closed — process is done or exiting.
+	close(sess.EventsCh)
+
+	exitCode := 0
+	_ = sess.Cmd.Wait()
+	if sess.Cmd.ProcessState != nil && !sess.Cmd.ProcessState.Success() {
+		exitCode = sess.Cmd.ProcessState.ExitCode()
+	}
+
+	sess.Mu.Lock()
+	sess.exitCode = exitCode
+	sess.Mu.Unlock()
+
+	if logFile != nil {
+		fmt.Fprintf(logFile, "\n--- session exited with code %d at %s ---\n", exitCode, time.Now().Format(time.RFC3339))
+	}
+
+	close(sess.done)
 }
 
 // SendUserMessage writes a plain-text user message to the agent's PTY.
