@@ -99,6 +99,12 @@ func (c *Client) UpdateSession(params UpdateSessionParams) error {
 	return err
 }
 
+// EndSession marks an active session as ended.
+func (c *Client) EndSession(params EndSessionParams) error {
+	_, err := c.call("EndSession", params)
+	return err
+}
+
 // ArchiveSession marks an ended session as archived, removing it from the list.
 func (c *Client) ArchiveSession(params ArchiveSessionParams) error {
 	_, err := c.call("ArchiveSession", params)

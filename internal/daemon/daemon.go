@@ -209,6 +209,16 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 		sessions := s.registry.list()
 		return sessions, nil
 
+	case "EndSession":
+		var params EndSessionParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}
+		}
+		if err := s.registry.end(params.SessionID); err != nil {
+			return nil, &RPCError{Code: -32000, Message: err.Error()}
+		}
+		return map[string]bool{"ok": true}, nil
+
 	case "ArchiveSession":
 		var params ArchiveSessionParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {

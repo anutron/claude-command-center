@@ -43,6 +43,10 @@ type ArchiveSessionParams struct {
 	SessionID string `json:"session_id"`
 }
 
+type EndSessionParams struct {
+	SessionID string `json:"session_id"`
+}
+
 type SessionInfo struct {
 	SessionID    string `json:"session_id"`
 	Topic        string `json:"topic"`

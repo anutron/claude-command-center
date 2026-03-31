@@ -72,7 +72,10 @@ func resolveSessionDir(sessionID, fallbackDir string) string {
 
 // RunClaude runs claude as a child process and returns when it exits.
 // It returns the resolved launch directory (which may be a worktree path).
-func RunClaude(action LaunchAction) (resolvedDir string, err error) {
+// The optional onStart callback is invoked after the process starts but before
+// waiting for it to exit, receiving the child process PID. This allows the
+// caller to register the session with the daemon while claude is running.
+func RunClaude(action LaunchAction, onStart func(pid int)) (resolvedDir string, err error) {
 	dir := action.Dir
 
 	// When resuming a session, verify the session exists in the expected project
@@ -121,7 +124,16 @@ func RunClaude(action LaunchAction) (resolvedDir string, err error) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+
+	if err := cmd.Start(); err != nil {
+		return dir, fmt.Errorf("claude start: %w", err)
+	}
+
+	if onStart != nil {
+		onStart(cmd.Process.Pid)
+	}
+
+	if err := cmd.Wait(); err != nil {
 		return dir, fmt.Errorf("claude exited with error: %w", err)
 	}
 	return dir, nil

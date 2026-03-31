@@ -9,8 +9,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/doctor"
 	"github.com/anutron/claude-command-center/internal/external"
@@ -271,8 +273,8 @@ func main() {
 
 		finalModel, err := p.Run()
 		cleanupNotify()
-		daemonConn.Close()
 		if err != nil {
+			daemonConn.Close()
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -280,11 +282,37 @@ func main() {
 		fm := finalModel.(tui.Model)
 		if fm.Launch == nil {
 			// User pressed Esc — exit
+			daemonConn.Close()
 			break
 		}
 
 		lastLaunch = fm.Launch
-		resolvedDir, err := tui.RunClaude(*fm.Launch)
+
+		// Register the session with the daemon around the claude launch.
+		// Generate a placeholder session ID (claude's real session ID is
+		// unknown until the hook fires, but this lets us track the process).
+		launchSessionID := uuid.New().String()
+		resolvedDir, err := tui.RunClaude(*fm.Launch, func(pid int) {
+			if client := daemonConn.Client(); client != nil {
+				regErr := client.RegisterSession(daemon.RegisterSessionParams{
+					SessionID: launchSessionID,
+					PID:       pid,
+					Project:   fm.Launch.Dir,
+				})
+				if regErr != nil {
+					logger.Info("launch", fmt.Sprintf("session register failed: %v", regErr))
+				}
+			}
+		})
+
+		// Mark the session as ended now that claude has exited.
+		if client := daemonConn.Client(); client != nil {
+			_ = client.EndSession(daemon.EndSessionParams{
+				SessionID: launchSessionID,
+			})
+		}
+		daemonConn.Close()
+
 		// Write the resolved launch directory (may be worktree) so the shell hook can cd to it after exit.
 		_ = os.WriteFile(filepath.Join(config.DataDir(), "last-dir"), []byte(resolvedDir), 0o644)
 		if err != nil {

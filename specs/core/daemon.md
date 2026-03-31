@@ -102,6 +102,7 @@ The session registry tracks terminal sessions (Claude Code instances) with an in
 
 - `RegisterSession(session_id, pid, project, worktree_path)` — Creates a new session. Resolves git remote URL and branch from the project directory (best-effort, via `git -C`). Persists to `cc_sessions` table.
 - `UpdateSession(session_id, topic)` — Updates mutable fields (currently only topic). Errors if session not found.
+- `EndSession(session_id)` — Marks an active session as `ended` with a timestamp. No-op if the session is already ended or archived. Errors if session not found.
 - `ListSessions()` — Returns all non-archived sessions from the in-memory map.
 - `ArchiveSession(session_id)` — Marks a session as `archived`. Only allowed for sessions in `ended` state; errors if session is still `active`.
 
@@ -216,6 +217,7 @@ The subscriber system provides push delivery of server events to connected TUI c
 
 - `RegisterSessionParams{SessionID, PID, Project, WorktreePath}`
 - `UpdateSessionParams{SessionID, Topic}`
+- `EndSessionParams{SessionID}`
 - `ArchiveSessionParams{SessionID}`
 - `LaunchAgentParams{ID, Prompt, Dir, Worktree, Permission, Budget, ResumeID, Automation}`
 - `StopAgentParams{ID}`

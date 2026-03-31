@@ -92,6 +92,23 @@ func (r *sessionRegistry) update(params UpdateSessionParams) error {
 	return db.DBUpdateSession(r.database, params.SessionID, fields)
 }
 
+// end marks a session as "ended".
+func (r *sessionRegistry) end(sessionID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	info, ok := r.sessions[sessionID]
+	if !ok {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+	if info.State != "active" {
+		return nil // already ended or archived — no-op
+	}
+	info.State = "ended"
+	info.EndedAt = db.FormatTime(time.Now())
+	return db.DBUpdateSessionState(r.database, sessionID, "ended")
+}
+
 // archive marks a session as "archived", removing it from the active list.
 func (r *sessionRegistry) archive(sessionID string) error {
 	r.mu.Lock()

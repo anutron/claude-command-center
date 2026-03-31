@@ -231,7 +231,16 @@ The TUI runs in a loop managed by `main.go`:
 4. Connect to daemon (auto-starts if needed)
 5. When the program exits:
    - If `Launch` is nil (user pressed Esc): exit the loop
-   - If `Launch` is set: run `RunClaude()`, write the resolved dir to `~/.config/ccc/data/last-dir` (for shell hook cd), set `returnedFromLaunch = true`, loop back to step 1
+   - If `Launch` is set: call `RunClaude()` with an `onStart` callback. The callback receives the claude process PID and resolved directory, which `main.go` uses to register the session with the daemon. After claude exits, `main.go` updates the session to "ended" via the daemon. The daemon connection is closed *after* the session lifecycle is complete, not before `RunClaude`. Write the resolved dir to `~/.config/ccc/data/last-dir` (for shell hook cd), set `returnedFromLaunch = true`, loop back to step 1
+
+### Session Registration on Launch
+
+When the TUI launches a Claude session, `main.go` registers the session with the daemon so it appears in the Active tab:
+
+1. **Before launch**: The daemon connection (`DaemonConn`) is kept open across the launch (not closed before `RunClaude`).
+2. **On process start**: `RunClaude` accepts an `onStart` callback (`func(pid int)`) that fires after `cmd.Start()` succeeds but before `cmd.Wait()`. The callback registers the session with the daemon using a generated UUID as the session ID, the claude process PID, and the resolved project directory.
+3. **After exit**: When claude exits, `main.go` marks the session as "ended" by updating its state via the daemon. The daemon's dead-session pruning also handles this as a fallback.
+4. **Graceful degradation**: If the daemon connection is nil or registration fails, the error is logged but does not prevent the claude launch. The session simply won't appear in the Active tab.
 
 ### Cross-Plugin Communication
 
@@ -316,3 +325,7 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 - DaemonDisconnectedMsg triggers reconnect cycle
 - FocusMsg triggers ClearScreen for repaint
 - Tab bar remains visible when banner is hidden (budget widget overlay must not overwrite the tab bar row)
+- RunClaude onStart callback fires with the process PID after cmd.Start succeeds
+- Session is registered with daemon before waiting for claude to exit
+- Session is marked ended after claude exits
+- Launch succeeds even when daemon connection is nil (graceful degradation)
