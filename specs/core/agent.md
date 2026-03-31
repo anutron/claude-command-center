@@ -37,7 +37,7 @@ Manages headless Claude Code agent sessions from within CCC. Provides process li
 - **SQLite database** (`cc_agent_costs`, `cc_budget_state` tables) — for cost tracking, budget state, and rate limit queries
 - **`config.AgentConfig`** — budget limits, rate limit parameters, concurrency cap
 - **`github.com/creack/pty`** — PTY allocation for agent processes
-- **Claude native log files** (`~/.claude/projects/<encoded-path>/<session-id>.jsonl`) — source of truth for event parsing, token usage, and cost estimation
+- **Claude native log files** (`~/.claude/projects/<encoded-path>/<session-id>.jsonl`) — source of truth for event parsing, token usage, and cost estimation. The encoded path is the project directory with all `/` replaced by `-` (including the leading slash, so `/Users/aaron/project` becomes `-Users-aaron-project`).
 
 ## Behavior
 
@@ -260,6 +260,7 @@ All settings live under the `agent:` key in `~/.config/ccc/config.yaml` via `con
 
 - Duplicate request ID (already active or queued): silently ignored, returns `(false, nil)`
 - Native log file does not appear within 30 seconds: monitoring goroutine exits, session runs blind
+- `NativeLogPath` encodes project dir with leading `-` (e.g., `/Users/aaron/project` → `-Users-aaron-project`) matching Claude CLI's actual directory naming; incorrect encoding causes session viewer to show "Waiting for events..." indefinitely (BUG-122)
 - Event channel full (64 capacity): events dropped silently (non-blocking send)
 - Process exits before `CheckProcesses` runs: `SessionIDCapturedMsg` emitted before `SessionFinishedMsg` to ensure session ID is persisted
 - Inner runner queues a governed launch: cost row is immediately cleaned up to avoid phantom budget consumption

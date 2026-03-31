@@ -18,9 +18,9 @@ func NativeLogPath(projectDir, sessionID string) string {
 	if err != nil {
 		home = os.Getenv("HOME")
 	}
-	// Encode the project path: strip leading slash, replace "/" with "-"
-	encoded := strings.TrimPrefix(projectDir, "/")
-	encoded = strings.ReplaceAll(encoded, "/", "-")
+	// Encode the project path: replace all "/" with "-".
+	// Claude CLI keeps the leading slash, so "/Users/aaron" becomes "-Users-aaron".
+	encoded := strings.ReplaceAll(projectDir, "/", "-")
 	return filepath.Join(home, ".claude", "projects", encoded, sessionID+".jsonl")
 }
 
