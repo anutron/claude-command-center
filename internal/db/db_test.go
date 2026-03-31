@@ -1718,3 +1718,40 @@ func TestRemoveBookmarkFromFile(t *testing.T) {
 		t.Fatalf("wrong session kept: %q", sessions[0].SessionID)
 	}
 }
+
+func TestDBAcceptTodoOnlyFromNew(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Insert a todo with status "running" (simulates agent already launched).
+	now := time.Now()
+	DBInsertTodo(db, Todo{ID: "t1", Title: "Running todo", Status: StatusRunning, Source: "manual", CreatedAt: now})
+
+	// DBAcceptTodo should NOT overwrite "running" back to "backlog".
+	err := DBAcceptTodo(db, "t1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	todo, err := DBLoadTodoByID(db, "t1")
+	if err != nil {
+		t.Fatalf("unexpected error loading todo: %v", err)
+	}
+	if todo.Status != StatusRunning {
+		t.Errorf("DBAcceptTodo should not change status from %q, but got %q", StatusRunning, todo.Status)
+	}
+
+	// Insert a todo with status "new" — DBAcceptTodo should transition it.
+	DBInsertTodo(db, Todo{ID: "t2", Title: "New todo", Status: StatusNew, Source: "github", CreatedAt: now})
+	err = DBAcceptTodo(db, "t2")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	todo2, err := DBLoadTodoByID(db, "t2")
+	if err != nil {
+		t.Fatalf("unexpected error loading todo: %v", err)
+	}
+	if todo2.Status != StatusBacklog {
+		t.Errorf("DBAcceptTodo should transition 'new' to 'backlog', got %q", todo2.Status)
+	}
+}

@@ -121,6 +121,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case agent.SessionFinishedMsg:
 		return p.handleAgentFinished(msg)
 
+	case agent.LaunchDeniedMsg:
+		return p.handleLaunchDenied(msg)
+
 	case tea.WindowSizeMsg:
 		p.width = msg.Width
 		p.height = msg.Height
@@ -952,6 +955,18 @@ func (p *Plugin) handleDaemonAgentFinished(data []byte) (bool, plugin.Action) {
 
 	cmd := p.onAgentFinished(payload.ID, payload.ExitCode)
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+func (p *Plugin) handleLaunchDenied(msg agent.LaunchDeniedMsg) (bool, plugin.Action) {
+	// Revert the todo status back to backlog since the agent was not launched.
+	p.setTodoStatus(msg.ID, db.StatusBacklog)
+	p.flashMessage = "Agent denied: " + msg.Reason
+	p.flashMessageAt = time.Now()
+	p.publishEvent("agent.denied", map[string]interface{}{
+		"todo_id": msg.ID,
+		"reason":  msg.Reason,
+	})
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistTodoStatus(msg.ID, db.StatusBacklog)}
 }
 
 func (p *Plugin) handleAgentEvent(msg agentEventMsg) (bool, plugin.Action) {

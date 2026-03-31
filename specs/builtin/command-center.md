@@ -405,8 +405,9 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 
 #### Session Lifecycle
 
-1. **Launch or queue**: User presses `enter` in task runner step 3. `launchOrQueueAgent` either starts the session immediately or queues it based on `cfg.Agent.MaxConcurrent` (default 10). Emits `plugin.AgentStateChangedMsg` so the TUI host immediately refreshes the budget widget.
-2. **Auto-accept**: Launching/queuing automatically sets the todo's `triage_status` to `"accepted"` so it leaves the "new" inbox.
+1. **Launch or queue**: User presses `enter` in task runner step 3. `launchOrQueueAgent` either starts the session immediately or queues it based on `cfg.Agent.MaxConcurrent` (default 10). When launching immediately, the todo status is set to `"running"` and persisted to the DB atomically. Emits `plugin.AgentStateChangedMsg` so the TUI host immediately refreshes the budget widget.
+2. **Auto-accept**: Launching/queuing automatically accepts the todo via `DBAcceptTodo`, which only transitions from `"new"` to `"backlog"` (no-op if the todo is already past `"new"`). This prevents a race where `AcceptTodo` could overwrite a `"running"` status back to `"backlog"`.
+3. **Launch denied**: If the governed runner denies a launch (budget or rate limit), a `LaunchDeniedMsg` is emitted. The command center handles this by reverting the todo status to `"backlog"` and showing a flash message with the denial reason.
 3. **Process start**: `launchAgent` spawns `claude --print --output-format stream-json --verbose [flags] <prompt>` as a subprocess. The session's `done` channel and exit code are managed by a background goroutine.
 4. **Monitoring**: A background goroutine reads stdout line-by-line, parsing stream-JSON events. It detects blocking events (tool_use with `SendUserMessage` or `AskUser`) and updates `sess.Status` to `"blocked"` with the question text.
 5. **Tick polling**: `checkAgentProcesses` runs on every UI tick. It checks the `done` channel for finished processes and reads `sess.Status` (protected by mutex) for status changes like `"blocked"`.
@@ -628,7 +629,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - `DBSwapPathOrder` and `DBSwapTodoOrder` use transactions for atomicity
 - Triage: refresh-created todos default to status "new"
 - Triage: manually created todos default to status "backlog"
-- Triage: normal view shows only "backlog" todos
+- Triage: normal view shows all non-terminal, non-inbox todos (backlog, running, enqueued, blocked, review, failed)
 - Triage: tab/shift+tab cycles filter tab in expanded view
 - Triage: y accepts a todo (sets status to "backlog"), Y accepts + opens task runner
 - Triage: launching agent auto-accepts the todo (moves from "new" to agent lifecycle)
@@ -640,9 +641,10 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Task runner wizard: `c` sets refining state, LLM response updates prompt
 - Task runner wizard: `r` opens review loop, unchanged prompt = approved
 - Task runner wizard: `r` annotated prompt triggers LLM revision and reopens Plannotator
-- Agent sessions: launching sets session_status to "active" and auto-accepts the todo
+- Agent sessions: launching sets status to "running", persists to DB immediately, and auto-accepts the todo
 - Agent sessions: launch/queue/finish/kill emits AgentStateChangedMsg to refresh budget widget
-- Agent sessions: queuing sets session_status to "queued" when at max concurrency
+- Agent sessions: queuing sets status to "enqueued" when at max concurrency, persists to DB
+- Agent sessions: launch denied by budget/rate limit reverts status to "backlog" with flash message
 - Agent sessions: stream-JSON blocking event sets session_status to "blocked" with question text
 - Agent sessions: successful completion (exit 0) sets session_status to "review" with summary
 - Agent sessions: failed completion (non-zero exit) sets session_status to "failed" with summary
@@ -658,7 +660,8 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Agent sessions: triage "Review" tab filters todos with session_status "review"
 - Agent sessions: triage "Blocked" tab filters todos with session_status "blocked"
 - Agent sessions: triage "Active" tab filters todos with session_status "active"
-- Agent sessions: normal view excludes todos with non-empty session_status from accepted list
+- Agent sessions: normal view includes todos with agent statuses (running, enqueued, blocked, review, failed) alongside backlog
+- Agent sessions: DBAcceptTodo only transitions from "new" to "backlog" (no-op when status already advanced)
 - Agent sessions: concurrency respects cfg.Agent.MaxConcurrent (default 10)
 - Todo-agent pipeline: eligible todos are active, have a source != "manual", and no proposed_prompt
 - Todo-agent pipeline: with learned paths, calls GenerateTodoPrompt per todo (sets project_dir + proposed_prompt)

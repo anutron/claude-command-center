@@ -1523,6 +1523,85 @@ func TestCanLaunchAgentWithDaemon(t *testing.T) {
 	}
 }
 
+func TestFilteredTodosNormalViewIncludesAgentStatuses(t *testing.T) {
+	p := testPluginWithCC(t)
+	// Add todos with various statuses
+	p.cc.Todos = []db.Todo{
+		{ID: "t1", Title: "Backlog", Status: db.StatusBacklog},
+		{ID: "t2", Title: "Running", Status: db.StatusRunning},
+		{ID: "t3", Title: "Enqueued", Status: db.StatusEnqueued},
+		{ID: "t4", Title: "Review", Status: db.StatusReview},
+		{ID: "t5", Title: "Blocked", Status: db.StatusBlocked},
+		{ID: "t6", Title: "Failed", Status: db.StatusFailed},
+		{ID: "t7", Title: "Inbox", Status: db.StatusNew},
+	}
+
+	// Normal (non-expanded) view should include everything except "new"
+	p.ccExpanded = false
+	filtered := p.filteredTodos()
+	if len(filtered) != 6 {
+		t.Fatalf("expected 6 non-new todos in normal view, got %d", len(filtered))
+	}
+	for _, todo := range filtered {
+		if todo.Status == db.StatusNew {
+			t.Error("normal view should not include 'new' status todos")
+		}
+	}
+}
+
+func TestAgentLaunchPersistsRunningStatus(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
+	p.cc.Todos[0].ProposedPrompt = "Do the thing"
+
+	// Launch agent via launchOrQueueAgent
+	qs := queuedSession{
+		TodoID:     "t1",
+		Prompt:     "Do the thing",
+		ProjectDir: "/tmp/myproject",
+		Mode:       "normal",
+		Perm:       "auto",
+		Budget:     5.0,
+		AutoStart:  true,
+	}
+	cmd := p.launchOrQueueAgent(qs)
+
+	// In-memory status should be running
+	if p.cc.Todos[0].Status != db.StatusRunning {
+		t.Errorf("expected in-memory status %q, got %q", db.StatusRunning, p.cc.Todos[0].Status)
+	}
+
+	// The returned cmd should not be nil (includes persist + launch)
+	if cmd == nil {
+		t.Error("expected non-nil tea.Cmd from launchOrQueueAgent")
+	}
+}
+
+func TestHandleLaunchDeniedRevertsStatus(t *testing.T) {
+	p := testPluginWithCC(t)
+	// Simulate the todo being set to enqueued (as launchOrQueueAgent does when queued)
+	p.cc.Todos[0].Status = db.StatusEnqueued
+
+	msg := agent.LaunchDeniedMsg{ID: "t1", Reason: "budget exceeded"}
+	handled, action := p.HandleMessage(msg)
+	if !handled {
+		t.Error("expected LaunchDeniedMsg to be handled")
+	}
+	if action.TeaCmd == nil {
+		t.Error("expected a persist cmd")
+	}
+
+	// Status should revert to backlog
+	if p.cc.Todos[0].Status != db.StatusBacklog {
+		t.Errorf("expected status %q after denial, got %q", db.StatusBacklog, p.cc.Todos[0].Status)
+	}
+
+	// Flash message should mention the denial
+	if !strings.Contains(p.flashMessage, "budget exceeded") {
+		t.Errorf("flash message %q should contain denial reason", p.flashMessage)
+	}
+}
+
 func TestSearchEnterOpensSelectedItem(t *testing.T) {
 	p := testPluginWithCC(t)
 
