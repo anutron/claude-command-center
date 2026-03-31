@@ -1887,3 +1887,101 @@ func TestNotifyMsgAgentFinishedRouting(t *testing.T) {
 	}
 }
 
+func TestBUG124_AutoExpandSetsTriageFilterAll(t *testing.T) {
+	p := testPlugin(t)
+	p.height = 30
+	p.width = 120
+	maxVisible := p.normalMaxVisibleTodos()
+
+	// Create todos with mixed statuses (backlog + enqueued) to exercise
+	// the filter difference between collapsed and expanded views.
+	var todos []db.Todo
+	for i := 0; i < maxVisible+3; i++ {
+		status := db.StatusBacklog
+		if i%3 == 0 {
+			status = db.StatusEnqueued
+		}
+		todos = append(todos, db.Todo{
+			ID:        fmt.Sprintf("t%d", i),
+			Title:     fmt.Sprintf("Todo %d", i),
+			Status:    status,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+		})
+	}
+	p.cc = &db.CommandCenter{GeneratedAt: time.Now(), Todos: todos}
+
+	// Verify default triageFilter is "todo" (which would show only backlog).
+	if p.triageFilter != "todo" {
+		t.Fatalf("expected default triageFilter 'todo', got %q", p.triageFilter)
+	}
+
+	// Navigate down past visible area to trigger auto-expand.
+	for i := 0; i < maxVisible; i++ {
+		p.HandleKey(keyMsg("j"))
+	}
+
+	if !p.ccExpanded {
+		t.Fatal("BUG-124 regression: expected auto-expand to trigger")
+	}
+
+	// After auto-expand, triageFilter must be "all" so the same items are visible.
+	if p.triageFilter != "all" {
+		t.Errorf("BUG-124 regression: expected triageFilter 'all' after auto-expand, got %q", p.triageFilter)
+	}
+
+	// Verify that enqueued todos are in the filtered list (they wouldn't be under "todo" filter).
+	filtered := p.filteredTodos()
+	hasEnqueued := false
+	for _, todo := range filtered {
+		if todo.Status == db.StatusEnqueued {
+			hasEnqueued = true
+			break
+		}
+	}
+	if !hasEnqueued {
+		t.Error("BUG-124 regression: expanded view after auto-expand should include enqueued todos (same as collapsed view)")
+	}
+}
+
+func TestBUG124_AutoExpandWithSuggestionBanner(t *testing.T) {
+	p := testPlugin(t)
+	p.height = 50
+	p.width = 120
+
+	// Before adding suggestions, record maxVisible.
+	maxVisibleClean := p.normalMaxVisibleTodos()
+
+	var todos []db.Todo
+	for i := 0; i < maxVisibleClean+3; i++ {
+		todos = append(todos, db.Todo{
+			ID:        fmt.Sprintf("t%d", i),
+			Title:     fmt.Sprintf("Todo %d", i),
+			Status:    db.StatusBacklog,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+		})
+	}
+	p.cc = &db.CommandCenter{
+		GeneratedAt: time.Now(),
+		Todos:       todos,
+		Suggestions: db.Suggestions{Focus: "Work on the critical bug fix"},
+	}
+
+	// Recompute maxVisible now that suggestions are set — it should be smaller.
+	maxVisibleWithSuggestion := p.normalMaxVisibleTodos()
+	if maxVisibleWithSuggestion >= maxVisibleClean {
+		t.Fatalf("expected normalMaxVisibleTodos to decrease with suggestion banner, got %d vs %d", maxVisibleWithSuggestion, maxVisibleClean)
+	}
+
+	// Navigate down to trigger auto-expand — should take exactly one press
+	// past the last visible item.
+	for i := 0; i < maxVisibleWithSuggestion; i++ {
+		p.HandleKey(keyMsg("j"))
+	}
+
+	if !p.ccExpanded {
+		t.Errorf("BUG-124 regression: expected auto-expand after %d down presses (maxVisible with suggestion)", maxVisibleWithSuggestion)
+	}
+}
+

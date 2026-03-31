@@ -59,7 +59,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | Key | Context | Description |
 |-----|---------|-------------|
 | `up`/`k` | normal | Move cursor up |
-| `down`/`j` | normal | Move cursor down; auto-expands to expanded view when cursor would move past the last visible item (cursor lands on the next todo) |
+| `down`/`j` | normal | Move cursor down; auto-expands to expanded view when cursor would move past the last visible item (cursor lands on the next todo); sets triageFilter to "all" so expanded view shows the same items as the collapsed view |
 | `shift+up` | normal | Swap todo with the one above |
 | `shift+down` | normal | Swap todo with the one below |
 | `left`/`h` | expanded | Move cursor left; paginates to previous page at left edge |
@@ -225,7 +225,7 @@ When the expanded multi-column view is active, a tab bar appears below the heade
 
 In the normal (collapsed) view:
 
-- **Todo list** shows only `backlog` todos (same as the "todo" filter tab)
+- **Todo list** shows all non-new todos (backlog, running, review, enqueued, blocked, failed)
 - **Triage status bar** appears below the todo list showing counts per tab — only displayed if any count is non-zero
 
 #### Triage Actions
@@ -599,6 +599,8 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Init loads command center data from DB
 - Navigation (up/down) moves cursor correctly
 - Down arrow past last visible item in normal view auto-expands to expanded view with cursor on the next todo
+- Auto-expand sets triageFilter to "all" so expanded view preserves the same items visible in collapsed view
+- normalMaxVisibleTodos accounts for suggestion/warning banner height so auto-expand triggers at the correct position
 - Complete todo updates status and pushes undo entry
 - Dismiss todo (X) updates status and pushes undo entry
 - Undo (u) restores previous state from undo stack
