@@ -17,9 +17,10 @@ func newTestUnifiedView() *unifiedView {
 }
 
 // TestUnifiedViewMainMode verifies that the main (non-archive) mode
-// shows LIVE and SAVED sections with appropriate content.
+// with no filter shows LIVE and SAVED sections with appropriate content.
 func TestUnifiedViewMainMode(t *testing.T) {
 	uv := newTestUnifiedView()
+	uv.viewFilter = ViewFilterAll // legacy: show both tiers
 
 	now := time.Now()
 	uv.liveSessions = []daemon.SessionInfo{
@@ -54,6 +55,94 @@ func TestUnifiedViewMainMode(t *testing.T) {
 	// "active" state should produce green ● indicator (not gray ○)
 	if !strings.Contains(output, "●") {
 		t.Errorf("expected green ● for active session:\n%s", output)
+	}
+	if !strings.Contains(output, "SAVED") {
+		t.Errorf("expected SAVED section header in output:\n%s", output)
+	}
+	if !strings.Contains(output, "Saved summary text") {
+		t.Errorf("expected saved summary in output:\n%s", output)
+	}
+}
+
+// TestUnifiedViewLiveOnlyFilter verifies that the Active tab (live-only filter)
+// shows only live sessions, not saved sessions.
+func TestUnifiedViewLiveOnlyFilter(t *testing.T) {
+	uv := newTestUnifiedView()
+	uv.viewFilter = ViewFilterLiveOnly
+
+	now := time.Now()
+	uv.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-001",
+			Topic:        "Live Topic Here",
+			Project:      "/home/user/project-a",
+			State:        "active",
+			RegisteredAt: now.Add(-5 * time.Minute).Format(time.RFC3339),
+		},
+	}
+	uv.savedSessions = []db.Session{
+		{
+			SessionID: "saved-001",
+			Project:   "/home/user/project-b",
+			Repo:      "project-b",
+			Branch:    "main",
+			Summary:   "Saved summary text",
+			Created:   now.Add(-1 * time.Hour),
+			Type:      db.SessionBookmark,
+		},
+	}
+
+	output := uv.View(120, 40)
+
+	if !strings.Contains(output, "LIVE") {
+		t.Errorf("expected LIVE section header in output:\n%s", output)
+	}
+	if !strings.Contains(output, "Live Topic Here") {
+		t.Errorf("expected live topic in output:\n%s", output)
+	}
+	if strings.Contains(output, "SAVED") {
+		t.Errorf("Active tab (live-only) should NOT show SAVED section:\n%s", output)
+	}
+	if strings.Contains(output, "Saved summary text") {
+		t.Errorf("Active tab (live-only) should NOT show saved sessions:\n%s", output)
+	}
+}
+
+// TestUnifiedViewSavedOnlyFilter verifies that the Resume tab (saved-only filter)
+// shows only saved sessions, not live sessions.
+func TestUnifiedViewSavedOnlyFilter(t *testing.T) {
+	uv := newTestUnifiedView()
+	uv.viewFilter = ViewFilterSavedOnly
+
+	now := time.Now()
+	uv.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-001",
+			Topic:        "Live Topic Here",
+			Project:      "/home/user/project-a",
+			State:        "active",
+			RegisteredAt: now.Add(-5 * time.Minute).Format(time.RFC3339),
+		},
+	}
+	uv.savedSessions = []db.Session{
+		{
+			SessionID: "saved-001",
+			Project:   "/home/user/project-b",
+			Repo:      "project-b",
+			Branch:    "main",
+			Summary:   "Saved summary text",
+			Created:   now.Add(-1 * time.Hour),
+			Type:      db.SessionBookmark,
+		},
+	}
+
+	output := uv.View(120, 40)
+
+	if strings.Contains(output, "LIVE") {
+		t.Errorf("Resume tab (saved-only) should NOT show LIVE section:\n%s", output)
+	}
+	if strings.Contains(output, "Live Topic Here") {
+		t.Errorf("Resume tab (saved-only) should NOT show live sessions:\n%s", output)
 	}
 	if !strings.Contains(output, "SAVED") {
 		t.Errorf("expected SAVED section header in output:\n%s", output)

@@ -119,6 +119,7 @@ func TestHandleKeyEnterOnPathReturnsLaunch(t *testing.T) {
 
 func TestHandleKeyEnterOnSessionReturnsResume(t *testing.T) {
 	p := setupSessionsPlugin(t)
+	p.unified.viewFilter = ViewFilterSavedOnly // Resume tab shows saved sessions
 
 	// Load a saved session into the unified view
 	sessions := []db.Session{
@@ -273,6 +274,7 @@ func TestUnifiedViewLoadsSavedSessions(t *testing.T) {
 		},
 	}
 	p.unified.SetSavedSessions(sessions)
+	p.unified.viewFilter = ViewFilterSavedOnly // Resume tab shows saved sessions
 
 	if len(p.unified.savedSessions) != 1 {
 		t.Fatalf("expected 1 saved session, got %d", len(p.unified.savedSessions))
@@ -290,9 +292,28 @@ func TestUnifiedViewLoadsSavedSessions(t *testing.T) {
 func TestNavigateTo(t *testing.T) {
 	p := setupPlugin(t)
 
+	p.NavigateTo("active", nil)
+	if p.subTab != "sessions" {
+		t.Fatalf("expected subTab 'sessions', got %s", p.subTab)
+	}
+	if p.unified.viewFilter != ViewFilterLiveOnly {
+		t.Fatalf("expected viewFilter live_only for active route, got %q", p.unified.viewFilter)
+	}
+
+	p.NavigateTo("resume", nil)
+	if p.subTab != "sessions" {
+		t.Fatalf("expected subTab 'sessions' for resume route, got %s", p.subTab)
+	}
+	if p.unified.viewFilter != ViewFilterSavedOnly {
+		t.Fatalf("expected viewFilter saved_only for resume route, got %q", p.unified.viewFilter)
+	}
+
 	p.NavigateTo("sessions", nil)
 	if p.subTab != "sessions" {
 		t.Fatalf("expected subTab 'sessions', got %s", p.subTab)
+	}
+	if p.unified.viewFilter != ViewFilterLiveOnly {
+		t.Fatalf("expected viewFilter live_only for sessions route (alias), got %q", p.unified.viewFilter)
 	}
 
 	p.NavigateTo("new", nil)
@@ -351,6 +372,7 @@ func searchString(s, substr string) bool {
 
 func TestFilterFromFirstCharacter(t *testing.T) {
 	p := setupSessionsPlugin(t)
+	p.unified.viewFilter = ViewFilterSavedOnly // show saved sessions for this test
 
 	// Load 3 saved sessions with different repos
 	sessions := []db.Session{
@@ -638,6 +660,7 @@ func TestSessionsBookmarkArchivedPromotesToSaved(t *testing.T) {
 
 func TestSessionsDismissSavedRemovesBookmark(t *testing.T) {
 	p := setupSessionsPlugin(t)
+	p.unified.viewFilter = ViewFilterSavedOnly // Resume tab shows saved sessions
 
 	// Insert a bookmark directly into DB
 	_ = db.DBInsertBookmark(p.db, db.Session{
