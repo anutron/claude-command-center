@@ -134,3 +134,9 @@ type SettingsProvider interface {
 type NotifyMsg struct {
 	Event string
 }
+
+// AgentStateChangedMsg is sent by plugins when agent sessions are launched,
+// queued, finished, or killed. The TUI host handles this by immediately
+// re-polling budget status from the daemon so the budget widget updates
+// without waiting for the next 5-second tick.
+type AgentStateChangedMsg struct{}

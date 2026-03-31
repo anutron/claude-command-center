@@ -24,6 +24,14 @@ import (
 // Compile-time check that Plugin implements plugin.Plugin.
 var _ plugin.Plugin = (*Plugin)(nil)
 
+// agentStateChangedCmd returns a tea.Cmd that notifies the TUI host to
+// immediately refresh the budget widget after an agent state change.
+func agentStateChangedCmd() tea.Cmd {
+	return func() tea.Msg {
+		return plugin.AgentStateChangedMsg{}
+	}
+}
+
 // Plugin implements plugin.Plugin for PR tracking.
 type Plugin struct {
 	database    *sql.DB
@@ -183,7 +191,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 				p.logger.Error("prs", fmt.Sprintf("agent status update (running) failed for %s: %v", msg.ID, err))
 			}
 			p.updatePRAgentStatus(msg.ID, "running")
-			return true, plugin.NoopAction()
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: agentStateChangedCmd()}
 		}
 
 	case agent.SessionIDCapturedMsg:
@@ -213,7 +221,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 				p.logger.Error("prs", fmt.Sprintf("agent status update (%s) failed for %s: %v", status, msg.ID, err))
 			}
 			p.updatePRAgentStatus(msg.ID, status)
-			return true, plugin.NoopAction()
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: agentStateChangedCmd()}
 		}
 
 	case ui.TickMsg:

@@ -405,12 +405,12 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 
 #### Session Lifecycle
 
-1. **Launch or queue**: User presses `enter` in task runner step 3. `launchOrQueueAgent` either starts the session immediately or queues it based on `cfg.Agent.MaxConcurrent` (default 10).
+1. **Launch or queue**: User presses `enter` in task runner step 3. `launchOrQueueAgent` either starts the session immediately or queues it based on `cfg.Agent.MaxConcurrent` (default 10). Emits `plugin.AgentStateChangedMsg` so the TUI host immediately refreshes the budget widget.
 2. **Auto-accept**: Launching/queuing automatically sets the todo's `triage_status` to `"accepted"` so it leaves the "new" inbox.
 3. **Process start**: `launchAgent` spawns `claude --print --output-format stream-json --verbose [flags] <prompt>` as a subprocess. The session's `done` channel and exit code are managed by a background goroutine.
 4. **Monitoring**: A background goroutine reads stdout line-by-line, parsing stream-JSON events. It detects blocking events (tool_use with `SendUserMessage` or `AskUser`) and updates `sess.Status` to `"blocked"` with the question text.
 5. **Tick polling**: `checkAgentProcesses` runs on every UI tick. It checks the `done` channel for finished processes and reads `sess.Status` (protected by mutex) for status changes like `"blocked"`.
-6. **Completion**: When the process exits, `onAgentFinished` sets status to `"review"` (exit 0) or `"failed"` (non-zero). It checks the DB for an agent-authored summary (submitted via `ccc update-todo` during the session). If none exists, falls back to `extractSessionSummary()` which parses the stream-json output. Persists status and summary to DB.
+6. **Completion**: When the process exits, `onAgentFinished` sets status to `"review"` (exit 0) or `"failed"` (non-zero). It checks the DB for an agent-authored summary (submitted via `ccc update-todo` during the session). If none exists, falls back to `extractSessionSummary()` which parses the stream-json output. Persists status and summary to DB. Emits `plugin.AgentStateChangedMsg` to refresh the budget widget.
 7. **Queue drain**: After a session finishes, `onAgentFinished` checks the queue and auto-launches the next `AutoStart` session if capacity is available.
 8. **Shutdown cleanup**: `Plugin.Shutdown()` cancels all active sessions to prevent zombie processes.
 
@@ -640,6 +640,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Task runner wizard: `r` opens review loop, unchanged prompt = approved
 - Task runner wizard: `r` annotated prompt triggers LLM revision and reopens Plannotator
 - Agent sessions: launching sets session_status to "active" and auto-accepts the todo
+- Agent sessions: launch/queue/finish/kill emits AgentStateChangedMsg to refresh budget widget
 - Agent sessions: queuing sets session_status to "queued" when at max concurrency
 - Agent sessions: stream-JSON blocking event sets session_status to "blocked" with question text
 - Agent sessions: successful completion (exit 0) sets session_status to "review" with summary
