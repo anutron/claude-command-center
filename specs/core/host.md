@@ -244,7 +244,7 @@ All cross-plugin communication uses the event bus exclusively. The host does not
 3. Flash message or double-esc hint or empty line (below tab bar)
 4. Active plugin's `View(width, contentHeight, frame)` output
 5. Centered in terminal via `lipgloss.Place`
-6. Budget widget overlaid on row 1, right-aligned (see [Budget Widget](#budget-widget))
+6. Budget widget overlaid on row 1, right-aligned (see [Budget Widget](#budget-widget)). The overlay row must account for banner visibility — when the banner is hidden, the overlay row must skip the tab bar.
 
 **Content height calculation**: The host computes the overhead (banner + spacing + tab bar) by rendering the header sections and counting newlines, then passes `terminalHeight - overhead` as `contentHeight` to the plugin (minimum 10). This prevents plugins from sizing their layouts to the full terminal height and overflowing past the banner/tabs.
 
@@ -315,3 +315,4 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 - Flash message renders when active and clears when expired
 - DaemonDisconnectedMsg triggers reconnect cycle
 - FocusMsg triggers ClearScreen for repaint
+- Tab bar remains visible when banner is hidden (budget widget overlay must not overwrite the tab bar row)

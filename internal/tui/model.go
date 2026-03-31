@@ -717,14 +717,19 @@ func (m Model) View() string {
 	if m.width > 0 && m.height > 0 {
 		page = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, page)
 
-		// Overlay budget widget pinned to the upper-right corner (row 1, 2 chars from right).
+		// Overlay budget widget pinned to the upper-right corner (2 chars from right).
+		// When the banner is visible, place on row 1 (inside the banner).
+		// When hidden, place on row 0 to avoid overwriting the tab bar.
 		if budget := m.renderBudgetWidget(); budget != "" && m.width > 0 {
 			bw := lipgloss.Width(budget)
 			pad := m.width - bw - 2
 			if pad > 0 {
 				budgetLine := strings.Repeat(" ", pad) + budget
 				lines := strings.Split(page, "\n")
-				row := 1 // 2nd line (0-indexed)
+				row := 0
+				if m.cfg.BannerVisible() {
+					row = 1
+				}
 				if row < len(lines) {
 					lines[row] = budgetLine
 				}

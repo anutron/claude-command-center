@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/anutron/claude-command-center/internal/config"
@@ -140,6 +141,35 @@ func TestViewDoesNotPanic(t *testing.T) {
 		t.Error("expected non-empty view for command tab")
 	}
 
+}
+
+func TestTabBarVisibleWhenBannerHidden(t *testing.T) {
+	cfg := testSetup(t)
+	cfg.SetShowBanner(false)
+	database, err := db.OpenDB(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
+	m.width = 120
+	m.height = 40
+
+	v := m.View()
+
+	// The tab bar should contain tab labels regardless of banner visibility.
+	// BUG-123: The budget widget overlay was overwriting the tab bar row when
+	// the banner was hidden because it unconditionally targeted row 1.
+	if !strings.Contains(v, "New Session") {
+		t.Error("tab bar label 'New Session' missing from view when banner is hidden")
+	}
+	if !strings.Contains(v, "Command Center") {
+		t.Error("tab bar label 'Command Center' missing from view when banner is hidden")
+	}
+	if !strings.Contains(v, "Settings") {
+		t.Error("tab bar label 'Settings' missing from view when banner is hidden")
+	}
 }
 
 func TestStylesFromPalette(t *testing.T) {
