@@ -124,10 +124,12 @@ func DBUpdateTodo(db *sql.DB, id string, t Todo) error {
 }
 
 // DBAcceptTodo transitions a todo from "new" to "backlog".
+// Only updates if the current status is "new" to avoid overwriting
+// a status that has already advanced (e.g., "running" from an agent launch).
 func DBAcceptTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_todos SET status = ?, updated_at = ? WHERE id = ?`,
-		StatusBacklog, now, id)
+	_, err := db.Exec(`UPDATE cc_todos SET status = ?, updated_at = ? WHERE id = ? AND status = ?`,
+		StatusBacklog, now, id, StatusNew)
 	if err != nil {
 		return fmt.Errorf("accept todo %s: %w", id, err)
 	}

@@ -180,13 +180,13 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 			}
 			// Fall through to local runner
 		} else {
-			// Daemon accepted the launch. Set status optimistically.
+			// Daemon accepted the launch. Set status optimistically and persist.
 			// The daemon will broadcast agent.started/agent.queued events.
 			p.setTodoStatus(qs.TodoID, db.StatusRunning)
 			p.publishEvent("agent.started", map[string]interface{}{
 				"todo_id": qs.TodoID,
 			})
-			return acceptCmd
+			return tea.Batch(acceptCmd, p.persistTodoStatus(qs.TodoID, db.StatusRunning))
 		}
 	}
 
@@ -199,7 +199,7 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 		p.publishEvent("agent.started", map[string]interface{}{
 			"todo_id": qs.TodoID,
 		})
-		return tea.Batch(acceptCmd, launchCmd)
+		return tea.Batch(acceptCmd, p.persistTodoStatus(qs.TodoID, db.StatusRunning), launchCmd)
 	}
 
 	// Queued.
