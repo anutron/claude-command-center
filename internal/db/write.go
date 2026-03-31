@@ -652,7 +652,7 @@ func DBUpsertSourceSync(d *sql.DB, source string, syncErr error) error {
 // Write methods -- Merges
 // ---------------------------------------------------------------------------
 
-func DBInsertMerge(db *sql.DB, synthesisID, originalID, mergeNote string) error {
+func DBInsertMerge(db *sql.DB, synthesisID, originalID string) error {
 	now := FormatTime(time.Now())
 	_, err := db.Exec(`INSERT OR REPLACE INTO cc_todo_merges (synthesis_id, original_id, vetoed, created_at)
 		VALUES (?, ?, 0, ?)`, synthesisID, originalID, now)

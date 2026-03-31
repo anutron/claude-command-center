@@ -455,7 +455,7 @@ func (p *Plugin) handleSynthesizeFinished(msg claudeSynthesizeFinishedMsg) (bool
 			return err
 		}
 		for _, orig := range msg.originals {
-			if err := db.DBInsertMerge(database, synthCopy.ID, orig.ID, ""); err != nil {
+			if err := db.DBInsertMerge(database, synthCopy.ID, orig.ID); err != nil {
 				return err
 			}
 		}

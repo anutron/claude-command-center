@@ -1525,10 +1525,10 @@ func TestMergeCRUD(t *testing.T) {
 	defer database.Close()
 
 	// Insert merges
-	if err := DBInsertMerge(database, "synth-1", "orig-a", "same task"); err != nil {
+	if err := DBInsertMerge(database, "synth-1", "orig-a"); err != nil {
 		t.Fatalf("insert merge: %v", err)
 	}
-	if err := DBInsertMerge(database, "synth-1", "orig-b", "same task"); err != nil {
+	if err := DBInsertMerge(database, "synth-1", "orig-b"); err != nil {
 		t.Fatalf("insert merge: %v", err)
 	}
 
@@ -1636,10 +1636,10 @@ func TestFullMergeCycle(t *testing.T) {
 	if err := DBInsertTodo(database, s); err != nil {
 		t.Fatalf("insert synth: %v", err)
 	}
-	if err := DBInsertMerge(database, "s1", "a", "same task"); err != nil {
+	if err := DBInsertMerge(database, "s1", "a"); err != nil {
 		t.Fatalf("insert merge a: %v", err)
 	}
-	if err := DBInsertMerge(database, "s1", "b", "same task"); err != nil {
+	if err := DBInsertMerge(database, "s1", "b"); err != nil {
 		t.Fatalf("insert merge b: %v", err)
 	}
 

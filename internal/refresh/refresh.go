@@ -235,7 +235,7 @@ func dedupTodos(ctx context.Context, l llm.LLM, database *sql.DB, todos []db.Tod
 			continue
 		}
 		for _, orig := range originals {
-			_ = db.DBInsertMerge(database, synth.ID, orig.ID, "")
+			_ = db.DBInsertMerge(database, synth.ID, orig.ID)
 		}
 		if g.target.Source == "merge" {
 			_ = db.DBDeleteSynthesisMerges(database, g.target.ID)
