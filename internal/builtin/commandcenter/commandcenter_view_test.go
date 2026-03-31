@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/testutil"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -378,9 +379,60 @@ func TestView_TaskRunnerStep3LaunchOptions(t *testing.T) {
 }
 
 func TestView_EditGuardBlocksMutationDuringAgent(t *testing.T) {
-	// The edit guard checks agentRunner.Session(todo.ID) != nil, which requires
-	// a real running agent process. Simulating this needs agent runner infrastructure.
-	t.Skip("requires agent runner mock to simulate active session")
+	p := testPluginWithCC(t)
+	todo := &p.cc.Todos[0]
+	todo.Status = db.StatusRunning
+
+	// Inject mock runner with an active session for this todo
+	mock := testutil.NewMockRunner(3)
+	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
+	p.agentRunner = mock
+
+	// Open detail view
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+	if !p.detailView {
+		t.Fatal("enter should open detail view")
+	}
+
+	// Press enter again — should be blocked by edit guard
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+	if !strings.Contains(p.flashMessage, "being updated by agent") {
+		t.Errorf("expected flash about agent, got %q", p.flashMessage)
+	}
+}
+
+func TestView_EditGuardBlocksCommandDuringAgent(t *testing.T) {
+	p := testPluginWithCC(t)
+	todo := &p.cc.Todos[0]
+	todo.Status = db.StatusRunning
+
+	mock := testutil.NewMockRunner(3)
+	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
+	p.agentRunner = mock
+
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+	// Press 'c' — command input should also be blocked
+	p.HandleKey(keyMsg("c"))
+	if !strings.Contains(p.flashMessage, "being updated by agent") {
+		t.Errorf("expected flash about agent, got %q", p.flashMessage)
+	}
+}
+
+func TestView_EditGuardAllowsWatchDuringAgent(t *testing.T) {
+	p := testPluginWithCC(t)
+	todo := &p.cc.Todos[0]
+	todo.Status = db.StatusRunning
+
+	mock := testutil.NewMockRunner(3)
+	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
+	p.agentRunner = mock
+
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+	// 'w' should NOT be blocked — it opens the session viewer
+	p.HandleKey(keyMsg("w"))
+	if !p.sessionViewerActive {
+		t.Error("w should open session viewer even during active agent")
+	}
 }
 
 func TestView_EditGuardAllowsNavigationDuringAgent(t *testing.T) {
@@ -405,19 +457,63 @@ func TestView_EditGuardAllowsNavigationDuringAgent(t *testing.T) {
 }
 
 func TestView_SessionViewerOpensOnW(t *testing.T) {
-	// Session viewer requires a real agent session with events channel.
-	// The 'w' key checks agentRunner.Session(todo.ID) for the events channel.
-	t.Skip("requires agent runner mock to provide events channel")
+	p := testPluginWithCC(t)
+	todo := &p.cc.Todos[0]
+	todo.Status = db.StatusRunning
+
+	mock := testutil.NewMockRunner(3)
+	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
+	p.agentRunner = mock
+
+	// Open detail view, then press w
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+	p.HandleKey(keyMsg("w"))
+
+	if !p.sessionViewerActive {
+		t.Fatal("w should open session viewer")
+	}
+
+	view := renderView(p)
+	viewContains(t, view, "SESSION VIEWER")
+}
+
+func TestView_NoSessionShowsFlash(t *testing.T) {
+	p := testPluginWithCC(t)
+	todo := &p.cc.Todos[0]
+	todo.Status = db.StatusBacklog
+
+	// No active session and no log path
+	mock := testutil.NewMockRunner(3)
+	p.agentRunner = mock
+
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+	p.HandleKey(keyMsg("w"))
+
+	if p.sessionViewerActive {
+		t.Error("session viewer should NOT open without active session")
+	}
+	if p.flashMessage == "" {
+		t.Error("expected flash message when no session available")
+	}
 }
 
 func TestView_SessionViewerClosesOnEsc(t *testing.T) {
-	// Session viewer close test requires an open session viewer, which needs
-	// a real agent session. Test the state transition directly.
 	p := testPluginWithCC(t)
-	// Manually activate session viewer
-	p.sessionViewerActive = true
-	p.detailView = true
+	todo := &p.cc.Todos[0]
+	todo.Status = db.StatusRunning
 
+	mock := testutil.NewMockRunner(3)
+	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
+	p.agentRunner = mock
+
+	// Open detail → session viewer
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+	p.HandleKey(keyMsg("w"))
+	if !p.sessionViewerActive {
+		t.Fatal("session viewer should be active")
+	}
+
+	// Esc closes session viewer, returns to detail
 	p.HandleKey(specialKeyMsg(tea.KeyEsc))
 	if p.sessionViewerActive {
 		t.Fatal("esc should close session viewer")
