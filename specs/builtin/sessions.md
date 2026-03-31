@@ -8,9 +8,11 @@ Manage sessions, project launching, and worktrees as a plugin. Users can browse 
 
 ## Routes
 
-- `sessions/sessions` — unified sessions view (default)
+- `sessions/active` — live sessions only (Active tab, default)
+- `sessions/resume` — saved/bookmarked sessions only (Resume tab)
 - `sessions/new` — new session list
 - `sessions/worktrees` — worktrees sub-tab
+- `sessions/sessions` — legacy alias for `active`
 
 ## State
 
@@ -19,7 +21,7 @@ Manage sessions, project launching, and worktrees as a plugin. Users can browse 
 - paths []string
 - confirming, confirmYes bool
 - confirmItem
-- sub-tab: "sessions", "new", or "worktrees"
+- sub-tab: "sessions" (active), "resume", "new", or "worktrees"
 - worktreeItems []worktreeItem
 - worktreeCursor int
 - worktreeWarning string (non-empty = show warning overlay)
@@ -53,12 +55,16 @@ A session that is both live in the daemon AND bookmarked appears in **Live** onl
 
 ### View Modes
 
-Two modes toggled by `a`:
+The Active and Resume tabs each have their own view filter. The `a` key toggles archive mode within the current tab.
 
-| Mode | Contents | Default |
-|------|----------|---------|
-| **Main** | Live + Saved sections | Yes |
-| **Archive** | Archived sessions only | No |
+| Tab / Mode | Contents | Default |
+|------------|----------|---------|
+| **Active** (main) | Live sessions only | Yes |
+| **Active** (archive) | Archived sessions only | No |
+| **Resume** (main) | Saved/bookmarked sessions only | Yes |
+| **Resume** (archive) | Archived sessions only | No |
+
+The Active tab MUST NOT show saved sessions. Saved sessions appear exclusively in the Resume tab.
 
 ### Auto-Archiving
 
@@ -293,7 +299,8 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 ## Test Cases
 
 - Init loads paths, bookmarks, and archived sessions
-- Sessions tab shows Live and Saved sections in main mode
+- Active tab shows only Live sessions in main mode (no Saved)
+- Resume tab shows only Saved sessions in main mode (no Live)
 - Sessions tab shows Archived section in archive mode
 - Toggle archive mode resets cursor
 - Deduplication: bookmarked live session shows ★, not duplicated in Saved

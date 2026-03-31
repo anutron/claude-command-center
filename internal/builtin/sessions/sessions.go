@@ -325,6 +325,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	// Initialise unified view (daemon client getter wired later via SetDaemonClientFunc)
 	p.unified = NewUnifiedView(nil, p.styles)
 	p.unified.db = p.db
+	p.unified.viewFilter = ViewFilterLiveOnly // Active tab is the default
 
 	// Load initial saved/archived sessions into unified view
 	if p.db != nil {
@@ -388,7 +389,9 @@ func (p *Plugin) Migrations() []plugin.Migration { return nil }
 // Routes returns navigable sub-routes.
 func (p *Plugin) Routes() []plugin.Route {
 	return []plugin.Route{
-		{Slug: "sessions", Description: "Sessions sub-tab"},
+		{Slug: "active", Description: "Active sessions (live only)"},
+		{Slug: "resume", Description: "Resume sessions (saved/bookmarked)"},
+		{Slug: "sessions", Description: "Sessions sub-tab (alias for active)"},
 		{Slug: "new", Description: "New session sub-tab"},
 		{Slug: "worktrees", Description: "Worktrees sub-tab"},
 	}
@@ -398,9 +401,17 @@ func (p *Plugin) Routes() []plugin.Route {
 func (p *Plugin) NavigateTo(route string, args map[string]string) {
 	p.filterText = ""
 	switch route {
-	case "sessions":
+	case "active", "sessions":
 		p.subTab = "sessions"
+		if p.unified != nil {
+			p.unified.viewFilter = ViewFilterLiveOnly
+		}
 		// Refresh dispatched asynchronously via TabViewMsg → HandleMessage.
+	case "resume":
+		p.subTab = "sessions"
+		if p.unified != nil {
+			p.unified.viewFilter = ViewFilterSavedOnly
+		}
 	case "new":
 		p.subTab = "new"
 		p.applyFilter()
@@ -499,6 +510,9 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		if !filtering {
 			p.subTab = "sessions"
 			p.filterText = ""
+			if p.unified != nil {
+				p.unified.viewFilter = ViewFilterLiveOnly
+			}
 			if cmd := p.Refresh(); cmd != nil {
 				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 			}

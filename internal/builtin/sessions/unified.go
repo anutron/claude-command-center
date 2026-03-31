@@ -20,6 +20,13 @@ const (
 	TierArchived = "archived"
 )
 
+// ViewFilter constants control which tiers mainItems returns.
+const (
+	ViewFilterAll      = "" // show both live + saved (legacy)
+	ViewFilterLiveOnly = "live_only"
+	ViewFilterSavedOnly = "saved_only"
+)
+
 // UnifiedItem is a flattened, renderable session from any tier. Exported so
 // the Plugin can use it for key handling without knowing which underlying list
 // was queried.
@@ -58,6 +65,7 @@ type unifiedView struct {
 	agentsByID       map[string]daemon.AgentStatusResult
 	cursor           int
 	archiveMode      bool
+	viewFilter       string // ViewFilterAll, ViewFilterLiveOnly, or ViewFilterSavedOnly
 	daemonClient     func() *daemon.Client
 	styles           sessionStyles
 	db               *sql.DB
@@ -120,43 +128,47 @@ func (uv *unifiedView) mainItems() []UnifiedItem {
 
 	var items []UnifiedItem
 
-	// Live section.
-	for i, s := range sorted {
-		items = append(items, UnifiedItem{
-			SessionID:    s.SessionID,
-			Topic:        s.Topic,
-			Project:      s.Project,
-			Repo:         s.Repo,
-			Branch:       s.Branch,
-			WorktreePath: s.WorktreePath,
-			RegisteredAt: s.RegisteredAt,
-			EndedAt:      s.EndedAt,
-			State:        s.State,
-			Tier:         TierLive,
-			IsBookmarked: savedIDs[s.SessionID],
-			IsFirst:      i == 0,
-		})
+	// Live section (skipped when filter is saved-only).
+	if uv.viewFilter != ViewFilterSavedOnly {
+		for i, s := range sorted {
+			items = append(items, UnifiedItem{
+				SessionID:    s.SessionID,
+				Topic:        s.Topic,
+				Project:      s.Project,
+				Repo:         s.Repo,
+				Branch:       s.Branch,
+				WorktreePath: s.WorktreePath,
+				RegisteredAt: s.RegisteredAt,
+				EndedAt:      s.EndedAt,
+				State:        s.State,
+				Tier:         TierLive,
+				IsBookmarked: savedIDs[s.SessionID],
+				IsFirst:      i == 0,
+			})
+		}
 	}
 
-	// Saved section: exclude any session already shown in live.
-	savedIdx := 0
-	for _, s := range uv.savedSessions {
-		if s.SessionID != "" && liveIDs[s.SessionID] {
-			// Already shown as live — skip.
-			continue
+	// Saved section: exclude any session already shown in live (skipped when filter is live-only).
+	if uv.viewFilter != ViewFilterLiveOnly {
+		savedIdx := 0
+		for _, s := range uv.savedSessions {
+			if s.SessionID != "" && liveIDs[s.SessionID] {
+				// Already shown as live — skip.
+				continue
+			}
+			items = append(items, UnifiedItem{
+				SessionID:    s.SessionID,
+				Topic:        s.Summary,
+				Project:      s.Project,
+				Repo:         s.Repo,
+				Branch:       s.Branch,
+				WorktreePath: s.WorktreePath,
+				RegisteredAt: s.Created.Format("2006-01-02T15:04:05Z07:00"),
+				Tier:         TierSaved,
+				IsFirst:      savedIdx == 0,
+			})
+			savedIdx++
 		}
-		items = append(items, UnifiedItem{
-			SessionID:    s.SessionID,
-			Topic:        s.Summary,
-			Project:      s.Project,
-			Repo:         s.Repo,
-			Branch:       s.Branch,
-			WorktreePath: s.WorktreePath,
-			RegisteredAt: s.Created.Format("2006-01-02T15:04:05Z07:00"),
-			Tier:         TierSaved,
-			IsFirst:      savedIdx == 0,
-		})
-		savedIdx++
 	}
 
 	return items
@@ -190,7 +202,14 @@ func (uv *unifiedView) View(width, height int) string {
 		if uv.archiveMode {
 			return uv.styles.hint.Render("  No archived sessions.")
 		}
-		return uv.styles.hint.Render("  No sessions. Start a Claude session to see it here.")
+		switch uv.viewFilter {
+		case ViewFilterSavedOnly:
+			return uv.styles.hint.Render("  No saved sessions. Bookmark a session with 'b' to save it.")
+		case ViewFilterLiveOnly:
+			return uv.styles.hint.Render("  No active sessions. Start a Claude session to see it here.")
+		default:
+			return uv.styles.hint.Render("  No sessions. Start a Claude session to see it here.")
+		}
 	}
 
 	var lines []string
