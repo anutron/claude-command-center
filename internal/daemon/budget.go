@@ -11,9 +11,9 @@ func (s *Server) handleGetBudgetStatus(req *RPCRequest) (interface{}, *RPCError)
 
 	status := s.governed.BudgetTracker().Status()
 
-	var activeCount int
+	var agentCount int
 	if s.runner != nil {
-		activeCount = len(s.runner.Active())
+		agentCount = len(s.runner.Active()) + s.runner.QueueLen()
 	}
 
 	return BudgetStatusResult{
@@ -23,7 +23,7 @@ func (s *Server) handleGetBudgetStatus(req *RPCRequest) (interface{}, *RPCError)
 		DailyLimit:       status.DailyLimit,
 		EmergencyStopped: status.EmergencyStopped,
 		WarningLevel:     status.WarningLevel,
-		ActiveAgents:     activeCount,
+		ActiveAgents:     agentCount,
 	}, nil
 }
 

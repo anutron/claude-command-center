@@ -224,4 +224,36 @@ func (s *Server) watchAgentDone(id string, sess *agent.Session) {
 		Type: "agent.finished",
 		Data: data,
 	})
+
+	// Drain queue: start the next queued agent now that capacity is free.
+	s.drainNextAgent()
+}
+
+// drainNextAgent pops the next queued request (if any) and launches it.
+func (s *Server) drainNextAgent() {
+	if s.runner == nil {
+		return
+	}
+	next, ok := s.runner.DrainQueue()
+	if !ok {
+		return
+	}
+	queued, cmd := s.runner.LaunchOrQueue(next)
+	if !queued && cmd != nil {
+		go func() {
+			msg := cmd()
+			if started, ok := msg.(agent.SessionStartedMsg); ok {
+				data, _ := json.Marshal(AgentStatusResult{
+					ID:        started.ID,
+					Status:    "processing",
+					StartedAt: time.Now().Format(time.RFC3339),
+				})
+				s.Broadcast(Event{
+					Type: "agent.started",
+					Data: data,
+				})
+				go s.watchAgentDone(started.ID, started.Session)
+			}
+		}()
+	}
 }

@@ -155,7 +155,8 @@ Agents are long-running Claude Code subprocess sessions managed by an `agent.Run
 
 **Agent completion watcher:**
 
-- `watchAgentDone` blocks on `sess.Done()`, then calls `runner.CleanupFinished(id)` and broadcasts `agent.finished` with exit code
+- `watchAgentDone` blocks on `sess.Done()`, then calls `runner.CleanupFinished(id)`, broadcasts `agent.finished` with exit code, and calls `drainNextAgent()` to start the next queued agent
+- `drainNextAgent` pops from `runner.DrainQueue()`, launches via `runner.LaunchOrQueue()`, broadcasts `agent.started`, and spawns a new `watchAgentDone` goroutine
 
 ### Budget RPCs
 
@@ -164,6 +165,7 @@ Budget RPCs require a `GovernedRunner` to be configured; they return an error if
 **GetBudgetStatus():**
 
 - Returns `{hourly_spent, hourly_limit, daily_spent, daily_limit, emergency_stopped, warning_level, active_agents}`
+- `active_agents` includes both running (`runner.Active()`) and queued (`runner.QueueLen()`) agents
 
 **StopAllAgents():**
 
@@ -210,6 +212,47 @@ The subscriber system provides push delivery of server events to connected TUI c
 - Events are forwarded as `DaemonEventMsg` bubbletea messages via `p.Send()`
 - Events are also routed to the plugin event bus as `plugin.Event{Source: "daemon", Topic: evt.Type}`
 - On disconnect, a `DaemonDisconnectedMsg` is sent; the TUI retries every 10 seconds via `daemonReconnectCmd`
+
+### Binary Staleness Detection and Auto-Restart
+
+The daemon detects when its own binary has been replaced (e.g. by `make install`) and automatically restarts itself, ensuring running daemons always reflect the latest build.
+
+**Startup:**
+
+1. On startup, the daemon calls `os.Executable()` to resolve its binary path
+2. It records the binary's modification time (mtime) via `os.Stat()`
+3. These values are stored in the `Server` struct for later comparison
+
+**Periodic check:**
+
+1. A ticker fires every 30 seconds inside the `Serve()` loop (alongside the existing accept loop, run as a separate goroutine)
+2. On each tick, the daemon stats its own binary path
+3. If the file's mtime is strictly newer than the recorded startup mtime, the binary is considered stale
+4. If the file cannot be stat'd (deleted, permission error), the check is silently skipped — no restart
+
+**Graceful restart (re-exec):**
+
+1. When staleness is detected, the daemon logs `"binary updated, restarting..."` to `daemon.log`
+2. It calls `Shutdown()` — which stops agents, stops refresh, cancels the context, closes connections, and removes the socket file
+3. After shutdown completes, it re-execs itself via `syscall.Exec(binaryPath, os.Args, os.Environ())`
+4. The re-exec'd process goes through normal daemon startup: creates socket, writes PID file, begins serving
+5. If `syscall.Exec` fails, the daemon logs the error and exits with code 1 (the PID file is stale; the TUI or next `ccc daemon start` will spawn a fresh daemon)
+
+**Safety constraints:**
+
+- The check only compares mtime, not file content — this is intentional for simplicity and speed
+- The restart is synchronous within the daemon process: shutdown fully completes before re-exec
+- Active agent sessions are stopped via `runner.Shutdown()` (sends SIGINT, waits up to 3s) before re-exec — agents that are mid-work will be interrupted; this is acceptable because the alternative (stale daemon running indefinitely) is worse
+- The 30-second check interval means the daemon picks up new binaries within 30 seconds of `make install`
+
+### Makefile Daemon Restart
+
+The `make install` target automatically restarts any running daemon after installing the new binary:
+
+1. After symlinking binaries, the Makefile runs `ccc daemon stop` (sends SIGTERM to the running daemon via PID file)
+2. Waits 1 second for shutdown to complete
+3. Runs `ccc daemon start` to spawn a fresh daemon with the new binary
+4. Both commands are best-effort: if no daemon is running, `stop` is a no-op; if `start` fails, install still succeeds (the TUI will auto-start the daemon on next launch)
 
 ### Wire Types
 
@@ -269,6 +312,10 @@ The subscriber system provides push delivery of server events to connected TUI c
 - Session persistence across daemon restart — sessions loaded from SQLite on startup
 - `ShutdownDaemon` RPC — response is sent before shutdown (100ms delay before `Shutdown()`)
 - Socket file security — umask `0177` ensures socket is never world-accessible, even briefly
+- Binary staleness — daemon detects updated binary within 30s and auto-restarts via re-exec
+- Binary deleted — if binary is removed or unreadable, staleness check is silently skipped (no crash)
+- `make install` restarts daemon — stop + start after symlink, both best-effort
+- Re-exec failure — daemon logs error and exits with code 1; TUI auto-starts a fresh daemon on next launch
 - No client-side socket permission check — umask-on-create is sufficient for single-user macOS; client-side ownership verification is unnecessary (audit 2026-03-30)
 - No graceful drain on SIGTERM — `Shutdown()` stops agents cleanly via `runner.Shutdown()`, cancels context, and closes connections; a drain period adds complexity with no practical benefit for fast RPCs (audit 2026-03-30)
 - No configurable connection timeout — Unix domain sockets clean up dead fds via kernel lifecycle; subscriber write deadlines (5s) handle slow consumers; idle timeout config adds surface area for no gain (audit 2026-03-30)
