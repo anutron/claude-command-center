@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -518,6 +519,78 @@ func TestSubstringFilter(t *testing.T) {
 // ---------------------------------------------------------------------------
 // New integration tests for unified view
 // ---------------------------------------------------------------------------
+
+// TestBUG121_ArchiveKeybindingsIntegration is a regression test for BUG-121.
+// It verifies the full rendered output shows the correct hint bar text and that
+// key presses produce the expected visual state changes — testing what the user
+// actually sees, not just internal state.
+func TestBUG121_ArchiveKeybindingsIntegration(t *testing.T) {
+	p := setupSessionsPlugin(t)
+
+	// Inject an ended live session so 'a' has something to act on.
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "int-test-001",
+			Topic:        "Integration test session",
+			Project:      "/home/user/proj",
+			Repo:         "proj",
+			Branch:       "main",
+			State:        "ended",
+			RegisteredAt: time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
+			EndedAt:      time.Now().Add(-10 * time.Minute).Format(time.RFC3339),
+		},
+	}
+
+	// 1. Verify the hint bar shows both keybindings in normal mode.
+	view := p.View(120, 38, 0)
+	if !strings.Contains(view, "a archive") {
+		t.Errorf("BUG-121 regression: hint bar missing 'a archive' in normal mode.\nView:\n%s", view)
+	}
+	if !strings.Contains(view, "A view archive") {
+		t.Errorf("BUG-121 regression: hint bar missing 'A view archive' in normal mode.\nView:\n%s", view)
+	}
+
+	// 2. Press 'A' (shift-a) — should enter archive mode, hint bar changes.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	view = p.View(120, 38, 0)
+	if !strings.Contains(view, "A back") {
+		t.Errorf("BUG-121 regression: hint bar missing 'A back' in archive mode.\nView:\n%s", view)
+	}
+	// Should NOT show 'a archive' in archive mode.
+	if strings.Contains(view, "a archive") {
+		t.Errorf("BUG-121 regression: hint bar still shows 'a archive' in archive mode.\nView:\n%s", view)
+	}
+
+	// 3. Press 'A' again — back to normal mode with both hints.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'A'}})
+	view = p.View(120, 38, 0)
+	if !strings.Contains(view, "a archive") {
+		t.Errorf("BUG-121 regression: hint bar missing 'a archive' after returning from archive mode.\nView:\n%s", view)
+	}
+
+	// 4. Press 'a' (lowercase) — should archive the ended session.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	archived, _ := db.DBLoadArchivedSessions(p.db)
+	if len(archived) != 1 || archived[0].SessionID != "int-test-001" {
+		t.Errorf("BUG-121 regression: pressing 'a' did not archive the session. archived=%d", len(archived))
+	}
+
+	// 5. Inject a running session and verify 'a' is blocked.
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "int-test-002",
+			Topic:        "Running session",
+			Project:      "/home/user/proj",
+			State:        "running",
+			RegisteredAt: time.Now().Format(time.RFC3339),
+		},
+	}
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	view = p.View(120, 38, 0)
+	if !strings.Contains(view, "Can't archive running session") {
+		t.Errorf("BUG-121 regression: expected flash message when archiving running session.\nView:\n%s", view)
+	}
+}
 
 func TestSessionsArchiveToggle(t *testing.T) {
 	p := setupSessionsPlugin(t)
