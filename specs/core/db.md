@@ -117,7 +117,7 @@ All types are exported for use by other packages:
 ### Todo Merges (Duplicate Detection)
 - **Schema**: `cc_todo_merges` table with composite primary key `(synthesis_id, original_id)`, plus `vetoed` (INTEGER, default 0) and `created_at` (TEXT)
 - `DBLoadMerges(db)` -- loads all merge records; used by `LoadCommandCenterFromDB` to populate `cc.Merges`
-- `DBInsertMerge(db, synthesisID, originalID, mergeNote)` -- inserts or replaces a merge record with `vetoed=0`; note: `mergeNote` parameter is accepted but not persisted (no column in schema)
+- `DBInsertMerge(db, synthesisID, originalID)` -- inserts or replaces a merge record with `vetoed=0`
 - `DBSetMergeVetoed(db, synthesisID, originalID, vetoed)` -- sets the vetoed flag on a specific merge record
 - `DBDeleteSynthesisMerges(db, synthesisID)` -- deletes all merge records for a given synthesis todo
 - `DBGetOriginalIDs(merges, synthesisID)` -- in-memory helper: returns non-vetoed original IDs for a synthesis from a pre-loaded merges slice

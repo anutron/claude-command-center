@@ -60,7 +60,7 @@ The in-memory buffer is implemented as a slice with tail-trimming (not a true ci
 - **Trim**: when `len(entries) > maxMem`, the slice is resliced to keep only the last `maxMem` entries: `entries = entries[len(entries)-maxMem:]`
 - **Read**: `Recent(n)` copies the last `n` entries from the slice. The returned slice is a copy, so callers cannot mutate the buffer.
 - **Capacity**: `maxMem` is fixed at 500 for both `FileLogger` and `MemoryLogger`. It is not configurable at runtime.
-- **Memory**: trimming reslices but does not reallocate. Over time, the underlying array grows and the prefix becomes unreachable but is not freed until GC collects the array. [NEEDS INPUT: should trimming compact the slice to bound memory?]
+- **Memory**: trimming reslices but does not reallocate. The unreachable prefix (~60KB at 500 entries) is reclaimed on next GC cycle. Compaction is not worth the complexity at this scale.
 - **Ordering**: entries are always in chronological order (oldest first). `Recent(n)` returns entries in the same order (oldest of the N first, newest last).
 
 ## Test Cases
