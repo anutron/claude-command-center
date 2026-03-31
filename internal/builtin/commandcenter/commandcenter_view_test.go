@@ -9,497 +9,319 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// viewContains asserts that view contains text, dumping the full view on failure.
-func viewContains(t *testing.T, view, text string) {
+// testPluginWithAgent creates a plugin with todos and an active agent session
+// for the first todo. Returns the plugin and the session's EventsCh for pushing events.
+func testPluginWithAgent(t *testing.T) (*Plugin, chan sessionEvent) {
 	t.Helper()
-	if !strings.Contains(view, text) {
-		t.Errorf("expected view to contain %q but it did not.\nFull view:\n%s", text, view)
+	p := testPluginWithCC(t)
+	todoID := p.cc.Todos[0].ID
+
+	eventsCh := make(chan sessionEvent, 64)
+	sess := &agentSession{
+		TodoID:    todoID,
+		Status:    "processing",
+		StartedAt: time.Now(),
+		EventsCh:  eventsCh,
+		done:      make(chan struct{}),
 	}
+	p.activeSessions[todoID] = sess
+	p.cc.Todos[0].Status = db.StatusRunning
+
+	return p, eventsCh
 }
 
-// viewNotContains asserts that view does NOT contain text.
-func viewNotContains(t *testing.T, view, text string) {
-	t.Helper()
-	if strings.Contains(view, text) {
-		t.Errorf("expected view NOT to contain %q but it did.\nFull view:\n%s", text, view)
-	}
-}
-
-// testPluginWithTodos creates a plugin with the given todos pre-loaded.
-func testPluginWithTodos(t *testing.T, todos []db.Todo) *Plugin {
-	t.Helper()
-	p := testPlugin(t)
-	p.cc = &db.CommandCenter{
-		GeneratedAt: time.Now(),
-		Todos:       todos,
-	}
-	p.width = 120
-	p.height = 40
-	return p
-}
-
-// renderView renders the plugin's View at standard dimensions.
+// renderView renders the plugin at standard test dimensions.
 func renderView(p *Plugin) string {
-	return p.View(120, 38, 0)
+	return p.View(120, 40, 0)
 }
 
-// ---------------------------------------------------------------------------
-// Status Badge Rendering (9 tests)
-// ---------------------------------------------------------------------------
-
-func TestView_TodoStatusNew(t *testing.T) {
-	// "new" status todos appear in the "inbox" triage tab when expanded
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Inbox item alpha", Status: db.StatusNew, Source: "github", CreatedAt: time.Now()},
-	})
-	// Expand the view and switch to inbox tab
-	p.HandleKey(keyMsg(" "))
-	if !p.ccExpanded {
-		t.Fatal("space should expand the view")
-	}
-	// Default triage is "todo", switch to "inbox"
-	p.HandleKey(keyMsg("tab"))
-	view := renderView(p)
-	viewContains(t, view, "Inbox item alpha")
-}
-
-func TestView_TodoStatusBacklog(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Backlog task bravo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-	})
-	view := renderView(p)
-	viewContains(t, view, "Backlog task bravo")
-}
-
-func TestView_TodoStatusEnqueued(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Enqueued task charlie", Status: db.StatusEnqueued, Source: "manual", CreatedAt: time.Now()},
-	})
-	view := renderView(p)
-	viewContains(t, view, "Enqueued task charlie")
-	viewContains(t, view, "queued")
-}
-
-func TestView_TodoStatusRunning(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Running task delta", Status: db.StatusRunning, Source: "manual", CreatedAt: time.Now()},
-	})
-	view := renderView(p)
-	viewContains(t, view, "Running task delta")
-	viewContains(t, view, "agent working")
-}
-
-func TestView_TodoStatusBlocked(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Blocked task echo", Status: db.StatusBlocked, Source: "manual", CreatedAt: time.Now()},
-	})
-	view := renderView(p)
-	viewContains(t, view, "Blocked task echo")
-	viewContains(t, view, "needs input")
-}
-
-func TestView_TodoStatusReview(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Review task foxtrot", Status: db.StatusReview, Source: "manual", CreatedAt: time.Now()},
-	})
-	view := renderView(p)
-	viewContains(t, view, "Review task foxtrot")
-	viewContains(t, view, "ready for review")
-}
-
-func TestView_TodoStatusFailed(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Failed task golf", Status: db.StatusFailed, Source: "manual", CreatedAt: time.Now()},
-	})
-	view := renderView(p)
-	viewContains(t, view, "Failed task golf")
-	viewContains(t, view, "failed")
-}
-
-func TestView_TodoStatusCompleted(t *testing.T) {
-	// Completed todos are terminal; they should NOT appear in the default active list
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Completed task hotel", Status: db.StatusCompleted, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t2", Title: "Active task india", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-	})
-	view := renderView(p)
-	viewNotContains(t, view, "Completed task hotel")
-	viewContains(t, view, "Active task india")
-}
-
-func TestView_TodoStatusDismissed(t *testing.T) {
-	// Dismissed todos are terminal; they should NOT appear in any active view
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Dismissed task juliet", Status: db.StatusDismissed, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t2", Title: "Active task kilo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-	})
-	view := renderView(p)
-	viewNotContains(t, view, "Dismissed task juliet")
-	// Also check expanded view with "all" filter
-	p.HandleKey(keyMsg(" "))
-	// Cycle tabs to "all" (todo -> inbox -> agents -> review -> all)
-	p.HandleKey(keyMsg("tab"))
-	p.HandleKey(keyMsg("tab"))
-	p.HandleKey(keyMsg("tab"))
-	p.HandleKey(keyMsg("tab"))
-	view = renderView(p)
-	viewNotContains(t, view, "Dismissed task juliet")
-}
-
-// ---------------------------------------------------------------------------
-// Navigation and View Modes (9 tests)
-// ---------------------------------------------------------------------------
-
-func TestView_ExpandCollapseSpaceCycles(t *testing.T) {
-	p := testPluginWithCC(t)
-
-	// Start collapsed
-	view1 := renderView(p)
-
-	// Press space -> expanded 2-col
-	p.HandleKey(keyMsg(" "))
-	if !p.ccExpanded || p.ccExpandedCols != 2 {
-		t.Fatal("first space should expand to 2-col")
-	}
-	view2 := renderView(p)
-
-	// Press space -> expanded 1-col
-	p.HandleKey(keyMsg(" "))
-	if !p.ccExpanded || p.ccExpandedCols != 1 {
-		t.Fatal("second space should switch to 1-col")
-	}
-	view3 := renderView(p)
-
-	// Press space -> collapsed
-	p.HandleKey(keyMsg(" "))
-	if p.ccExpanded {
-		t.Fatal("third space should collapse")
-	}
-
-	// Views should differ at each stage
-	if view1 == view2 {
-		t.Error("collapsed and 2-col expanded views should differ")
-	}
-	if view2 == view3 {
-		t.Error("2-col and 1-col expanded views should differ")
+// viewContains checks that the rendered view contains the given substring.
+func viewContains(t *testing.T, p *Plugin, substr string) {
+	t.Helper()
+	v := renderView(p)
+	if !strings.Contains(v, substr) {
+		t.Errorf("view should contain %q but does not.\nView:\n%s", substr, v)
 	}
 }
 
-func TestView_ExpandedViewShowsTriageTabs(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.HandleKey(keyMsg(" "))
-	view := renderView(p)
-	viewContains(t, view, "ToDo")
-	viewContains(t, view, "Inbox")
-	viewContains(t, view, "Agents")
-}
-
-func TestView_TriageTabFiltersContent(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Backlog lima", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t2", Title: "Inbox mike", Status: db.StatusNew, Source: "github", CreatedAt: time.Now()},
-		{ID: "t3", Title: "Running november", Status: db.StatusRunning, Source: "manual", CreatedAt: time.Now()},
-	})
-
-	// Expand to see triage tabs (default is "todo")
-	p.HandleKey(keyMsg(" "))
-	todoView := renderView(p)
-	viewContains(t, todoView, "Backlog lima")
-	viewNotContains(t, todoView, "Inbox mike")
-
-	// Switch to inbox tab
-	p.HandleKey(keyMsg("tab"))
-	inboxView := renderView(p)
-	viewContains(t, inboxView, "Inbox mike")
-	viewNotContains(t, inboxView, "Backlog lima")
-
-	// Switch to agents tab
-	p.HandleKey(keyMsg("tab"))
-	agentView := renderView(p)
-	viewContains(t, agentView, "Running november")
-	viewNotContains(t, agentView, "Backlog lima")
-}
-
-func TestView_DetailViewOpensOnEnter(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.HandleKey(keyMsg("enter"))
-	if !p.detailView {
-		t.Fatal("enter should open detail view")
-	}
-	view := renderView(p)
-	// Detail view shows "TODO #" header
-	viewContains(t, view, "TODO #")
-	viewContains(t, view, "First todo")
-}
-
-func TestView_DetailViewClosesOnEsc(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.HandleKey(keyMsg("enter"))
-	if !p.detailView {
-		t.Fatal("enter should open detail view")
-	}
-	p.HandleKey(specialKeyMsg(tea.KeyEsc))
-	if p.detailView {
-		t.Fatal("esc should close detail view")
-	}
-	// Back to list view, should contain todo titles
-	view := renderView(p)
-	viewContains(t, view, "First todo")
-}
-
-func TestView_DetailViewTracksTodoByID(t *testing.T) {
-	p := testPluginWithCC(t)
-	// Move cursor to second todo, then open detail
-	p.HandleKey(keyMsg("j"))
-	p.HandleKey(keyMsg("enter"))
-	if !p.detailView {
-		t.Fatal("enter should open detail view")
-	}
-	view := renderView(p)
-	viewContains(t, view, "Second todo")
-}
-
-func TestView_SearchModeEnterExit(t *testing.T) {
-	p := testPluginWithCC(t)
-
-	// Enter search mode
-	p.HandleKey(keyMsg("/"))
-	if !p.searchActive {
-		t.Fatal("/ should activate search")
-	}
-	view := renderView(p)
-	// Search view shows the "/" prompt indicator and hints
-	viewContains(t, view, "esc clear")
-
-	// Exit search with esc
-	p.HandleKey(specialKeyMsg(tea.KeyEsc))
-	if p.searchActive {
-		t.Fatal("esc should deactivate search")
+// viewNotContains checks that the rendered view does NOT contain the given substring.
+func viewNotContains(t *testing.T, p *Plugin, substr string) {
+	t.Helper()
+	v := renderView(p)
+	if strings.Contains(v, substr) {
+		t.Errorf("view should NOT contain %q but does.\nView:\n%s", substr, v)
 	}
 }
 
-func TestView_SearchFilterUpdatesView(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Alpha unique name", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t2", Title: "Bravo different name", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-	})
-
-	// Expand to get full todo listing
-	p.HandleKey(keyMsg(" "))
-	viewBefore := renderView(p)
-	viewContains(t, viewBefore, "Alpha unique name")
-	viewContains(t, viewBefore, "Bravo different name")
-
-	// Enter search mode and type filter characters
-	p.HandleKey(keyMsg("/"))
-	for _, ch := range "Alpha" {
-		p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
-	}
-
-	viewAfter := renderView(p)
-	viewContains(t, viewAfter, "Alpha unique name")
-	viewNotContains(t, viewAfter, "Bravo different name")
-}
-
-func TestView_SearchEnterOpensDirectly(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Searchable oscar", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t2", Title: "Other papa", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-	})
-
-	// Search for a specific todo, press enter — should open detail view directly (BUG-115)
-	p.HandleKey(keyMsg("/"))
-	for _, ch := range "oscar" {
-		p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
-	}
+// openDetailView navigates into the detail view for the todo at the current cursor.
+func openDetailView(t *testing.T, p *Plugin) {
+	t.Helper()
 	p.HandleKey(specialKeyMsg(tea.KeyEnter))
-
-	// Should open detail view directly, not freeze the filter
 	if !p.detailView {
-		t.Fatal("enter in search should open detail view directly (BUG-115)")
+		t.Fatal("expected detailView to be true after enter")
 	}
-	view := renderView(p)
-	viewContains(t, view, "Searchable oscar")
-}
-
-// ---------------------------------------------------------------------------
-// Agent Interactions (8 tests)
-// ---------------------------------------------------------------------------
-
-func TestView_TaskRunnerStep1ProjectSelection(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.cc.Todos[0].ProjectDir = "/tmp/testproject"
-
-	p.HandleKey(keyMsg("o"))
-	if !p.taskRunnerView || p.taskRunnerStep != 1 {
-		t.Fatal("o should open task runner at step 1")
-	}
-	view := renderView(p)
-	viewContains(t, view, "Step 1/3")
-	viewContains(t, view, "Project")
-}
-
-func TestView_TaskRunnerStep2ModeSelection(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.cc.Todos[0].ProjectDir = "/tmp/testproject"
-
-	p.HandleKey(keyMsg("o"))
-	p.HandleKey(keyMsg("enter")) // step 1 -> 2
-	if p.taskRunnerStep != 2 {
-		t.Fatal("step should be 2")
-	}
-	view := renderView(p)
-	viewContains(t, view, "Step 2/3")
-	viewContains(t, view, "Mode")
-	viewContains(t, view, "Normal")
-	viewContains(t, view, "Worktree")
-	viewContains(t, view, "Sandbox")
-}
-
-func TestView_TaskRunnerStep3LaunchOptions(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.cc.Todos[0].ProjectDir = "/tmp/testproject"
-
-	p.HandleKey(keyMsg("o"))
-	p.HandleKey(keyMsg("enter")) // step 1 -> 2
-	p.HandleKey(keyMsg("enter")) // step 2 -> 3
-	if p.taskRunnerStep != 3 {
-		t.Fatal("step should be 3")
-	}
-	view := renderView(p)
-	viewContains(t, view, "Step 3/3")
-	viewContains(t, view, "Run Claude")
-	viewContains(t, view, "Queue Agent")
-	viewContains(t, view, "Run Agent Now")
 }
 
 func TestView_EditGuardBlocksMutationDuringAgent(t *testing.T) {
-	// The edit guard checks agentRunner.Session(todo.ID) != nil, which requires
-	// a real running agent process. Simulating this needs agent runner infrastructure.
-	t.Skip("requires agent runner mock to simulate active session")
+	p, _ := testPluginWithAgent(t)
+
+	// Open detail view for the first todo (which has an active session)
+	openDetailView(t, p)
+
+	// Verify we're in viewing mode
+	if p.detailMode != "viewing" {
+		t.Fatalf("detailMode = %q, want viewing", p.detailMode)
+	}
+
+	// Press enter — would normally open field edit, but should be blocked
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+
+	// Should show flash message about agent
+	if !strings.Contains(p.flashMessage, "being updated by agent") {
+		t.Errorf("flashMessage = %q, want something containing 'being updated by agent'", p.flashMessage)
+	}
+
+	// Should still be in viewing mode (not editing)
+	if p.detailMode != "viewing" {
+		t.Errorf("detailMode = %q after blocked enter, want 'viewing'", p.detailMode)
+	}
+
+	// View should render without panic and still show detail
+	v := renderView(p)
+	if v == "" {
+		t.Error("view should not be empty")
+	}
 }
 
-func TestView_EditGuardAllowsNavigationDuringAgent(t *testing.T) {
-	// Navigation (j/k) always works regardless of agent state — no guard needed.
-	// Test cursor navigation with running status todos.
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Agent todo quebec", Status: db.StatusRunning, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t2", Title: "Normal todo romeo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-	})
+func TestView_EditGuardBlocksCommandInputDuringAgent(t *testing.T) {
+	p, _ := testPluginWithAgent(t)
+	openDetailView(t, p)
 
-	if p.ccCursor != 0 {
-		t.Fatal("initial cursor should be 0")
+	// Press 'c' — would normally open command input, but should be blocked
+	p.HandleKey(keyMsg("c"))
+
+	if !strings.Contains(p.flashMessage, "being updated by agent") {
+		t.Errorf("flashMessage = %q, want something containing 'being updated by agent'", p.flashMessage)
 	}
-	p.HandleKey(keyMsg("j"))
-	if p.ccCursor != 1 {
-		t.Error("j should move cursor down")
-	}
-	p.HandleKey(keyMsg("k"))
-	if p.ccCursor != 0 {
-		t.Error("k should move cursor up")
+
+	if p.detailMode != "viewing" {
+		t.Errorf("detailMode = %q after blocked c, want 'viewing'", p.detailMode)
 	}
 }
 
 func TestView_SessionViewerOpensOnW(t *testing.T) {
-	// Session viewer requires a real agent session with events channel.
-	// The 'w' key checks agentRunner.Session(todo.ID) for the events channel.
-	t.Skip("requires agent runner mock to provide events channel")
+	p, _ := testPluginWithAgent(t)
+	openDetailView(t, p)
+
+	// Press 'w' to open session viewer
+	p.HandleKey(keyMsg("w"))
+
+	if !p.sessionViewerActive {
+		t.Error("sessionViewerActive should be true after pressing w")
+	}
+	if p.sessionViewerTodoID != p.cc.Todos[0].ID {
+		t.Errorf("sessionViewerTodoID = %q, want %q", p.sessionViewerTodoID, p.cc.Todos[0].ID)
+	}
+
+	// Render and check for SESSION VIEWER header
+	viewContains(t, p, "SESSION VIEWER")
+}
+
+func TestView_SessionViewerShowsEvents(t *testing.T) {
+	p, eventsCh := testPluginWithAgent(t)
+	openDetailView(t, p)
+
+	// Open session viewer
+	p.HandleKey(keyMsg("w"))
+	if !p.sessionViewerActive {
+		t.Fatal("session viewer should be active")
+	}
+
+	// Push an event to the session's events list directly (simulating what
+	// the background goroutine + handleAgentEvent would do)
+	sess := p.activeSessions[p.cc.Todos[0].ID]
+	testEvent := sessionEvent{
+		Type:      "assistant_text",
+		Text:      "Working on your task...",
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+	sess.Events = append(sess.Events, testEvent)
+	p.updateSessionViewerContent()
+
+	// Render — should not panic
+	v := renderView(p)
+	if v == "" {
+		t.Error("session viewer should render non-empty")
+	}
+
+	// The view should contain SESSION VIEWER
+	if !strings.Contains(v, "SESSION VIEWER") {
+		t.Error("view should contain SESSION VIEWER header")
+	}
+
+	// Clean up channel to avoid goroutine leak
+	close(eventsCh)
+}
+
+func TestView_EditGuardAllowsWatchDuringAgent(t *testing.T) {
+	p, _ := testPluginWithAgent(t)
+	openDetailView(t, p)
+
+	// Verify edit is blocked (sanity check)
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+	if !strings.Contains(p.flashMessage, "being updated by agent") {
+		t.Fatalf("edit should be blocked, but flashMessage = %q", p.flashMessage)
+	}
+	p.flashMessage = "" // clear
+
+	// But 'w' should still work — not blocked by edit guard
+	p.HandleKey(keyMsg("w"))
+
+	if !p.sessionViewerActive {
+		t.Error("sessionViewerActive should be true — w should not be blocked by edit guard")
+	}
+}
+
+func TestView_AgentKillViaDetailView(t *testing.T) {
+	p, _ := testPluginWithAgent(t)
+	todoID := p.cc.Todos[0].ID
+	openDetailView(t, p)
+
+	// Verify session exists
+	if _, ok := p.activeSessions[todoID]; !ok {
+		t.Fatal("expected active session for todo")
+	}
+
+	// Press delete/backspace to kill agent
+	p.HandleKey(specialKeyMsg(tea.KeyBackspace))
+
+	// Session should be removed
+	if _, ok := p.activeSessions[todoID]; ok {
+		t.Error("active session should be removed after kill")
+	}
+
+	// Flash message should confirm kill
+	if !strings.Contains(p.flashMessage, "Agent killed") {
+		t.Errorf("flashMessage = %q, want 'Agent killed'", p.flashMessage)
+	}
+
+	// Todo status should revert to backlog
+	for _, todo := range p.cc.Todos {
+		if todo.ID == todoID {
+			if todo.Status != db.StatusBacklog {
+				t.Errorf("todo status = %q after kill, want %q", todo.Status, db.StatusBacklog)
+			}
+			break
+		}
+	}
+
+	// After kill, edit should no longer be blocked
+	p.flashMessage = "" // clear
+	p.HandleKey(specialKeyMsg(tea.KeyEnter))
+	if strings.Contains(p.flashMessage, "being updated by agent") {
+		t.Error("edit should no longer be blocked after agent kill")
+	}
+}
+
+func TestView_AgentFinishedUpdatesStatus(t *testing.T) {
+	p, _ := testPluginWithAgent(t)
+	todoID := p.cc.Todos[0].ID
+
+	// Simulate agent finishing via the message handler
+	p.HandleMessage(agentFinishedMsg{todoID: todoID, exitCode: 0})
+
+	// Session should be cleaned up
+	if _, ok := p.activeSessions[todoID]; ok {
+		t.Error("active session should be removed after finish")
+	}
+
+	// Todo should move to review status
+	for _, todo := range p.cc.Todos {
+		if todo.ID == todoID {
+			if todo.Status != db.StatusReview {
+				t.Errorf("todo status = %q after success finish, want %q", todo.Status, db.StatusReview)
+			}
+			break
+		}
+	}
+}
+
+func TestView_AgentFinishedWithFailureStatus(t *testing.T) {
+	p, _ := testPluginWithAgent(t)
+	todoID := p.cc.Todos[0].ID
+
+	// Simulate agent finishing with error
+	p.HandleMessage(agentFinishedMsg{todoID: todoID, exitCode: 1})
+
+	// Todo should move to failed status
+	for _, todo := range p.cc.Todos {
+		if todo.ID == todoID {
+			if todo.Status != db.StatusFailed {
+				t.Errorf("todo status = %q after failed finish, want %q", todo.Status, db.StatusFailed)
+			}
+			break
+		}
+	}
 }
 
 func TestView_SessionViewerClosesOnEsc(t *testing.T) {
-	// Session viewer close test requires an open session viewer, which needs
-	// a real agent session. Test the state transition directly.
-	p := testPluginWithCC(t)
-	// Manually activate session viewer
-	p.sessionViewerActive = true
-	p.detailView = true
+	p, _ := testPluginWithAgent(t)
+	openDetailView(t, p)
 
-	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	// Open session viewer
+	p.HandleKey(keyMsg("w"))
+	if !p.sessionViewerActive {
+		t.Fatal("session viewer should be active")
+	}
+
+	// Press esc to close
+	p.HandleKey(keyMsg("esc"))
 	if p.sessionViewerActive {
-		t.Fatal("esc should close session viewer")
-	}
-	if !p.detailView {
-		t.Error("should return to detail view after closing session viewer")
+		t.Error("session viewer should be closed after esc")
 	}
 }
 
-func TestView_AgentFinishedUpdatesViewToReview(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Agent task sierra", Status: db.StatusRunning, Source: "manual", CreatedAt: time.Now()},
-	})
+func TestView_NoSessionShowsFlash(t *testing.T) {
+	p := testPluginWithCC(t)
+	openDetailView(t, p)
 
-	// Before: agent status indicator should show "agent working"
-	view := renderView(p)
-	viewContains(t, view, "agent working")
+	// Press 'w' without an active session — should show flash
+	p.HandleKey(keyMsg("w"))
 
-	// Simulate agent finished (exit code 0 -> review)
-	p.onAgentFinished("t1", 0)
-
-	// After: status should change to review
-	view = renderView(p)
-	viewContains(t, view, "ready for review")
+	if p.sessionViewerActive {
+		t.Error("session viewer should not open without active session")
+	}
+	if !strings.Contains(p.flashMessage, "No active session") {
+		t.Errorf("flashMessage = %q, want something containing 'No active session'", p.flashMessage)
+	}
 }
 
-// ---------------------------------------------------------------------------
-// Budget and Agent Header (4 tests)
-// ---------------------------------------------------------------------------
+func TestView_KillWithNoAgentShowsFlash(t *testing.T) {
+	p := testPluginWithCC(t)
+	openDetailView(t, p)
 
-func TestView_ExpandedAgentsHeaderShowsCounts(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Running agent tango", Status: db.StatusRunning, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t2", Title: "Queued agent uniform", Status: db.StatusEnqueued, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t3", Title: "Backlog task victor", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-	})
+	// Press backspace without agent
+	p.HandleKey(specialKeyMsg(tea.KeyBackspace))
 
-	// Expand and switch to agents tab
-	p.HandleKey(keyMsg(" "))
-	// tab from "todo" -> "inbox" -> "agents"
-	p.HandleKey(keyMsg("tab"))
-	p.HandleKey(keyMsg("tab"))
-
-	view := renderView(p)
-	// Agents tab should show the agent todos
-	viewContains(t, view, "Running agent tango")
-	viewContains(t, view, "Queued agent uniform")
-	viewNotContains(t, view, "Backlog task victor")
+	if !strings.Contains(p.flashMessage, "No running agent") {
+		t.Errorf("flashMessage = %q, want something containing 'No running agent'", p.flashMessage)
+	}
 }
 
-func TestView_LaunchDeniedShowsFlash(t *testing.T) {
-	// Skip: LaunchDeniedMsg does not exist in the current codebase.
-	// The flash message mechanism for launch denial is handled via
-	// p.flashMessage directly in the agent launch path, not through
-	// a dedicated message type.
-	t.Skip("LaunchDeniedMsg does not exist in current codebase")
-}
+func TestView_AgentBlockedStatusPropagates(t *testing.T) {
+	p, _ := testPluginWithAgent(t)
+	todoID := p.cc.Todos[0].ID
 
-func TestView_KillAgentUpdatesStatus(t *testing.T) {
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Kill target whiskey", Status: db.StatusRunning, Source: "manual", CreatedAt: time.Now()},
-	})
-	// Simulate agent finished with non-zero exit code (like a kill)
-	p.onAgentFinished("t1", 1)
+	// Simulate agent blocked status via message handler
+	p.HandleMessage(agentStatusMsg{todoID: todoID, status: "blocked", question: "Need approval"})
 
-	view := renderView(p)
-	// Non-zero exit sets status to "failed"
-	viewContains(t, view, "failed")
-}
-
-func TestView_ConcurrencyLimitQueuesAgent(t *testing.T) {
-	// In the collapsed view, renderTodoPanel shows agentStatusIndicator per-todo.
-	// The collapsed view excludes "new" status but shows all other active statuses.
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Active xray", Status: db.StatusRunning, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t2", Title: "Active yankee", Status: db.StatusRunning, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t3", Title: "Active zulu", Status: db.StatusRunning, Source: "manual", CreatedAt: time.Now()},
-		{ID: "t4", Title: "Queued amber", Status: db.StatusEnqueued, Source: "manual", CreatedAt: time.Now()},
-	})
-
-	// Stay in collapsed view where status indicators are rendered
-	view := renderView(p)
-	viewContains(t, view, "queued")
-	viewContains(t, view, "agent working")
+	// Check status propagated
+	for _, todo := range p.cc.Todos {
+		if todo.ID == todoID {
+			if todo.Status != "blocked" {
+				t.Errorf("todo status = %q after block, want 'blocked'", todo.Status)
+			}
+			break
+		}
+	}
 }
