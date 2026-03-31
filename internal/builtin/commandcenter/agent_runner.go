@@ -8,6 +8,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/plugin"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -75,6 +76,14 @@ func (qs queuedSession) toDaemonParams() daemon.LaunchAgentParams {
 	}
 }
 
+// agentStateChangedCmd returns a tea.Cmd that sends AgentStateChangedMsg to the
+// TUI host, triggering an immediate budget widget refresh.
+func agentStateChangedCmd() tea.Cmd {
+	return func() tea.Msg {
+		return plugin.AgentStateChangedMsg{}
+	}
+}
+
 // killAgent terminates a running agent session for a given todo.
 // Uses daemon RPC when connected, falls back to local runner.
 // Returns a tea.Cmd for any DB/event side effects, or nil if no session was running.
@@ -96,7 +105,7 @@ func (p *Plugin) killAgent(todoID string) tea.Cmd {
 				p.sessionViewerListening = false
 				p.updateSessionViewerContent()
 			}
-			return p.persistTodoStatus(todoID, db.StatusBacklog)
+			return tea.Batch(p.persistTodoStatus(todoID, db.StatusBacklog), agentStateChangedCmd())
 		}
 	}
 
@@ -117,7 +126,7 @@ func (p *Plugin) killAgent(todoID string) tea.Cmd {
 		p.updateSessionViewerContent()
 	}
 
-	return p.persistTodoStatus(todoID, db.StatusBacklog)
+	return tea.Batch(p.persistTodoStatus(todoID, db.StatusBacklog), agentStateChangedCmd())
 }
 
 // canLaunchAgent checks if there is room to launch another agent session.
@@ -186,7 +195,7 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 			p.publishEvent("agent.started", map[string]interface{}{
 				"todo_id": qs.TodoID,
 			})
-			return acceptCmd
+			return tea.Batch(acceptCmd, agentStateChangedCmd())
 		}
 	}
 
@@ -199,7 +208,7 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 		p.publishEvent("agent.started", map[string]interface{}{
 			"todo_id": qs.TodoID,
 		})
-		return tea.Batch(acceptCmd, launchCmd)
+		return tea.Batch(acceptCmd, launchCmd, agentStateChangedCmd())
 	}
 
 	// Queued.
@@ -207,7 +216,7 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 	p.publishEvent("agent.queued", map[string]interface{}{
 		"todo_id": qs.TodoID,
 	})
-	return tea.Batch(acceptCmd, p.persistTodoStatus(qs.TodoID, db.StatusEnqueued))
+	return tea.Batch(acceptCmd, p.persistTodoStatus(qs.TodoID, db.StatusEnqueued), agentStateChangedCmd())
 }
 
 // onAgentFinished cleans up after an agent finishes and launches the next queued item.
@@ -240,6 +249,7 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 
 	var cmds []tea.Cmd
 	cmds = append(cmds, p.persistTodoStatusAndSummary(todoID, status, summary))
+	cmds = append(cmds, agentStateChangedCmd())
 
 	// Check queue for next auto-start item.
 	if next, ok := p.agentRunner.DrainQueue(); ok {
@@ -255,9 +265,6 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 		}
 	}
 
-	if len(cmds) == 1 {
-		return cmds[0]
-	}
 	return tea.Batch(cmds...)
 }
 

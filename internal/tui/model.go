@@ -511,6 +511,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case plugin.AgentStateChangedMsg:
+		// A plugin launched, queued, finished, or killed an agent.
+		// Immediately re-poll budget status so the budget widget updates
+		// without waiting for the next 5-second tick.
+		var cmds []tea.Cmd
+		if m.DaemonConnected() {
+			m.budgetLastPoll = time.Now()
+			cmds = append(cmds, m.pollBudgetCmd())
+		}
+		m.broadcastMessage(msg, &cmds)
+		return m, tea.Batch(cmds...)
+
 	case plugin.NotifyMsg:
 		// External notification — reload all plugins from DB
 		var cmds []tea.Cmd

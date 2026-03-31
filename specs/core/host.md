@@ -106,6 +106,7 @@ The host maintains a `DaemonConn` that wraps two daemon RPC connections: one for
 The host polls the daemon for budget status and renders a widget pinned to the upper-right corner of the terminal (row 1, 2 chars from right edge). The widget is overlaid on the rendered page by replacing characters in the output string.
 
 - **Polling**: Every 5 seconds (on tick), if the daemon is connected, the host fires a `pollBudgetCmd()` that calls `client.GetBudgetStatus()`. Results arrive as `budgetStatusMsg` and update `budgetStatus` / `budgetAvailable`.
+- **Immediate refresh on agent state change**: When a plugin sends `plugin.AgentStateChangedMsg` (agent launched, queued, finished, or killed), the host immediately re-polls budget status so the widget updates without waiting for the next 5-second tick.
 - **Initial poll**: Triggered during `Init()` alongside other startup commands.
 - **Display states**:
   - Daemon not connected: `[not running]` in dim text
@@ -310,6 +311,7 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 - resolveSessionDir falls back to original dir when session not found
 - Onboarding defers plugin init until completion
 - Budget widget shows correct state for each warning level
+- AgentStateChangedMsg triggers immediate budget re-poll when daemon is connected
 - Flash message renders when active and clears when expired
 - DaemonDisconnectedMsg triggers reconnect cycle
 - FocusMsg triggers ClearScreen for repaint
