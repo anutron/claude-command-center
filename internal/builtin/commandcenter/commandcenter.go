@@ -461,13 +461,22 @@ func ensureCC(cc **db.CommandCenter) {
 func (p *Plugin) normalMaxVisibleTodos() int {
 	// Must match the maxVisibleTodos calculation in renderCommandCenterView.
 	// viewCommandTab passes height = p.height - 14 to the render function.
-	// renderCommandCenterView uses usedHeight ~= 4 (base, no warnings/suggestions),
-	// panelHeight = height - usedHeight, maxVisibleTodos = (panelHeight - 3) / 2, min 5.
+	// renderCommandCenterView computes usedHeight from warnings + suggestions + base chrome,
+	// then panelHeight = height - usedHeight, maxVisibleTodos = (panelHeight - 3) / 2, min 5.
 	viewHeight := p.height - 14
 	if viewHeight < 10 {
 		viewHeight = 10
 	}
+	// Base usedHeight: 2 (top) + 2 (bottom) = 4.
 	usedHeight := 4
+	// Account for suggestion banner if present (header + body + border = ~4 lines, plus 1 gap).
+	if p.cc != nil && p.cc.Suggestions.Focus != "" {
+		usedHeight += 5
+	}
+	// Account for warning banner if present (~2 lines per warning + border + gap).
+	if p.cc != nil && len(p.cc.Warnings) > 0 {
+		usedHeight += len(p.cc.Warnings) + 3
+	}
 	panelHeight := viewHeight - usedHeight
 	if panelHeight < 10 {
 		panelHeight = 10

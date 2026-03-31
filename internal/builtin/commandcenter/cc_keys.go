@@ -169,10 +169,13 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			if p.ccCursor < maxCursor {
 				p.ccCursor++
 				if p.ccCursor >= todoViewHeight {
-					// Auto-expand when cursor moves past visible area
+					// Auto-expand when cursor moves past visible area.
+					// Set triageFilter to "all" so expanded view shows the same
+					// items as the collapsed view (all non-new), not just backlog.
 					p.ccExpanded = true
 					p.ccExpandedCols = 2
 					p.ccExpandedOffset = 0
+					p.triageFilter = "all"
 				}
 			}
 		}
