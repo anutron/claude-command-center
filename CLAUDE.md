@@ -60,6 +60,41 @@ Step-by-step: given X, system does Y, resulting in Z
 - **Update spec on the same turn as behavioral changes** — never let them drift
 - **Tests validate spec compliance** — not implementation details
 
+### Required Process for Every Change
+
+Every behavioral change — bug fix, feature, refactor — follows this order:
+
+1. **Spec** — update the relevant spec in `specs/` (add the new behavior, fix the description, add test cases)
+2. **Unit tests** — write or update tests that validate the spec's behavior section
+3. **View tests** — if the change affects rendered UI output (key bindings, status indicators, tab content, hint bars, overlays), add a `TestView_*` test in the appropriate `*_view_test.go` file
+4. **Implement** — write code to pass the tests
+5. **Run tests** — `make test` must pass before committing
+
+**View tests are mandatory for UI changes.** View tests exercise the full plugin: inject state, send keys via `HandleKey()`, render `View()`, and assert on the output with `strings.Contains`. They live in dedicated files:
+
+- `internal/builtin/commandcenter/commandcenter_view_test.go`
+- `internal/builtin/sessions/sessions_view_test.go`
+- `internal/builtin/settings/settings_view_test.go`
+- `internal/builtin/prs/prs_view_test.go`
+- `internal/tui/model_view_test.go`
+
+**Shared test infrastructure** in `internal/testutil/`:
+- `view_helpers.go` — `AssertViewContains`, `KeyMsg`, `SendKeys`
+- `mock_runner.go` — `MockRunner` implementing `agent.Runner` for agent-dependent tests
+- `daemon_helpers.go` — `StartTestDaemon`, `InsertTestTodo`, `InsertTestPR`
+
+**What needs a view test:**
+- Key binding changes → verify the key produces expected view output
+- Status indicator changes → verify the rendered badge/text
+- Tab/navigation changes → verify correct content renders per tab
+- Overlay/modal changes → verify overlay text appears in view
+- Hint bar changes → verify hint text
+
+**What doesn't need a view test:**
+- DB-only changes (query optimization, schema migration)
+- Daemon RPC internals (unit test the RPC handler directly)
+- Config loading (unit test)
+
 ## Project Structure
 
 ```
