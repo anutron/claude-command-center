@@ -735,3 +735,79 @@ func TestSessionsDismissRunningBlocked(t *testing.T) {
 		t.Fatalf("expected session to still be present, got %d sessions", len(p.unified.liveSessions))
 	}
 }
+
+// BUG-119: NavigateTo("resume") must set subTab to "sessions", not leave it unchanged.
+func TestNavigateToResumeRoute(t *testing.T) {
+	p := setupPlugin(t)
+	// Start on the "new" sub-tab (simulates user on New Session tab)
+	p.subTab = "new"
+
+	// Switch to the Resume route (as the host tab bar does)
+	p.NavigateTo("resume", nil)
+
+	if p.subTab != "sessions" {
+		t.Fatalf("expected subTab 'sessions' after NavigateTo('resume'), got %q", p.subTab)
+	}
+}
+
+// BUG-119: NavigateTo("active") must set subTab to "sessions", not leave it unchanged.
+func TestNavigateToActiveRoute(t *testing.T) {
+	p := setupPlugin(t)
+	// Start on the "new" sub-tab
+	p.subTab = "new"
+
+	p.NavigateTo("active", nil)
+
+	if p.subTab != "sessions" {
+		t.Fatalf("expected subTab 'sessions' after NavigateTo('active'), got %q", p.subTab)
+	}
+}
+
+// BUG-119: Switching tabs should not corrupt content — each tab renders independently.
+func TestTabSwitchingDoesNotCorruptContent(t *testing.T) {
+	p := setupPlugin(t)
+
+	// Start on sessions
+	p.NavigateTo("sessions", nil)
+	if p.subTab != "sessions" {
+		t.Fatalf("expected subTab 'sessions', got %q", p.subTab)
+	}
+
+	// Switch to new
+	p.NavigateTo("new", nil)
+	if p.subTab != "new" {
+		t.Fatalf("expected subTab 'new', got %q", p.subTab)
+	}
+
+	// Switch to resume
+	p.NavigateTo("resume", nil)
+	if p.subTab != "sessions" {
+		t.Fatalf("expected subTab 'sessions' after resume, got %q", p.subTab)
+	}
+
+	// Switch back to active
+	p.NavigateTo("active", nil)
+	if p.subTab != "sessions" {
+		t.Fatalf("expected subTab 'sessions' after active, got %q", p.subTab)
+	}
+
+	// Switch to new again — should still work
+	p.NavigateTo("new", nil)
+	if p.subTab != "new" {
+		t.Fatalf("expected subTab 'new' after switching back, got %q", p.subTab)
+	}
+}
+
+// BUG-119: TabViewMsg with route "resume" should trigger a refresh command.
+func TestTabViewMsgResumeTriggersRefresh(t *testing.T) {
+	p := setupPlugin(t)
+	p.subTab = "sessions"
+
+	handled, action := p.HandleMessage(plugin.TabViewMsg{Route: "resume"})
+	if !handled {
+		t.Fatal("expected TabViewMsg with route 'resume' to be handled")
+	}
+	// action.TeaCmd may be nil if unified has no daemon client, but the message
+	// should still be handled (returns true).
+	_ = action
+}

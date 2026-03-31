@@ -398,7 +398,7 @@ func (p *Plugin) Routes() []plugin.Route {
 func (p *Plugin) NavigateTo(route string, args map[string]string) {
 	p.filterText = ""
 	switch route {
-	case "sessions":
+	case "sessions", "active", "resume":
 		p.subTab = "sessions"
 		// Refresh dispatched asynchronously via TabViewMsg → HandleMessage.
 	case "new":
@@ -590,7 +590,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		return false, plugin.NoopAction()
 
 	case plugin.TabViewMsg:
-		if msg.Route == "active" || msg.Route == "sessions" {
+		if msg.Route == "active" || msg.Route == "sessions" || msg.Route == "resume" {
 			if cmd := p.Refresh(); cmd != nil {
 				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 			}
