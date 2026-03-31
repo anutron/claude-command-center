@@ -59,7 +59,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | Key | Context | Description |
 |-----|---------|-------------|
 | `up`/`k` | normal | Move cursor up |
-| `down`/`j` | normal | Move cursor down |
+| `down`/`j` | normal | Move cursor down; auto-expands to expanded view when cursor would move past the last visible item (cursor lands on the next todo) |
 | `shift+up` | normal | Swap todo with the one above |
 | `shift+down` | normal | Swap todo with the one below |
 | `left`/`h` | expanded | Move cursor left; paginates to previous page at left edge |
@@ -594,6 +594,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Routes returns one route
 - Init loads command center data from DB
 - Navigation (up/down) moves cursor correctly
+- Down arrow past last visible item in normal view auto-expands to expanded view with cursor on the next todo
 - Complete todo updates status and pushes undo entry
 - Dismiss todo (X) updates status and pushes undo entry
 - Undo (u) restores previous state from undo stack

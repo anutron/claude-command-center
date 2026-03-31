@@ -156,6 +156,54 @@ func TestNavigationUpDown(t *testing.T) {
 	}
 }
 
+func TestDownArrowAutoExpandsPastVisibleArea(t *testing.T) {
+	p := testPlugin(t)
+	// Create enough todos to exceed the visible area.
+	// Set a small height so normalMaxVisibleTodos is small.
+	p.height = 30 // gives a small visible count
+	maxVisible := p.normalMaxVisibleTodos()
+
+	// Create maxVisible+2 todos so we can go past the visible limit.
+	var todos []db.Todo
+	for i := 0; i < maxVisible+2; i++ {
+		todos = append(todos, db.Todo{
+			ID:        fmt.Sprintf("t%d", i),
+			Title:     fmt.Sprintf("Todo %d", i),
+			Status:    db.StatusBacklog,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+		})
+	}
+	p.cc = &db.CommandCenter{GeneratedAt: time.Now(), Todos: todos}
+	p.width = 120
+
+	// Navigate down to the last visible position (maxVisible - 1).
+	for i := 0; i < maxVisible-1; i++ {
+		p.HandleKey(keyMsg("j"))
+	}
+	if p.ccExpanded {
+		t.Fatal("should not be expanded yet")
+	}
+	if p.ccCursor != maxVisible-1 {
+		t.Fatalf("cursor = %d, want %d", p.ccCursor, maxVisible-1)
+	}
+
+	// One more down should trigger auto-expand.
+	p.HandleKey(keyMsg("j"))
+	if !p.ccExpanded {
+		t.Error("expected auto-expand when cursor moves past visible area")
+	}
+	if p.ccCursor != maxVisible {
+		t.Errorf("cursor = %d, want %d (the first non-visible todo)", p.ccCursor, maxVisible)
+	}
+	if p.ccExpandedCols != 2 {
+		t.Errorf("expandedCols = %d, want 2", p.ccExpandedCols)
+	}
+	if p.ccExpandedOffset != 0 {
+		t.Errorf("expandedOffset = %d, want 0", p.ccExpandedOffset)
+	}
+}
+
 func TestCompleteTodo(t *testing.T) {
 	p := testPluginWithCC(t)
 

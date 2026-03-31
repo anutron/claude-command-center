@@ -168,8 +168,11 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		} else {
 			if p.ccCursor < maxCursor {
 				p.ccCursor++
-				if p.ccCursor >= p.ccScrollOffset+todoViewHeight {
-					p.ccScrollOffset++
+				if p.ccCursor >= todoViewHeight {
+					// Auto-expand when cursor moves past visible area
+					p.ccExpanded = true
+					p.ccExpandedCols = 2
+					p.ccExpandedOffset = 0
 				}
 			}
 		}
