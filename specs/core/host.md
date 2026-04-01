@@ -256,6 +256,8 @@ All cross-plugin communication uses the event bus exclusively. The host does not
 5. Centered in terminal via `lipgloss.Place`
 6. Budget widget overlaid on row 1, right-aligned (see [Budget Widget](#budget-widget)). The overlay row must account for banner visibility — when the banner is hidden, the overlay row must skip the tab bar.
 
+**Width normalization**: Before joining sections vertically, each section (banner, tab bar, flash/hint, plugin content) must be padded to a consistent width (`ContentMaxWidth`) using `lipgloss.PlaceHorizontal`. This ensures `JoinVertical(lipgloss.Left, ...)` produces stable horizontal alignment regardless of the active plugin's content width. Without this, narrower or wider plugin content shifts the banner and tab bar horizontally.
+
 **Content height calculation**: The host computes the overhead (banner + spacing + tab bar) by rendering the header sections and counting newlines, then passes `terminalHeight - overhead` as `contentHeight` to the plugin (minimum 10). This prevents plugins from sizing their layouts to the full terminal height and overflowing past the banner/tabs.
 
 ### Animation
@@ -330,3 +332,4 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 - Session is registered with daemon before waiting for claude to exit
 - Session is marked ended after claude exits
 - Launch succeeds even when daemon connection is nil (graceful degradation)
+- Banner and tab bar have consistent width across all tabs (BUG-127): switching tabs must not shift the banner or tab bar horizontally — every section in the vertical join must be padded to the same width
