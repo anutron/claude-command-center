@@ -5,6 +5,7 @@
 package agent
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"sync"
@@ -89,6 +90,10 @@ type Session struct {
 
 	// Pty is the PTY master file descriptor when the session is launched via PTY.
 	Pty *os.File
+
+	// StdinWriter is the writable end of the stdin pipe for -p mode sessions.
+	// Used by SendUserMessage as a fallback when Pty is nil.
+	StdinWriter io.WriteCloser
 
 	// Events tracks parsed session events for the live viewer.
 	Events   []SessionEvent

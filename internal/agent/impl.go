@@ -337,31 +337,41 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 			// Drain PTY output to prevent blocking.
 			go io.Copy(io.Discard, ptmx)
 		} else {
-			// New session: use pipes. Pass prompt via stdin.
-			cmd.Stdin = strings.NewReader(req.Prompt)
+			// New session: use pipes. Stdin uses io.Pipe so follow-up messages
+			// can be sent after the initial prompt (via SendUserMessage).
+			stdinReader, stdinWriter := io.Pipe()
+			cmd.Stdin = stdinReader
 			// Capture stdout for stream-json event parsing.
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
+				stdinWriter.Close()
 				LogSessionError(req.ID, "stdout pipe: %v", err)
 				return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
 			}
 			cmd.Stderr = os.Stderr // Let errors through for debugging.
 
 			if err := cmd.Start(); err != nil {
+				stdinWriter.Close()
 				LogSessionError(req.ID, "start: %v", err)
 				return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
 			}
 
+			// Write the initial prompt, then keep the pipe open for follow-ups.
+			go func() {
+				stdinWriter.Write([]byte(req.Prompt + "\n"))
+			}()
+
 			sess := &Session{
-				ID:        req.ID,
-				SessionID: sessionUUID,
-				Cmd:       cmd,
-				Status:    "processing",
-				StartedAt: time.Now(),
-				LogPath:   logPath,
-				EventsCh:  make(chan SessionEvent, 64),
-				done:      make(chan struct{}),
-				output:    &strings.Builder{},
+				ID:          req.ID,
+				SessionID:   sessionUUID,
+				Cmd:         cmd,
+				Status:      "processing",
+				StartedAt:   time.Now(),
+				LogPath:     logPath,
+				StdinWriter: stdinWriter,
+				EventsCh:    make(chan SessionEvent, 64),
+				done:        make(chan struct{}),
+				output:      &strings.Builder{},
 			}
 
 			r.mu.Lock()
@@ -649,12 +659,19 @@ func monitorSessionFromStdout(sess *Session, stdout io.ReadCloser, costCb CostCa
 
 // SendUserMessage writes a plain-text user message to the agent's PTY.
 func SendUserMessage(sess *Session, message string) error {
-	if sess.Pty == nil {
-		return fmt.Errorf("session PTY is not available")
-	}
-	_, err := sess.Pty.Write([]byte(message + "\n"))
-	if err != nil {
-		return fmt.Errorf("write to agent PTY: %w", err)
+	var err error
+	if sess.Pty != nil {
+		_, err = sess.Pty.Write([]byte(message + "\n"))
+		if err != nil {
+			return fmt.Errorf("write to agent PTY: %w", err)
+		}
+	} else if sess.StdinWriter != nil {
+		_, err = sess.StdinWriter.Write([]byte(message + "\n"))
+		if err != nil {
+			return fmt.Errorf("write to agent stdin: %w", err)
+		}
+	} else {
+		return fmt.Errorf("session has no writable input (no PTY or stdin pipe)")
 	}
 	sess.Mu.Lock()
 	if sess.Status == "blocked" {
