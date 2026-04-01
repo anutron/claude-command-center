@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -1098,4 +1099,50 @@ func TestTabViewMsgResumeTriggersRefresh(t *testing.T) {
 	// action.TeaCmd may be nil if unified has no daemon client, but the message
 	// should still be handled (returns true).
 	_ = action
+}
+
+// ---------------------------------------------------------------------------
+// findClaudeSessionID
+// ---------------------------------------------------------------------------
+
+func TestFindClaudeSessionID_FindsMostRecent(t *testing.T) {
+	// Create a fake ~/.claude/projects/<encoded>/ directory with session files.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	projectDir := "/Users/test/my-project"
+	encoded := strings.ReplaceAll(projectDir, "/", "-")
+	sessDir := tmpHome + "/.claude/projects/" + encoded
+	if err := os.MkdirAll(sessDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write two session files with different mod times.
+	oldFile := sessDir + "/old-session-uuid.jsonl"
+	newFile := sessDir + "/new-session-uuid.jsonl"
+	if err := os.WriteFile(oldFile, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Set old file to the past.
+	past := time.Now().Add(-1 * time.Hour)
+	os.Chtimes(oldFile, past, past)
+
+	if err := os.WriteFile(newFile, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := findClaudeSessionID(projectDir)
+	if got != "new-session-uuid" {
+		t.Fatalf("expected 'new-session-uuid', got %q", got)
+	}
+}
+
+func TestFindClaudeSessionID_EmptyOnMissingDir(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	got := findClaudeSessionID("/nonexistent/project")
+	if got != "" {
+		t.Fatalf("expected empty string, got %q", got)
+	}
 }

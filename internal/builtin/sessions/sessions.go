@@ -923,11 +923,20 @@ func (p *Plugin) handleSessionsTab(msg tea.KeyMsg) plugin.Action {
 		if sel.WorktreePath != "" {
 			dir = sel.WorktreePath
 		}
+		// For live sessions the daemon session_id is a CCC-generated UUID, not
+		// the Claude CLI session UUID. Look up the real Claude session file in
+		// ~/.claude/projects/ so that --resume finds it.
+		resumeID := sel.SessionID
+		if sel.Tier == TierLive {
+			if claudeID := findClaudeSessionID(dir); claudeID != "" {
+				resumeID = claudeID
+			}
+		}
 		return plugin.Action{
 			Type: plugin.ActionLaunch,
 			Args: map[string]string{
 				"dir":       dir,
-				"resume_id": sel.SessionID,
+				"resume_id": resumeID,
 			},
 		}
 
@@ -1459,4 +1468,45 @@ func formatTodoContext(todo db.Todo) string {
 		parts = append(parts, fmt.Sprintf("\n### Detail\n%s", todo.Detail))
 	}
 	return strings.Join(parts, "\n")
+}
+
+// findClaudeSessionID looks up the most recent Claude session file for a project
+// directory. Claude stores sessions under ~/.claude/projects/<encoded-path>/<uuid>.jsonl.
+// Returns the Claude session UUID if found, or empty string otherwise.
+func findClaudeSessionID(projectDir string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	// Encode the project path the way Claude does: replace "/" with "-".
+	encoded := strings.ReplaceAll(filepath.Clean(projectDir), string(filepath.Separator), "-")
+	sessDir := filepath.Join(home, ".claude", "projects", encoded)
+
+	entries, err := os.ReadDir(sessDir)
+	if err != nil {
+		return ""
+	}
+
+	// Find the most recently modified .jsonl file.
+	var bestName string
+	var bestTime time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(bestTime) {
+			bestTime = info.ModTime()
+			bestName = e.Name()
+		}
+	}
+	if bestName == "" {
+		return ""
+	}
+	// Strip .jsonl extension to get the session UUID.
+	return strings.TrimSuffix(bestName, ".jsonl")
 }
