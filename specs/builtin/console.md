@@ -60,7 +60,7 @@ Shows all available metadata for the selected agent:
 - **Agent category** — e.g., "review", "respond", "todo"
 - **Summary** — agent-generated summary (if completed)
 
-Scrollable with `j`/`k` if content exceeds viewport.
+Scrollable with `j`/`k` if content exceeds viewport. Scroll offset is clamped so the user cannot scroll past the last row of content — when all content fits in the viewport, scrolling is disabled (offset stays at 0).
 
 ### Live Updates
 
