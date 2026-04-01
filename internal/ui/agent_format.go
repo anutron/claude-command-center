@@ -54,7 +54,12 @@ func FormatAgentElapsed(e db.AgentHistoryEntry) string {
 	if e.DurationSec > 0 {
 		return FormatDuration(time.Duration(e.DurationSec) * time.Second)
 	}
-	if !e.StartedAt.IsZero() {
+	// For finished agents without DurationSec, compute from timestamps.
+	if e.FinishedAt != nil && !e.StartedAt.IsZero() {
+		return FormatDuration(e.FinishedAt.Sub(e.StartedAt))
+	}
+	// Only show live elapsed for actually running agents.
+	if !e.StartedAt.IsZero() && (e.Status == "running" || e.Status == "processing" || e.Status == "blocked") {
 		return FormatDuration(time.Since(e.StartedAt))
 	}
 	return "—"
