@@ -188,6 +188,8 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 				// Daemon-managed agent completed. Parse the event data and run
 				// the same completion logic as locally-managed agents.
 				return p.handleDaemonAgentFinished(nm.Data)
+			case "agent.session_id":
+				return p.handleDaemonAgentSessionID(nm.Data)
 			}
 		}
 
@@ -955,6 +957,31 @@ func (p *Plugin) handleDaemonAgentFinished(data []byte) (bool, plugin.Action) {
 
 	cmd := p.onAgentFinished(payload.ID, payload.ExitCode)
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+}
+
+// handleDaemonAgentSessionID processes an agent.session_id event from the daemon.
+// It updates the in-memory todo's SessionID and persists it to the database.
+func (p *Plugin) handleDaemonAgentSessionID(data []byte) (bool, plugin.Action) {
+	var payload struct {
+		ID        string `json:"id"`
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.ID == "" || payload.SessionID == "" {
+		return false, plugin.NoopAction()
+	}
+
+	if p.cc != nil {
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == payload.ID {
+				p.cc.Todos[i].SessionID = payload.SessionID
+				break
+			}
+		}
+	}
+
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
+		return db.DBUpdateTodoSessionID(database, payload.ID, payload.SessionID)
+	})}
 }
 
 func (p *Plugin) handleLaunchDenied(msg agent.LaunchDeniedMsg) (bool, plugin.Action) {

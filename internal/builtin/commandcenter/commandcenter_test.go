@@ -1985,3 +1985,20 @@ func TestBUG124_AutoExpandWithSuggestionBanner(t *testing.T) {
 	}
 }
 
+func TestDaemonAgentSessionID_UpdatesTodoSessionID(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].Status = db.StatusRunning
+
+	msg := plugin.NotifyMsg{
+		Event: "agent.session_id",
+		Data:  []byte(`{"id":"t1","session_id":"uuid-abc-123"}`),
+	}
+	handled, _ := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("expected HandleMessage to handle agent.session_id NotifyMsg")
+	}
+	if p.cc.Todos[0].SessionID != "uuid-abc-123" {
+		t.Errorf("expected session ID %q, got %q", "uuid-abc-123", p.cc.Todos[0].SessionID)
+	}
+}
+

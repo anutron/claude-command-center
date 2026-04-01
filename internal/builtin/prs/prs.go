@@ -187,6 +187,8 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			return p.handleDaemonAgentFinished(msg.Data)
 		case "agent.started":
 			return p.handleDaemonAgentStarted(msg.Data)
+		case "agent.session_id":
+			return p.handleDaemonAgentSessionID(msg.Data)
 		}
 		return false, plugin.NoopAction()
 
@@ -346,6 +348,26 @@ func (p *Plugin) handleDaemonAgentFinished(data []byte) (bool, plugin.Action) {
 	}
 	p.updatePRAgentStatus(payload.ID, status)
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: agentStateChangedCmd()}
+}
+
+// handleDaemonAgentSessionID processes an agent.session_id event from the daemon.
+// It updates the in-memory PR's AgentSessionID and persists it to the database.
+func (p *Plugin) handleDaemonAgentSessionID(data []byte) (bool, plugin.Action) {
+	var payload struct {
+		ID        string `json:"id"`
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.ID == "" || payload.SessionID == "" {
+		return false, plugin.NoopAction()
+	}
+	if !p.isPRAgent(payload.ID) {
+		return false, plugin.NoopAction()
+	}
+	if err := db.DBUpdatePRAgentSessionID(p.database, payload.ID, payload.SessionID); err != nil {
+		p.logger.Error("prs", fmt.Sprintf("daemon agent session_id update failed for %s: %v", payload.ID, err))
+	}
+	p.updatePRSessionID(payload.ID, payload.SessionID)
+	return true, plugin.NoopAction()
 }
 
 // handleDaemonAgentStarted processes an agent.started event from the daemon.

@@ -101,7 +101,8 @@ func (s *Server) handleLaunchAgent(req *RPCRequest) (interface{}, *RPCError) {
 					Data: data,
 				})
 
-				// Watch for session completion and clean up.
+				// Watch for session ID capture and completion.
+				go s.watchAgentSessionID(started.ID, started.Session)
 				go s.watchAgentDone(started.ID, started.Session)
 			}
 		}()
@@ -207,6 +208,34 @@ func (s *Server) handleSendAgentInput(req *RPCRequest) (interface{}, *RPCError) 
 	return map[string]bool{"ok": true}, nil
 }
 
+// watchAgentSessionID polls a session's SessionID field and broadcasts an
+// agent.session_id event once the UUID is captured. This runs as a goroutine
+// alongside watchAgentDone, since the session ID is parsed from stream-JSON
+// output asynchronously after the process starts.
+func (s *Server) watchAgentSessionID(id string, sess *agent.Session) {
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-sess.Done():
+			return
+		case <-ticker.C:
+			sess.Mu.Lock()
+			sid := sess.SessionID
+			sess.Mu.Unlock()
+			if sid != "" {
+				data, _ := json.Marshal(map[string]interface{}{
+					"id":         id,
+					"session_id": sid,
+				})
+				s.Broadcast(Event{Type: "agent.session_id", Data: data})
+				return
+			}
+		}
+	}
+}
+
 // watchAgentDone waits for a session to finish and performs cleanup:
 // calls CleanupFinished to remove it from activeSessions and finalize cost rows,
 // then broadcasts an agent.finished event.
@@ -261,6 +290,7 @@ func (s *Server) drainNextAgent() {
 						Type: "agent.started",
 						Data: data,
 					})
+					go s.watchAgentSessionID(started.ID, started.Session)
 					go s.watchAgentDone(started.ID, started.Session)
 				}
 			}()

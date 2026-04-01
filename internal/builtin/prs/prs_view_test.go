@@ -141,6 +141,33 @@ func TestDaemonAgentStarted_TransitionsToRunning(t *testing.T) {
 	t.Fatal("PR o/r#3 not found")
 }
 
+func TestDaemonAgentSessionID_UpdatesPRSessionID(t *testing.T) {
+	p := setupPRPlugin(t)
+	loadPRsIntoPlugin(t, p, []db.PullRequest{
+		{ID: "o/r#1", Repo: "o/r", Number: 1, Title: "PR", Category: CategoryReview,
+			LastActivityAt: recentTime(), AgentStatus: "running", HeadSHA: "abc"},
+	})
+
+	msg := plugin.NotifyMsg{
+		Event: "agent.session_id",
+		Data:  []byte(`{"id":"o/r#1","session_id":"uuid-pr-456"}`),
+	}
+	handled, _ := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("expected HandleMessage to handle agent.session_id NotifyMsg for PR")
+	}
+
+	for _, pr := range p.prs {
+		if pr.ID == "o/r#1" {
+			if pr.AgentSessionID != "uuid-pr-456" {
+				t.Errorf("expected session ID %q, got %q", "uuid-pr-456", pr.AgentSessionID)
+			}
+			return
+		}
+	}
+	t.Fatal("PR not found")
+}
+
 // loadPRsIntoPlugin inserts all PRs in a single transaction (so
 // DBSavePullRequests doesn't archive earlier ones) and triggers a reload.
 func loadPRsIntoPlugin(t *testing.T, p *Plugin, prs []db.PullRequest) {

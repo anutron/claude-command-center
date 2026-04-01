@@ -482,6 +482,14 @@ func DBUpdatePRAgentStatus(d *sql.DB, id, agentStatus, agentSessionID, agentCate
 	return err
 }
 
+// DBUpdatePRAgentSessionID updates only the agent_session_id column for a
+// pull request, leaving all other agent columns unchanged.
+func DBUpdatePRAgentSessionID(d *sql.DB, id, sessionID string) error {
+	_, err := d.Exec(`UPDATE cc_pull_requests SET agent_session_id=NULLIF(?,'') WHERE id=?`,
+		sessionID, id)
+	return err
+}
+
 // ---------------------------------------------------------------------------
 // Write methods -- Bulk refresh result
 // ---------------------------------------------------------------------------
