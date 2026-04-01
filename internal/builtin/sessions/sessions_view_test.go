@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/worktree"
@@ -331,6 +332,62 @@ func TestView_WorktreeWarningOverlay(t *testing.T) {
 	view := p.View(120, 38, 0)
 	assertViewContains(t, view, "Not a git repository")
 	assertViewContains(t, view, "Launch directly")
+}
+
+// ---------------------------------------------------------------------------
+// Session Label Display (BUG-128)
+// ---------------------------------------------------------------------------
+
+func TestView_LiveSessionShowsProjectName(t *testing.T) {
+	p := setupPlugin(t)
+	// Active tab is default — shows live sessions.
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-001",
+			Project:      "/home/user/claude-command-center",
+			Branch:       "main",
+			State:        "active",
+			RegisteredAt: db.FormatTime(time.Now()),
+		},
+	}
+
+	view := p.View(120, 38, 0)
+	// Should show project basename, not just branch.
+	assertViewContains(t, view, "claude-command-center")
+}
+
+func TestView_LiveSessionShowsTopicWhenSet(t *testing.T) {
+	p := setupPlugin(t)
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-002",
+			Topic:        "AGENT CONSOLE",
+			Project:      "/home/user/claude-command-center",
+			Branch:       "main",
+			State:        "active",
+			RegisteredAt: db.FormatTime(time.Now()),
+		},
+	}
+
+	view := p.View(120, 38, 0)
+	assertViewContains(t, view, "AGENT CONSOLE")
+}
+
+func TestView_LiveSessionShowsBranchInSuffix(t *testing.T) {
+	p := setupPlugin(t)
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-003",
+			Project:      "/home/user/my-project",
+			Branch:       "feature-x",
+			State:        "active",
+			RegisteredAt: db.FormatTime(time.Now()),
+		},
+	}
+
+	view := p.View(120, 38, 0)
+	// Branch should appear in parentheses in the suffix.
+	assertViewContains(t, view, "(feature-x)")
 }
 
 func TestView_PendingTodoBanner(t *testing.T) {

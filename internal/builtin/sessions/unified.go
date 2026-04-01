@@ -259,13 +259,13 @@ func (uv *unifiedView) View(width, height int) string {
 			indicator = uv.styles.descMuted.Render("○")
 		}
 
-		// Label (topic / summary / branch fallback).
+		// Label: prefer Topic, then Project basename, then Branch.
 		label := item.Topic
 		if label == "" {
-			if item.Branch != "" {
-				label = item.Branch
-			} else {
+			if item.Project != "" {
 				label = filepath.Base(item.Project)
+			} else if item.Branch != "" {
+				label = item.Branch
 			}
 		}
 
@@ -285,7 +285,13 @@ func (uv *unifiedView) View(width, height int) string {
 		switch item.Tier {
 		case TierLive:
 			age := sessionAge(item.RegisteredAt)
-			suffix = uv.styles.descMuted.Render(age)
+			// Build suffix: optional branch, then age.
+			var parts []string
+			if item.Branch != "" {
+				parts = append(parts, "("+item.Branch+")")
+			}
+			parts = append(parts, age)
+			suffix = uv.styles.descMuted.Render(strings.Join(parts, "  "))
 			if (item.State == "running" || item.State == "active") && uv.isSessionBlocked(item.SessionID) {
 				blocked := lipgloss.NewStyle().Foreground(lipgloss.Color("#f1fa8c")).Render("Blocked")
 				suffix = blocked + "  " + suffix

@@ -218,7 +218,7 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 2. Sessions sub-tab shows live sessions (from daemon) + saved sessions (bookmarks), with archive toggle
 3. New sub-tab shows project paths + Browse option
 4. Worktrees sub-tab shows all CCC-managed worktrees grouped by project
-5. Enter on a live/saved/archived session resumes it (`--resume <session_id>`)
+5. Enter on a live/saved/archived session resumes it (`--resume <session_id>`). For live sessions, the daemon's CCC-generated session_id differs from Claude CLI's session UUID, so the plugin resolves the real Claude session_id by scanning `~/.claude/projects/<encoded-project>/` for the most recently modified `.jsonl` file. If no file is found, falls back to the daemon session_id.
 6. Enter on a project path launches Claude in that directory
 7. `b` on a live session bookmarks it; on an archived session promotes it to Saved
 8. `d` dismisses live ended sessions, removes bookmarks, or deletes archived sessions (tier-dependent)
@@ -285,6 +285,17 @@ This is separate from auto-archiving (which writes to `cc_archived_sessions` in 
 
 **Full pending todo fields (via event bus):** The `pending.todo` event bus subscription populates a richer `db.Todo` with `Title`, `Context`, `Detail`, `WhoWaiting`, `Due`, and `Effort`. The `NavigateTo` args path only sets `Title`.
 
+### Session Label Rendering
+
+Session labels follow this fallback order:
+1. **Topic** — if set via `/set-topic`, displayed as the label (e.g., "AGENT CONSOLE")
+2. **Project basename** — `filepath.Base(project)` (e.g., "claude-command-center")
+3. **Branch** — last resort when both topic and project are empty
+
+For **live sessions**, the suffix shows branch in parentheses and session age: `(main)  2h ago`
+For **saved sessions**, the suffix shows project basename and branch: `claude-command-center (main)`
+For **archived sessions**, the suffix shows how long ago the session ended
+
 ### Blocked Session Rendering
 
 Blocked sessions are detected by cross-referencing live sessions with daemon agent statuses:
@@ -306,9 +317,12 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 - Toggle archive mode resets cursor
 - Deduplication: bookmarked live session shows ★, not duplicated in Saved
 - Empty state shows appropriate message
-- Enter on live session returns ActionLaunch with correct dir and resume_id
+- Enter on live session returns ActionLaunch with correct dir and resume_id (resolved from Claude session files, not daemon ID)
 - Enter on saved session returns ActionLaunch
 - Enter on archived session returns ActionLaunch
+- Live session label shows project basename when topic is empty (not branch)
+- Live session label shows topic when topic is set
+- Live session suffix shows branch in parentheses and age
 - `b` on live session saves bookmark to DB
 - `b` on archived session promotes to Saved, removes from archive
 - `d` on running session shows "Can't dismiss" flash
