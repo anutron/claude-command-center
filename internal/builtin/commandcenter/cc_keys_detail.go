@@ -138,10 +138,11 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "w":
-		// Open session viewer for todos with active agent sessions or saved logs
+		// Open session viewer for todos with active agent sessions or saved logs.
+		// Priority: local session > daemon session > saved log on disk.
 		if todo := p.detailTodo(); todo != nil {
 			if sess := p.agentRunner.Session(todo.ID); sess != nil {
-				// Live session — watch in real time
+				// Live local session — watch in real time
 				p.initSessionViewer(todo.ID)
 				// Start listening for events if not already
 				if !p.sessionViewerListening {
@@ -149,8 +150,23 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 					return plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForAgentEvent(todo.ID, sess.EventsCh)}
 				}
 				return plugin.ConsumedAction()
-			} else if todo.SessionLogPath != "" {
-				// No active session but we have a saved log — replay from disk
+			}
+
+			// No local session — check daemon for an active agent.
+			if dc := p.daemonClient(); dc != nil {
+				if status, err := dc.AgentStatus(todo.ID); err == nil && (status.Status == "processing" || status.Status == "blocked") {
+					p.initSessionViewer(todo.ID)
+					p.sessionViewerReplayEvents = nil
+					if !p.sessionViewerListening {
+						p.sessionViewerListening = true
+						return plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForDaemonAgentEvents(todo.ID, dc, 0)}
+					}
+					return plugin.ConsumedAction()
+				}
+			}
+
+			// No active session anywhere — try saved log on disk.
+			if todo.SessionLogPath != "" {
 				if err := p.initSessionViewerFromLog(todo.ID, todo.SessionLogPath); err != nil {
 					p.flashMessage = fmt.Sprintf("Cannot open session log: %v", err)
 					p.flashMessageAt = time.Now()

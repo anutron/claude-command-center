@@ -2002,3 +2002,134 @@ func TestDaemonAgentSessionID_UpdatesTodoSessionID(t *testing.T) {
 	}
 }
 
+func TestWKeyDaemonFallback(t *testing.T) {
+	// When no local agent session exists but daemon reports an active agent,
+	// pressing w should open the session viewer and start daemon polling.
+	p := testPluginWithCC(t)
+	client := startTestDaemon(t)
+	p.SetDaemonClientFunc(func() *daemon.Client {
+		return client
+	})
+
+	// Launch an agent via daemon so AgentStatus returns "processing".
+	todo := p.cc.Todos[0]
+	if err := client.LaunchAgent(daemon.LaunchAgentParams{
+		ID:     todo.ID,
+		Prompt: "test prompt",
+		Dir:    t.TempDir(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond) // let daemon register the agent
+
+	// Open detail view for the todo.
+	p.detailView = true
+	p.detailTodoID = todo.ID
+	p.detailMode = "viewing"
+
+	// Press w — should open session viewer via daemon path (no local session).
+	action := p.handleDetailViewing(keyMsg("w"))
+
+	if !p.sessionViewerActive {
+		t.Fatal("expected sessionViewerActive to be true after w key")
+	}
+	if p.sessionViewerTodoID != todo.ID {
+		t.Errorf("expected sessionViewerTodoID %q, got %q", todo.ID, p.sessionViewerTodoID)
+	}
+	if !p.sessionViewerListening {
+		t.Fatal("expected sessionViewerListening to be true (daemon polling)")
+	}
+	// The action should carry a TeaCmd (the daemon polling command).
+	if action.TeaCmd == nil {
+		t.Fatal("expected action to carry a TeaCmd for daemon event polling")
+	}
+}
+
+func TestDaemonAgentEventMsgAccumulatesEvents(t *testing.T) {
+	p := testPluginWithCC(t)
+	client := startTestDaemon(t)
+	p.SetDaemonClientFunc(func() *daemon.Client {
+		return client
+	})
+
+	todo := p.cc.Todos[0]
+
+	// Set up session viewer as if we just opened it via daemon.
+	p.sessionViewerActive = true
+	p.sessionViewerTodoID = todo.ID
+	p.sessionViewerListening = true
+	p.sessionViewerReplayEvents = nil
+
+	// Simulate receiving a daemon agent event.
+	ev := sessionEvent{Type: "assistant_text", Text: "Hello from daemon"}
+	handled, _ := p.HandleMessage(daemonAgentEventMsg{
+		todoID: todo.ID,
+		event:  ev,
+		offset: 1,
+		done:   false,
+	})
+
+	if !handled {
+		t.Fatal("expected daemonAgentEventMsg to be handled")
+	}
+	if len(p.sessionViewerReplayEvents) != 1 {
+		t.Fatalf("expected 1 replay event, got %d", len(p.sessionViewerReplayEvents))
+	}
+	if p.sessionViewerReplayEvents[0].Text != "Hello from daemon" {
+		t.Errorf("unexpected event text: %q", p.sessionViewerReplayEvents[0].Text)
+	}
+}
+
+func TestDaemonAgentEventDoneTriggersCompletion(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	todo := p.cc.Todos[0]
+	p.sessionViewerActive = true
+	p.sessionViewerTodoID = todo.ID
+	p.sessionViewerListening = true
+
+	// When done=true, it should emit an agentEventsDoneMsg via TeaCmd.
+	ev := sessionEvent{Type: "assistant_text", Text: "Final message"}
+	_, action := p.HandleMessage(daemonAgentEventMsg{
+		todoID: todo.ID,
+		event:  ev,
+		offset: 5,
+		done:   true,
+	})
+
+	if action.TeaCmd == nil {
+		t.Fatal("expected TeaCmd for done=true daemonAgentEventMsg")
+	}
+	// Execute the TeaCmd and check it produces agentEventsDoneMsg.
+	result := action.TeaCmd()
+	if _, ok := result.(agentEventsDoneMsg); !ok {
+		t.Fatalf("expected agentEventsDoneMsg, got %T", result)
+	}
+}
+
+func TestDaemonAgentPollStopsWhenViewerClosed(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	todo := p.cc.Todos[0]
+	// Viewer is NOT active — polling should stop.
+	p.sessionViewerActive = false
+	p.sessionViewerTodoID = todo.ID
+	p.sessionViewerListening = true
+
+	handled, action := p.HandleMessage(daemonAgentPollMsg{
+		todoID: todo.ID,
+		offset: 3,
+	})
+
+	if !handled {
+		t.Fatal("expected daemonAgentPollMsg to be handled")
+	}
+	// No daemon client and viewer not active — should noop.
+	if action.TeaCmd != nil {
+		t.Fatal("expected no TeaCmd when viewer is closed")
+	}
+	if p.sessionViewerListening {
+		t.Fatal("expected sessionViewerListening to be false after viewer closed")
+	}
+}
+

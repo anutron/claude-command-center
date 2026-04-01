@@ -109,6 +109,12 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case agentEventsDoneMsg:
 		return p.handleAgentEventsDone(msg)
 
+	case daemonAgentEventMsg:
+		return p.handleDaemonAgentEvent(msg)
+
+	case daemonAgentPollMsg:
+		return p.handleDaemonAgentPoll(msg)
+
 	case agent.SessionStartedMsg:
 		return p.handleAgentStartedInternal(msg)
 
@@ -1016,6 +1022,33 @@ func (p *Plugin) handleAgentEventsDone(msg agentEventsDoneMsg) (bool, plugin.Act
 		p.sessionViewerDone = true
 		p.updateSessionViewerContent()
 	}
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleDaemonAgentEvent(msg daemonAgentEventMsg) (bool, plugin.Action) {
+	// Accumulate event into replay buffer for the viewer.
+	p.sessionViewerReplayEvents = append(p.sessionViewerReplayEvents, msg.event)
+	if p.sessionViewerActive && p.sessionViewerTodoID == msg.todoID {
+		p.updateSessionViewerContent()
+	}
+	if msg.done {
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: func() tea.Msg {
+			return agentEventsDoneMsg{todoID: msg.todoID}
+		}}
+	}
+	// Continue polling for more events.
+	if dc := p.daemonClient(); dc != nil {
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForDaemonAgentEvents(msg.todoID, dc, msg.offset)}
+	}
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleDaemonAgentPoll(msg daemonAgentPollMsg) (bool, plugin.Action) {
+	// Re-poll only if the viewer is still active for this todo.
+	if dc := p.daemonClient(); dc != nil && p.sessionViewerActive && p.sessionViewerTodoID == msg.todoID {
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForDaemonAgentEvents(msg.todoID, dc, msg.offset)}
+	}
+	p.sessionViewerListening = false
 	return true, plugin.NoopAction()
 }
 
