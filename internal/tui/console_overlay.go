@@ -44,6 +44,33 @@ func (o *consoleOverlay) selected() *db.AgentHistoryEntry {
 	return &o.entries[o.cursor]
 }
 
+// detailLineCount returns the number of content lines in the detail view.
+func (o *consoleOverlay) detailLineCount() int {
+	// 3 header lines: title, subtitle, blank
+	const headerLines = 3
+	e := o.selected()
+	if e == nil {
+		return headerLines + 1 // "No entry selected"
+	}
+	// 16 data fields
+	return headerLines + 16
+}
+
+// maxDetailScroll returns the maximum scroll offset for the detail view
+// given the terminal height. Returns 0 if all content fits.
+func (o *consoleOverlay) maxDetailScroll(termHeight int) int {
+	const boxChrome = 4 // border top/bottom + padding top/bottom
+	visibleRows := termHeight - boxChrome
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+	max := o.detailLineCount() - visibleRows
+	if max < 0 {
+		return 0
+	}
+	return max
+}
+
 const (
 	overlayBoxWidth  = 70
 	overlayMinWidth  = 40
@@ -227,6 +254,23 @@ func (o *consoleOverlay) renderDetail(width, height int) string {
 		lines = append(lines, field("Project", e.ProjectDir))
 		lines = append(lines, field("Repo", e.Repo))
 		lines = append(lines, field("Branch", e.Branch))
+	}
+
+	// Calculate visible rows inside the box.
+	// borderStyle adds: border (1 top + 1 bottom) + padding (1 top + 1 bottom) = 4 rows of chrome.
+	const boxChrome = 4
+	visibleRows := height - boxChrome
+	if visibleRows < 1 {
+		visibleRows = 1
+	}
+
+	// Clamp scroll so content can't scroll past the last row.
+	maxScroll := len(lines) - visibleRows
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if o.scroll > maxScroll {
+		o.scroll = maxScroll
 	}
 
 	// Apply scroll offset

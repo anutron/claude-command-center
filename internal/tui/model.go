@@ -498,7 +498,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "j", "down":
 				if m.console.detail {
-					m.console.scroll++
+					if m.console.scroll < m.console.maxDetailScroll(m.height) {
+						m.console.scroll++
+					}
 				} else if m.console.cursor < len(m.console.entries)-1 {
 					m.console.cursor++
 				}
