@@ -277,7 +277,7 @@ Any other key after `g` clears `gPending` and falls through to normal key handli
 
 ### Edit Guards (Agent Active)
 
-When a headless agent session is actively running on a todo (checked via `agentRunner.Session(todo.ID)`), the detail view blocks mutation operations:
+When a todo has an active agent (determined by `todo.Status == "running" || todo.Status == "blocked"` — status-based, not local session), the detail view blocks mutation operations:
 
 - **`enter` (edit field)**: Shows flash message "Todo is being updated by agent" instead of entering edit mode
 - **`c` (command input)**: Shows the same flash message instead of opening command input

@@ -22,7 +22,7 @@ func (p *Plugin) renderDetailViewScrollable(width, height int) string {
 		innerWidth = 40
 	}
 
-	hasActiveSession := p.agentRunner.Session(todo.ID) != nil
+	hasActiveSession := todo.Status == db.StatusRunning || todo.Status == db.StatusBlocked
 
 	// Build the full body content (no truncation).
 	body := p.buildDetailBody(s, *todo, innerWidth, hasActiveSession)

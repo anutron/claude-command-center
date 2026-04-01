@@ -599,3 +599,23 @@ func TestView_ConcurrencyLimitQueuesAgent(t *testing.T) {
 	viewContains(t, view, "queued")
 	viewContains(t, view, "agent working")
 }
+
+// ---------------------------------------------------------------------------
+// Daemon Agent Observability (detail spinner based on todo status)
+// ---------------------------------------------------------------------------
+
+func TestView_DetailSpinnerShownForDaemonRunningTodo(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].Status = db.StatusRunning
+	// No local session — this simulates a daemon-managed agent.
+
+	// Open detail view for first todo
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("enter should open detail view")
+	}
+
+	view := renderView(p)
+	viewContains(t, view, "Agent running")
+	viewContains(t, view, "w watch")
+}
