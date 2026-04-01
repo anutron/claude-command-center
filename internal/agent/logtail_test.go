@@ -287,7 +287,7 @@ func TestExtractUsageFromEvent(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name: "no stop_reason",
+			name: "no stop_reason but has usage",
 			event: map[string]interface{}{
 				"type": "assistant",
 				"message": map[string]interface{}{
@@ -297,10 +297,12 @@ func TestExtractUsageFromEvent(t *testing.T) {
 					},
 				},
 			},
-			wantOK: false,
+			wantInput:  100,
+			wantOutput: 50,
+			wantOK:     true,
 		},
 		{
-			name: "nil stop_reason",
+			name: "nil stop_reason but has usage",
 			event: map[string]interface{}{
 				"type": "assistant",
 				"message": map[string]interface{}{
@@ -311,7 +313,9 @@ func TestExtractUsageFromEvent(t *testing.T) {
 					},
 				},
 			},
-			wantOK: false,
+			wantInput:  100,
+			wantOutput: 50,
+			wantOK:     true,
 		},
 		{
 			name: "no usage field",

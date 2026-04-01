@@ -87,20 +87,13 @@ func tailNativeLog(ctx context.Context, logPath string, startOffset int64, event
 	}
 }
 
-// extractUsageFromEvent extracts input and output token counts from a native
-// log assistant event that has a stop_reason (i.e. a completed message).
-// Returns (inputTokens, outputTokens, true) on success or (0, 0, false) if
-// the event does not contain usage data.
+// extractUsageFromEvent extracts input and output token counts from a
+// stream-JSON event containing message.usage. Returns (inputTokens,
+// outputTokens, true) on success or (0, 0, false) if the event does not
+// contain usage data.
 func extractUsageFromEvent(raw map[string]interface{}) (inputTokens, outputTokens int, ok bool) {
-	// Look for message.usage on assistant events with a stop_reason.
 	msg, hasMsg := raw["message"].(map[string]interface{})
 	if !hasMsg {
-		return 0, 0, false
-	}
-
-	// Must have a non-nil stop_reason to indicate a completed message.
-	stopReason, hasStop := msg["stop_reason"]
-	if !hasStop || stopReason == nil {
 		return 0, 0, false
 	}
 
