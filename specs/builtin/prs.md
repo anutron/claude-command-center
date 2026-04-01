@@ -186,6 +186,8 @@ None — `cc_pull_requests` table is created in core `schema.go`.
 **Handles `plugin.NotifyMsg`:**
 
 - `data.refreshed` — dispatches async `Refresh()` cmd to reload PR data from DB; also triggers agent evaluation (scan for PRs needing agent spawn)
+- `agent.finished` — daemon-managed agent completed; parses `{"id", "exit_code"}` payload, updates PR status to `"completed"` or `"failed"` in DB and in-memory, emits `AgentStateChangedMsg`
+- `agent.started` — daemon-managed agent started; parses `{"id"}` payload, updates PR status to `"running"` in DB and in-memory, emits `AgentStateChangedMsg`
 
 ## Agent Automation
 
@@ -214,13 +216,22 @@ Three layers prevent runaway agent spawning:
 
 ### Agent Status Lifecycle (PR Plugin)
 
-The PR plugin handles agent lifecycle messages in `HandleMessage`:
+The PR plugin handles agent lifecycle messages in `HandleMessage` via two paths:
+
+**Local runner path** (direct `agent.*Msg` types from `CheckProcesses`):
 
 | Message | DB Update | In-Memory Update |
 |---------|-----------|-----------------|
 | `SessionStartedMsg` | `agent_status = "running"` | Update `p.prs` status |
 | `SessionIDCapturedMsg` | `agent_session_id = <id>` | Update `p.prs` session ID |
 | `SessionFinishedMsg` | `agent_status = "completed"/"failed"`, `agent_summary` | Update `p.prs` status |
+
+**Daemon path** (`plugin.NotifyMsg` events from daemon subscription):
+
+| NotifyMsg Event | DB Update | In-Memory Update |
+|---------|-----------|-----------------|
+| `agent.started` | `agent_status = "running"` | Update `p.prs` status |
+| `agent.finished` | `agent_status = "completed"/"failed"` | Update `p.prs` status |
 
 Messages are matched to PRs by checking if `msg.ID` exists in `p.prs` (PR IDs are `"owner/repo#number"`).
 

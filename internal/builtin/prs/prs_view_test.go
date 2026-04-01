@@ -35,6 +35,112 @@ func setupPRPlugin(t *testing.T) *Plugin {
 	return p
 }
 
+// ---------------------------------------------------------------------------
+// Daemon agent.finished / agent.started NotifyMsg handling
+// ---------------------------------------------------------------------------
+
+func TestDaemonAgentFinished_TransitionsToCompleted(t *testing.T) {
+	p := setupPRPlugin(t)
+	loadPRsIntoPlugin(t, p, []db.PullRequest{
+		{ID: "o/r#1", Repo: "o/r", Number: 1, Title: "Review PR", Category: CategoryReview,
+			LastActivityAt: recentTime(), AgentStatus: "running", HeadSHA: "abc"},
+	})
+
+	// Simulate daemon broadcasting agent.finished with exit code 0.
+	msg := plugin.NotifyMsg{
+		Event: "agent.finished",
+		Data:  []byte(`{"id":"o/r#1","exit_code":0}`),
+	}
+	handled, _ := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("expected HandleMessage to handle agent.finished NotifyMsg for PR agent")
+	}
+
+	// In-memory status should transition to completed.
+	for _, pr := range p.prs {
+		if pr.ID == "o/r#1" {
+			if pr.AgentStatus != "completed" {
+				t.Errorf("expected agent status %q, got %q", "completed", pr.AgentStatus)
+			}
+			return
+		}
+	}
+	t.Fatal("PR o/r#1 not found")
+}
+
+func TestDaemonAgentFinished_NonZeroExitShowsFailed(t *testing.T) {
+	p := setupPRPlugin(t)
+	loadPRsIntoPlugin(t, p, []db.PullRequest{
+		{ID: "o/r#2", Repo: "o/r", Number: 2, Title: "Fail PR", Category: CategoryReview,
+			LastActivityAt: recentTime(), AgentStatus: "running", HeadSHA: "abc"},
+	})
+
+	msg := plugin.NotifyMsg{
+		Event: "agent.finished",
+		Data:  []byte(`{"id":"o/r#2","exit_code":1}`),
+	}
+	handled, _ := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("expected HandleMessage to handle agent.finished NotifyMsg")
+	}
+
+	for _, pr := range p.prs {
+		if pr.ID == "o/r#2" {
+			if pr.AgentStatus != "failed" {
+				t.Errorf("expected agent status %q, got %q", "failed", pr.AgentStatus)
+			}
+			return
+		}
+	}
+	t.Fatal("PR o/r#2 not found")
+}
+
+func TestDaemonAgentFinished_IgnoresUnknownID(t *testing.T) {
+	p := setupPRPlugin(t)
+	loadPRsIntoPlugin(t, p, []db.PullRequest{
+		{ID: "o/r#1", Repo: "o/r", Number: 1, Title: "PR", Category: CategoryReview,
+			LastActivityAt: recentTime(), AgentStatus: "running", HeadSHA: "abc"},
+	})
+
+	// Agent ID that doesn't match any PR — should not be handled.
+	msg := plugin.NotifyMsg{
+		Event: "agent.finished",
+		Data:  []byte(`{"id":"unknown-todo-id","exit_code":0}`),
+	}
+	handled, _ := p.HandleMessage(msg)
+	if handled {
+		t.Error("expected HandleMessage to NOT handle agent.finished for non-PR agent ID")
+	}
+}
+
+func TestDaemonAgentStarted_TransitionsToRunning(t *testing.T) {
+	p := setupPRPlugin(t)
+	loadPRsIntoPlugin(t, p, []db.PullRequest{
+		{ID: "o/r#3", Repo: "o/r", Number: 3, Title: "Start PR", Category: CategoryReview,
+			LastActivityAt: recentTime(), AgentStatus: "pending", HeadSHA: "abc"},
+	})
+
+	// Simulate daemon broadcasting agent.started.
+	msg := plugin.NotifyMsg{
+		Event: "agent.started",
+		Data:  []byte(`{"id":"o/r#3","status":"processing","started_at":"2026-03-31T12:00:00Z"}`),
+	}
+	handled, _ := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("expected HandleMessage to handle agent.started NotifyMsg for PR agent")
+	}
+
+	for _, pr := range p.prs {
+		if pr.ID == "o/r#3" {
+			if pr.AgentStatus != "running" {
+				t.Errorf("expected agent status %q, got %q", "running", pr.AgentStatus)
+			}
+			return
+		}
+	}
+	t.Fatal("PR o/r#3 not found")
+}
+
 // loadPRsIntoPlugin inserts all PRs in a single transaction (so
 // DBSavePullRequests doesn't archive earlier ones) and triggers a reload.
 func loadPRsIntoPlugin(t *testing.T, p *Plugin, prs []db.PullRequest) {

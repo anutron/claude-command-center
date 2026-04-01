@@ -6,6 +6,7 @@ package prs
 import (
 	"bufio"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -177,10 +178,15 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		return true, plugin.NoopAction()
 
 	case plugin.NotifyMsg:
-		if msg.Event == "data.refreshed" {
+		switch msg.Event {
+		case "data.refreshed":
 			if cmd := p.Refresh(); cmd != nil {
 				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 			}
+		case "agent.finished":
+			return p.handleDaemonAgentFinished(msg.Data)
+		case "agent.started":
+			return p.handleDaemonAgentStarted(msg.Data)
 		}
 		return false, plugin.NoopAction()
 
@@ -314,6 +320,53 @@ func (p *Plugin) updatePRSessionID(id, sessionID string) {
 			return
 		}
 	}
+}
+
+// handleDaemonAgentFinished processes an agent.finished event from the daemon.
+// Without this, daemon-managed PR agents never transition to completed/failed.
+func (p *Plugin) handleDaemonAgentFinished(data []byte) (bool, plugin.Action) {
+	var payload struct {
+		ID       string `json:"id"`
+		ExitCode int    `json:"exit_code"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.ID == "" {
+		return false, plugin.NoopAction()
+	}
+	if !p.isPRAgent(payload.ID) {
+		return false, plugin.NoopAction()
+	}
+
+	status := "completed"
+	if payload.ExitCode != 0 {
+		status = "failed"
+	}
+	if err := db.DBUpdatePRAgentStatus(p.database, payload.ID,
+		status, "", "", "", ""); err != nil {
+		p.logger.Error("prs", fmt.Sprintf("daemon agent finished: status update (%s) failed for %s: %v", status, payload.ID, err))
+	}
+	p.updatePRAgentStatus(payload.ID, status)
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: agentStateChangedCmd()}
+}
+
+// handleDaemonAgentStarted processes an agent.started event from the daemon.
+// Without this, daemon-managed PR agents stay in "pending" instead of "running".
+func (p *Plugin) handleDaemonAgentStarted(data []byte) (bool, plugin.Action) {
+	var payload struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.ID == "" {
+		return false, plugin.NoopAction()
+	}
+	if !p.isPRAgent(payload.ID) {
+		return false, plugin.NoopAction()
+	}
+
+	if err := db.DBUpdatePRAgentStatus(p.database, payload.ID,
+		"running", "", "", "", ""); err != nil {
+		p.logger.Error("prs", fmt.Sprintf("daemon agent started: status update failed for %s: %v", payload.ID, err))
+	}
+	p.updatePRAgentStatus(payload.ID, "running")
+	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: agentStateChangedCmd()}
 }
 
 // matchesRepo checks if a .git/config file contains a remote URL matching
