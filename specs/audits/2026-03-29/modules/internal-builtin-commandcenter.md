@@ -172,7 +172,7 @@
 | Branch | Classification | Notes |
 |--------|---------------|-------|
 | `killAgent` — daemon first, local fallback | **[COVERED]** | Session-viewer spec describes kill lifecycle |
-| `canLaunchAgent` — concurrency check | **[COVERED]** | Spec: "canLaunchAgent() checks len(activeSessions) < maxConcurrent" |
+| `canLaunchAgent` — concurrency check | **[COVERED]** | Spec: concurrency managed by `agentRunner.LaunchOrQueue()` (Runner interface) |
 | `launchOrQueueAgent` — auto-accept | **[COVERED]** | Spec: "Auto-accept: Launching/queuing automatically sets triage_status" |
 | `launchOrQueueAgent` — daemon first, local fallback | **[UNCOVERED-IMPLEMENTATION]** | Internal routing detail |
 | `onAgentFinished` — status + summary + queue drain | **[COVERED]** | Spec: "Completion" and "Queue drain" sections |

@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/anutron/claude-command-center/internal/agent"
@@ -178,6 +177,3 @@ func (r *MockRunner) Shutdown() {
 
 // Verify MockRunner implements Runner at compile time.
 var _ agent.Runner = (*MockRunner)(nil)
-
-// Suppress unused import warning for strings.
-var _ = strings.Builder{}
