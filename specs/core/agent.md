@@ -41,6 +41,10 @@ Manages headless Claude Code agent sessions from within CCC. Provides process li
 
 ## Behavior
 
+### TUI Consumption Model
+
+TUI consumers (plugins) receive agent state exclusively via daemon push events (`agent.started`, `agent.finished`, `agent.session_id`, `agent.cost_updated`), not local runner messages. The command center plugin has no local agent runner — all agent operations go through daemon RPCs. The PR plugin retains a local runner as a fallback but prefers the daemon path when connected.
+
 ### Runner (core process lifecycle)
 
 The `Runner` interface is the low-level session manager. `NewRunner(maxConcurrent)` creates a concrete `defaultRunner` (defaults to 10 if maxConcurrent <= 0).

@@ -68,6 +68,8 @@ While overlay is open, subscribe to event bus for `agent.started`, `agent.stoppe
 
 On `agent.cost_updated` daemon events (broadcast when `RecordCost` fires, throttled to ≤1 per 2s per agent), re-fetch `ListAgentHistory` to pick up live cost/token updates. This is event-driven — no polling needed. All TUI instances subscribed to the daemon receive the same updates.
 
+The TUI host handles `agent.cost_updated` at the model level: when the console overlay is visible, it re-fetches agent history entries and updates the overlay's list. It also immediately re-polls the daemon budget status (bypassing the normal 5-second polling interval) so the budget widget stays current with live spend.
+
 ## Feature 2: `ccc console` (Live Streaming TUI)
 
 ### Entry Point

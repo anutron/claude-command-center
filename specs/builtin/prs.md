@@ -188,6 +188,7 @@ None — `cc_pull_requests` table is created in core `schema.go`.
 - `data.refreshed` — dispatches async `Refresh()` cmd to reload PR data from DB; also triggers agent evaluation (scan for PRs needing agent spawn)
 - `agent.finished` — daemon-managed agent completed; parses `{"id", "exit_code"}` payload, updates PR status to `"completed"` or `"failed"` in DB and in-memory, emits `AgentStateChangedMsg`
 - `agent.started` — daemon-managed agent started; parses `{"id"}` payload, updates PR status to `"running"` in DB and in-memory, emits `AgentStateChangedMsg`
+- `agent.session_id` — daemon-captured Claude session UUID; parses `{"id", "session_id"}` payload, persists `agent_session_id` to DB and updates in-memory PR. Enables session resume and console display for daemon-managed agents.
 
 ## Agent Automation
 

@@ -408,9 +408,10 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 3. **Launch denied**: If the governed runner denies a launch (budget or rate limit), a `LaunchDeniedMsg` is emitted. The command center handles this by reverting the todo status to `"backlog"` and showing a flash message with the denial reason.
 4. **Process start**: The daemon spawns `claude --print --output-format stream-json --verbose [flags] <prompt>` as a subprocess. The session lifecycle is managed entirely by the daemon.
 5. **Monitoring**: The daemon's background goroutine reads stdout line-by-line, parsing stream-JSON events. It detects blocking events and broadcasts status changes via events.
-6. **Completion**: When a daemon-managed agent exits, the daemon broadcasts `agent.finished` with `{id, exit_code}`. The plugin receives this as a `NotifyMsg{Event: "agent.finished", Data: ...}`, parses the payload, and calls `onAgentFinished`. This sets status to `"review"` (exit 0) or `"failed"` (non-zero), checks the DB for an agent-authored summary (submitted via `ccc update-todo`), persists status and summary to DB, and emits `plugin.AgentStateChangedMsg` to refresh the budget widget.
-7. **Queue drain**: Queue management is handled daemon-side.
-8. **Shutdown**: Agent lifecycle is managed by the daemon — no local cleanup needed.
+6. **Session ID capture**: The daemon broadcasts `agent.session_id` with `{id, session_id}` when the Claude session UUID is captured from stream-json output. The plugin receives this as a `NotifyMsg`, persists `session_id` to the todo in DB and in-memory. This enables session resume (`o`) and console display.
+7. **Completion**: When a daemon-managed agent exits, the daemon broadcasts `agent.finished` with `{id, exit_code}`. The plugin receives this as a `NotifyMsg{Event: "agent.finished", Data: ...}`, parses the payload, and calls `onAgentFinished`. This sets status to `"review"` (exit 0) or `"failed"` (non-zero), checks the DB for an agent-authored summary (submitted via `ccc update-todo`), persists status and summary to DB, and emits `plugin.AgentStateChangedMsg` to refresh the budget widget.
+8. **Queue drain**: Queue management is handled daemon-side.
+9. **Shutdown**: Agent lifecycle is managed by the daemon — no local cleanup needed.
 
 #### Launch Options
 
