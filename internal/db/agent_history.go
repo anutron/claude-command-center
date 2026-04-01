@@ -58,8 +58,8 @@ func DBLoadAgentHistory(database *sql.DB, window time.Duration) ([]AgentHistoryE
 			s.repo,
 			s.branch
 		FROM cc_agent_costs ac
-		LEFT JOIN cc_todos t ON t.session_id = ac.agent_id
-		LEFT JOIN cc_pull_requests pr ON pr.agent_session_id = ac.agent_id
+		LEFT JOIN cc_todos t ON t.id = ac.agent_id
+		LEFT JOIN cc_pull_requests pr ON pr.id = ac.agent_id
 		LEFT JOIN cc_sessions s ON s.session_id = ac.agent_id
 		WHERE ac.started_at >= ?
 		ORDER BY ac.started_at DESC

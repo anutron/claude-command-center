@@ -10,9 +10,9 @@ func TestDBLoadAgentHistory(t *testing.T) {
 
 	now := time.Now()
 
-	// Insert a todo with a session_id linking to an agent
-	_, err := db.Exec(`INSERT INTO cc_todos (id, display_id, title, status, source, session_id, created_at, updated_at)
-		VALUES ('todo-1', 113, 'Fix auth bug', 'running', 'github', 'agent-abc', ?, ?)`,
+	// Insert a todo — the todo's id IS the agent_id in cc_agent_costs
+	_, err := db.Exec(`INSERT INTO cc_todos (id, display_id, title, status, source, created_at, updated_at)
+		VALUES ('agent-abc', 113, 'Fix auth bug', 'running', 'github', ?, ?)`,
 		FormatTime(now), FormatTime(now))
 	if err != nil {
 		t.Fatal(err)
@@ -26,9 +26,9 @@ func TestDBLoadAgentHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Insert a PR agent cost row
-	_, err = db.Exec(`INSERT INTO cc_pull_requests (id, number, repo, title, url, author, created_at, updated_at, last_activity_at, fetched_at, agent_session_id, agent_status, agent_category)
-		VALUES ('pr-47', 47, 'owner/repo', 'Add feature', 'https://github.com/owner/repo/pull/47', 'user', ?, ?, ?, ?, 'agent-pr-47', 'completed', 'review')`,
+	// Insert a PR — the PR's id IS the agent_id in cc_agent_costs
+	_, err = db.Exec(`INSERT INTO cc_pull_requests (id, number, repo, title, url, author, created_at, updated_at, last_activity_at, fetched_at, agent_status, agent_category)
+		VALUES ('agent-pr-47', 47, 'owner/repo', 'Add feature', 'https://github.com/owner/repo/pull/47', 'user', ?, ?, ?, ?, 'completed', 'review')`,
 		FormatTime(now), FormatTime(now), FormatTime(now), FormatTime(now))
 	if err != nil {
 		t.Fatal(err)
