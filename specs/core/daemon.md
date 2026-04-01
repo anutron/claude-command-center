@@ -172,6 +172,12 @@ Agents are long-running Claude Code subprocess sessions managed by an `agent.Run
 - `watchAgentDone` blocks on `sess.Done()`, then calls `runner.CleanupFinished(id)`, broadcasts `agent.finished` with exit code, and calls `drainNextAgent()` to start the next queued agent
 - `drainNextAgent` pops from `runner.DrainQueue()`, launches via `runner.LaunchOrQueue()`, broadcasts `agent.started`, and spawns a new `watchAgentDone` goroutine
 
+**Session ID propagation:**
+
+- After launching an agent, the daemon monitors the session for its Claude session UUID (captured from stream-json output by the agent runner)
+- When captured, the daemon broadcasts `agent.session_id` event with payload `{"id": "<agent_id>", "session_id": "<uuid>"}`
+- The TUI CC plugin handles this event to update the todo's `SessionID` in memory and DB, enabling session resume and console display
+
 ### Budget RPCs
 
 Budget RPCs require a `GovernedRunner` to be configured; they return an error if governance is not enabled.
@@ -217,7 +223,7 @@ The subscriber system provides push delivery of server events to connected TUI c
 - `data.refreshed` — emitted after each successful refresh
 - `session.registered` / `session.updated` / `session.ended` — session lifecycle (declared in Event type comment; registration/update don't currently broadcast)
 - `daemon.paused` / `daemon.resumed` — daemon state changes
-- `agent.started` / `agent.stopped` / `agent.finished` — agent lifecycle
+- `agent.started` / `agent.stopped` / `agent.finished` / `agent.session_id` — agent lifecycle
 - `budget.emergency_stop` / `budget.resumed` — budget governance events
 
 **TUI integration:**

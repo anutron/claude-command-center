@@ -108,7 +108,7 @@ Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectD
 | `r` | detail:viewing | Resume/re-launch agent (skips ResumeID if session expired) |
 | `T` | detail:viewing | Train routing/prompt rules (opens training input textarea) |
 | `U` | detail:viewing | Unmerge: detach the selected source from a synthesis todo |
-| `w` | detail:viewing | Open live session viewer (active sessions only), or replay saved session log |
+| `w` | detail:viewing | Open live session viewer (local or daemon-managed active sessions), or replay saved session log |
 | `delete`/`backspace` | detail:viewing | Kill running agent session for this todo |
 | `g` | detail:viewing | Chord prefix for Gmail-style shortcuts (`gi`/`gu` = return to list view) |
 | `up`/`down` | detail:viewing | Scroll detail viewport |
@@ -337,7 +337,8 @@ The session viewer is a sub-view of the detail view (`sessionViewerActive = true
 
 #### Opening
 
-- **Live session** (`w` when an active agent session exists): Initializes the viewer with the session's event channel for real-time updates
+- **Live local session** (`w` when a local agent session exists in `agentRunner`): Initializes the viewer with the session's event channel for real-time updates via `listenForAgentEvent`
+- **Live daemon session** (`w` when no local session but daemon reports agent is active via `AgentStatus` RPC): Initializes the viewer with a polling loop that calls `StreamAgentOutput` RPC every 500ms, emitting the same `sessionEventMsg` types as the local path via `listenForDaemonAgentEvents`
 - **Saved log** (`w` when `todo.SessionLogPath` is set but no active session): Replays events from the saved log file on disk
 - **No session**: Shows flash "No active session for this todo"
 
@@ -472,7 +473,7 @@ An agent status header line also appears when sessions are running: `"2/10 agent
 - `cfg.Agent.MaxConcurrent` controls the max number of simultaneous sessions (default 10)
 - Concurrency is managed by `agentRunner` (`agent.Runner` interface), NOT by the plugin directly
 - `agentRunner.LaunchOrQueue(req)` returns `(queued bool, cmd tea.Cmd)` — handles concurrency internally
-- `agentRunner.Session(id)` returns `*agent.Session` for a running session, or nil — this is how the plugin checks if an agent is active
+- `agentRunner.Session(id)` returns `*agent.Session` for a running session, or nil — for LOCAL sessions only. Daemon-managed agents are NOT in the local runner; use `todo.Status == "running"` to determine if an agent is active regardless of execution path
 - `agentRunner.DrainQueue()` pops the next queued request when capacity frees
 - The plugin does NOT have `activeSessions` or `sessionQueue` fields — those are internal to the `agent.runnerImpl` struct
 
