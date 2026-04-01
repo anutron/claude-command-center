@@ -518,6 +518,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.console.scroll = 0
 				}
 				return m, nil
+			case "X": // Shift+X: kill selected agent
+				if m.console.detail {
+					if e := m.console.selected(); e != nil && (e.Status == "running" || e.Status == "processing" || e.Status == "blocked") {
+						if client := m.DaemonClient(); client != nil {
+							_ = client.StopAgent(e.AgentID)
+							m.flashMessage = fmt.Sprintf("Killed agent %s", e.AgentID)
+							m.flashExpiresAt = time.Now().Add(3 * time.Second)
+							// Refresh entries
+							if entries, err := client.ListAgentHistory(24); err == nil {
+								m.console.entries = entries
+								if m.console.cursor >= len(entries) {
+									m.console.cursor = max(0, len(entries)-1)
+								}
+							}
+							m.console.detail = false
+						}
+					}
+				}
+				return m, nil
 			default:
 				return m, nil // consume all keys while overlay is open
 			}

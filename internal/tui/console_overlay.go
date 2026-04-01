@@ -49,7 +49,7 @@ const (
 	overlayMinWidth  = 40
 	overlayTitle     = "AGENT CONSOLE"
 	overlaySubtitle  = "Last 24 hours · ↑↓ select · Enter detail · ~ dismiss"
-	overlaySubDetail = "Esc back · ↑↓ scroll"
+	overlaySubDetail = "Esc back · ↑↓ scroll · Shift+X kill"
 	overlayEmpty     = "No agents in the last 24 hours"
 	overlayBorderColor = "#3b4261"
 )

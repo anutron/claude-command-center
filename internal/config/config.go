@@ -208,6 +208,9 @@ type AgentConfig struct {
 	DailyBudget      float64 `yaml:"daily_budget"`        // max spend per rolling 24h (default $100)
 	BudgetWarningPct float64 `yaml:"budget_warning_pct"`  // warn at this fraction of budget (default 0.80)
 
+	// Timeouts
+	MaxRuntimeMinutes int `yaml:"max_runtime_minutes"` // kill agents after this many minutes (default 20, 0 = no limit)
+
 	// Rate limiting & backoff
 	MaxLaunchesPerAutomationPerHour int `yaml:"max_launches_per_automation_per_hour"` // default 20
 	CooldownMinutes                 int `yaml:"cooldown_minutes"`                     // pause after budget hit (default 15)

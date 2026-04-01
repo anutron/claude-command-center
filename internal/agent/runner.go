@@ -74,8 +74,9 @@ type Request struct {
 	Budget       float64      // max budget in USD (passed if >= 0.50)
 	ResumeID     string       // if set, resume an existing session
 	AutoStart    bool         // if true, auto-launch when dequeued
-	Automation   string       // which automation triggered this agent (e.g. "pr-review")
-	CostCallback CostCallback // optional callback for token usage updates
+	Automation   string        // which automation triggered this agent (e.g. "pr-review")
+	MaxRuntime   time.Duration // kill the agent after this duration (0 = no limit)
+	CostCallback CostCallback  // optional callback for token usage updates
 }
 
 // Session is the handle for a running agent process.

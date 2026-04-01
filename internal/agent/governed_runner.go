@@ -23,6 +23,7 @@ type GovernedRunner struct {
 	inner   Runner
 	budget  *BudgetTracker
 	limiter *RateLimiter
+	cfg     *config.AgentConfig
 
 	// costRows tracks cost row IDs for active sessions so we can
 	// record finished status when CleanupFinished is called.
@@ -42,6 +43,7 @@ func NewGovernedRunner(inner Runner, db *sql.DB, cfg *config.AgentConfig) *Gover
 		inner:    inner,
 		budget:   NewBudgetTracker(db, cfg),
 		limiter:  NewRateLimiter(db, cfg),
+		cfg:      cfg,
 		costRows: make(map[string]costEntry),
 	}
 }
@@ -78,7 +80,14 @@ func (g *GovernedRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
 		g.budget.RecordCost(costRowID, inputTokens, outputTokens, costUSD)
 	}
 
-	// 4. Delegate to the inner runner.
+	// 4. Set max runtime from config if not already set.
+	if req.MaxRuntime == 0 && g.cfg.MaxRuntimeMinutes > 0 {
+		req.MaxRuntime = time.Duration(g.cfg.MaxRuntimeMinutes) * time.Minute
+	} else if req.MaxRuntime == 0 {
+		req.MaxRuntime = 20 * time.Minute // default
+	}
+
+	// 5. Delegate to the inner runner.
 	innerQueued, innerCmd := g.inner.LaunchOrQueue(req)
 
 	// If the inner runner queued it (concurrency limit), clean up the cost row

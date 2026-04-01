@@ -381,6 +381,11 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 			// Parse stream-json from stdout directly (more reliable than tailing native log).
 			go monitorSessionFromStdout(sess, stdout, req.CostCallback, req.Budget)
 
+			// Wall-clock timeout: SIGINT the process if it runs too long.
+			if req.MaxRuntime > 0 {
+				go enforceMaxRuntime(sess, req.MaxRuntime)
+			}
+
 			return SessionStartedMsg{
 				ID:      req.ID,
 				Session: sess,
@@ -409,9 +414,35 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 		nativeLogPath := NativeLogPath(projectDir, sessionUUID)
 		go monitorSessionFromLog(sess, nativeLogPath, req.CostCallback, req.Budget)
 
+		// Wall-clock timeout: SIGINT the process if it runs too long.
+		if req.MaxRuntime > 0 {
+			go enforceMaxRuntime(sess, req.MaxRuntime)
+		}
+
 		return SessionStartedMsg{
 			ID:      req.ID,
 			Session: sess,
+		}
+	}
+}
+
+// enforceMaxRuntime SIGINTs a session's process if it exceeds the max runtime.
+// Exits immediately if the session finishes before the deadline.
+func enforceMaxRuntime(sess *Session, maxRuntime time.Duration) {
+	timer := time.NewTimer(maxRuntime)
+	defer timer.Stop()
+
+	select {
+	case <-sess.Done():
+		// Session finished before timeout — nothing to do.
+		return
+	case <-timer.C:
+		// Timeout reached — SIGINT the process.
+		sess.Mu.Lock()
+		proc := sess.Cmd
+		sess.Mu.Unlock()
+		if proc != nil && proc.Process != nil {
+			_ = proc.Process.Signal(syscall.SIGINT)
 		}
 	}
 }
