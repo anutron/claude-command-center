@@ -17,6 +17,9 @@ type LaunchDeniedMsg struct {
 	Reason string
 }
 
+// CostBroadcastFunc is called when an agent incurs cost, for broadcasting to subscribers.
+type CostBroadcastFunc func(id string, inputTokens, outputTokens int, costUSD float64)
+
 // GovernedRunner wraps a Runner, enforcing budget and rate limits before
 // delegating to the inner runner.
 type GovernedRunner struct {
@@ -27,8 +30,10 @@ type GovernedRunner struct {
 
 	// costRows tracks cost row IDs for active sessions so we can
 	// record finished status when CleanupFinished is called.
-	mu       sync.Mutex
-	costRows map[string]costEntry
+	mu              sync.Mutex
+	costRows        map[string]costEntry
+	costBroadcast   CostBroadcastFunc
+	lastBroadcastAt map[string]time.Time
 }
 
 type costEntry struct {
@@ -51,6 +56,13 @@ func NewGovernedRunner(inner Runner, db *sql.DB, cfg *config.AgentConfig) *Gover
 // BudgetTracker returns the budget tracker for external use (e.g., daemon RPC handlers).
 func (g *GovernedRunner) BudgetTracker() *BudgetTracker {
 	return g.budget
+}
+
+// SetCostBroadcast registers a callback invoked (throttled) when an agent incurs cost.
+func (g *GovernedRunner) SetCostBroadcast(fn CostBroadcastFunc) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.costBroadcast = fn
 }
 
 // LaunchOrQueue checks budget and rate limits before delegating to the inner runner.
@@ -78,6 +90,22 @@ func (g *GovernedRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
 
 	req.CostCallback = func(inputTokens, outputTokens int, costUSD float64) {
 		g.budget.RecordCost(costRowID, inputTokens, outputTokens, costUSD)
+
+		g.mu.Lock()
+		fn := g.costBroadcast
+		last := g.lastBroadcastAt[req.ID]
+		shouldBroadcast := fn != nil && time.Since(last) >= 2*time.Second
+		if shouldBroadcast {
+			if g.lastBroadcastAt == nil {
+				g.lastBroadcastAt = make(map[string]time.Time)
+			}
+			g.lastBroadcastAt[req.ID] = time.Now()
+		}
+		g.mu.Unlock()
+
+		if shouldBroadcast {
+			fn(req.ID, inputTokens, outputTokens, costUSD)
+		}
 	}
 
 	// 4. Set max runtime from config if not already set.

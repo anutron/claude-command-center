@@ -181,8 +181,10 @@ Agents are long-running Claude Code subprocess sessions managed by an `agent.Run
 **Cost update broadcasting:**
 
 - The `GovernedRunner`'s cost callback broadcasts `agent.cost_updated` events when `RecordCost` fires, throttled to at most once per 2 seconds per agent
+- The broadcast is wired via `SetCostBroadcast()` during daemon `NewServer()` initialization
 - Payload: `{"id": "<agent_id>", "cost_usd": <float>, "input_tokens": <int>, "output_tokens": <int>}`
 - All subscribing TUI instances receive these events for live cost visibility in the console overlay and budget widget
+- On `agent.cost_updated`, the TUI immediately re-polls budget status (bypassing the 5s interval) so the budget widget stays current
 
 **Daemon is required for agents:**
 

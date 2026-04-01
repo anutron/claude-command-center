@@ -568,7 +568,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh console entries on relevant agent events if the overlay is open.
 		if m.console.visible {
 			switch msg.Event.Type {
-			case "agent.started", "agent.finished", "agent.stopped":
+			case "agent.started", "agent.finished", "agent.stopped", "agent.cost_updated":
 				if client := m.DaemonClient(); client != nil {
 					if entries, err := client.ListAgentHistory(24); err == nil {
 						m.console.entries = entries
@@ -578,6 +578,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+		}
+		// Refresh budget widget on cost updates so the spend figure stays current.
+		if msg.Event.Type == "agent.cost_updated" && m.DaemonConnected() {
+			m.budgetLastPoll = time.Now()
+			var cmds []tea.Cmd
+			cmds = append(cmds, m.pollBudgetCmd())
+			m.broadcastMessage(plugin.NotifyMsg{Event: msg.Event.Type, Data: msg.Event.Data}, &cmds)
+			return m, tea.Batch(cmds...)
 		}
 		// Broadcast NotifyMsg for all daemon events so plugins can dispatch
 		// async refresh commands via HandleMessage (instead of mutating state

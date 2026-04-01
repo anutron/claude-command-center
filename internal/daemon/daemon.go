@@ -56,6 +56,20 @@ func NewServer(cfg ServerConfig) *Server {
 		runner:   cfg.AgentRunner,
 		governed: cfg.GovernedRunner,
 	}
+	// Wire cost broadcast on the governed runner so subscribers get
+	// throttled agent.cost_updated events as agents incur cost.
+	if s.governed != nil {
+		s.governed.SetCostBroadcast(func(id string, inputTokens, outputTokens int, costUSD float64) {
+			data, _ := json.Marshal(map[string]interface{}{
+				"id":            id,
+				"cost_usd":      costUSD,
+				"input_tokens":  inputTokens,
+				"output_tokens": outputTokens,
+			})
+			s.Broadcast(Event{Type: "agent.cost_updated", Data: data})
+		})
+	}
+
 	// Wire refresh loop with a post-refresh callback that broadcasts
 	// data.refreshed to subscribers and prunes dead sessions.
 	s.refresh = newRefreshLoop(cfg.RefreshFunc, cfg.RefreshInterval, func() {

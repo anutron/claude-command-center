@@ -391,6 +391,60 @@ func TestGovernedRunner_DelegatesMethods(t *testing.T) {
 	_ = inner
 }
 
+func TestGovernedRunner_CostCallback_InvokesBroadcast(t *testing.T) {
+	cfg := defaultAgentCfg()
+	gr, inner := newTestGovernedRunner(t, cfg)
+
+	var broadcasts []float64
+	gr.SetCostBroadcast(func(id string, inputTokens, outputTokens int, costUSD float64) {
+		broadcasts = append(broadcasts, costUSD)
+	})
+
+	req := Request{ID: "test-cb-1", Prompt: "hello", Budget: 1.0}
+	gr.LaunchOrQueue(req)
+
+	// Grab the launched request from the inner runner to get the wired CostCallback.
+	inner.mu.Lock()
+	if len(inner.launched) == 0 {
+		t.Fatal("expected at least 1 launch")
+	}
+	lastReq := inner.launched[len(inner.launched)-1]
+	inner.mu.Unlock()
+
+	if lastReq.CostCallback == nil {
+		t.Fatal("expected CostCallback to be set")
+	}
+	lastReq.CostCallback(100, 50, 0.01)
+	if len(broadcasts) != 1 || broadcasts[0] != 0.01 {
+		t.Errorf("expected 1 broadcast with cost 0.01, got %v", broadcasts)
+	}
+}
+
+func TestGovernedRunner_CostBroadcast_ThrottledTo2Seconds(t *testing.T) {
+	cfg := defaultAgentCfg()
+	gr, inner := newTestGovernedRunner(t, cfg)
+
+	var broadcastCount int
+	gr.SetCostBroadcast(func(id string, inputTokens, outputTokens int, costUSD float64) {
+		broadcastCount++
+	})
+
+	req := Request{ID: "test-cb-2", Prompt: "hello", Budget: 1.0}
+	gr.LaunchOrQueue(req)
+
+	inner.mu.Lock()
+	lastReq := inner.launched[len(inner.launched)-1]
+	inner.mu.Unlock()
+
+	cb := lastReq.CostCallback
+	for i := 0; i < 10; i++ {
+		cb(100*i, 50*i, 0.01*float64(i))
+	}
+	if broadcastCount != 1 {
+		t.Errorf("expected 1 broadcast (throttled), got %d", broadcastCount)
+	}
+}
+
 func TestGovernedRunner_BudgetTrackerAccessor(t *testing.T) {
 	cfg := defaultAgentCfg()
 	gr, _ := newTestGovernedRunner(t, cfg)
