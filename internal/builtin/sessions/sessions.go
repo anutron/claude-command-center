@@ -1340,9 +1340,9 @@ func (p *Plugin) renderHints() string {
 		switch p.subTab {
 		case "sessions":
 			if p.unified != nil && p.unified.archiveMode {
-				hints = p.styles.hint.Render("enter resume   b save   d delete   j/k navigate   A back   s sessions   n new   t worktrees")
+				hints = p.styles.hint.Render("enter resume   b save   d delete   j/k navigate   A back   n new   t worktrees")
 			} else {
-				hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive   s sessions   n new   t worktrees")
+				hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive   n new   t worktrees")
 			}
 		case "new":
 			if p.filterText != "" {

@@ -281,6 +281,24 @@ func TestView_HintBarUpdatesPerSubTab(t *testing.T) {
 	assertViewContains(t, view, "p prune")
 }
 
+func TestView_HintBarHidesSessionsKeyOnSessionsTab(t *testing.T) {
+	p := setupNewTabPlugin(t)
+
+	// New tab should show "s sessions" (it's useful for switching)
+	view := p.View(120, 38, 0)
+	assertViewContains(t, view, "s sessions")
+
+	// Switch to sessions sub-tab
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	view = p.View(120, 38, 0)
+
+	// Sessions tab should NOT show "s sessions" — already there
+	assertViewNotContains(t, view, "s sessions")
+	// But should still show other navigation hints
+	assertViewContains(t, view, "n new")
+	assertViewContains(t, view, "t worktrees")
+}
+
 func TestView_FilterTypingInNewTab(t *testing.T) {
 	p := setupNewTabPlugin(t)
 

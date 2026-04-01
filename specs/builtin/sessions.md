@@ -152,8 +152,8 @@ When `Refresh()` polls the daemon, it compares the current session list against 
 
 Each sub-tab displays a hint bar at the bottom:
 
-- **Sessions (main):** `enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive   s sessions   n new   t worktrees`
-- **Sessions (archive):** `enter resume   b save   d delete   j/k navigate   A back   s sessions   n new   t worktrees`
+- **Sessions (main):** `enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive   n new   t worktrees`
+- **Sessions (archive):** `enter resume   b save   d delete   j/k navigate   A back   n new   t worktrees`
 - **New:** `type to filter   enter launch   w worktree   s sessions   n new   t worktrees   shift+up/down reorder   del remove   esc quit`
 - **Worktrees:** `enter launch   d delete   p prune   s sessions   n new   esc back`
 - **Worktree warning:** `⚠ Not a git repository — worktrees require git.` + `[enter] Launch directly in this directory   [esc] Cancel`
