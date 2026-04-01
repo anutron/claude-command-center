@@ -389,18 +389,43 @@ func TestDBSaveRefreshResult(t *testing.T) {
 		t.Fatalf("pending actions mismatch")
 	}
 
-	// Overwrite with new data — verify replace-all behavior
+	// Save with different todos — verify race-safe behavior:
+	// t3 is new, t1 and t2 are NOT in the new list so they survive (not deleted).
 	cc.Todos = []Todo{{ID: "t3", Title: "New only", Status: StatusBacklog, Source: "manual", CreatedAt: now}}
 	cc.PendingActions = nil
 	if err := DBSaveRefreshResult(db, cc); err != nil {
 		t.Fatalf("second save: %v", err)
 	}
 	loaded, _ = LoadCommandCenterFromDB(db)
-	if len(loaded.Todos) != 1 || loaded.Todos[0].ID != "t3" {
-		t.Fatalf("expected only t3 after overwrite, got %d todos", len(loaded.Todos))
+	// t1 and t2 survive because the save only deletes IDs it knows about (t3).
+	if len(loaded.Todos) != 3 {
+		t.Fatalf("expected 3 todos (t1, t2 preserved + t3 new), got %d", len(loaded.Todos))
 	}
 	if len(loaded.PendingActions) != 0 {
 		t.Fatalf("expected 0 pending actions after overwrite, got %d", len(loaded.PendingActions))
+	}
+
+	// Verify that re-saving t1 updates it (upsert via delete+insert of known IDs).
+	cc.Todos = []Todo{
+		{ID: "t1", Title: "Updated bug", Status: StatusBacklog, Source: "github", CreatedAt: now},
+		{ID: "t3", Title: "New only", Status: StatusBacklog, Source: "manual", CreatedAt: now},
+	}
+	if err := DBSaveRefreshResult(db, cc); err != nil {
+		t.Fatalf("third save: %v", err)
+	}
+	loaded, _ = LoadCommandCenterFromDB(db)
+	if len(loaded.Todos) != 3 {
+		t.Fatalf("expected 3 todos, got %d", len(loaded.Todos))
+	}
+	// Find t1 and verify it was updated
+	found := false
+	for _, td := range loaded.Todos {
+		if td.ID == "t1" && td.Title == "Updated bug" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected t1 to be updated to 'Updated bug'")
 	}
 }
 

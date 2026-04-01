@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -497,9 +498,20 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 
 	now := FormatTime(time.Now())
 
-	// --- Todos: delete all, re-insert ---
-	if _, err := tx.Exec(`DELETE FROM cc_todos`); err != nil {
-		return fmt.Errorf("clear todos: %w", err)
+	// --- Todos: delete only IDs we're about to re-insert ---
+	// This preserves any todos created during the refresh window (race-safe).
+	// Todos not in cc.Todos (e.g., manual todos added mid-refresh) survive.
+	if len(cc.Todos) > 0 {
+		ids := make([]interface{}, len(cc.Todos))
+		placeholders := make([]string, len(cc.Todos))
+		for i, t := range cc.Todos {
+			ids[i] = t.ID
+			placeholders[i] = "?"
+		}
+		query := `DELETE FROM cc_todos WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+		if _, err := tx.Exec(query, ids...); err != nil {
+			return fmt.Errorf("clear known todos: %w", err)
+		}
 	}
 	// Find the current max display_id so we can assign IDs to new todos.
 	maxDisplayID := 0
