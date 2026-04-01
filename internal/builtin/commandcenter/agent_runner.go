@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -13,8 +12,7 @@ import (
 )
 
 // queuedSession describes a session waiting to launch.
-// This is the CC-specific wrapper around agent.Request that includes
-// CC-specific fields like TodoID and prompt enhancement.
+// CC-specific wrapper that includes TodoID and prompt enhancement.
 type queuedSession struct {
 	TodoID     string
 	Prompt     string
@@ -26,9 +24,9 @@ type queuedSession struct {
 	ResumeID   string // If set, resume an existing session instead of starting a new one
 }
 
-// toAgentRequest converts a CC-specific queuedSession to a generic agent.Request.
+// toDaemonParams converts a CC-specific queuedSession to daemon RPC params.
 // It enhances the prompt with summary instructions so the agent self-reports.
-func (qs queuedSession) toAgentRequest() agent.Request {
+func (qs queuedSession) toDaemonParams() daemon.LaunchAgentParams {
 	enhancedPrompt := fmt.Sprintf(`%s
 
 ---
@@ -50,31 +48,15 @@ ccc update-todo --id %s --session-summary "$(cat <<'SUMMARY'
 SUMMARY
 )"`, qs.Prompt, qs.TodoID)
 
-	return agent.Request{
+	return daemon.LaunchAgentParams{
 		ID:         qs.TodoID,
 		Prompt:     enhancedPrompt,
-		ProjectDir: qs.ProjectDir,
+		Dir:        qs.ProjectDir,
 		Worktree:   qs.Mode == "worktree",
 		Permission: qs.Perm,
 		Budget:     qs.Budget,
 		ResumeID:   qs.ResumeID,
-		AutoStart:  qs.AutoStart,
 		Automation: "todo",
-	}
-}
-
-// toDaemonParams converts a CC-specific queuedSession to daemon RPC params.
-func (qs queuedSession) toDaemonParams() daemon.LaunchAgentParams {
-	req := qs.toAgentRequest()
-	return daemon.LaunchAgentParams{
-		ID:         req.ID,
-		Prompt:     req.Prompt,
-		Dir:        req.ProjectDir,
-		Worktree:   req.Worktree,
-		Permission: req.Permission,
-		Budget:     req.Budget,
-		ResumeID:   req.ResumeID,
-		Automation: req.Automation,
 	}
 }
 
@@ -87,32 +69,22 @@ func agentStateChangedCmd() tea.Cmd {
 }
 
 // killAgent terminates a running agent session for a given todo.
-// Uses daemon RPC when connected, falls back to local runner.
+// Uses daemon RPC — daemon is the sole agent manager.
 // Returns a tea.Cmd for any DB/event side effects, or nil if no session was running.
 func (p *Plugin) killAgent(todoID string) tea.Cmd {
-	if dc := p.daemonClient(); dc != nil {
-		if err := dc.StopAgent(todoID); err != nil {
-			if p.logger != nil {
-				p.logger.Warn("commandcenter", "daemon StopAgent failed, falling back to local", "err", err)
-			}
-			// Fall through to local runner
-		} else {
-			// Daemon handled the kill successfully.
-			p.setTodoStatus(todoID, db.StatusBacklog)
-			p.publishEvent("agent.killed", map[string]interface{}{
-				"todo_id": todoID,
-			})
-			if p.sessionViewerActive && p.sessionViewerTodoID == todoID {
-				p.sessionViewerDone = true
-				p.sessionViewerListening = false
-				p.updateSessionViewerContent()
-			}
-			return tea.Batch(p.persistTodoStatus(todoID, db.StatusBacklog), agentStateChangedCmd())
-		}
+	dc := p.daemonClient()
+	if dc == nil {
+		p.flashMessage = "Daemon not connected — cannot kill agent"
+		p.flashMessageAt = time.Now()
+		return nil
 	}
 
-	// Local runner fallback.
-	if !p.agentRunner.Kill(todoID) {
+	if err := dc.StopAgent(todoID); err != nil {
+		if p.logger != nil {
+			p.logger.Warn("commandcenter", "daemon StopAgent failed", "err", err)
+		}
+		p.flashMessage = "Kill failed: " + parseUserError(err)
+		p.flashMessageAt = time.Now()
 		return nil
 	}
 
@@ -120,19 +92,16 @@ func (p *Plugin) killAgent(todoID string) tea.Cmd {
 	p.publishEvent("agent.killed", map[string]interface{}{
 		"todo_id": todoID,
 	})
-
-	// If the session viewer is watching this session, mark it done.
 	if p.sessionViewerActive && p.sessionViewerTodoID == todoID {
 		p.sessionViewerDone = true
 		p.sessionViewerListening = false
 		p.updateSessionViewerContent()
 	}
-
 	return tea.Batch(p.persistTodoStatus(todoID, db.StatusBacklog), agentStateChangedCmd())
 }
 
 // canLaunchAgent checks if there is room to launch another agent session.
-// Uses daemon RPC when connected, falls back to local runner.
+// Uses daemon RPC — daemon is the sole agent manager.
 func (p *Plugin) canLaunchAgent() bool {
 	maxConcurrent := p.cfg.Agent.MaxConcurrent
 	if maxConcurrent <= 0 {
@@ -144,14 +113,14 @@ func (p *Plugin) canLaunchAgent() bool {
 			return len(agents) < maxConcurrent
 		}
 		if p.logger != nil {
-			p.logger.Warn("commandcenter", "daemon ListAgents failed, falling back to local", "err", err)
+			p.logger.Warn("commandcenter", "daemon ListAgents failed", "err", err)
 		}
 	}
-	return len(p.agentRunner.Active()) < maxConcurrent
+	return false
 }
 
 // activeAgentCount returns the number of currently running agent sessions.
-// Uses daemon RPC when connected, falls back to local runner.
+// Uses daemon RPC — daemon is the sole agent manager.
 func (p *Plugin) activeAgentCount() int {
 	if dc := p.daemonClient(); dc != nil {
 		agents, err := dc.ListAgents()
@@ -159,21 +128,20 @@ func (p *Plugin) activeAgentCount() int {
 			return len(agents)
 		}
 		if p.logger != nil {
-			p.logger.Warn("commandcenter", "daemon ListAgents failed, falling back to local", "err", err)
+			p.logger.Warn("commandcenter", "daemon ListAgents failed", "err", err)
 		}
 	}
-	return len(p.agentRunner.Active())
+	return 0
 }
 
 // queuedAgentCount returns the number of sessions waiting in the queue.
-// When using daemon, queue is managed server-side; local runner tracks it.
+// Queue is managed daemon-side; not exposed as a separate count yet.
 func (p *Plugin) queuedAgentCount() int {
-	// The daemon doesn't expose queue length yet — always use local runner.
-	return p.agentRunner.QueueLen()
+	return 0
 }
 
-// launchOrQueueAgent either launches an agent immediately or queues it.
-// Uses daemon RPC when connected, falls back to local runner.
+// launchOrQueueAgent launches an agent via the daemon.
+// The daemon is the sole agent manager — no local fallback.
 // It also auto-accepts the todo so it moves out of the "new" triage filter.
 func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 	// Auto-accept the todo when launching/queuing an agent
@@ -182,46 +150,32 @@ func (p *Plugin) launchOrQueueAgent(qs queuedSession) tea.Cmd {
 		return db.DBAcceptTodo(database, qs.TodoID)
 	})
 
-	if dc := p.daemonClient(); dc != nil {
-		params := qs.toDaemonParams()
-		err := dc.LaunchAgent(params)
-		if err != nil {
-			if p.logger != nil {
-				p.logger.Warn("commandcenter", "daemon LaunchAgent failed, falling back to local", "err", err)
-			}
-			// Fall through to local runner
-		} else {
-			// Daemon accepted the launch. Set status optimistically and persist.
-			// The daemon will broadcast agent.started/agent.queued events.
-			p.setTodoStatus(qs.TodoID, db.StatusRunning)
-			p.publishEvent("agent.started", map[string]interface{}{
-				"todo_id": qs.TodoID,
-			})
-			return tea.Batch(acceptCmd, p.persistTodoStatus(qs.TodoID, db.StatusRunning), agentStateChangedCmd())
-		}
+	dc := p.daemonClient()
+	if dc == nil {
+		p.flashMessage = "Daemon not connected — cannot launch agent"
+		p.flashMessageAt = time.Now()
+		return acceptCmd
 	}
 
-	// Local runner fallback.
-	req := qs.toAgentRequest()
-	queued, launchCmd := p.agentRunner.LaunchOrQueue(req)
-
-	if !queued {
-		p.setTodoStatus(qs.TodoID, db.StatusRunning)
-		p.publishEvent("agent.started", map[string]interface{}{
-			"todo_id": qs.TodoID,
-		})
-		return tea.Batch(acceptCmd, p.persistTodoStatus(qs.TodoID, db.StatusRunning), launchCmd, agentStateChangedCmd())
+	params := qs.toDaemonParams()
+	err := dc.LaunchAgent(params)
+	if err != nil {
+		p.flashMessage = "Agent launch failed: " + parseUserError(err)
+		p.flashMessageAt = time.Now()
+		return acceptCmd
 	}
 
-	// Queued.
-	p.setTodoStatus(qs.TodoID, db.StatusEnqueued)
-	p.publishEvent("agent.queued", map[string]interface{}{
+	// Daemon accepted the launch. Set status optimistically and persist.
+	// The daemon will broadcast agent.started/agent.queued events.
+	p.setTodoStatus(qs.TodoID, db.StatusRunning)
+	p.publishEvent("agent.started", map[string]interface{}{
 		"todo_id": qs.TodoID,
 	})
-	return tea.Batch(acceptCmd, p.persistTodoStatus(qs.TodoID, db.StatusEnqueued), agentStateChangedCmd())
+	return tea.Batch(acceptCmd, p.persistTodoStatus(qs.TodoID, db.StatusRunning), agentStateChangedCmd())
 }
 
-// onAgentFinished cleans up after an agent finishes and launches the next queued item.
+// onAgentFinished cleans up after an agent finishes.
+// Queue management is handled daemon-side.
 func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 	var summary string
 
@@ -230,11 +184,6 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 		if dbTodo, err := db.DBLoadTodoByID(p.database, todoID); err == nil && dbTodo != nil && dbTodo.SessionSummary != "" {
 			summary = dbTodo.SessionSummary
 		}
-	}
-
-	// Clean up the session from the runner and extract summary if needed.
-	if sess := p.agentRunner.CleanupFinished(todoID); sess != nil && summary == "" {
-		summary = agent.ExtractSessionSummary(sess)
 	}
 
 	status := db.StatusReview
@@ -253,29 +202,7 @@ func (p *Plugin) onAgentFinished(todoID string, exitCode int) tea.Cmd {
 	cmds = append(cmds, p.persistTodoStatusAndSummary(todoID, status, summary))
 	cmds = append(cmds, agentStateChangedCmd())
 
-	// Check queue for next auto-start item.
-	if next, ok := p.agentRunner.DrainQueue(); ok {
-		if next.AutoStart {
-			p.setTodoStatus(next.ID, db.StatusRunning)
-			p.publishEvent("agent.started", map[string]interface{}{
-				"todo_id": next.ID,
-			})
-			_, launchCmd := p.agentRunner.LaunchOrQueue(next)
-			if launchCmd != nil {
-				cmds = append(cmds, launchCmd)
-			}
-		}
-	}
-
 	return tea.Batch(cmds...)
-}
-
-// checkAgentProcesses polls active sessions for completion and status changes.
-func (p *Plugin) checkAgentProcesses() tea.Cmd {
-	// When daemon is connected, the daemon manages process lifecycle and
-	// sends events via Subscribe. We still poll the local runner for any
-	// sessions that were started before daemon connection.
-	return p.agentRunner.CheckProcesses()
 }
 
 // setTodoStatus updates the status of a todo in-memory.

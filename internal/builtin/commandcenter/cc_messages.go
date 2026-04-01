@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"syscall"
 	"time"
 
 	"database/sql"
@@ -115,18 +114,6 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case daemonAgentPollMsg:
 		return p.handleDaemonAgentPoll(msg)
 
-	case agent.SessionStartedMsg:
-		return p.handleAgentStartedInternal(msg)
-
-	case agent.SessionBlockedMsg:
-		return p.handleAgentStatus(msg)
-
-	case agent.SessionIDCapturedMsg:
-		return p.handleAgentSessionID(msg)
-
-	case agent.SessionFinishedMsg:
-		return p.handleAgentFinished(msg)
-
 	case agent.LaunchDeniedMsg:
 		return p.handleLaunchDenied(msg)
 
@@ -164,17 +151,11 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.detailSelectedField = 0
 
 			// Update session status when returning from a Claude session.
-			// - Resume/join sessions → "review" (user reviewed existing work)
-			// - Interactive sessions launched via "Run Claude" → "completed"
-			//   (only if not tracked as a headless agent, which has its own completion path)
-			if msg.WasResumeJoin {
-				p.setTodoStatus(msg.TodoID, db.StatusReview)
-				cmds = append(cmds, p.persistTodoStatus(msg.TodoID, db.StatusReview))
-			} else if p.agentRunner.Session(msg.TodoID) == nil {
-				// Interactive session returned — detect completion.
-				p.setTodoStatus(msg.TodoID, db.StatusReview)
-				cmds = append(cmds, p.persistTodoStatus(msg.TodoID, db.StatusReview))
-			}
+			// Both resume/join and interactive sessions transition to "review".
+			// Daemon-managed headless agents have their own completion path
+			// via agent.finished events.
+			p.setTodoStatus(msg.TodoID, db.StatusReview)
+			cmds = append(cmds, p.persistTodoStatus(msg.TodoID, db.StatusReview))
 		}
 
 		if len(cmds) > 0 {
@@ -257,30 +238,24 @@ func (p *Plugin) handleCCLoaded(msg ccLoadedMsg) (bool, plugin.Action) {
 	var cmds []tea.Cmd
 
 	// When an agent submits a session summary (via ccc update-todo), the DB
-	// reload picks it up here. Terminate the agent process since it has
-	// declared its work done, and transition the todo to "review" status.
-	// We don't use killAgent here because that resets status to "backlog",
-	// which is wrong — the agent completed successfully.
+	// reload picks it up here. Transition running todos with summaries to
+	// "review" status. The daemon manages agent process lifecycle.
 	if p.cc != nil {
 		for _, todo := range p.cc.Todos {
-			if todo.SessionSummary != "" {
-				if sess := p.agentRunner.Session(todo.ID); sess != nil {
-					p.agentRunner.Kill(todo.ID)
+			if todo.SessionSummary != "" && todo.Status == db.StatusRunning {
+				p.setTodoStatus(todo.ID, db.StatusReview)
+				p.publishEvent("agent.completed", map[string]interface{}{
+					"todo_id": todo.ID,
+				})
 
-					p.setTodoStatus(todo.ID, db.StatusReview)
-					p.publishEvent("agent.completed", map[string]interface{}{
-						"todo_id": todo.ID,
-					})
-
-					// If the session viewer is watching this session, mark it done.
-					if p.sessionViewerActive && p.sessionViewerTodoID == todo.ID {
-						p.sessionViewerDone = true
-						p.sessionViewerListening = false
-						p.updateSessionViewerContent()
-					}
-
-					cmds = append(cmds, p.persistTodoStatus(todo.ID, db.StatusReview))
+				// If the session viewer is watching this session, mark it done.
+				if p.sessionViewerActive && p.sessionViewerTodoID == todo.ID {
+					p.sessionViewerDone = true
+					p.sessionViewerListening = false
+					p.updateSessionViewerContent()
 				}
+
+				cmds = append(cmds, p.persistTodoStatus(todo.ID, db.StatusReview))
 			}
 		}
 	}
@@ -870,82 +845,17 @@ func (p *Plugin) handleClaudeReviewAddressed(msg claudeReviewAddressedMsg) (bool
 	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: reviewCmd}
 }
 
-func (p *Plugin) handleAgentStartedInternal(msg agent.SessionStartedMsg) (bool, plugin.Action) {
-	// Update the todo session status in-memory and persist.
-	p.setTodoStatus(msg.ID, db.StatusRunning)
-
-	var cmds []tea.Cmd
-	cmds = append(cmds, p.persistTodoStatus(msg.ID, db.StatusRunning))
-
-	// Persist the session log path so it can be replayed later.
-	if msg.Session.LogPath != "" {
-		p.setTodoSessionLogPath(msg.ID, msg.Session.LogPath)
-		cmds = append(cmds, p.persistSessionLogPath(msg.ID, msg.Session.LogPath))
-	}
-
-	// If session viewer is open for this todo, start listening for events.
-	if p.sessionViewerActive && p.sessionViewerTodoID == msg.ID && !p.sessionViewerListening {
-		p.sessionViewerListening = true
-		cmds = append(cmds, listenForAgentEvent(msg.ID, msg.Session.EventsCh))
-	}
-
-	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
-}
-
-func (p *Plugin) handleAgentStatus(msg agent.SessionBlockedMsg) (bool, plugin.Action) {
-	p.setTodoStatus(msg.ID, "blocked")
-	p.publishEvent("agent.blocked", map[string]interface{}{
-		"todo_id":  msg.ID,
-		"question": msg.Question,
-	})
-	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistTodoStatus(msg.ID, "blocked")}
-}
-
 func (p *Plugin) handleLaunchMsg(msg plugin.LaunchMsg) (bool, plugin.Action) {
 	// When joining a session (--resume), gracefully stop the headless agent first
-	// so Claude CLI can save state and the interactive resume finds the session.
+	// so the interactive resume finds the session.
 	if msg.ResumeID != "" {
-		for _, info := range p.agentRunner.Active() {
-			if info.SessionID == msg.ResumeID {
-				// Kill the headless agent so the interactive session can resume it.
-				// The runner's Kill sends SIGKILL; for graceful shutdown we need
-				// to access the session directly.
-				if sess := p.agentRunner.Session(info.ID); sess != nil {
-					if sess.Cmd != nil && sess.Cmd.Process != nil {
-						sess.Cmd.Process.Signal(syscall.SIGINT)
-					}
-					select {
-					case <-sess.Done():
-					case <-time.After(5 * time.Second):
-					}
-				}
-				p.agentRunner.CleanupFinished(info.ID)
-				break
-			}
+		if dc := p.daemonClient(); dc != nil {
+			// Ask daemon to stop the agent so the interactive session can resume it.
+			_ = dc.StopAgent(msg.ResumeID)
+			time.Sleep(500 * time.Millisecond) // brief pause for process cleanup
 		}
 	}
 	return false, plugin.NoopAction() // Let host continue with the launch
-}
-
-func (p *Plugin) handleAgentSessionID(msg agent.SessionIDCapturedMsg) (bool, plugin.Action) {
-	// Update in-memory todo with the captured session ID.
-	if p.cc != nil {
-		for i := range p.cc.Todos {
-			if p.cc.Todos[i].ID == msg.ID {
-				p.cc.Todos[i].SessionID = msg.SessionID
-				break
-			}
-		}
-	}
-	// Persist to DB.
-	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
-		return db.DBUpdateTodoSessionID(database, msg.ID, msg.SessionID)
-	})}
-}
-
-func (p *Plugin) handleAgentFinished(msg agent.SessionFinishedMsg) (bool, plugin.Action) {
-	cmd := p.onAgentFinished(msg.ID, msg.ExitCode)
-	return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
 // handleDaemonAgentFinished processes an agent.finished event from the daemon.
@@ -1006,11 +916,6 @@ func (p *Plugin) handleAgentEvent(msg agentEventMsg) (bool, plugin.Action) {
 	// Update session viewer if it's active and watching this todo
 	if p.sessionViewerActive && p.sessionViewerTodoID == msg.todoID {
 		p.updateSessionViewerContent()
-	}
-
-	// Continue listening for more events
-	if sess := p.agentRunner.Session(msg.todoID); sess != nil {
-		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForAgentEvent(msg.todoID, sess.EventsCh)}
 	}
 	return true, plugin.NoopAction()
 }
@@ -1082,11 +987,6 @@ func (p *Plugin) handleTickMsg() (bool, plugin.Action) {
 	}
 
 	var cmds []tea.Cmd
-
-	// Check for finished agent processes.
-	if agentCmd := p.checkAgentProcesses(); agentCmd != nil {
-		cmds = append(cmds, agentCmd)
-	}
 
 	// Trigger ai-cron when data is older than the refresh interval (default 5m).
 	if p.cfg.RefreshEnabled() && p.cc != nil && !p.ccRefreshing && time.Since(p.cc.GeneratedAt) > ccRefreshInterval {

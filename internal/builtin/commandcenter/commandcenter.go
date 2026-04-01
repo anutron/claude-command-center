@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
@@ -150,8 +149,7 @@ type Plugin struct {
 	flashMessage   string
 	flashMessageAt time.Time
 
-	// Agent sessions
-	agentRunner     agent.Runner
+	// Agent sessions — daemon is the sole agent manager
 	daemonClientFunc func() *daemon.Client // nil-safe getter; set after Init by TUI host
 
 	// Session viewer
@@ -297,9 +295,6 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.llm = llm.NoopLLM{}
 	}
 
-	// Use the shared agent runner from Context.
-	p.agentRunner = ctx.AgentRunner
-
 	// Set refresh interval from config
 	ccRefreshInterval = ctx.Config.ParseRefreshInterval()
 
@@ -422,11 +417,8 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 }
 
 // Shutdown is called when the plugin is being shut down.
-// It sends SIGINT to all active agent sessions so Claude CLI can save session state.
+// Agent lifecycle is managed by the daemon — no local cleanup needed.
 func (p *Plugin) Shutdown() {
-	if p.agentRunner != nil {
-		p.agentRunner.Shutdown()
-	}
 }
 
 // dbWriteCmd creates a tea.Cmd that performs a DB write.

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
-	"github.com/anutron/claude-command-center/internal/testutil"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -383,18 +383,13 @@ func TestView_EditGuardBlocksMutationDuringAgent(t *testing.T) {
 	todo := &p.cc.Todos[0]
 	todo.Status = db.StatusRunning
 
-	// Inject mock runner with an active session for this todo
-	mock := testutil.NewMockRunner(3)
-	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
-	p.agentRunner = mock
-
 	// Open detail view
 	p.HandleKey(specialKeyMsg(tea.KeyEnter))
 	if !p.detailView {
 		t.Fatal("enter should open detail view")
 	}
 
-	// Press enter again — should be blocked by edit guard
+	// Press enter again — should be blocked by edit guard (status=running)
 	p.HandleKey(specialKeyMsg(tea.KeyEnter))
 	if !strings.Contains(p.flashMessage, "being updated by agent") {
 		t.Errorf("expected flash about agent, got %q", p.flashMessage)
@@ -405,10 +400,6 @@ func TestView_EditGuardBlocksCommandDuringAgent(t *testing.T) {
 	p := testPluginWithCC(t)
 	todo := &p.cc.Todos[0]
 	todo.Status = db.StatusRunning
-
-	mock := testutil.NewMockRunner(3)
-	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
-	p.agentRunner = mock
 
 	p.HandleKey(specialKeyMsg(tea.KeyEnter))
 	// Press 'c' — command input should also be blocked
@@ -423,9 +414,11 @@ func TestView_EditGuardAllowsWatchDuringAgent(t *testing.T) {
 	todo := &p.cc.Todos[0]
 	todo.Status = db.StatusRunning
 
-	mock := testutil.NewMockRunner(3)
-	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
-	p.agentRunner = mock
+	// Set up daemon so the "w" key can open the session viewer.
+	client := startTestDaemon(t)
+	p.SetDaemonClientFunc(func() *daemon.Client { return client })
+	_ = client.LaunchAgent(daemon.LaunchAgentParams{ID: todo.ID, Prompt: "test", Dir: t.TempDir()})
+	time.Sleep(100 * time.Millisecond)
 
 	p.HandleKey(specialKeyMsg(tea.KeyEnter))
 	// 'w' should NOT be blocked — it opens the session viewer
@@ -461,9 +454,11 @@ func TestView_SessionViewerOpensOnW(t *testing.T) {
 	todo := &p.cc.Todos[0]
 	todo.Status = db.StatusRunning
 
-	mock := testutil.NewMockRunner(3)
-	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
-	p.agentRunner = mock
+	// Set up daemon with an active agent for this todo.
+	client := startTestDaemon(t)
+	p.SetDaemonClientFunc(func() *daemon.Client { return client })
+	_ = client.LaunchAgent(daemon.LaunchAgentParams{ID: todo.ID, Prompt: "test", Dir: t.TempDir()})
+	time.Sleep(100 * time.Millisecond)
 
 	// Open detail view, then press w
 	p.HandleKey(specialKeyMsg(tea.KeyEnter))
@@ -482,10 +477,6 @@ func TestView_NoSessionShowsFlash(t *testing.T) {
 	todo := &p.cc.Todos[0]
 	todo.Status = db.StatusBacklog
 
-	// No active session and no log path
-	mock := testutil.NewMockRunner(3)
-	p.agentRunner = mock
-
 	p.HandleKey(specialKeyMsg(tea.KeyEnter))
 	p.HandleKey(keyMsg("w"))
 
@@ -502,9 +493,11 @@ func TestView_SessionViewerClosesOnEsc(t *testing.T) {
 	todo := &p.cc.Todos[0]
 	todo.Status = db.StatusRunning
 
-	mock := testutil.NewMockRunner(3)
-	mock.AddSession(todo.ID, testutil.NewFakeSession(todo.ID))
-	p.agentRunner = mock
+	// Set up daemon with an active agent for this todo.
+	client := startTestDaemon(t)
+	p.SetDaemonClientFunc(func() *daemon.Client { return client })
+	_ = client.LaunchAgent(daemon.LaunchAgentParams{ID: todo.ID, Prompt: "test", Dir: t.TempDir()})
+	time.Sleep(100 * time.Millisecond)
 
 	// Open detail → session viewer
 	p.HandleKey(specialKeyMsg(tea.KeyEnter))

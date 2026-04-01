@@ -337,8 +337,7 @@ The session viewer is a sub-view of the detail view (`sessionViewerActive = true
 
 #### Opening
 
-- **Live local session** (`w` when a local agent session exists in `agentRunner`): Initializes the viewer with the session's event channel for real-time updates via `listenForAgentEvent`
-- **Live daemon session** (`w` when no local session but daemon reports agent is active via `AgentStatus` RPC): Initializes the viewer with a polling loop that calls `StreamAgentOutput` RPC every 500ms, emitting the same `sessionEventMsg` types as the local path via `listenForDaemonAgentEvents`
+- **Live daemon session** (`w` when daemon reports agent is active via `AgentStatus` RPC): Initializes the viewer with a polling loop that calls `StreamAgentOutput` RPC every 500ms via `listenForDaemonAgentEvents`
 - **Saved log** (`w` when `todo.SessionLogPath` is set but no active session): Replays events from the saved log file on disk
 - **No session**: Shows flash "No active session for this todo"
 
@@ -369,10 +368,8 @@ The sent message is appended as a user event to the session's event list for dis
 
 When joining a session (`o` with `resume_id`), the system gracefully stops any running headless agent that owns that session before launching the interactive resume. In `handleLaunchMsg`:
 
-1. Finds the active session matching the `resume_id`
-2. Sends `SIGINT` to the agent process (not `SIGKILL`) so Claude CLI can save session state
-3. Waits up to 5 seconds for the process to exit via the `Done()` channel
-4. Cleans up the finished session via `agentRunner.CleanupFinished`
+1. Calls `dc.StopAgent(resumeID)` via daemon RPC to stop the headless agent
+2. Waits briefly for the process to exit
 
 This ensures the interactive session finds a consistent session file rather than competing with a still-running headless agent.
 
@@ -406,16 +403,14 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 
 #### Session Lifecycle
 
-1. **Launch or queue**: User presses `enter` in task runner step 3. `launchOrQueueAgent` either starts the session immediately or queues it based on `cfg.Agent.MaxConcurrent` (default 10). When launching immediately, the todo status is set to `"running"` and persisted to the DB atomically. Emits `plugin.AgentStateChangedMsg` so the TUI host immediately refreshes the budget widget.
-2. **Auto-accept**: Launching/queuing automatically accepts the todo via `DBAcceptTodo`, which only transitions from `"new"` to `"backlog"` (no-op if the todo is already past `"new"`). This prevents a race where `AcceptTodo` could overwrite a `"running"` status back to `"backlog"`.
+1. **Launch via daemon**: User presses `enter` in task runner step 3. `launchOrQueueAgent` sends the request to the daemon via `dc.LaunchAgent()`. If the daemon is not connected, shows a flash message. On success, the todo status is set to `"running"` optimistically and persisted to DB. Emits `plugin.AgentStateChangedMsg` so the TUI host immediately refreshes the budget widget.
+2. **Auto-accept**: Launching automatically accepts the todo via `DBAcceptTodo`, which only transitions from `"new"` to `"backlog"` (no-op if the todo is already past `"new"`). This prevents a race where `AcceptTodo` could overwrite a `"running"` status back to `"backlog"`.
 3. **Launch denied**: If the governed runner denies a launch (budget or rate limit), a `LaunchDeniedMsg` is emitted. The command center handles this by reverting the todo status to `"backlog"` and showing a flash message with the denial reason.
-3. **Process start**: `launchAgent` spawns `claude --print --output-format stream-json --verbose [flags] <prompt>` as a subprocess. The session's `done` channel and exit code are managed by a background goroutine.
-4. **Monitoring**: A background goroutine reads stdout line-by-line, parsing stream-JSON events. It detects blocking events (tool_use with `SendUserMessage` or `AskUser`) and updates `sess.Status` to `"blocked"` with the question text.
-5. **Tick polling**: `checkAgentProcesses` runs on every UI tick. It checks the `done` channel for finished processes and reads `sess.Status` (protected by mutex) for status changes like `"blocked"`.
-6. **Completion (local runner)**: When the process exits, `onAgentFinished` sets status to `"review"` (exit 0) or `"failed"` (non-zero). It checks the DB for an agent-authored summary (submitted via `ccc update-todo` during the session). If none exists, falls back to `extractSessionSummary()` which parses the stream-json output. Persists status and summary to DB. Emits `plugin.AgentStateChangedMsg` to refresh the budget widget.
-7. **Completion (daemon)**: When a daemon-managed agent exits, the daemon broadcasts `agent.finished` with `{id, exit_code}`. The plugin receives this as a `NotifyMsg{Event: "agent.finished", Data: ...}`, parses the payload, and calls the same `onAgentFinished` logic as the local runner path. This ensures daemon-managed agents transition to `"review"`/`"failed"` status.
-8. **Queue drain**: After a session finishes, `onAgentFinished` checks the queue and auto-launches the next `AutoStart` session if capacity is available.
-9. **Shutdown cleanup**: `Plugin.Shutdown()` cancels all active sessions to prevent zombie processes.
+4. **Process start**: The daemon spawns `claude --print --output-format stream-json --verbose [flags] <prompt>` as a subprocess. The session lifecycle is managed entirely by the daemon.
+5. **Monitoring**: The daemon's background goroutine reads stdout line-by-line, parsing stream-JSON events. It detects blocking events and broadcasts status changes via events.
+6. **Completion**: When a daemon-managed agent exits, the daemon broadcasts `agent.finished` with `{id, exit_code}`. The plugin receives this as a `NotifyMsg{Event: "agent.finished", Data: ...}`, parses the payload, and calls `onAgentFinished`. This sets status to `"review"` (exit 0) or `"failed"` (non-zero), checks the DB for an agent-authored summary (submitted via `ccc update-todo`), persists status and summary to DB, and emits `plugin.AgentStateChangedMsg` to refresh the budget widget.
+7. **Queue drain**: Queue management is handled daemon-side.
+8. **Shutdown**: Agent lifecycle is managed by the daemon — no local cleanup needed.
 
 #### Launch Options
 
@@ -471,11 +466,10 @@ An agent status header line also appears when sessions are running: `"2/10 agent
 #### Concurrency Management
 
 - `cfg.Agent.MaxConcurrent` controls the max number of simultaneous sessions (default 10)
-- Concurrency is managed by `agentRunner` (`agent.Runner` interface), NOT by the plugin directly
-- `agentRunner.LaunchOrQueue(req)` returns `(queued bool, cmd tea.Cmd)` — handles concurrency internally
-- `agentRunner.Session(id)` returns `*agent.Session` for a running session, or nil — for LOCAL sessions only. Daemon-managed agents are NOT in the local runner; use `todo.Status == "running"` to determine if an agent is active regardless of execution path
-- `agentRunner.DrainQueue()` pops the next queued request when capacity frees
-- The plugin does NOT have `activeSessions` or `sessionQueue` fields — those are internal to the `agent.runnerImpl` struct
+- Concurrency is managed by the daemon, NOT by the plugin directly
+- `dc.LaunchAgent(params)` sends the launch request to the daemon
+- `dc.ListAgents()` returns active agent count for concurrency checks
+- The plugin does NOT have `activeSessions`, `sessionQueue`, or `agentRunner` fields — all agent management is daemon-side
 
 #### Event Bus Integration
 
@@ -491,7 +485,7 @@ The background goroutine parses each stdout line as JSON. It detects blocking ev
 1. Top-level events with `type == "tool_use"` and `name` of `"SendUserMessage"` or `"AskUser"`
 2. `type == "assistant"` events containing `content` blocks with tool_use entries matching the same names
 
-When a blocking event is detected, the question text is extracted from `input.message` or `input.question` fields. The goroutine updates `sess.Status` and `sess.Question` under a mutex. The main UI thread picks up the change on the next tick via `checkAgentProcesses`.
+When a blocking event is detected, the question text is extracted from `input.message` or `input.question` fields. The daemon broadcasts blocking status changes via events, which the plugin receives as `NotifyMsg`.
 
 ### Todo-Agent Prompt Generation Pipeline
 
@@ -653,13 +647,12 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Agent sessions: stream-JSON blocking event sets session_status to "blocked" with question text
 - Agent sessions: successful completion (exit 0) sets session_status to "review" with summary
 - Agent sessions: failed completion (non-zero exit) sets session_status to "failed" with summary
-- Agent sessions: daemon-managed agent.finished event triggers onAgentFinished (same as local runner)
-- Agent sessions: queue drains FIFO — next AutoStart session launches when capacity frees
+- Agent sessions: daemon agent.finished event triggers onAgentFinished
+- Agent sessions: daemon agent.session_id event persists session ID to todo
+- Agent sessions: queue management is daemon-side
 - Agent sessions: `o` on todo with session_id returns launch action with resume_id
 - Agent sessions: `o` on todo without session_id opens task runner wizard
-- Agent sessions: checkAgentProcesses detects finished sessions via done channel on tick
-- Agent sessions: checkAgentProcesses detects blocked status change on tick
-- Agent sessions: Shutdown cancels all active sessions
+- Agent sessions: daemon not connected shows flash message on launch attempt
 - Agent sessions: status indicators render correctly in todo list (active/blocked/review/queued)
 - Agent sessions: detail view shows session status and summary sections
 - Agent sessions: triage "Review" tab filters todos with session_status "review"

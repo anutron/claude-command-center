@@ -4,7 +4,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -125,43 +124,25 @@ func (p *Plugin) handleSessionViewerInput(msg tea.KeyMsg) plugin.Action {
 		}
 
 		sent := false
-		// Try daemon RPC first for sending input.
+		// Send input via daemon RPC.
 		if dc := p.daemonClient(); dc != nil {
 			if err := dc.SendAgentInput(p.sessionViewerTodoID, text); err != nil {
 				if p.logger != nil {
-					p.logger.Warn("commandcenter", "daemon SendAgentInput failed, falling back to local", "err", err)
+					p.logger.Warn("commandcenter", "daemon SendAgentInput failed", "err", err)
 				}
 			} else {
 				sent = true
 			}
 		}
 
-		// Local runner fallback.
-		if !sent {
-			sess := p.agentRunner.Session(p.sessionViewerTodoID)
-			if sess != nil {
-				if err := agent.SendUserMessage(sess, text); err != nil {
-					if p.logger != nil {
-						p.logger.Warn("commandcenter", "failed to send user message", "err", err)
-					}
-				} else {
-					sent = true
-				}
-			}
-		}
-
 		if sent {
-			// Append a user event for display (works for both daemon and local).
-			if sess := p.agentRunner.Session(p.sessionViewerTodoID); sess != nil {
-				userEvent := sessionEvent{
-					Type:      "user",
-					Text:      text,
-					Timestamp: time.Now().Format(time.RFC3339),
-				}
-				sess.Mu.Lock()
-				sess.Events = append(sess.Events, userEvent)
-				sess.Mu.Unlock()
+			// Append a user event for display in the session viewer.
+			userEvent := sessionEvent{
+				Type:      "user",
+				Text:      text,
+				Timestamp: time.Now().Format(time.RFC3339),
 			}
+			p.sessionViewerReplayEvents = append(p.sessionViewerReplayEvents, userEvent)
 			p.updateSessionViewerContent()
 		}
 

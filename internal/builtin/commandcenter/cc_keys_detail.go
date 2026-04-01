@@ -51,10 +51,10 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 	}
 
-	// Block edit/mutation operations only when THIS instance owns the running agent.
+	// Block edit/mutation operations when the daemon reports an active agent.
 	agentActive := false
 	if todo := p.detailTodo(); todo != nil {
-		agentActive = p.agentRunner.Session(todo.ID) != nil
+		agentActive = todo.Status == db.StatusRunning || todo.Status == db.StatusEnqueued
 	}
 
 	switch msg.String() {
@@ -139,20 +139,9 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		return plugin.ConsumedAction()
 	case "w":
 		// Open session viewer for todos with active agent sessions or saved logs.
-		// Priority: local session > daemon session > saved log on disk.
+		// Priority: daemon session > saved log on disk.
 		if todo := p.detailTodo(); todo != nil {
-			if sess := p.agentRunner.Session(todo.ID); sess != nil {
-				// Live local session — watch in real time
-				p.initSessionViewer(todo.ID)
-				// Start listening for events if not already
-				if !p.sessionViewerListening {
-					p.sessionViewerListening = true
-					return plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForAgentEvent(todo.ID, sess.EventsCh)}
-				}
-				return plugin.ConsumedAction()
-			}
-
-			// No local session — check daemon for an active agent.
+			// Check daemon for an active agent.
 			if dc := p.daemonClient(); dc != nil {
 				if status, err := dc.AgentStatus(todo.ID); err == nil && (status.Status == "processing" || status.Status == "blocked") {
 					p.initSessionViewer(todo.ID)
@@ -247,11 +236,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			if resumeID == "" {
 				verb = "re-launched"
 			}
-			if p.canLaunchAgent() || p.agentRunner.QueueLen() == 0 {
-				p.flashMessage = fmt.Sprintf("Agent %s for: %s", verb, truncateToWidth(flattenTitle(todo.Title), 40))
-			} else {
-				p.flashMessage = fmt.Sprintf("Agent queued for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
-			}
+			p.flashMessage = fmt.Sprintf("Agent %s for: %s", verb, truncateToWidth(flattenTitle(todo.Title), 40))
 			p.flashMessageAt = time.Now()
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}

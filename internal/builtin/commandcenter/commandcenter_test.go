@@ -1455,9 +1455,9 @@ func TestKillAgentViasDaemon(t *testing.T) {
 	_ = cmd
 }
 
-func TestFallbackToLocalRunnerWhenNoDaemon(t *testing.T) {
+func TestNoDaemonShowsFlashMessage(t *testing.T) {
 	p := testPluginWithCC(t)
-	// No daemon client set — should fall back to local runner.
+	// No daemon client set — should show flash message.
 
 	todo := p.cc.Todos[0]
 	qs := queuedSession{
@@ -1470,14 +1470,19 @@ func TestFallbackToLocalRunnerWhenNoDaemon(t *testing.T) {
 		AutoStart:  true,
 	}
 
-	cmd := p.launchOrQueueAgent(qs)
-	if cmd == nil {
-		t.Fatal("expected non-nil cmd from local runner launch")
+	p.launchOrQueueAgent(qs)
+
+	// Without daemon, flash message should indicate the problem.
+	if p.flashMessage == "" {
+		t.Fatal("expected flash message when daemon is not connected")
+	}
+	if !strings.Contains(p.flashMessage, "Daemon not connected") {
+		t.Errorf("expected 'Daemon not connected' flash, got %q", p.flashMessage)
 	}
 
-	// The todo should be set to running via local runner path.
-	if p.cc.Todos[0].Status != db.StatusRunning {
-		t.Errorf("expected todo status %q, got %q", db.StatusRunning, p.cc.Todos[0].Status)
+	// The todo should NOT be set to running (no launch happened).
+	if p.cc.Todos[0].Status == db.StatusRunning {
+		t.Error("todo should not be running when daemon is not connected")
 	}
 }
 
@@ -1553,6 +1558,10 @@ func TestAgentLaunchPersistsRunningStatus(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.cc.Todos[0].ProjectDir = "/tmp/myproject"
 	p.cc.Todos[0].ProposedPrompt = "Do the thing"
+
+	// Set up daemon so launch can succeed.
+	client := startTestDaemon(t)
+	p.SetDaemonClientFunc(func() *daemon.Client { return client })
 
 	// Launch agent via launchOrQueueAgent
 	qs := queuedSession{

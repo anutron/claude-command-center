@@ -107,9 +107,7 @@ func (p *Plugin) renderSessionViewer(width, height int) string {
 
 // buildSessionStatusLine builds the status bar for the session viewer.
 func (p *Plugin) buildSessionStatusLine(s *ccStyles) string {
-	sess := p.agentRunner.Session(p.sessionViewerTodoID)
-
-	// Status indicator — check local session first, then daemon.
+	// Status indicator — check daemon for agent status.
 	var statusPart string
 	var sessionIDPart string
 	var elapsedPart string
@@ -118,33 +116,7 @@ func (p *Plugin) buildSessionStatusLine(s *ccStyles) string {
 		statusPart = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("streaming \u25cf")
 	} else if p.sessionViewerDone {
 		statusPart = lipgloss.NewStyle().Foreground(s.ColorGreen).Bold(true).Render("completed \u25cf")
-	} else if sess != nil {
-		sess.Mu.Lock()
-		status := sess.Status
-		sid := sess.SessionID
-		sess.Mu.Unlock()
-		switch status {
-		case "blocked":
-			statusPart = lipgloss.NewStyle().Foreground(lipgloss.Color("#f1fa8c")).Bold(true).Render("blocked \u25cf")
-		default:
-			statusPart = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render("active \u25cf")
-		}
-		if sid != "" {
-			if len(sid) > 8 {
-				sid = sid[:8]
-			}
-			sessionIDPart = s.DescMuted.Render("Session: " + sid)
-		}
-		elapsed := time.Since(sess.StartedAt)
-		if elapsed < time.Minute {
-			elapsedPart = s.DescMuted.Render(fmt.Sprintf("%ds elapsed", int(elapsed.Seconds())))
-		} else {
-			mins := int(elapsed.Minutes())
-			secs := int(elapsed.Seconds()) % 60
-			elapsedPart = s.DescMuted.Render(fmt.Sprintf("%dm %02ds elapsed", mins, secs))
-		}
 	} else if dc := p.daemonClient(); dc != nil {
-		// No local session — try daemon for status.
 		if agentStatus, err := dc.AgentStatus(p.sessionViewerTodoID); err == nil {
 			switch agentStatus.Status {
 			case "blocked":
@@ -193,14 +165,9 @@ func (p *Plugin) buildSessionStatusLine(s *ccStyles) string {
 
 // buildSessionViewerContent renders all events into a single string for the viewport.
 func (p *Plugin) buildSessionViewerContent(s *ccStyles) string {
-	sess := p.agentRunner.Session(p.sessionViewerTodoID)
+	// Events come from the daemon replay buffer.
 	var events []sessionEvent
-	if sess != nil {
-		sess.Mu.Lock()
-		events = make([]sessionEvent, len(sess.Events))
-		copy(events, sess.Events)
-		sess.Mu.Unlock()
-	} else if len(p.sessionViewerReplayEvents) > 0 {
+	if len(p.sessionViewerReplayEvents) > 0 {
 		events = p.sessionViewerReplayEvents
 	}
 
@@ -263,12 +230,8 @@ func (p *Plugin) initSessionViewer(todoID string) {
 	p.sessionViewerDone = false
 	p.sessionViewerInputting = false
 
-	// Check if we have a local session (agent running in this TUI process).
-	sess := p.agentRunner.Session(todoID)
-	if sess == nil {
-		// No local session — try to reconnect via daemon.
-		p.tryDaemonReconnect(todoID)
-	}
+	// Try to reconnect via daemon for event replay.
+	p.tryDaemonReconnect(todoID)
 
 	p.sessionViewerVP = viewport.New(80, 20) // will be resized on render
 	p.sessionViewerVP.SetContent(p.buildSessionViewerContent(&p.styles))

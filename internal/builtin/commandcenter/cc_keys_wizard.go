@@ -461,11 +461,7 @@ func (p *Plugin) taskRunnerLaunch(immediate bool) plugin.Action {
 		cmd := tea.Batch(p.persistProjectDir(todo.ID, projectDir), p.persistLaunchMode(todo.ID, p.taskRunnerMode), p.launchOrQueueAgent(qs))
 		p.taskRunnerView = false
 		p.detailView = false
-		if p.canLaunchAgent() || p.agentRunner.QueueLen() == 0 {
-			p.flashMessage = fmt.Sprintf("Agent launched for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
-		} else {
-			p.flashMessage = fmt.Sprintf("Agent queued for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
-		}
+		p.flashMessage = fmt.Sprintf("Agent launched for: %s", truncateToWidth(flattenTitle(todo.Title), 40))
 		p.flashMessageAt = time.Now()
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 	}
