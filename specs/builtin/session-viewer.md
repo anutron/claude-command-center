@@ -196,7 +196,7 @@ If the agent fails before the goroutine starts (stdout pipe, stdin pipe, or `cmd
 
 ### Log Path Persistence
 
-The log file path is stored on the todo in the `session_log_path` DB column (`Todo.SessionLogPath` field). The path is computed deterministically from the todo ID and current timestamp **before** the background goroutine starts, stored on `agentSession.LogPath`, and persisted to the DB when `agentStartedInternalMsg` is handled.
+The log file path is stored on the todo in the `session_log_path` DB column (`Todo.SessionLogPath` field). The path is computed deterministically from the todo ID and current timestamp **before** the background goroutine starts, stored on the `agent.Session.LogPath` field (accessed via `agentRunner.Session(id)`), and persisted to the DB when `agentStartedInternalMsg` is handled.
 
 This enables the session viewer to replay logs from disk after the agent finishes and the in-memory session is cleaned up.
 
@@ -240,12 +240,12 @@ When a headless agent submits a session summary via `ccc update-todo --session-s
 
 When a todo is completed (`x`) or dismissed (`X`) from either the list view or detail view, any running agent session for that todo is automatically killed via `killAgent`:
 
-1. Close the process stdin pipe
-2. Send `SIGKILL` to the process
-3. Remove from `activeSessions` map
-4. Set todo session status to `"failed"`
-5. Publish `agent.killed` event
-6. If session viewer is watching this session, mark it done
+1. Call `agentRunner.Kill(todoID)` which closes stdin, sends SIGKILL, and removes the session internally
+2. Set todo session status to `"failed"`
+3. Publish `agent.killed` event
+4. If session viewer is watching this session, mark it done
+
+Note: the plugin accesses agent sessions through the `agentRunner` (`agent.Runner` interface), not through direct map access. `agentRunner.Session(id)` returns the session handle or nil.
 
 The `del` key in the detail view provides explicit agent kill without completing/dismissing the todo.
 

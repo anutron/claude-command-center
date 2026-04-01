@@ -470,9 +470,11 @@ An agent status header line also appears when sessions are running: `"2/10 agent
 #### Concurrency Management
 
 - `cfg.Agent.MaxConcurrent` controls the max number of simultaneous sessions (default 10)
-- `canLaunchAgent()` checks `len(activeSessions) < maxConcurrent`
-- Excess sessions are pushed to `sessionQueue` with status `"queued"`
-- Queue is drained FIFO as sessions complete
+- Concurrency is managed by `agentRunner` (`agent.Runner` interface), NOT by the plugin directly
+- `agentRunner.LaunchOrQueue(req)` returns `(queued bool, cmd tea.Cmd)` — handles concurrency internally
+- `agentRunner.Session(id)` returns `*agent.Session` for a running session, or nil — this is how the plugin checks if an agent is active
+- `agentRunner.DrainQueue()` pops the next queued request when capacity frees
+- The plugin does NOT have `activeSessions` or `sessionQueue` fields — those are internal to the `agent.runnerImpl` struct
 
 #### Event Bus Integration
 
