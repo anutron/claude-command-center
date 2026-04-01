@@ -134,6 +134,7 @@ The host supports temporary status messages displayed below the tab bar. A flash
   - Second esc within 2 seconds: quits the TUI immediately.
   - Timeout expires (`quitTimeoutMsg`): cancels pending quit.
   - Any non-esc key while pending: cancels pending quit.
+- **`~` (tilde)**: Plugin gets first chance — the active plugin's `HandleKey` is called first. If the plugin returns `ActionConsumed` or has a `TeaCmd`, the key is consumed (this allows text inputs to type `~` without triggering the console overlay). Otherwise, the host toggles the console overlay.
 - **All other keys**: Forward to active plugin's `HandleKey`, process the returned action.
 
 ### Message Broadcast

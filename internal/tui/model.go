@@ -542,6 +542,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		action := m.activePlugin().HandleKey(msg)
+		if action.Type == plugin.ActionConsumed || action.TeaCmd != nil {
+			return m.processAction(action)
+		}
+
 		if msg.String() == "~" {
 			var entries []db.AgentHistoryEntry
 			if client := m.DaemonClient(); client != nil {
@@ -551,7 +556,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		action := m.activePlugin().HandleKey(msg)
 		return m.processAction(action)
 
 	case DaemonEventMsg:

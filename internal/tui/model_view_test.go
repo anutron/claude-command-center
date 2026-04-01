@@ -385,6 +385,36 @@ func TestView_ConsoleOverlay_ShowsEntries(t *testing.T) {
 	assertViewContains(t, v, "TODO #55")
 }
 
+func TestView_ConsoleOverlay_TildeSkippedWhenPluginConsumes(t *testing.T) {
+	m := newTestModel(t)
+
+	// Console starts hidden.
+	if m.console.visible {
+		t.Fatal("console should start hidden")
+	}
+
+	// Replace the active plugin with a fake that consumes all keys.
+	// This simulates a plugin in text-input mode (editing a todo title, etc.).
+	fake := &fakeConsumingPlugin{}
+	m.tabs[m.activeTab].plugin = fake
+
+	// Send ~ key — the plugin should consume it and the console should NOT open.
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'~'}})
+	m = result.(Model)
+
+	if m.console.visible {
+		t.Error("expected console overlay to NOT open when active plugin consumes ~ key")
+	}
+}
+
+// fakeConsumingPlugin always returns ActionConsumed for HandleKey, simulating
+// a plugin in text-input mode where all keys are consumed by the input field.
+type fakeConsumingPlugin struct{ stubPlugin }
+
+func (f *fakeConsumingPlugin) HandleKey(msg tea.KeyMsg) plugin.Action {
+	return plugin.ConsumedAction()
+}
+
 func TestView_ConsoleOverlay_ConsumesKeysWhileOpen(t *testing.T) {
 	m := newTestModel(t)
 	m.console.visible = true

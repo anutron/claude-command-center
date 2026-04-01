@@ -197,6 +197,7 @@ Box: 70 chars wide (or width-4 if narrow), rounded border `#3b4261`, padding 1,2
 ## Test Cases
 
 - Overlay opens/closes with `~` key from any tab
+- `~` key is ignored (not intercepted) when the active plugin is in text input mode (editing a todo title, command mode, editing a setting value); the plugin's `HandleKey` gets first chance at the key, and the overlay only opens if the plugin returns `ActionUnhandled` or `ActionNoop`
 - Overlay list shows running agents with correct status icons
 - Overlay list shows completed agents from last 24h
 - Overlay detail view displays all metadata fields
