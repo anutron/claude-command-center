@@ -461,8 +461,9 @@ func monitorSessionFromLog(sess *Session, nativeLogPath string, costCb CostCallb
 	eventCh := make(chan map[string]interface{}, 64)
 	go tailNativeLog(ctx, nativeLogPath, 0, eventCh)
 
-	// Track cumulative cost for per-session budget enforcement.
+	// Track cumulative cost and tokens for per-session budget enforcement.
 	var cumulativeCost float64
+	var cumulativeInput, cumulativeOutput int
 
 	// processDone signals when the child process exits.
 	processDone := make(chan struct{})
@@ -538,9 +539,11 @@ func monitorSessionFromLog(sess *Session, nativeLogPath string, costCb CostCallb
 			// Extract token usage and invoke cost callback.
 			if inputTok, outputTok, hasUsage := extractUsageFromEvent(event); hasUsage {
 				cost := estimateCost(event, inputTok, outputTok)
+				cumulativeInput += inputTok
+				cumulativeOutput += outputTok
 				cumulativeCost += cost
 				if costCb != nil {
-					costCb(inputTok, outputTok, cost)
+					costCb(cumulativeInput, cumulativeOutput, cumulativeCost)
 				}
 
 				// Per-session budget enforcement: if cumulative cost exceeds
@@ -585,9 +588,11 @@ func monitorSessionFromLog(sess *Session, nativeLogPath string, costCb CostCallb
 
 					if inputTok, outputTok, hasUsage := extractUsageFromEvent(event); hasUsage {
 						cost := estimateCost(event, inputTok, outputTok)
+						cumulativeInput += inputTok
+						cumulativeOutput += outputTok
 						cumulativeCost += cost
 						if costCb != nil {
-							costCb(inputTok, outputTok, cost)
+							costCb(cumulativeInput, cumulativeOutput, cumulativeCost)
 						}
 					}
 				case <-drainCtx.Done():
@@ -611,6 +616,7 @@ func monitorSessionFromStdout(sess *Session, stdout io.ReadCloser, costCb CostCa
 	}
 
 	var cumulativeCost float64
+	var cumulativeInput, cumulativeOutput int
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -656,9 +662,11 @@ func monitorSessionFromStdout(sess *Session, stdout io.ReadCloser, costCb CostCa
 
 		if inputTok, outputTok, hasUsage := extractUsageFromEvent(event); hasUsage {
 			cost := estimateCost(event, inputTok, outputTok)
+			cumulativeInput += inputTok
+			cumulativeOutput += outputTok
 			cumulativeCost += cost
 			if costCb != nil {
-				costCb(inputTok, outputTok, cost)
+				costCb(cumulativeInput, cumulativeOutput, cumulativeCost)
 			}
 			if budgetUSD > 0 && cumulativeCost > budgetUSD {
 				if sess.Cmd != nil && sess.Cmd.Process != nil {

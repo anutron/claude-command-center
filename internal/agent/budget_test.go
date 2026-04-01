@@ -46,7 +46,8 @@ func TestCanLaunch_ExceedsHourlyBudget(t *testing.T) {
 
 	// Record a launch that costs $8
 	rowID := bt.RecordLaunch("agent-1", "test", "", 10.0)
-	bt.RecordFinished(rowID, 60, 0, 8.0)
+	bt.RecordCost(rowID, 0, 0, 8.0)
+	bt.RecordFinished(rowID, 60, 0)
 
 	ok, reason := bt.CanLaunch(5.0)
 	if ok {
@@ -65,7 +66,8 @@ func TestCanLaunch_ExceedsDailyBudget(t *testing.T) {
 
 	// Record a launch that costs $8
 	rowID := bt.RecordLaunch("agent-1", "test", "", 10.0)
-	bt.RecordFinished(rowID, 60, 0, 8.0)
+	bt.RecordCost(rowID, 0, 0, 8.0)
+	bt.RecordFinished(rowID, 60, 0)
 
 	ok, reason := bt.CanLaunch(5.0)
 	if ok {
@@ -122,7 +124,8 @@ func TestRecordFinished_RefreshesTotals(t *testing.T) {
 	bt := newTestBudgetTracker(t, defaultAgentCfg())
 
 	rowID := bt.RecordLaunch("agent-1", "test", "", 5.0)
-	bt.RecordFinished(rowID, 60, 0, 3.50)
+	bt.RecordCost(rowID, 0, 0, 3.50)
+	bt.RecordFinished(rowID, 60, 0)
 
 	bt.mu.RLock()
 	hourly := bt.hourlySpent
@@ -163,7 +166,8 @@ func TestStatus_WarningLevels(t *testing.T) {
 
 			// Record a finished launch with the desired cost
 			rowID := bt.RecordLaunch("agent-1", "test", "", tt.limit)
-			bt.RecordFinished(rowID, 60, 0, tt.spent)
+			bt.RecordCost(rowID, 0, 0, tt.spent)
+			bt.RecordFinished(rowID, 60, 0)
 
 			status := bt.Status()
 			if status.WarningLevel != tt.expected {

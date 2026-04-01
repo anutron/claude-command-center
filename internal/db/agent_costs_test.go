@@ -59,7 +59,10 @@ func TestDBUpdateAgentCostFinished(t *testing.T) {
 		t.Fatalf("insert: %v", err)
 	}
 
-	err = DBUpdateAgentCostFinished(db, id, 120, 1.50, 0, "completed")
+	// Simulate cost tracking during execution.
+	db.Exec(`UPDATE cc_agent_costs SET cost_usd = 1.50 WHERE id = ?`, id)
+
+	err = DBUpdateAgentCostFinished(db, id, 120, 0, "completed")
 	if err != nil {
 		t.Fatalf("DBUpdateAgentCostFinished: %v", err)
 	}
@@ -80,7 +83,7 @@ func TestDBUpdateAgentCostFinished(t *testing.T) {
 		t.Errorf("duration_sec = %d, want 120", dur)
 	}
 	if cost != 1.50 {
-		t.Errorf("cost_usd = %f, want 1.5", cost)
+		t.Errorf("cost_usd = %f, want 1.5 (must not be overwritten by finish)", cost)
 	}
 	if exitCode != 0 {
 		t.Errorf("exit_code = %d, want 0", exitCode)
@@ -104,9 +107,13 @@ func TestDBSumCostsSince(t *testing.T) {
 	id2, _ := DBInsertAgentCost(db, "b", "auto", "", 5, now.Add(-30*time.Minute))
 	id3, _ := DBInsertAgentCost(db, "c", "auto", "", 5, ancient)
 
-	DBUpdateAgentCostFinished(db, id1, 60, 2.0, 0, "completed")
-	DBUpdateAgentCostFinished(db, id2, 30, 1.0, 0, "completed")
-	DBUpdateAgentCostFinished(db, id3, 60, 10.0, 0, "completed")
+	// Set costs via direct UPDATE (simulating RecordCost during execution).
+	db.Exec(`UPDATE cc_agent_costs SET cost_usd = 2.0 WHERE id = ?`, id1)
+	db.Exec(`UPDATE cc_agent_costs SET cost_usd = 1.0 WHERE id = ?`, id2)
+	db.Exec(`UPDATE cc_agent_costs SET cost_usd = 10.0 WHERE id = ?`, id3)
+	DBUpdateAgentCostFinished(db, id1, 60, 0, "completed")
+	DBUpdateAgentCostFinished(db, id2, 30, 0, "completed")
+	DBUpdateAgentCostFinished(db, id3, 60, 0, "completed")
 
 	total, err := DBSumCostsSince(db, past)
 	if err != nil {
@@ -201,9 +208,9 @@ func TestDBCountRecentFailures(t *testing.T) {
 	id2, _ := DBInsertAgentCost(db, "b", "pr-review", "", 5, now.Add(-30*time.Minute))
 	id3, _ := DBInsertAgentCost(db, "c", "pr-review", "", 5, now.Add(-15*time.Minute))
 
-	DBUpdateAgentCostFinished(db, id1, 60, 1.0, 1, "failed")
-	DBUpdateAgentCostFinished(db, id2, 30, 0.5, 1, "failed")
-	DBUpdateAgentCostFinished(db, id3, 15, 0.3, 0, "completed")
+	DBUpdateAgentCostFinished(db, id1, 60, 1, "failed")
+	DBUpdateAgentCostFinished(db, id2, 30, 1, "failed")
+	DBUpdateAgentCostFinished(db, id3, 15, 0, "completed")
 
 	count, err := DBCountRecentFailures(db, "pr-review", now.Add(-2*time.Hour))
 	if err != nil {

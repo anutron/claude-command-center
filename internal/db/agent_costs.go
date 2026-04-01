@@ -23,14 +23,16 @@ func DBInsertAgentCost(db *sql.DB, agentID, automation, projectDir string, budge
 	return res.LastInsertId()
 }
 
-// DBUpdateAgentCostFinished marks an agent cost row as finished with final metrics.
-func DBUpdateAgentCostFinished(db *sql.DB, rowID int64, durationSec int, costUSD float64, exitCode int, status string) error {
+// DBUpdateAgentCostFinished marks an agent cost row as finished.
+// It does NOT overwrite cost_usd, input_tokens, or output_tokens — those are
+// updated incrementally by RecordCost during execution and must be preserved.
+func DBUpdateAgentCostFinished(db *sql.DB, rowID int64, durationSec int, exitCode int, status string) error {
 	now := FormatTime(time.Now())
 	_, err := db.Exec(
 		`UPDATE cc_agent_costs
-		 SET finished_at = ?, duration_sec = ?, cost_usd = ?, exit_code = ?, status = ?
+		 SET finished_at = ?, duration_sec = ?, exit_code = ?, status = ?
 		 WHERE id = ?`,
-		now, durationSec, costUSD, exitCode, status, rowID,
+		now, durationSec, exitCode, status, rowID,
 	)
 	if err != nil {
 		return fmt.Errorf("update agent cost %d: %w", rowID, err)

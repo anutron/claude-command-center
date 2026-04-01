@@ -96,7 +96,7 @@ func (g *GovernedRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
 		g.mu.Lock()
 		delete(g.costRows, req.ID)
 		g.mu.Unlock()
-		g.budget.RecordFinished(costRowID, 0, 0, 0)
+		g.budget.RecordFinished(costRowID, 0, 0)
 	}
 
 	return innerQueued, innerCmd
@@ -156,10 +156,7 @@ func (g *GovernedRunner) CleanupFinished(id string) *Session {
 	if ok && sess != nil {
 		duration := int(time.Since(entry.startedAt).Seconds())
 		exitCode := sess.ExitCode()
-		// We don't have actual cost data from the session, so record with
-		// the budgeted amount. Real cost tracking would come from parsing
-		// the session output.
-		g.budget.RecordFinished(entry.rowID, duration, exitCode, 0)
+		g.budget.RecordFinished(entry.rowID, duration, exitCode)
 	}
 
 	return sess

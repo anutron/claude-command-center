@@ -168,7 +168,8 @@ func TestGovernedRunner_LaunchDenied_OverBudget(t *testing.T) {
 
 	// Fill up the budget.
 	rowID := gr.budget.RecordLaunch("pre-fill", "test", "", 10.0)
-	gr.budget.RecordFinished(rowID, 60, 0, 9.0)
+	gr.budget.RecordCost(rowID, 0, 0, 9.0)
+	gr.budget.RecordFinished(rowID, 60, 0)
 
 	req := Request{
 		ID:         "test-over",

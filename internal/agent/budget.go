@@ -96,12 +96,14 @@ func (bt *BudgetTracker) RecordCost(costRowID int64, inputTokens, outputTokens i
 }
 
 // RecordFinished marks an agent cost row as finished and refreshes cached totals.
-func (bt *BudgetTracker) RecordFinished(costRowID int64, durationSec, exitCode int, finalCostUSD float64) {
+// Cost and token data are already tracked incrementally by RecordCost — this
+// only sets finished_at, duration, exit_code, and status.
+func (bt *BudgetTracker) RecordFinished(costRowID int64, durationSec, exitCode int) {
 	status := "completed"
 	if exitCode != 0 {
 		status = "failed"
 	}
-	_ = db.DBUpdateAgentCostFinished(bt.db, costRowID, durationSec, finalCostUSD, exitCode, status)
+	_ = db.DBUpdateAgentCostFinished(bt.db, costRowID, durationSec, exitCode, status)
 
 	bt.mu.Lock()
 	bt.refreshTotalsLocked()

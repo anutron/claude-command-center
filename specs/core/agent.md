@@ -152,12 +152,14 @@ Tracks cumulative agent spend against rolling hourly and daily budget limits, ba
 
 **`RecordCost(rowID, inputTokens, outputTokens, costUSD)`:**
 
-- Updates the `cc_agent_costs` row with running cost/token counts.
+- Updates the `cc_agent_costs` row with cumulative cost/token counts.
+- Monitors accumulate tokens and cost across all API calls in a session and pass cumulative values.
 - Refreshes cached hourly/daily totals from DB.
 
-**`RecordFinished(rowID, durationSec, exitCode, finalCostUSD)`:**
+**`RecordFinished(rowID, durationSec, exitCode)`:**
 
 - Sets `finished_at`, `duration_sec`, `exit_code`, and `status` ("completed" or "failed") on the cost row.
+- Does NOT overwrite `cost_usd`, `input_tokens`, or `output_tokens` — those are tracked incrementally by `RecordCost` during execution.
 - Refreshes cached totals.
 
 **`EmergencyStop()` / `Resume()`:**

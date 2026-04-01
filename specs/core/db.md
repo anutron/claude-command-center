@@ -179,7 +179,7 @@ All types are exported for use by other packages:
 ### Agent Costs
 - **Schema**: `cc_agent_costs` table with auto-increment `id`, `agent_id` (TEXT), `automation` (TEXT), `started_at` (TEXT), `finished_at` (TEXT, nullable), `duration_sec` (INTEGER, nullable), `budget_usd` (REAL, default 0), `cost_usd` (REAL, default 0), `input_tokens` (INTEGER, default 0), `output_tokens` (INTEGER, default 0), `cost_source` (TEXT, default 'estimate'), `exit_code` (INTEGER, nullable), `status` (TEXT, default 'running'). Indexed on `started_at`.
 - `DBInsertAgentCost(db, agentID, automation, budget, startedAt)` -- inserts a new cost row with `status='running'`; returns the auto-generated row ID
-- `DBUpdateAgentCostFinished(db, rowID, durationSec, costUSD, exitCode, status)` -- marks a cost row as finished with final metrics (`finished_at` set to now)
+- `DBUpdateAgentCostFinished(db, rowID, durationSec, exitCode, status)` -- marks a cost row as finished (`finished_at` set to now); does NOT overwrite `cost_usd`/`input_tokens`/`output_tokens` (those are tracked by `RecordCost`)
 - `DBSumCostsSince(db, since)` -- returns total `cost_usd` for all agent runs started since the given time; returns 0 if no rows match
 - `DBCountLaunchesSince(db, automation, since)` -- returns number of agent launches for a specific automation since the given time
 - `DBLastAgentLaunch(db, agentID)` -- returns the most recent `started_at` for a given agent ID; returns zero time if no launches found
