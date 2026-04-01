@@ -415,6 +415,52 @@ func (f *fakeConsumingPlugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	return plugin.ConsumedAction()
 }
 
+// fakeWidePlugin returns content wider than ContentMaxWidth, simulating a
+// plugin with long data rows (e.g., session list with full paths).
+type fakeWidePlugin struct{ stubPlugin }
+
+func (f *fakeWidePlugin) View(width, height, frame int) string {
+	// Return a line that's 200 chars wide — wider than ContentMaxWidth (120).
+	return strings.Repeat("X", 200)
+}
+
+func TestView_BUG127_BannerStableWithWidePluginContent(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 160
+	m.height = 40
+
+	// Record the banner position with a normal-width plugin (tab 0).
+	m.activeTab = 0
+	v1 := m.View()
+	bannerMargin1 := findBannerMargin(t, v1)
+
+	// Replace one tab's plugin with a wide-content plugin and switch to it.
+	wideTab := tab(len(m.tabs) - 2) // second-to-last tab (before Settings)
+	m.tabs[wideTab].plugin = &fakeWidePlugin{}
+	m.activeTab = wideTab
+	v2 := m.View()
+	bannerMargin2 := findBannerMargin(t, v2)
+
+	if bannerMargin1 != bannerMargin2 {
+		t.Errorf("BUG-127: banner margin shifted from %d to %d when switching to wide-content plugin",
+			bannerMargin1, bannerMargin2)
+	}
+}
+
+// findBannerMargin returns the left margin (leading spaces) of the first
+// banner line (containing block art characters) in the rendered view.
+func findBannerMargin(t *testing.T, view string) int {
+	t.Helper()
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "\u2588") { // █ block char
+			trimmed := strings.TrimLeft(line, " ")
+			return len(line) - len(trimmed)
+		}
+	}
+	t.Fatal("BUG-127: could not find banner block art in view")
+	return 0
+}
+
 func TestView_ConsoleOverlay_ConsumesKeysWhileOpen(t *testing.T) {
 	m := newTestModel(t)
 	m.console.visible = true

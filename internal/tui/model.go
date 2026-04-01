@@ -810,7 +810,15 @@ func (m Model) View() string {
 
 	content := m.activePlugin().View(m.width, contentHeight, m.frame)
 
-	sections = append(sections, "", tabBar)
+	// Pad each section to ContentMaxWidth so JoinVertical(Left) produces
+	// stable horizontal alignment regardless of plugin content width (BUG-127).
+	// Use MaxWidth to clamp sections that exceed ContentMaxWidth.
+	padWidth := ui.ContentMaxWidth
+	pad := func(s string) string {
+		clamped := lipgloss.NewStyle().MaxWidth(padWidth).Render(s)
+		return lipgloss.PlaceHorizontal(padWidth, lipgloss.Left, clamped)
+	}
+	sections = append(sections, pad(""), tabBar)
 	if m.flashMessage != "" && time.Now().Before(m.flashExpiresAt) {
 		hint := m.styles.TitleBoldC.Render(m.flashMessage)
 		sections = append(sections, lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hint))
@@ -819,9 +827,9 @@ func (m Model) View() string {
 		sections = append(sections, lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hint))
 	} else {
 		m.flashMessage = "" // clear expired flash
-		sections = append(sections, "")
+		sections = append(sections, pad(""))
 	}
-	sections = append(sections, content)
+	sections = append(sections, pad(content))
 	page := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
 	if m.width > 0 && m.height > 0 {
