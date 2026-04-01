@@ -66,7 +66,7 @@ Scrollable with `j`/`k` if content exceeds viewport. Scroll offset is clamped so
 
 While overlay is open, subscribe to event bus for `agent.started`, `agent.stopped`, `agent.finished` events. New agents appear in the list, status changes reflected without re-querying DB.
 
-While overlay is open and any entry has status `"running"` or `"processing"`, re-fetch `ListAgentHistory` on tick every 2 seconds to pick up live cost/token updates from `RecordCost`. This avoids the need for a new daemon event — cost data is already persisted incrementally to the DB.
+On `agent.cost_updated` daemon events (broadcast when `RecordCost` fires, throttled to ≤1 per 2s per agent), re-fetch `ListAgentHistory` to pick up live cost/token updates. This is event-driven — no polling needed. All TUI instances subscribed to the daemon receive the same updates.
 
 ## Feature 2: `ccc console` (Live Streaming TUI)
 

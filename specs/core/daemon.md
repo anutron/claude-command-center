@@ -178,6 +178,18 @@ Agents are long-running Claude Code subprocess sessions managed by an `agent.Run
 - When captured, the daemon broadcasts `agent.session_id` event with payload `{"id": "<agent_id>", "session_id": "<uuid>"}`
 - The TUI CC plugin handles this event to update the todo's `SessionID` in memory and DB, enabling session resume and console display
 
+**Cost update broadcasting:**
+
+- The `GovernedRunner`'s cost callback broadcasts `agent.cost_updated` events when `RecordCost` fires, throttled to at most once per 2 seconds per agent
+- Payload: `{"id": "<agent_id>", "cost_usd": <float>, "input_tokens": <int>, "output_tokens": <int>}`
+- All subscribing TUI instances receive these events for live cost visibility in the console overlay and budget widget
+
+**Daemon is required for agents:**
+
+- The TUI does not maintain a local agent runner fallback. All agent operations (launch, watch, status, kill) go through daemon RPCs.
+- If the daemon is not connected, agent operations fail with a clear error rather than silently degrading.
+- The daemon auto-starts from the TUI on launch and auto-restarts on binary update.
+
 ### Budget RPCs
 
 Budget RPCs require a `GovernedRunner` to be configured; they return an error if governance is not enabled.
@@ -223,7 +235,7 @@ The subscriber system provides push delivery of server events to connected TUI c
 - `data.refreshed` — emitted after each successful refresh
 - `session.registered` / `session.updated` / `session.ended` — session lifecycle (declared in Event type comment; registration/update don't currently broadcast)
 - `daemon.paused` / `daemon.resumed` — daemon state changes
-- `agent.started` / `agent.stopped` / `agent.finished` / `agent.session_id` — agent lifecycle
+- `agent.started` / `agent.session_id` / `agent.cost_updated` / `agent.finished` / `agent.stopped` — agent lifecycle
 - `budget.emergency_stop` / `budget.resumed` — budget governance events
 
 **TUI integration:**
