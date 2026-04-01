@@ -45,7 +45,7 @@ func TestCanLaunch_ExceedsHourlyBudget(t *testing.T) {
 	bt := newTestBudgetTracker(t, cfg)
 
 	// Record a launch that costs $8
-	rowID := bt.RecordLaunch("agent-1", "test", 10.0)
+	rowID := bt.RecordLaunch("agent-1", "test", "", 10.0)
 	bt.RecordFinished(rowID, 60, 0, 8.0)
 
 	ok, reason := bt.CanLaunch(5.0)
@@ -64,7 +64,7 @@ func TestCanLaunch_ExceedsDailyBudget(t *testing.T) {
 	bt := newTestBudgetTracker(t, cfg)
 
 	// Record a launch that costs $8
-	rowID := bt.RecordLaunch("agent-1", "test", 10.0)
+	rowID := bt.RecordLaunch("agent-1", "test", "", 10.0)
 	bt.RecordFinished(rowID, 60, 0, 8.0)
 
 	ok, reason := bt.CanLaunch(5.0)
@@ -121,7 +121,7 @@ func TestEmergencyStop_Resume_PersistsToDb(t *testing.T) {
 func TestRecordFinished_RefreshesTotals(t *testing.T) {
 	bt := newTestBudgetTracker(t, defaultAgentCfg())
 
-	rowID := bt.RecordLaunch("agent-1", "test", 5.0)
+	rowID := bt.RecordLaunch("agent-1", "test", "", 5.0)
 	bt.RecordFinished(rowID, 60, 0, 3.50)
 
 	bt.mu.RLock()
@@ -162,7 +162,7 @@ func TestStatus_WarningLevels(t *testing.T) {
 			bt := newTestBudgetTracker(t, cfg)
 
 			// Record a finished launch with the desired cost
-			rowID := bt.RecordLaunch("agent-1", "test", tt.limit)
+			rowID := bt.RecordLaunch("agent-1", "test", "", tt.limit)
 			bt.RecordFinished(rowID, 60, 0, tt.spent)
 
 			status := bt.Status()
@@ -202,7 +202,7 @@ func TestStatus_Fields(t *testing.T) {
 func TestRecordCost_UpdatesRunningTotal(t *testing.T) {
 	bt := newTestBudgetTracker(t, defaultAgentCfg())
 
-	rowID := bt.RecordLaunch("agent-1", "test", 10.0)
+	rowID := bt.RecordLaunch("agent-1", "test", "", 10.0)
 
 	// Incremental cost update
 	bt.RecordCost(rowID, 1000, 500, 2.50)

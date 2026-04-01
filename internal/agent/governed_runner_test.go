@@ -167,7 +167,7 @@ func TestGovernedRunner_LaunchDenied_OverBudget(t *testing.T) {
 	gr, inner := newTestGovernedRunner(t, cfg)
 
 	// Fill up the budget.
-	rowID := gr.budget.RecordLaunch("pre-fill", "test", 10.0)
+	rowID := gr.budget.RecordLaunch("pre-fill", "test", "", 10.0)
 	gr.budget.RecordFinished(rowID, 60, 0, 9.0)
 
 	req := Request{
@@ -211,7 +211,7 @@ func TestGovernedRunner_LaunchDenied_RateLimited(t *testing.T) {
 	gr, inner := newTestGovernedRunner(t, cfg)
 
 	// Record a recent launch for this agent ID to trigger cooldown.
-	gr.budget.RecordLaunch("test-rl", "test", 1.0)
+	gr.budget.RecordLaunch("test-rl", "test", "", 1.0)
 
 	req := Request{
 		ID:         "test-rl",

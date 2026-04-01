@@ -288,8 +288,11 @@ func migrateSchema(db *sql.DB) error {
 		output_tokens INTEGER NOT NULL DEFAULT 0,
 		cost_source   TEXT NOT NULL DEFAULT 'estimate',
 		exit_code     INTEGER,
-		status        TEXT NOT NULL DEFAULT 'running'
+		status        TEXT NOT NULL DEFAULT 'running',
+		project_dir   TEXT NOT NULL DEFAULT ''
 	)`)
+	// Migration: add project_dir column if missing (existing DBs).
+	_, _ = db.Exec(`ALTER TABLE cc_agent_costs ADD COLUMN project_dir TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_agent_costs_started ON cc_agent_costs(started_at)`)
 
 	// Budget state key-value store (for agent governance)

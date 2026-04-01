@@ -11,11 +11,11 @@ import (
 // ---------------------------------------------------------------------------
 
 // DBInsertAgentCost inserts a new agent cost row and returns its row ID.
-func DBInsertAgentCost(db *sql.DB, agentID, automation string, budget float64, startedAt time.Time) (int64, error) {
+func DBInsertAgentCost(db *sql.DB, agentID, automation, projectDir string, budget float64, startedAt time.Time) (int64, error) {
 	res, err := db.Exec(
-		`INSERT INTO cc_agent_costs (agent_id, automation, budget_usd, started_at, status)
-		 VALUES (?, ?, ?, ?, 'running')`,
-		agentID, automation, budget, FormatTime(startedAt),
+		`INSERT INTO cc_agent_costs (agent_id, automation, project_dir, budget_usd, started_at, status)
+		 VALUES (?, ?, ?, ?, ?, 'running')`,
+		agentID, automation, projectDir, budget, FormatTime(startedAt),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert agent cost: %w", err)

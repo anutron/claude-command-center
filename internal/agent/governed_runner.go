@@ -69,7 +69,7 @@ func (g *GovernedRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
 	}
 
 	// 3. Record the launch cost and wire cost callback before delegating.
-	costRowID := g.budget.RecordLaunch(req.ID, req.Automation, req.Budget)
+	costRowID := g.budget.RecordLaunch(req.ID, req.Automation, req.ProjectDir, req.Budget)
 	g.mu.Lock()
 	g.costRows[req.ID] = costEntry{rowID: costRowID, startedAt: time.Now()}
 	g.mu.Unlock()

@@ -74,8 +74,8 @@ func (bt *BudgetTracker) CanLaunch(budget float64) (bool, string) {
 }
 
 // RecordLaunch inserts a new agent cost row and returns the row ID.
-func (bt *BudgetTracker) RecordLaunch(agentID, automation string, budget float64) int64 {
-	id, err := db.DBInsertAgentCost(bt.db, agentID, automation, budget, time.Now())
+func (bt *BudgetTracker) RecordLaunch(agentID, automation, projectDir string, budget float64) int64 {
+	id, err := db.DBInsertAgentCost(bt.db, agentID, automation, projectDir, budget, time.Now())
 	if err != nil {
 		return 0
 	}

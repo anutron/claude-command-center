@@ -59,6 +59,7 @@ SUMMARY
 		Budget:     qs.Budget,
 		ResumeID:   qs.ResumeID,
 		AutoStart:  qs.AutoStart,
+		Automation: "todo",
 	}
 }
 
@@ -73,6 +74,7 @@ func (qs queuedSession) toDaemonParams() daemon.LaunchAgentParams {
 		Permission: req.Permission,
 		Budget:     req.Budget,
 		ResumeID:   req.ResumeID,
+		Automation: req.Automation,
 	}
 }
 

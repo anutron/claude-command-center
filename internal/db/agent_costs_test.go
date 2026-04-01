@@ -19,7 +19,7 @@ func TestDBInsertAgentCost(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	id, err := DBInsertAgentCost(db, "agent-1", "pr-review", 5.0, now)
+	id, err := DBInsertAgentCost(db, "agent-1", "pr-review", "", 5.0, now)
 	if err != nil {
 		t.Fatalf("DBInsertAgentCost: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestDBUpdateAgentCostFinished(t *testing.T) {
 	}
 	defer db.Close()
 
-	id, err := DBInsertAgentCost(db, "agent-2", "triage", 3.0, time.Now())
+	id, err := DBInsertAgentCost(db, "agent-2", "triage", "", 3.0, time.Now())
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
@@ -100,9 +100,9 @@ func TestDBSumCostsSince(t *testing.T) {
 	ancient := now.Add(-48 * time.Hour)
 
 	// Insert two recent, one old
-	id1, _ := DBInsertAgentCost(db, "a", "auto", 5, now.Add(-1*time.Hour))
-	id2, _ := DBInsertAgentCost(db, "b", "auto", 5, now.Add(-30*time.Minute))
-	id3, _ := DBInsertAgentCost(db, "c", "auto", 5, ancient)
+	id1, _ := DBInsertAgentCost(db, "a", "auto", "", 5, now.Add(-1*time.Hour))
+	id2, _ := DBInsertAgentCost(db, "b", "auto", "", 5, now.Add(-30*time.Minute))
+	id3, _ := DBInsertAgentCost(db, "c", "auto", "", 5, ancient)
 
 	DBUpdateAgentCostFinished(db, id1, 60, 2.0, 0, "completed")
 	DBUpdateAgentCostFinished(db, id2, 30, 1.0, 0, "completed")
@@ -135,9 +135,9 @@ func TestDBCountLaunchesSince(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	DBInsertAgentCost(db, "a", "pr-review", 5, now.Add(-1*time.Hour))
-	DBInsertAgentCost(db, "b", "pr-review", 5, now.Add(-30*time.Minute))
-	DBInsertAgentCost(db, "c", "triage", 5, now.Add(-30*time.Minute))
+	DBInsertAgentCost(db, "a", "pr-review", "", 5, now.Add(-1*time.Hour))
+	DBInsertAgentCost(db, "b", "pr-review", "", 5, now.Add(-30*time.Minute))
+	DBInsertAgentCost(db, "c", "triage", "", 5, now.Add(-30*time.Minute))
 
 	count, err := DBCountLaunchesSince(db, "pr-review", now.Add(-2*time.Hour))
 	if err != nil {
@@ -175,8 +175,8 @@ func TestDBLastAgentLaunch(t *testing.T) {
 
 	t1 := time.Now().Add(-2 * time.Hour).Truncate(time.Second)
 	t2 := time.Now().Add(-1 * time.Hour).Truncate(time.Second)
-	DBInsertAgentCost(db, "agent-x", "auto", 5, t1)
-	DBInsertAgentCost(db, "agent-x", "auto", 5, t2)
+	DBInsertAgentCost(db, "agent-x", "auto", "", 5, t1)
+	DBInsertAgentCost(db, "agent-x", "auto", "", 5, t2)
 
 	last, err = DBLastAgentLaunch(db, "agent-x")
 	if err != nil {
@@ -197,9 +197,9 @@ func TestDBCountRecentFailures(t *testing.T) {
 	defer db.Close()
 
 	now := time.Now()
-	id1, _ := DBInsertAgentCost(db, "a", "pr-review", 5, now.Add(-1*time.Hour))
-	id2, _ := DBInsertAgentCost(db, "b", "pr-review", 5, now.Add(-30*time.Minute))
-	id3, _ := DBInsertAgentCost(db, "c", "pr-review", 5, now.Add(-15*time.Minute))
+	id1, _ := DBInsertAgentCost(db, "a", "pr-review", "", 5, now.Add(-1*time.Hour))
+	id2, _ := DBInsertAgentCost(db, "b", "pr-review", "", 5, now.Add(-30*time.Minute))
+	id3, _ := DBInsertAgentCost(db, "c", "pr-review", "", 5, now.Add(-15*time.Minute))
 
 	DBUpdateAgentCostFinished(db, id1, 60, 1.0, 1, "failed")
 	DBUpdateAgentCostFinished(db, id2, 30, 0.5, 1, "failed")

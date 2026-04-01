@@ -42,7 +42,7 @@ func TestCanLaunch_RefusesWhenHourlyCapExceeded(t *testing.T) {
 	now := time.Now()
 	// Insert 3 launches within the last hour (at the cap)
 	for i := 0; i < 3; i++ {
-		db.DBInsertAgentCost(database, "other-agent", "pr-review", 5, now.Add(-time.Duration(10*(i+1))*time.Minute))
+		db.DBInsertAgentCost(database, "other-agent", "pr-review", "", 5, now.Add(-time.Duration(10*(i+1))*time.Minute))
 	}
 
 	ok, reason := rl.CanLaunch("new-agent", "pr-review")
@@ -62,7 +62,7 @@ func TestCanLaunch_RefusesWhenAgentInCooldown(t *testing.T) {
 	rl := NewRateLimiter(database, cfg)
 
 	// Agent launched 5 minutes ago — still in 15-minute cooldown
-	db.DBInsertAgentCost(database, "agent-1", "pr-review", 5, time.Now().Add(-5*time.Minute))
+	db.DBInsertAgentCost(database, "agent-1", "pr-review", "", 5, time.Now().Add(-5*time.Minute))
 
 	ok, reason := rl.CanLaunch("agent-1", "pr-review")
 	if ok {
@@ -84,7 +84,7 @@ func TestCanLaunch_RefusesWhenFailureBackoffActive(t *testing.T) {
 
 	now := time.Now()
 	// Insert a failed run 30 seconds ago — with base=60s, backoff should be 60s
-	id, _ := db.DBInsertAgentCost(database, "other-agent", "pr-review", 5, now.Add(-30*time.Second))
+	id, _ := db.DBInsertAgentCost(database, "other-agent", "pr-review", "", 5, now.Add(-30*time.Second))
 	db.DBUpdateAgentCostFinished(database, id, 10, 0.5, 1, "failed")
 
 	// Use a different agent ID so cooldown check passes
@@ -105,7 +105,7 @@ func TestCanLaunch_AllowsWhenCooldownExpired(t *testing.T) {
 	rl := NewRateLimiter(database, cfg)
 
 	// Agent launched 20 minutes ago — cooldown of 15 minutes has passed
-	db.DBInsertAgentCost(database, "agent-1", "pr-review", 5, time.Now().Add(-20*time.Minute))
+	db.DBInsertAgentCost(database, "agent-1", "pr-review", "", 5, time.Now().Add(-20*time.Minute))
 
 	ok, reason := rl.CanLaunch("agent-1", "pr-review")
 	if !ok {
@@ -121,10 +121,10 @@ func TestCanLaunch_EmptyAutomationSkipsAutomationChecks(t *testing.T) {
 
 	now := time.Now()
 	// Insert a launch — but with empty automation, the per-automation cap should be skipped
-	db.DBInsertAgentCost(database, "other-agent", "", 5, now.Add(-5*time.Minute))
+	db.DBInsertAgentCost(database, "other-agent", "", "", 5, now.Add(-5*time.Minute))
 
 	// Also insert a failure to make sure failure backoff is skipped too
-	id, _ := db.DBInsertAgentCost(database, "fail-agent", "", 5, now.Add(-10*time.Second))
+	id, _ := db.DBInsertAgentCost(database, "fail-agent", "", "", 5, now.Add(-10*time.Second))
 	db.DBUpdateAgentCostFinished(database, id, 5, 0.1, 1, "failed")
 
 	// Use a fresh agent ID so cooldown passes
@@ -145,7 +145,7 @@ func TestCanLaunch_FailureBackoffExponential(t *testing.T) {
 	now := time.Now()
 	// Insert 3 failures in the last hour — backoff = min(10 * 2^2, 3600) = 40 seconds
 	for i := 0; i < 3; i++ {
-		id, _ := db.DBInsertAgentCost(database, "fail-agent", "auto", 5, now.Add(-time.Duration(5*(i+1))*time.Second))
+		id, _ := db.DBInsertAgentCost(database, "fail-agent", "auto", "", 5, now.Add(-time.Duration(5*(i+1))*time.Second))
 		db.DBUpdateAgentCostFinished(database, id, 5, 0.1, 1, "failed")
 	}
 

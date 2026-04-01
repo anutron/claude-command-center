@@ -54,7 +54,7 @@ func DBLoadAgentHistory(database *sql.DB, window time.Duration) ([]AgentHistoryE
 			pr.title,
 			pr.agent_category,
 			s.session_id,
-			s.project,
+			COALESCE(NULLIF(ac.project_dir, ''), s.project),
 			s.repo,
 			s.branch
 		FROM cc_agent_costs ac
