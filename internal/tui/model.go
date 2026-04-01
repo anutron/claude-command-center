@@ -15,6 +15,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/builtin/settings"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/daemon"
+	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/external"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -105,6 +106,9 @@ type Model struct {
 	budgetStatus     daemon.BudgetStatusResult
 	budgetLastPoll   time.Time
 	budgetAvailable  bool // true once we've received at least one successful poll
+
+	// Agent console overlay state.
+	console consoleOverlay
 }
 
 // NewModel creates the main TUI model with plugins.
@@ -454,6 +458,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case tea.KeyEsc:
+			// Console overlay intercepts esc before the plugin.
+			if m.console.visible {
+				if m.console.detail {
+					m.console.detail = false
+					m.console.scroll = 0
+				} else {
+					m.console.close()
+				}
+				return m, nil
+			}
 			// Let active plugin try esc first
 			action := m.activePlugin().HandleKey(msg)
 			if action.Type != "unhandled" && action.Type != "quit" {
@@ -470,6 +484,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return quitTimeoutMsg{}
 			})
 		}
+
+		// Console overlay: handle keys when visible.
+		if m.console.visible {
+			switch msg.String() {
+			case "~":
+				if m.console.detail {
+					m.console.detail = false
+					m.console.scroll = 0
+				} else {
+					m.console.close()
+				}
+				return m, nil
+			case "j", "down":
+				if m.console.detail {
+					m.console.scroll++
+				} else if m.console.cursor < len(m.console.entries)-1 {
+					m.console.cursor++
+				}
+				return m, nil
+			case "k", "up":
+				if m.console.detail {
+					if m.console.scroll > 0 {
+						m.console.scroll--
+					}
+				} else if m.console.cursor > 0 {
+					m.console.cursor--
+				}
+				return m, nil
+			case "enter":
+				if !m.console.detail && m.console.selected() != nil {
+					m.console.detail = true
+					m.console.scroll = 0
+				}
+				return m, nil
+			default:
+				return m, nil // consume all keys while overlay is open
+			}
+		}
+
+		if msg.String() == "~" {
+			var entries []db.AgentHistoryEntry
+			if client := m.DaemonClient(); client != nil {
+				entries, _ = client.ListAgentHistory(24)
+			}
+			m.console.toggle(entries)
+			return m, nil
+		}
+
 		action := m.activePlugin().HandleKey(msg)
 		return m.processAction(action)
 
@@ -477,6 +539,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Route daemon events through the event bus so plugins can react.
 		if m.bus != nil {
 			routeDaemonEvent(m.bus, msg.Event)
+		}
+		// Refresh console entries on relevant agent events if the overlay is open.
+		if m.console.visible {
+			switch msg.Event.Type {
+			case "agent.started", "agent.finished", "agent.stopped":
+				if client := m.DaemonClient(); client != nil {
+					if entries, err := client.ListAgentHistory(24); err == nil {
+						m.console.entries = entries
+						if m.console.cursor >= len(entries) {
+							m.console.cursor = max(0, len(entries)-1)
+						}
+					}
+				}
+			}
 		}
 		// Broadcast NotifyMsg for all daemon events so plugins can dispatch
 		// async refresh commands via HandleMessage (instead of mutating state
@@ -519,6 +595,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.DaemonConnected() {
 			m.budgetLastPoll = time.Now()
 			cmds = append(cmds, m.pollBudgetCmd())
+		}
+		// Refresh console entries if the overlay is open.
+		if m.console.visible {
+			if client := m.DaemonClient(); client != nil {
+				if entries, err := client.ListAgentHistory(24); err == nil {
+					m.console.entries = entries
+					if m.console.cursor >= len(entries) {
+						m.console.cursor = max(0, len(entries)-1)
+					}
+				}
+			}
 		}
 		m.broadcastMessage(msg, &cmds)
 		return m, tea.Batch(cmds...)
@@ -716,6 +803,11 @@ func (m Model) View() string {
 
 	if m.width > 0 && m.height > 0 {
 		page = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Top, page)
+
+		// Overlay console when visible — replaces page content entirely.
+		if m.console.visible {
+			page = m.console.render(m.width, m.height)
+		}
 
 		// Overlay budget widget pinned to the upper-right corner (2 chars from right).
 		// When the banner is visible, place on row 1 (inside the banner).

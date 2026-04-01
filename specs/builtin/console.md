@@ -154,6 +154,28 @@ All data comes from existing tables via joins:
 - `cc_todos` — todo origin (display_id, title, session_id)
 - `cc_pull_requests` — PR origin (number, agent_session_id, agent_category)
 
+## Implementation Notes
+
+### Shared Formatting Helpers (`internal/ui/agent_format.go`)
+
+Shared formatting functions used by both the overlay and standalone console:
+- `AgentStatusIcon(status)` — returns status character icon
+- `AgentStatusColor(status)` — returns lipgloss color for status
+- `FormatAgentElapsed(entry)` — returns human-readable elapsed time
+- `FormatDuration(d)` — formats a duration as short string
+
+### Overlay State (`internal/tui/console_overlay.go`)
+
+`consoleOverlay` struct holds: `visible`, `entries`, `cursor`, `detail`, `scroll`.
+- `toggle(entries)` — flip visible, load entries, reset cursor/detail/scroll
+- `close()` — hide, reset state
+- `selected()` — return entry at cursor
+- `renderList(w, h)` — list view with status icon, origin (35 chars), elapsed, cost
+- `renderDetail(w, h)` — all metadata fields, scrollable
+- `render(w, h)` — dispatches to list or detail
+
+Box: 70 chars wide (or width-4 if narrow), rounded border `#3b4261`, padding 1,2, centered via `lipgloss.Place`.
+
 ## Out of Scope
 
 - Agent control (stop/restart/requeue) from either surface

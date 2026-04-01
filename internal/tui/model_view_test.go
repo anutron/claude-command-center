@@ -295,3 +295,107 @@ func TestView_BudgetWidgetAgentCount(t *testing.T) {
 	v := m.View()
 	assertViewContains(t, v, "3 agents")
 }
+
+func TestView_ConsoleOverlay_TildeToggles(t *testing.T) {
+	m := newTestModel(t)
+
+	// Console is hidden by default.
+	if m.console.visible {
+		t.Fatal("console should start hidden")
+	}
+
+	// Tilde key should open the overlay.
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'~'}})
+	m = result.(Model)
+
+	if !m.console.visible {
+		t.Error("expected console overlay to be visible after ~ key")
+	}
+
+	// View should render the overlay title.
+	v := m.View()
+	assertViewContains(t, v, overlayTitle)
+
+	// Tilde again should close the overlay.
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'~'}})
+	m = result.(Model)
+
+	if m.console.visible {
+		t.Error("expected console overlay to be hidden after second ~ key")
+	}
+}
+
+func TestView_ConsoleOverlay_EscCloses(t *testing.T) {
+	m := newTestModel(t)
+
+	// Open overlay by setting state directly.
+	m.console.visible = true
+	m.console.entries = nil
+
+	v := m.View()
+	assertViewContains(t, v, overlayTitle)
+
+	// Esc should close the overlay.
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'~'}})
+	m = result.(Model)
+	// Second ~ closes it
+	if m.console.visible {
+		// Was opened then closed
+	}
+	// Set directly and test esc
+	m.console.visible = true
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = result.(Model)
+
+	if m.console.visible {
+		t.Error("expected console overlay to be hidden after esc key")
+	}
+}
+
+func TestView_ConsoleOverlay_ShowsEmptyState(t *testing.T) {
+	m := newTestModel(t)
+
+	// Open with no entries.
+	m.console.visible = true
+	m.console.entries = nil
+
+	v := m.View()
+	assertViewContains(t, v, overlayTitle)
+	assertViewContains(t, v, overlayEmpty)
+}
+
+func TestView_ConsoleOverlay_ShowsEntries(t *testing.T) {
+	m := newTestModel(t)
+
+	entries := []db.AgentHistoryEntry{
+		{
+			AgentID:     "agent001",
+			Status:      "completed",
+			OriginLabel: "TODO #55 — Test entry",
+			OriginRef:   "todo:55",
+			DurationSec: 60,
+			CostUSD:     0.005,
+		},
+	}
+	m.console.visible = true
+	m.console.entries = entries
+
+	v := m.View()
+	assertViewContains(t, v, overlayTitle)
+	assertViewContains(t, v, "TODO #55")
+}
+
+func TestView_ConsoleOverlay_ConsumesKeysWhileOpen(t *testing.T) {
+	m := newTestModel(t)
+	m.console.visible = true
+	m.console.entries = nil
+
+	// 'a' key should be consumed (not passed to plugin).
+	// The overlay should remain visible (no crash, no state change).
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = result.(Model)
+
+	if !m.console.visible {
+		t.Error("expected overlay to remain visible after non-navigation key")
+	}
+}
