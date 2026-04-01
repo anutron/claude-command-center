@@ -164,6 +164,16 @@ Shared formatting functions used by both the overlay and standalone console:
 - `FormatAgentElapsed(entry)` — returns human-readable elapsed time
 - `FormatDuration(d)` — formats a duration as short string
 
+### Standalone Console Entry Point (`cmd/ccc/console.go`)
+
+`runConsole(args)` is the entry point for `ccc console`. It:
+1. Dials the daemon Unix socket via `daemon.NewClient(config.ConfigDir() + "/daemon.sock")`
+2. Creates a `consoleModel` and runs `tea.NewProgram` with `tea.WithAltScreen()`
+3. Polls every 1 second via `tea.Tick` — calls `ListAgentHistory(24)` for sidebar, `StreamAgentOutput(agentID)` for focus pane
+4. Key bindings: `q`/`ctrl+c` quit, `j`/`down` and `k`/`up` move cursor
+5. Layout: `lipgloss.JoinHorizontal` with sidebar (28 chars, or 20 if width < 60) + focus pane (remaining)
+6. If daemon connection fails, prints helpful error: "Is the daemon running? Try: ccc daemon start"
+
 ### Overlay State (`internal/tui/console_overlay.go`)
 
 `consoleOverlay` struct holds: `visible`, `entries`, `cursor`, `detail`, `scroll`.
