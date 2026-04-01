@@ -230,30 +230,41 @@ func (s *Server) watchAgentDone(id string, sess *agent.Session) {
 }
 
 // drainNextAgent pops the next queued request (if any) and launches it.
+// If the GovernedRunner denies the launch (budget/rate limit), tries the next
+// queued item up to 3 times to avoid stalling the queue.
 func (s *Server) drainNextAgent() {
 	if s.runner == nil {
 		return
 	}
-	next, ok := s.runner.DrainQueue()
-	if !ok {
+	for attempts := 0; attempts < 3; attempts++ {
+		next, ok := s.runner.DrainQueue()
+		if !ok {
+			return
+		}
+		queued, cmd := s.runner.LaunchOrQueue(next)
+		if queued && cmd != nil {
+			// GovernedRunner denied the launch (budget/rate limit).
+			// Execute cmd to consume the denial, then try the next queued item.
+			cmd()
+			continue
+		}
+		if !queued && cmd != nil {
+			go func() {
+				msg := cmd()
+				if started, ok := msg.(agent.SessionStartedMsg); ok {
+					data, _ := json.Marshal(AgentStatusResult{
+						ID:        started.ID,
+						Status:    "processing",
+						StartedAt: time.Now().Format(time.RFC3339),
+					})
+					s.Broadcast(Event{
+						Type: "agent.started",
+						Data: data,
+					})
+					go s.watchAgentDone(started.ID, started.Session)
+				}
+			}()
+		}
 		return
-	}
-	queued, cmd := s.runner.LaunchOrQueue(next)
-	if !queued && cmd != nil {
-		go func() {
-			msg := cmd()
-			if started, ok := msg.(agent.SessionStartedMsg); ok {
-				data, _ := json.Marshal(AgentStatusResult{
-					ID:        started.ID,
-					Status:    "processing",
-					StartedAt: time.Now().Format(time.RFC3339),
-				})
-				s.Broadcast(Event{
-					Type: "agent.started",
-					Data: data,
-				})
-				go s.watchAgentDone(started.ID, started.Session)
-			}
-		}()
 	}
 }

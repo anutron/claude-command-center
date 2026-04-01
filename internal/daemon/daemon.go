@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -127,13 +128,13 @@ func (s *Server) monitorBinaryStaleness() {
 				continue
 			}
 			if info.ModTime().After(s.cfg.BinaryMtime) {
-				fmt.Printf("Binary updated (was %s, now %s), restarting...\n",
+				log.Printf("Binary updated (was %s, now %s), restarting...",
 					s.cfg.BinaryMtime.Format(time.RFC3339),
 					info.ModTime().Format(time.RFC3339))
 				s.Shutdown()
 				// Re-exec ourselves with the same arguments.
 				if err := syscall.Exec(s.cfg.BinaryPath, os.Args, os.Environ()); err != nil {
-					fmt.Printf("Re-exec failed: %v\n", err)
+					log.Printf("Re-exec failed: %v", err)
 					os.Exit(1)
 				}
 				return // unreachable after successful Exec
