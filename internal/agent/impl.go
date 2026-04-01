@@ -678,11 +678,15 @@ func monitorSessionFromStdout(sess *Session, stdout io.ReadCloser, costCb CostCa
 	}
 
 	sess.Mu.Lock()
+	eventCount := len(sess.Events)
 	sess.exitCode = exitCode
 	sess.Mu.Unlock()
 
 	if logFile != nil {
 		fmt.Fprintf(logFile, "\n--- session exited with code %d at %s ---\n", exitCode, time.Now().Format(time.RFC3339))
+		if eventCount == 0 {
+			fmt.Fprintf(logFile, "WARNING: process produced no stream-json events — claude may have failed to start\n")
+		}
 	}
 
 	close(sess.done)

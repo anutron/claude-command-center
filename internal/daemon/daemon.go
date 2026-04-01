@@ -86,6 +86,17 @@ func (s *Server) Serve() error {
 
 	s.refresh.start()
 
+	// Clean up orphaned agent cost rows from previous daemon instances.
+	// Any row still marked "running" has no live process — the daemon that
+	// tracked it is gone. Mark them as failed so they don't show as running
+	// forever in the agent console.
+	if s.cfg.DB != nil {
+		_, _ = s.cfg.DB.Exec(
+			`UPDATE cc_agent_costs SET status = 'failed', finished_at = ? WHERE status = 'running'`,
+			time.Now().UTC().Format(time.RFC3339),
+		)
+	}
+
 	// Start binary staleness monitor.
 	if s.cfg.BinaryPath != "" && !s.cfg.BinaryMtime.IsZero() {
 		go s.monitorBinaryStaleness()
