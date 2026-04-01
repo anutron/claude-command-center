@@ -281,6 +281,11 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 	case "SendAgentInput":
 		return s.handleSendAgentInput(req)
 
+	case "ListAgentHistory":
+		return s.handleListAgentHistory(req)
+	case "StreamAgentOutput":
+		return s.handleStreamAgentOutput(req)
+
 	case "GetBudgetStatus":
 		return s.handleGetBudgetStatus(req)
 	case "StopAllAgents":

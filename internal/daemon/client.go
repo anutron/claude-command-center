@@ -7,6 +7,8 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+
+	cccdb "github.com/anutron/claude-command-center/internal/db"
 )
 
 // Client connects to the daemon over a Unix socket.
@@ -236,6 +238,32 @@ func (c *Client) GetDaemonStatus() (DaemonStatusResult, error) {
 		return DaemonStatusResult{}, fmt.Errorf("unmarshal daemon status: %w", err)
 	}
 	return status, nil
+}
+
+// ListAgentHistory returns agent history for the given time window (in hours).
+func (c *Client) ListAgentHistory(windowHours int) ([]cccdb.AgentHistoryEntry, error) {
+	result, err := c.call("ListAgentHistory", ListAgentHistoryParams{WindowHours: windowHours})
+	if err != nil {
+		return nil, err
+	}
+	var resp ListAgentHistoryResult
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal agent history: %w", err)
+	}
+	return resp.Entries, nil
+}
+
+// StreamAgentOutput returns the current event buffer for a running agent.
+func (c *Client) StreamAgentOutput(agentID string) (StreamAgentOutputResult, error) {
+	result, err := c.call("StreamAgentOutput", StreamAgentOutputParams{AgentID: agentID})
+	if err != nil {
+		return StreamAgentOutputResult{}, err
+	}
+	var resp StreamAgentOutputResult
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return StreamAgentOutputResult{}, fmt.Errorf("unmarshal agent output: %w", err)
+	}
+	return resp, nil
 }
 
 // Subscribe blocks, reading events forever. Must be called on a dedicated Client

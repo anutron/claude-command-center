@@ -153,6 +153,20 @@ Agents are long-running Claude Code subprocess sessions managed by an `agent.Run
 
 - Sends a message to a running agent's stdin via `runner.SendMessage(id, message)`
 
+**ListAgentHistory(window_hours):**
+
+- Returns agent runs from the last `window_hours` hours (default 24 if ≤0)
+- Calls `db.DBLoadAgentHistory(s.cfg.DB, window)` to load from `cc_agent_costs`
+- Enriches entries where `status == "running"` with live status from `runner.Status(agentID)` if runner is available
+- Returns `{entries: []AgentHistoryEntry}`
+
+**StreamAgentOutput(agent_id):**
+
+- Returns the current event buffer for a running agent
+- If runner is nil or session is not found, returns `{done: true}` (session already cleaned up)
+- If session is found: locks `sess.Mu`, copies `sess.Events`, checks `sess.Done()` non-blocking
+- Returns `{events: []SessionEvent, done: bool}`
+
 **Agent completion watcher:**
 
 - `watchAgentDone` blocks on `sess.Done()`, then calls `runner.CleanupFinished(id)`, broadcasts `agent.finished` with exit code, and calls `drainNextAgent()` to start the next queued agent
@@ -266,11 +280,15 @@ The `make install` target automatically restarts any running daemon after instal
 - `StopAgentParams{ID}`
 - `AgentStatusParams{ID}`
 - `SendAgentInputParams{ID, Message}`
+- `ListAgentHistoryParams{WindowHours}`
+- `StreamAgentOutputParams{AgentID}`
 
 **RPC result types:**
 
 - `SessionInfo{SessionID, Topic, PID, Project, Repo, Branch, WorktreePath, State, RegisteredAt, EndedAt}`
 - `AgentStatusResult{ID, Status, SessionID, Question, StartedAt}`
+- `ListAgentHistoryResult{Entries []db.AgentHistoryEntry}`
+- `StreamAgentOutputResult{Events []agent.SessionEvent, Done bool}`
 - `BudgetStatusResult{HourlySpent, HourlyLimit, DailySpent, DailyLimit, EmergencyStopped, WarningLevel, ActiveAgents}`
 - `StopAllAgentsResult{Stopped}`
 - `ResumeAgentsResult{Resumed}`
