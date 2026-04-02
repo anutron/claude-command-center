@@ -47,7 +47,19 @@ Broadcast to all plugins just before the TUI quits to launch a Claude session.
 
 - **Sent by:** Host, when processing a "launch" action
 - **Received by:** All plugins (broadcast)
-- **Use case:** Save state before the TUI exits
+- **Use case:** Save state before the TUI exits; stop daemon agents before resume
+
+### LaunchReadyMsg
+
+```go
+type LaunchReadyMsg struct{}
+```
+
+Emitted by a plugin (via `tea.Cmd`) when async pre-launch work is complete.
+
+- **Sent by:** Plugin, after finishing async cleanup (e.g., `StopAgent` + pause)
+- **Received by:** Host
+- **Use case:** Signal the host to proceed with `tea.Quit` after deferred launch prep
 
 ### ReturnMsg
 
@@ -79,7 +91,11 @@ Given the user presses Tab (or Shift+Tab, or a navigate action switches tabs):
 Given the user triggers a "launch" action:
 
 1. Host broadcasts `LaunchMsg{Dir, ResumeID}` to all plugins
-2. Host sets `Launch` field and quits
+2. If no `ResumeID` (or no plugin returns a cmd): host sets `Launch` field and quits immediately
+3. If `ResumeID` is set and a plugin returns a cmd: host defers quit; the plugin's cmd runs asynchronously (e.g., stops the daemon agent, pauses for cleanup) and emits `LaunchReadyMsg` when done
+4. On `LaunchReadyMsg`: host calls `tea.Quit`, proceeding to `RunClaude`
+
+This avoids blocking the bubbletea event loop with synchronous `StopAgent` + `time.Sleep` calls during session resume.
 
 ### Return Flow
 
@@ -96,7 +112,7 @@ tick-based DB reload:
 
 - **TabViewMsg:** If `time.Since(ccLastRead) > 2s`, reload from DB
 - **ReturnMsg:** Always reload from DB
-- **LaunchMsg:** No special handling needed (state is in DB)
+- **LaunchMsg:** If resuming a session (`ResumeID` set) and daemon is available, returns a `tea.Cmd` that calls `StopAgent` + 500ms pause asynchronously, then emits `LaunchReadyMsg`. Otherwise no special handling needed.
 
 The 5-minute `ccRefreshInterval` for spawning `ai-cron` is preserved as-is
 in the tick handler.
@@ -107,6 +123,9 @@ in the tick handler.
 - TabLeaveMsg sent to previous plugin on tab switch
 - NavigateTo called between Leave and View
 - LaunchMsg broadcast before quit on launch action
+- LaunchReadyMsg triggers quit when received by host (deferred launch)
+- Resume launch with daemon agent: quit deferred until StopAgent completes async
+- Non-resume launch: quit fires immediately (no LaunchReadyMsg needed)
 - ReturnMsg broadcast on Init when returnedFromLaunch is true
 - No ReturnMsg on normal Init (first launch)
 - Command center reloads on TabViewMsg when stale (>2s)
