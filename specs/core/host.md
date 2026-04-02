@@ -284,6 +284,7 @@ Multiple CCC instances share the same SQLite DB. A unix socket notification syst
 - **Claude exit errors**: If `claude` exits non-zero, the error is printed to stderr but the TUI loop continues
 - **RunClaude error propagation**: `launch.go:RunClaude()` returns errors from `cmd.Run()`
 - **Interactive launch with InitialPrompt**: When `LaunchAction.InitialPrompt` is set, `RunClaude` writes the prompt to `~/.config/ccc/data/task-context.md`, passes it via `--append-system-prompt` (persistent context across the session), and sends a short kickoff message as the positional prompt argument so Claude starts working immediately instead of waiting for user input
+- **Session ID env var**: When `LaunchAction.SessionID` is set, `RunClaude` passes it as `CCC_SESSION_ID` in the subprocess environment. This allows the CLAUDE.md session topic snippet inside the Claude subprocess to call `ccc update-session --session-id` with the correct CCC-generated session ID (instead of trying to read Claude's internal session ID from pid-map files, which is a different UUID).
 
 ## Key Design Decisions
 

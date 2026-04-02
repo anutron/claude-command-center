@@ -259,6 +259,7 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 		if err := s.registry.register(params); err != nil {
 			return nil, &RPCError{Code: -32000, Message: err.Error()}
 		}
+		s.Broadcast(Event{Type: "session.registered"})
 		return map[string]bool{"ok": true}, nil
 
 	case "UpdateSession":
@@ -269,6 +270,7 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 		if err := s.registry.update(params); err != nil {
 			return nil, &RPCError{Code: -32000, Message: err.Error()}
 		}
+		s.Broadcast(Event{Type: "session.updated"})
 		return map[string]bool{"ok": true}, nil
 
 	case "ListSessions":

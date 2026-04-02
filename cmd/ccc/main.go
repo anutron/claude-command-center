@@ -298,6 +298,7 @@ func main() {
 		// Generate a placeholder session ID (claude's real session ID is
 		// unknown until the hook fires, but this lets us track the process).
 		launchSessionID := uuid.New().String()
+		fm.Launch.SessionID = launchSessionID
 		resolvedDir, err := tui.RunClaude(*fm.Launch, func(pid int) {
 			if client := daemonConn.Client(); client != nil {
 				regErr := client.RegisterSession(daemon.RegisterSessionParams{
