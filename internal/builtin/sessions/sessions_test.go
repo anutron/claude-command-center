@@ -53,11 +53,12 @@ func setupPlugin(t *testing.T) *Plugin {
 	return p
 }
 
-// setupSessionsPlugin returns a plugin with subTab set to "sessions".
+// setupSessionsPlugin returns a plugin with subTab set to subTabRecent (live sessions view).
 func setupSessionsPlugin(t *testing.T) *Plugin {
 	t.Helper()
 	p := setupPlugin(t)
-	p.subTab = "sessions"
+	p.subTab = subTabRecent
+	p.unified.viewFilter = ViewFilterLiveOnly
 	return p
 }
 
@@ -100,7 +101,7 @@ func TestInitLoadsPaths(t *testing.T) {
 
 func TestHandleKeyEnterOnPathReturnsLaunch(t *testing.T) {
 	p := setupPlugin(t)
-	p.subTab = "new"
+	p.subTab = subTabNew
 
 	// Add a path so there's something beyond home
 	_ = db.DBAddPath(p.db, "/tmp/myproject")
@@ -152,7 +153,7 @@ func TestHandleKeyEnterOnSessionReturnsResume(t *testing.T) {
 
 func TestHandleKeyDeleteEntersConfirming(t *testing.T) {
 	p := setupPlugin(t)
-	p.subTab = "new"
+	p.subTab = subTabNew
 
 	_ = db.DBAddPath(p.db, "/tmp/deleteme")
 	p.paths = append(p.paths, "/tmp/deleteme")
@@ -204,27 +205,27 @@ func TestConfirmingYRemovesItem(t *testing.T) {
 func TestSubTabSwitching(t *testing.T) {
 	p := setupPlugin(t)
 
-	// After Init, subTab defaults to "sessions"
-	if p.subTab != "sessions" {
-		t.Fatalf("expected initial subTab 'sessions', got %s", p.subTab)
+	// After Init, subTab defaults to subTabNew
+	if p.subTab != subTabNew {
+		t.Fatalf("expected initial subTab subTabNew, got %d", p.subTab)
 	}
 
-	// Switch to new
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
-	if p.subTab != "new" {
-		t.Fatalf("expected subTab 'new', got %s", p.subTab)
+	// Switch to Saved via '2'
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	if p.subTab != subTabSaved {
+		t.Fatalf("expected subTab subTabSaved, got %d", p.subTab)
 	}
 
-	// Switch to sessions
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	if p.subTab != "sessions" {
-		t.Fatalf("expected subTab 'sessions', got %s", p.subTab)
+	// Switch back to New Session via '1'
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	if p.subTab != subTabNew {
+		t.Fatalf("expected subTab subTabNew, got %d", p.subTab)
 	}
 }
 
 func TestHandleKeyDeleteOnFirstPathEntersConfirming(t *testing.T) {
 	p := setupPlugin(t)
-	p.subTab = "new"
+	p.subTab = subTabNew
 
 	// Add a path and select it
 	_ = db.DBAddPath(p.db, "/tmp/firstpath")
@@ -248,13 +249,13 @@ func TestViewRendersWithoutPanic(t *testing.T) {
 	p := setupPlugin(t)
 
 	// Should not panic for any sub-tab
-	p.subTab = "new"
+	p.subTab = subTabNew
 	output := p.View(120, 40, 0)
 	if output == "" {
 		t.Fatal("expected non-empty view for new tab")
 	}
 
-	p.subTab = "sessions"
+	p.subTab = subTabRecent
 	output = p.View(120, 40, 0)
 	if output == "" {
 		t.Fatal("expected non-empty view for sessions tab")
@@ -295,38 +296,35 @@ func TestNavigateTo(t *testing.T) {
 	p := setupPlugin(t)
 
 	p.NavigateTo("active", nil)
-	if p.subTab != "sessions" {
-		t.Fatalf("expected subTab 'sessions', got %s", p.subTab)
+	if p.subTab != subTabRecent {
+		t.Fatalf("expected subTab subTabRecent, got %d", p.subTab)
 	}
 	if p.unified.viewFilter != ViewFilterLiveOnly {
 		t.Fatalf("expected viewFilter live_only for active route, got %q", p.unified.viewFilter)
 	}
 
 	p.NavigateTo("resume", nil)
-	if p.subTab != "sessions" {
-		t.Fatalf("expected subTab 'sessions' for resume route, got %s", p.subTab)
+	if p.subTab != subTabSaved {
+		t.Fatalf("expected subTab subTabSaved for resume route, got %d", p.subTab)
 	}
 	if p.unified.viewFilter != ViewFilterSavedOnly {
 		t.Fatalf("expected viewFilter saved_only for resume route, got %q", p.unified.viewFilter)
 	}
 
 	p.NavigateTo("sessions", nil)
-	if p.subTab != "sessions" {
-		t.Fatalf("expected subTab 'sessions', got %s", p.subTab)
-	}
-	if p.unified.viewFilter != ViewFilterLiveOnly {
-		t.Fatalf("expected viewFilter live_only for sessions route (alias), got %q", p.unified.viewFilter)
+	if p.subTab != subTabNew {
+		t.Fatalf("expected subTab subTabNew for sessions route, got %d", p.subTab)
 	}
 
 	p.NavigateTo("new", nil)
-	if p.subTab != "new" {
-		t.Fatalf("expected subTab 'new', got %s", p.subTab)
+	if p.subTab != subTabNew {
+		t.Fatalf("expected subTab subTabNew, got %d", p.subTab)
 	}
 }
 
 func TestEscWithPendingTodoNavigatesToCommand(t *testing.T) {
 	p := setupPlugin(t)
-	p.subTab = "new"
+	p.subTab = subTabNew
 	p.pendingLaunchTodo = &db.Todo{Title: "test task"}
 
 	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEscape})
@@ -402,7 +400,7 @@ func TestFilterFromFirstCharacter(t *testing.T) {
 func TestTypeToFilterNewTab(t *testing.T) {
 	p := setupPlugin(t)
 	// Switch to new tab explicitly so we can test filter behavior
-	p.subTab = "new"
+	p.subTab = subTabNew
 
 	// Add paths so we have items to filter
 	_ = db.DBAddPath(p.db, "/tmp/alpha-project")
@@ -446,7 +444,7 @@ func TestTypeToFilterNewTab(t *testing.T) {
 func TestTypeToFilterShortcutsDisabledWhileFiltering(t *testing.T) {
 	p := setupPlugin(t)
 	// Must be on new tab for type-to-filter to work
-	p.subTab = "new"
+	p.subTab = subTabNew
 
 	// Start filtering
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
@@ -454,10 +452,10 @@ func TestTypeToFilterShortcutsDisabledWhileFiltering(t *testing.T) {
 		t.Fatalf("expected filterText 'c', got %q", p.filterText)
 	}
 
-	// Pressing 's' while filtering should append to filter, not switch to sessions tab
+	// Pressing 's' while filtering should append to filter, not switch tabs
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	if p.subTab != "new" {
-		t.Fatalf("expected subTab 'new' while filtering, got %s", p.subTab)
+	if p.subTab != subTabNew {
+		t.Fatalf("expected subTab subTabNew while filtering, got %d", p.subTab)
 	}
 	if p.filterText != "cs" {
 		t.Fatalf("expected filterText 'cs', got %q", p.filterText)
@@ -478,7 +476,7 @@ func TestEnterDirectlyLaunchesOnNewTab(t *testing.T) {
 	p.paths = append(p.paths, "/tmp/myproject")
 	p.newList.SetItems(p.buildNewItems())
 	p.newList.Select(0)
-	p.subTab = "new"
+	p.subTab = subTabNew
 
 	// Single Enter should launch directly
 	action := p.HandleKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1025,30 +1023,30 @@ func TestSessionsDismissRunningBlocked(t *testing.T) {
 	}
 }
 
-// BUG-119: NavigateTo("resume") must set subTab to "sessions", not leave it unchanged.
+// BUG-119: NavigateTo("resume") must set subTab to saved, not leave it unchanged.
 func TestNavigateToResumeRoute(t *testing.T) {
 	p := setupPlugin(t)
-	// Start on the "new" sub-tab (simulates user on New Session tab)
-	p.subTab = "new"
+	// Start on the new sub-tab (simulates user on New Session tab)
+	p.subTab = subTabNew
 
 	// Switch to the Resume route (as the host tab bar does)
 	p.NavigateTo("resume", nil)
 
-	if p.subTab != "sessions" {
-		t.Fatalf("expected subTab 'sessions' after NavigateTo('resume'), got %q", p.subTab)
+	if p.subTab != subTabSaved {
+		t.Fatalf("expected subTab subTabSaved after NavigateTo('resume'), got %d", p.subTab)
 	}
 }
 
-// BUG-119: NavigateTo("active") must set subTab to "sessions", not leave it unchanged.
+// BUG-119: NavigateTo("active") must set subTab to recent, not leave it unchanged.
 func TestNavigateToActiveRoute(t *testing.T) {
 	p := setupPlugin(t)
-	// Start on the "new" sub-tab
-	p.subTab = "new"
+	// Start on the new sub-tab
+	p.subTab = subTabNew
 
 	p.NavigateTo("active", nil)
 
-	if p.subTab != "sessions" {
-		t.Fatalf("expected subTab 'sessions' after NavigateTo('active'), got %q", p.subTab)
+	if p.subTab != subTabRecent {
+		t.Fatalf("expected subTab subTabRecent after NavigateTo('active'), got %d", p.subTab)
 	}
 }
 
@@ -1056,41 +1054,41 @@ func TestNavigateToActiveRoute(t *testing.T) {
 func TestTabSwitchingDoesNotCorruptContent(t *testing.T) {
 	p := setupPlugin(t)
 
-	// Start on sessions
+	// Start on sessions (maps to new)
 	p.NavigateTo("sessions", nil)
-	if p.subTab != "sessions" {
-		t.Fatalf("expected subTab 'sessions', got %q", p.subTab)
+	if p.subTab != subTabNew {
+		t.Fatalf("expected subTab subTabNew, got %d", p.subTab)
 	}
 
 	// Switch to new
 	p.NavigateTo("new", nil)
-	if p.subTab != "new" {
-		t.Fatalf("expected subTab 'new', got %q", p.subTab)
+	if p.subTab != subTabNew {
+		t.Fatalf("expected subTab subTabNew, got %d", p.subTab)
 	}
 
-	// Switch to resume
+	// Switch to resume (maps to saved)
 	p.NavigateTo("resume", nil)
-	if p.subTab != "sessions" {
-		t.Fatalf("expected subTab 'sessions' after resume, got %q", p.subTab)
+	if p.subTab != subTabSaved {
+		t.Fatalf("expected subTab subTabSaved after resume, got %d", p.subTab)
 	}
 
-	// Switch back to active
+	// Switch back to active (maps to recent)
 	p.NavigateTo("active", nil)
-	if p.subTab != "sessions" {
-		t.Fatalf("expected subTab 'sessions' after active, got %q", p.subTab)
+	if p.subTab != subTabRecent {
+		t.Fatalf("expected subTab subTabRecent after active, got %d", p.subTab)
 	}
 
 	// Switch to new again — should still work
 	p.NavigateTo("new", nil)
-	if p.subTab != "new" {
-		t.Fatalf("expected subTab 'new' after switching back, got %q", p.subTab)
+	if p.subTab != subTabNew {
+		t.Fatalf("expected subTab subTabNew after switching back, got %d", p.subTab)
 	}
 }
 
 // BUG-119: TabViewMsg with route "resume" should trigger a refresh command.
 func TestTabViewMsgResumeTriggersRefresh(t *testing.T) {
 	p := setupPlugin(t)
-	p.subTab = "sessions"
+	p.subTab = subTabRecent
 
 	handled, action := p.HandleMessage(plugin.TabViewMsg{Route: "resume"})
 	if !handled {

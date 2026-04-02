@@ -99,11 +99,26 @@ func TestView_TabBarShowsAllLabels(t *testing.T) {
 	m := newTestModel(t)
 	v := m.View()
 
-	// All four tab labels should appear in the view.
-	assertViewContains(t, v, "New Session")
-	assertViewContains(t, v, "Resume")
+	// After consolidation, the tab bar shows "Sessions" as a single entry
+	// (not "Active", "New Session", "Resume" separately).
+	assertViewContains(t, v, "Sessions")
 	assertViewContains(t, v, "Command Center")
 	assertViewContains(t, v, "Settings")
+}
+
+func TestView_TabBarDoesNotShowOldSessionLabels(t *testing.T) {
+	m := newTestModel(t)
+	v := m.View()
+
+	// The old separate tab labels should NOT appear in the host tab bar.
+	// "Sessions" replaces "Active", "New Session", and "Resume".
+	// Note: "New Session" may appear inside the sessions plugin's sub-tab bar,
+	// but NOT in the host-level tab bar. We check the tab bar region specifically.
+	// Since the host tab bar is rendered before plugin content, we check that
+	// "Active" and "Resume" don't appear as top-level tab labels.
+	// The host tab bar should only contain: Sessions, Command Center, PRs, Settings.
+	assertViewNotContains(t, v, "> Active")
+	assertViewNotContains(t, v, "> Resume")
 }
 
 func TestView_BannerVisibleByDefault(t *testing.T) {
@@ -131,7 +146,7 @@ func TestView_BannerHiddenWhenConfigured(t *testing.T) {
 		t.Error("expected no banner block art when banner is hidden")
 	}
 	// Tab bar should still be present.
-	assertViewContains(t, v, "New Session")
+	assertViewContains(t, v, "Sessions")
 }
 
 func TestView_WindowResizePropagates(t *testing.T) {
@@ -159,7 +174,7 @@ func TestView_ActiveTabIndicator(t *testing.T) {
 
 	// Tab bar should contain all tab labels.
 	v := m.View()
-	assertViewContains(t, v, "New Session")
+	assertViewContains(t, v, "Sessions")
 	assertViewContains(t, v, "Command Center")
 
 	// Switch active tab — view should still render correctly.

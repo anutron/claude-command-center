@@ -285,8 +285,12 @@ func (uv *unifiedView) View(width, height int) string {
 		switch item.Tier {
 		case TierLive:
 			age := sessionAge(item.RegisteredAt)
-			// Build suffix: optional branch, then age.
+			// Build suffix: optional project basename (when topic displaces it from the label),
+			// optional branch, then age.
 			var parts []string
+			if item.Topic != "" && item.Project != "" {
+				parts = append(parts, filepath.Base(item.Project))
+			}
 			if item.Branch != "" {
 				parts = append(parts, "("+item.Branch+")")
 			}

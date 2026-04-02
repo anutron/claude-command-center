@@ -20,6 +20,7 @@ type LaunchAction struct {
 	Worktree        bool     // if true, create a git worktree for isolation
 	ReturnToTodoID  string   // todo ID to return to after session exits
 	WasResumeJoin   bool     // true if this was a join/resume of an existing session
+	SessionID       string   // CCC session ID to pass as env var to Claude subprocess
 }
 
 // resolveSessionDir finds the correct project directory for a Claude session ID.
@@ -124,6 +125,10 @@ func RunClaude(action LaunchAction, onStart func(pid int)) (resolvedDir string, 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	if action.SessionID != "" {
+		cmd.Env = append(os.Environ(), "CCC_SESSION_ID="+action.SessionID)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return dir, fmt.Errorf("claude start: %w", err)

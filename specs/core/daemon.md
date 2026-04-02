@@ -235,7 +235,7 @@ The subscriber system provides push delivery of server events to connected TUI c
 **Event types:**
 
 - `data.refreshed` — emitted after each successful refresh
-- `session.registered` / `session.updated` / `session.ended` — session lifecycle (declared in Event type comment; registration/update don't currently broadcast)
+- `session.registered` / `session.updated` / `session.ended` — session lifecycle (registration and update broadcast after successful registry mutation)
 - `daemon.paused` / `daemon.resumed` — daemon state changes
 - `agent.started` / `agent.session_id` / `agent.cost_updated` / `agent.finished` / `agent.stopped` — agent lifecycle
 - `budget.emergency_stop` / `budget.resumed` — budget governance events
