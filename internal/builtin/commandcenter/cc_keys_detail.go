@@ -326,6 +326,10 @@ func (p *Plugin) detailCompleteTodo() plugin.Action {
 	// Kill any running agent session for this todo.
 	killCmd := p.killAgent(todoID)
 
+	// Sync ccCursor to the detail todo's position in filteredTodos BEFORE removal,
+	// so that auto-advance in handleTickMsg picks the correct next item.
+	p.syncCursorToDetailTodo()
+
 	p.cc.CompleteTodo(todoID)
 	p.publishEvent("todo.completed", map[string]interface{}{"id": todoID, "title": todo.Title})
 
@@ -370,6 +374,10 @@ func (p *Plugin) detailDismissTodo() plugin.Action {
 
 	// Kill any running agent session for this todo.
 	killCmd := p.killAgent(todoID)
+
+	// Sync ccCursor to the detail todo's position in filteredTodos BEFORE removal,
+	// so that auto-advance in handleTickMsg picks the correct next item.
+	p.syncCursorToDetailTodo()
 
 	p.cc.RemoveTodo(todoID)
 	p.publishEvent("todo.dismissed", map[string]interface{}{"id": todoID, "title": todo.Title})

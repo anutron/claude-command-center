@@ -7,6 +7,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -611,4 +612,99 @@ func TestView_DetailSpinnerShownForDaemonRunningTodo(t *testing.T) {
 	view := renderView(p)
 	viewContains(t, view, "Agent running")
 	viewContains(t, view, "w watch")
+}
+
+// ---------------------------------------------------------------------------
+// Detail View: Auto-advance after complete/dismiss
+// ---------------------------------------------------------------------------
+
+func TestView_DetailCompleteAdvancesToNextTodo(t *testing.T) {
+	// Setup: 4 todos, open detail on first, navigate to #3 with j, mark done.
+	// After auto-advance, detail should show #4 (next), not #1.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Alpha first", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t2", Title: "Bravo second", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t3", Title: "Charlie third", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t4", Title: "Delta fourth", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+
+	// Open detail on first todo (ccCursor=0)
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("enter should open detail view")
+	}
+	view := renderView(p)
+	viewContains(t, view, "Alpha first")
+
+	// Navigate to third todo using j
+	p.HandleKey(keyMsg("j")) // now on Bravo
+	p.HandleKey(keyMsg("j")) // now on Charlie
+	view = renderView(p)
+	viewContains(t, view, "Charlie third")
+
+	// Mark done
+	p.HandleKey(keyMsg("x"))
+	if p.detailNotice == "" {
+		t.Fatal("expected a notice after marking done")
+	}
+
+	// Simulate auto-advance by backdating the notice and sending a tick
+	p.detailNoticeAt = time.Now().Add(-2 * time.Second)
+	p.HandleMessage(ui.TickMsg(time.Now()))
+
+	// After auto-advance, detail view should show Delta (next), not Alpha
+	if !p.detailView {
+		t.Fatal("detail view should still be open after auto-advance")
+	}
+	view = renderView(p)
+	viewContains(t, view, "Delta fourth")
+	viewNotContains(t, view, "Alpha first")
+}
+
+func TestView_DetailDismissAdvancesToNextTodo(t *testing.T) {
+	// Same as above but with dismiss (X) instead of complete (x).
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Alpha first", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t2", Title: "Bravo second", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t3", Title: "Charlie third", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t4", Title: "Delta fourth", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+
+	p.HandleKey(keyMsg("enter"))
+	p.HandleKey(keyMsg("j")) // Bravo
+	p.HandleKey(keyMsg("j")) // Charlie
+	p.HandleKey(keyMsg("X")) // dismiss Charlie
+
+	p.detailNoticeAt = time.Now().Add(-2 * time.Second)
+	p.HandleMessage(ui.TickMsg(time.Now()))
+
+	if !p.detailView {
+		t.Fatal("detail view should still be open after auto-advance")
+	}
+	view := renderView(p)
+	viewContains(t, view, "Delta fourth")
+	viewNotContains(t, view, "Alpha first")
+}
+
+func TestView_DetailCompleteLastTodoAdvancesToPrevious(t *testing.T) {
+	// When completing the last item, cursor should move to the new last item.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Alpha first", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t2", Title: "Bravo second", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t3", Title: "Charlie third", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+
+	p.HandleKey(keyMsg("enter"))
+	p.HandleKey(keyMsg("j")) // Bravo
+	p.HandleKey(keyMsg("j")) // Charlie (last)
+	p.HandleKey(keyMsg("x")) // complete Charlie
+
+	p.detailNoticeAt = time.Now().Add(-2 * time.Second)
+	p.HandleMessage(ui.TickMsg(time.Now()))
+
+	if !p.detailView {
+		t.Fatal("detail view should still be open after auto-advance")
+	}
+	view := renderView(p)
+	viewContains(t, view, "Bravo second")
 }

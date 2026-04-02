@@ -829,6 +829,22 @@ func (p *Plugin) detailTodo() *db.Todo {
 	return nil
 }
 
+// syncCursorToDetailTodo updates ccCursor to match the position of the current
+// detail todo in filteredTodos(). This ensures that after completing/dismissing
+// a todo from detail view (where j/k navigation updates detailTodoID but not
+// ccCursor), the auto-advance logic in handleTickMsg uses the correct position.
+func (p *Plugin) syncCursorToDetailTodo() {
+	if p.cc == nil || p.detailTodoID == "" {
+		return
+	}
+	for i, t := range p.filteredTodos() {
+		if t.ID == p.detailTodoID {
+			p.ccCursor = i
+			return
+		}
+	}
+}
+
 // detailTodoActiveIndex returns the index of the detail todo within ActiveTodos(), or -1.
 func (p *Plugin) detailTodoActiveIndex() int {
 	if p.cc == nil || p.detailTodoID == "" {

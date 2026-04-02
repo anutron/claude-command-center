@@ -120,7 +120,7 @@ Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectD
 | `esc` | detail:viewing | Return to list |
 | `esc` | detail:editing | Cancel field edit |
 
-While a notice banner is showing (1s after complete/dismiss), all keys except `esc` are blocked. After the notice clears, the view auto-advances to the next active todo.
+While a notice banner is showing (1s after complete/dismiss), all keys except `esc` are blocked. After the notice clears, the view auto-advances to the next active todo. Auto-advance uses the position of the just-completed/dismissed todo in the filtered list (not `ccCursor`, which may be stale if the user navigated with `j`/`k` in detail view). When the completed/dismissed todo was the last in the list, the cursor moves to the new last item.
 
 ### Rich Todo Creation
 
@@ -622,6 +622,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Detail view `enter` edits selected field (Status opens inline selector with backlog/blocked/completed/dismissed, Due opens text input, ProjectDir opens path picker)
 - Detail view `x` completes todo with notice banner, auto-advances after 1s
 - Detail view `X` dismisses todo with notice banner, auto-advances after 1s
+- Detail view `x`/`X` after `j`/`k` navigation advances to the correct next item (not index 0)
 - Detail view `j`/`k` navigates between active todos
 - Detail view blocks keys (except esc) while notice banner is showing
 - Granola/Slack incremental sync skips already-processed items via `cc_source_sync`
