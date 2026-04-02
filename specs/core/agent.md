@@ -129,7 +129,7 @@ The `Runner` interface is the low-level session manager. `NewRunner(maxConcurren
 2. **Rate limit check** — calls `RateLimiter.CanLaunch(id, automation)`. If denied, returns `LaunchDeniedMsg`.
 3. **Record launch** — inserts a cost row via `BudgetTracker.RecordLaunch`, wires a `CostCallback` that calls `RecordCost` on each usage event.
 4. **Delegate** — calls `inner.LaunchOrQueue(req)`.
-5. If the inner runner queued it (concurrency limit), cleans up the cost row to avoid polluting budget accounting.
+5. If the inner runner queued it (concurrency limit), marks the cost row as "cancelled" via `RecordCancelled` to avoid polluting budget accounting with phantom completed runs.
 
 **`CleanupFinished` flow:**
 
@@ -164,6 +164,12 @@ Tracks cumulative agent spend against rolling hourly and daily budget limits, ba
 
 - Sets `finished_at`, `duration_sec`, `exit_code`, and `status` ("completed" or "failed") on the cost row.
 - Does NOT overwrite `cost_usd`, `input_tokens`, or `output_tokens` — those are tracked incrementally by `RecordCost` during execution.
+- Refreshes cached totals.
+
+**`RecordCancelled(rowID)`:**
+
+- Marks the cost row with `status = "cancelled"`, `exit_code = 0`, `duration_sec = 0`.
+- Used for agents that were queued but never actually ran (e.g., denied by inner runner concurrency limit).
 - Refreshes cached totals.
 
 **`EmergencyStop()` / `Resume()`:**
@@ -227,7 +233,7 @@ Each session gets its own JSONL log file at `~/.config/ccc/data/session-logs/<ti
 | `output_tokens` | INTEGER | Cumulative output tokens |
 | `cost_source` | TEXT | Always "estimate" currently |
 | `exit_code` | INTEGER | Process exit code |
-| `status` | TEXT | "running", "completed", "failed" |
+| `status` | TEXT | "running", "completed", "failed", "cancelled" |
 
 Indexed on `started_at` for rolling-window budget queries.
 

@@ -122,7 +122,7 @@ func (g *GovernedRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
 		g.mu.Lock()
 		delete(g.costRows, req.ID)
 		g.mu.Unlock()
-		g.budget.RecordFinished(costRowID, 0, 0)
+		g.budget.RecordCancelled(costRowID)
 	}
 
 	return innerQueued, innerCmd

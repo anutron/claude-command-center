@@ -110,6 +110,16 @@ func (bt *BudgetTracker) RecordFinished(costRowID int64, durationSec, exitCode i
 	bt.mu.Unlock()
 }
 
+// RecordCancelled marks an agent cost row as cancelled (e.g., queued but never ran)
+// and refreshes cached totals.
+func (bt *BudgetTracker) RecordCancelled(costRowID int64) {
+	_ = db.DBUpdateAgentCostFinished(bt.db, costRowID, 0, 0, "cancelled")
+
+	bt.mu.Lock()
+	bt.refreshTotalsLocked()
+	bt.mu.Unlock()
+}
+
 // EmergencyStop activates the emergency stop, blocking all future launches.
 func (bt *BudgetTracker) EmergencyStop() {
 	bt.mu.Lock()
