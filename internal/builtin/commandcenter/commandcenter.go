@@ -61,8 +61,9 @@ type Plugin struct {
 	cfg      *config.Config
 	bus      plugin.EventBus
 	logger   plugin.Logger
-	llm      llm.LLM
-	styles   ccStyles
+	llm         llm.LLM
+	notifyPeers func(event string)
+	styles      ccStyles
 	grad     gradientColors
 
 	// Command center state
@@ -289,6 +290,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.cfg = ctx.Config
 	p.bus = ctx.Bus
 	p.logger = ctx.Logger
+	p.notifyPeers = ctx.NotifyPeers
 	if ctx.LLM != nil {
 		p.llm = ctx.LLM
 	} else {
@@ -429,6 +431,20 @@ func (p *Plugin) dbWriteCmd(fn func(*sql.DB) error) tea.Cmd {
 	database := p.database
 	return func() tea.Msg {
 		return dbWriteResult{err: fn(database)}
+	}
+}
+
+// notifyPeersCmd returns a tea.Cmd that sends an event to all other running
+// TUI instances via the notify socket system. Returns nil if no notify function
+// is configured (e.g. in tests).
+func (p *Plugin) notifyPeersCmd(event string) tea.Cmd {
+	if p.notifyPeers == nil {
+		return nil
+	}
+	notify := p.notifyPeers
+	return func() tea.Msg {
+		notify(event)
+		return nil
 	}
 }
 

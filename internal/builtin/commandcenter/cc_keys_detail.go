@@ -352,6 +352,9 @@ func (p *Plugin) detailCompleteTodo() plugin.Action {
 	if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
 		cmds = append(cmds, focusCmd)
 	}
+	if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+		cmds = append(cmds, notifyCmd)
+	}
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 }
 
@@ -400,6 +403,9 @@ func (p *Plugin) detailDismissTodo() plugin.Action {
 	}
 	if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
 		cmds = append(cmds, focusCmd)
+	}
+	if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+		cmds = append(cmds, notifyCmd)
 	}
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 }
@@ -479,7 +485,11 @@ func (p *Plugin) commitDetailFieldEdit(todo db.Todo, field, value string) plugin
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 				return db.DBUpdateTodo(database, updated.ID, updated)
 			})
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			cmds := []tea.Cmd{dbCmd}
+			if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+				cmds = append(cmds, notifyCmd)
+			}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 		}
 	}
 	return plugin.NoopAction()

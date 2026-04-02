@@ -124,6 +124,7 @@ type Context struct {
     DBPath      string
     LLM         llm.LLM
     AgentRunner agent.Runner
+    NotifyPeers func(event string) // sends event to all other running TUI instances via notify sockets
 }
 ```
 

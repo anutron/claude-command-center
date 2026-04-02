@@ -257,6 +257,15 @@ Instead of polling on a timer, the command center uses lifecycle messages to rel
   - **Interactive session return:** When the user returns from any interactive Claude session (new, resume, or join), the associated todo transitions to `"review"` status unconditionally. Daemon-managed headless agents have their own completion path via `agent.finished` events and are not affected by this transition.
 - **NotifyMsg:** Reload from DB (cross-instance notifications)
 
+### Cross-Instance Todo Sync
+
+When a user completes (`x`), dismisses (`X`), or changes the status of a todo in one TUI instance, all other running TUI instances are notified immediately so they reload from DB and reflect the change.
+
+- **Mechanism:** After the DB write succeeds, a `"data.refreshed"` notification is sent via `NotifyPeers` (provided in `plugin.Context`). This reaches all other TUI instances through the notify socket system.
+- **Receiving side:** Other instances already handle `"data.refreshed"` NotifyMsg by calling `loadCCFromDBCmd()`, which reloads all command center data from the shared SQLite database.
+- **Self-notification is harmless:** The sending instance may also receive the notification and reload, but since it already updated in-memory state, the DB reload is a no-op from the user's perspective.
+- **Scope:** Applies to `detailCompleteTodo`, `detailDismissTodo`, and status changes via `commitDetailFieldEdit`.
+
 ### Refresh (ai-cron)
 
 - Auto-refresh triggers when data is older than a threshold (tick-based)
@@ -622,8 +631,8 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Detail view shows "TODO #N" title with display_id
 - Detail view tracks todo by ID (not index) — status changes don't jump to different todo
 - Detail view `enter` edits selected field (Status opens inline selector with backlog/blocked/completed/dismissed, Due opens text input, ProjectDir opens path picker)
-- Detail view `x` completes todo with notice banner, auto-advances after 1s
-- Detail view `X` dismisses todo with notice banner, auto-advances after 1s
+- Detail view `x` completes todo with notice banner, auto-advances after 1s, and notifies peer instances
+- Detail view `X` dismisses todo with notice banner, auto-advances after 1s, and notifies peer instances
 - Detail view `x`/`X` after `j`/`k` navigation advances to the correct next item (not index 0)
 - Detail view `j`/`k` navigates between active todos
 - Detail view blocks keys (except esc) while notice banner is showing

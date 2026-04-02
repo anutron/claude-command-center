@@ -154,6 +154,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 		DBPath:      config.DBPath(),
 		LLM:         l,
 		AgentRunner: runner,
+		NotifyPeers: func(event string) { _ = SendNotify(event) },
 	}
 
 	_ = sessPlug.Init(ctx)

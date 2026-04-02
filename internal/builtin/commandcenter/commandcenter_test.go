@@ -261,6 +261,123 @@ func TestUndoCompletion(t *testing.T) {
 	}
 }
 
+// execBatchCmds executes a tea.Cmd and any nested batch commands, collecting
+// all resulting messages. This handles tea.Batch wrapping.
+func execBatchCmds(cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			execBatchCmds(c)
+		}
+	}
+}
+
+func TestCompleteTodoNotifiesPeers(t *testing.T) {
+	p := testPluginWithCC(t)
+	var notified []string
+	p.notifyPeers = func(event string) { notified = append(notified, event) }
+
+	action := p.HandleKey(keyMsg("x"))
+	if action.TeaCmd == nil {
+		t.Fatal("x should return a TeaCmd")
+	}
+	execBatchCmds(action.TeaCmd)
+	if len(notified) == 0 {
+		t.Error("complete todo should notify peers")
+	} else if notified[0] != "data.refreshed" {
+		t.Errorf("notify event = %q, want %q", notified[0], "data.refreshed")
+	}
+}
+
+func TestDismissTodoNotifiesPeers(t *testing.T) {
+	p := testPluginWithCC(t)
+	var notified []string
+	p.notifyPeers = func(event string) { notified = append(notified, event) }
+
+	action := p.HandleKey(keyMsg("X"))
+	if action.TeaCmd == nil {
+		t.Fatal("X should return a TeaCmd")
+	}
+	execBatchCmds(action.TeaCmd)
+	if len(notified) == 0 {
+		t.Error("dismiss todo should notify peers")
+	} else if notified[0] != "data.refreshed" {
+		t.Errorf("notify event = %q, want %q", notified[0], "data.refreshed")
+	}
+}
+
+func TestUndoNotifiesPeers(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.HandleKey(keyMsg("x")) // complete first
+
+	var notified []string
+	p.notifyPeers = func(event string) { notified = append(notified, event) }
+
+	action := p.HandleKey(keyMsg("u"))
+	if action.TeaCmd == nil {
+		t.Fatal("u should return a TeaCmd")
+	}
+	execBatchCmds(action.TeaCmd)
+	if len(notified) == 0 {
+		t.Error("undo should notify peers")
+	} else if notified[0] != "data.refreshed" {
+		t.Errorf("notify event = %q, want %q", notified[0], "data.refreshed")
+	}
+}
+
+func TestDetailCompleteTodoNotifiesPeers(t *testing.T) {
+	p := testPluginWithCC(t)
+	var notified []string
+	p.notifyPeers = func(event string) { notified = append(notified, event) }
+
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	action := p.HandleKey(keyMsg("x"))
+	if action.TeaCmd == nil {
+		t.Fatal("detail x should return a TeaCmd")
+	}
+	execBatchCmds(action.TeaCmd)
+	if len(notified) == 0 {
+		t.Error("detail complete should notify peers")
+	} else if notified[0] != "data.refreshed" {
+		t.Errorf("notify event = %q, want %q", notified[0], "data.refreshed")
+	}
+}
+
+func TestDetailDismissTodoNotifiesPeers(t *testing.T) {
+	p := testPluginWithCC(t)
+	var notified []string
+	p.notifyPeers = func(event string) { notified = append(notified, event) }
+
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	action := p.HandleKey(keyMsg("X"))
+	if action.TeaCmd == nil {
+		t.Fatal("detail X should return a TeaCmd")
+	}
+	execBatchCmds(action.TeaCmd)
+	if len(notified) == 0 {
+		t.Error("detail dismiss should notify peers")
+	} else if notified[0] != "data.refreshed" {
+		t.Errorf("notify event = %q, want %q", notified[0], "data.refreshed")
+	}
+}
+
+func TestNotifyPeersCmdNilWhenNotConfigured(t *testing.T) {
+	p := testPluginWithCC(t)
+	cmd := p.notifyPeersCmd("data.refreshed")
+	if cmd != nil {
+		t.Error("notifyPeersCmd should return nil when notifyPeers is not configured")
+	}
+}
+
 func TestCreateTodoEntersRichMode(t *testing.T) {
 	p := testPluginWithCC(t)
 

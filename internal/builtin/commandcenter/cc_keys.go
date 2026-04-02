@@ -322,6 +322,9 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
 				cmds = append(cmds, focusCmd)
 			}
+			if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+				cmds = append(cmds, notifyCmd)
+			}
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 		}
 		return plugin.NoopAction()
@@ -354,6 +357,9 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
 				cmds = append(cmds, focusCmd)
 			}
+			if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+				cmds = append(cmds, notifyCmd)
+			}
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 		}
 		return plugin.NoopAction()
@@ -374,10 +380,14 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 				return db.DBRestoreTodo(database, entry.todoID, prevStatus, prevDoneAt)
 			})
+			cmds := []tea.Cmd{dbCmd}
 			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, focusCmd)}
+				cmds = append(cmds, focusCmd)
 			}
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+				cmds = append(cmds, notifyCmd)
+			}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 		}
 		return plugin.NoopAction()
 
@@ -506,7 +516,11 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBAcceptTodo(database, todoID)
 				})
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+				cmds := []tea.Cmd{dbCmd}
+				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+					cmds = append(cmds, notifyCmd)
+				}
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 			}
 		}
 		return plugin.NoopAction()
@@ -532,7 +546,11 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBAcceptTodo(database, todoID)
 				})
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+				cmds := []tea.Cmd{dbCmd}
+				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+					cmds = append(cmds, notifyCmd)
+				}
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 			}
 		}
 		return plugin.NoopAction()
