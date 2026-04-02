@@ -649,6 +649,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.broadcastMessage(msg, &cmds)
 		return m, tea.Batch(cmds...)
 
+	case plugin.LaunchReadyMsg:
+		// A plugin finished async pre-launch work (e.g. stopping a daemon
+		// agent). Now it's safe to quit and hand off to RunClaude.
+		return m, tea.Quit
+
 	default:
 		var cmds []tea.Cmd
 		m.broadcastMessage(msg, &cmds)
@@ -740,7 +745,13 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 			Dir:      action.Args["dir"],
 			ResumeID: action.Args["resume_id"],
 		}, &cmds)
-		cmds = append(cmds, tea.Quit)
+		// When resuming a session, a plugin may need async time to stop the
+		// daemon agent. In that case the plugin returns a tea.Cmd that emits
+		// LaunchReadyMsg when done; we defer tea.Quit until that arrives.
+		// For non-resume launches (or when no plugin returns a cmd) quit now.
+		if action.Args["resume_id"] == "" || len(cmds) == 0 {
+			cmds = append(cmds, tea.Quit)
+		}
 		return m, tea.Batch(cmds...)
 
 	case plugin.ActionOpenURL:

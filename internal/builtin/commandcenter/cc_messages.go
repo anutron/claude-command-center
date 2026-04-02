@@ -847,12 +847,17 @@ func (p *Plugin) handleClaudeReviewAddressed(msg claudeReviewAddressedMsg) (bool
 
 func (p *Plugin) handleLaunchMsg(msg plugin.LaunchMsg) (bool, plugin.Action) {
 	// When joining a session (--resume), gracefully stop the headless agent first
-	// so the interactive resume finds the session.
+	// so the interactive resume finds the session. Run this in a tea.Cmd so
+	// we don't block the bubbletea event loop during the stop + cleanup pause.
 	if msg.ResumeID != "" {
 		if dc := p.daemonClient(); dc != nil {
-			// Ask daemon to stop the agent so the interactive session can resume it.
-			_ = dc.StopAgent(msg.ResumeID)
-			time.Sleep(500 * time.Millisecond) // brief pause for process cleanup
+			resumeID := msg.ResumeID
+			cmd := func() tea.Msg {
+				_ = dc.StopAgent(resumeID)
+				time.Sleep(500 * time.Millisecond) // brief pause for process cleanup
+				return plugin.LaunchReadyMsg{}
+			}
+			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 		}
 	}
 	return false, plugin.NoopAction() // Let host continue with the launch

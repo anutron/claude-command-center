@@ -14,6 +14,10 @@ type LaunchMsg struct {
 	ResumeID string
 }
 
+// LaunchReadyMsg is emitted by a plugin when async pre-launch work (e.g.
+// stopping a daemon agent) is complete and the TUI should proceed to quit.
+type LaunchReadyMsg struct{}
+
 // ReturnMsg is broadcast to all plugins when the TUI starts after returning
 // from a Claude session.
 type ReturnMsg struct {

@@ -54,7 +54,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 	// Block edit/mutation operations when the daemon reports an active agent.
 	agentActive := false
 	if todo := p.detailTodo(); todo != nil {
-		agentActive = todo.Status == db.StatusRunning || todo.Status == db.StatusEnqueued
+		agentActive = todo.Status == db.StatusRunning || todo.Status == db.StatusBlocked || todo.Status == db.StatusEnqueued
 	}
 
 	switch msg.String() {
