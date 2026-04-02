@@ -45,9 +45,7 @@ var _ plugin.Starter = (*commandcenter.Plugin)(nil)
 type tab int
 
 const (
-	tabNew     tab = iota // "Active" sessions tab
-	tabLaunch             // "New Session" launcher tab
-	tabResume             // "Resume" bookmarked sessions tab
+	tabNew     tab = iota // "Sessions" consolidated tab
 	tabCommand            // "Command Center" tab
 )
 
@@ -165,9 +163,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	// Build the full tab list (allTabs); rebuildTabs filters to visible.
 	var allTabs []tabEntry
 	allTabs = append(allTabs,
-		tabEntry{label: "Active", plugin: sessPlug, route: "active", ownerSlug: "sessions"},
-		tabEntry{label: "New Session", plugin: sessPlug, route: "new", ownerSlug: "sessions"},
-		tabEntry{label: "Resume", plugin: sessPlug, route: "resume", ownerSlug: "sessions"},
+		tabEntry{label: "Sessions", plugin: sessPlug, route: "sessions", ownerSlug: "sessions"},
 		tabEntry{label: "Command Center", plugin: ccPlug, route: "commandcenter", ownerSlug: "commandcenter"},
 		tabEntry{label: "PRs", plugin: prsPlug, route: "waiting", ownerSlug: "prs"},
 	)
@@ -768,7 +764,7 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		switch action.Payload {
 		case "sessions":
-			if idx := m.findTabByRoute("new"); idx >= 0 {
+			if idx := m.findTabByRoute("sessions"); idx >= 0 {
 				prev := m.activeTab
 				m.activeTab = tab(idx)
 				cmd = m.activateTab(prev)
