@@ -211,6 +211,18 @@ When `w` is pressed on a todo with `SessionLogPath` but no active session:
 5. `buildSessionViewerContent` falls back to `sessionViewerReplayEvents` when no active session exists
 6. If the todo is still in an agent status (running/enqueued/blocked), the viewer shows "streaming" status and "--- end of log ---" instead of "completed"/"--- session ended ---" to indicate the log is incomplete
 
+### Live Streaming from Daemon (`listenForDaemonAgentEvents`)
+
+When `w` is pressed on a todo with an active daemon agent (status `processing` or `blocked`):
+
+1. `initSessionViewer(todoID)` sets up the viewer (title, flags, auto-scroll)
+2. Replay events are **not** cleared — the daemon's `StreamAgentOutput` RPC returns the full `sess.Events` slice (all events since session start), so the polling loop populates the viewer from offset 0 with complete history
+3. `listenForDaemonAgentEvents` starts polling from offset 0, delivering one event per message
+4. Each poll calls `StreamAgentOutput` which returns the full event list; the offset tracks which events have already been delivered to the viewer
+5. When `result.Done` is true and all events have been delivered, an `agentEventsDoneMsg` is sent
+
+**Key invariant:** When the user presses `w`, they always see the complete event history — past events plus new events as they arrive. The daemon is the single source of truth for live sessions.
+
 ### Design Decisions
 
 - **Best-effort**: if the log file cannot be created, the session proceeds without logging (non-fatal)
@@ -302,3 +314,5 @@ The `?` key toggles a help overlay. When in detail view, it shows detail-specifi
 - Detail hints show "w log" for todos with `SessionLogPath` and no active session
 - Agent launch persists `session_log_path` to DB via `agentStartedInternalMsg` handler
 - Old todos without `session_log_path` do not show "w" hint (no crash)
+- `w` on a todo with active daemon agent opens viewer and starts polling from offset 0 (full history)
+- Daemon polling does not clear `sessionViewerReplayEvents` — events arrive via daemon poll loop
