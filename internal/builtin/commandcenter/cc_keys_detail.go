@@ -100,16 +100,6 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "j":
-		// If viewing a synthesis todo, navigate within sources list; otherwise go to next todo
-		if todo := p.detailTodo(); todo != nil && todo.Source == "merge" && p.cc != nil {
-			origIDs := db.DBGetOriginalIDs(p.cc.Merges, todo.ID)
-			if len(origIDs) > 0 {
-				if p.mergeSourceCursor < len(origIDs)-1 {
-					p.mergeSourceCursor++
-				}
-				return plugin.ConsumedAction()
-			}
-		}
 		// Next todo
 		activeTodos := p.cc.ActiveTodos()
 		idx := p.detailTodoActiveIndex()
@@ -119,22 +109,30 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "k":
-		// If viewing a synthesis todo, navigate within sources list; otherwise go to prev todo
-		if todo := p.detailTodo(); todo != nil && todo.Source == "merge" && p.cc != nil {
-			origIDs := db.DBGetOriginalIDs(p.cc.Merges, todo.ID)
-			if len(origIDs) > 0 {
-				if p.mergeSourceCursor > 0 {
-					p.mergeSourceCursor--
-				}
-				return plugin.ConsumedAction()
-			}
-		}
 		// Previous todo
 		activeTodos := p.cc.ActiveTodos()
 		idx := p.detailTodoActiveIndex()
 		if idx > 0 {
 			p.detailTodoID = activeTodos[idx-1].ID
 			p.detailSelectedField = 0
+		}
+		return plugin.ConsumedAction()
+	case "]":
+		// Navigate to next source in synthesis todo
+		if todo := p.detailTodo(); todo != nil && todo.Source == "merge" && p.cc != nil {
+			origIDs := db.DBGetOriginalIDs(p.cc.Merges, todo.ID)
+			if len(origIDs) > 0 && p.mergeSourceCursor < len(origIDs)-1 {
+				p.mergeSourceCursor++
+			}
+		}
+		return plugin.ConsumedAction()
+	case "[":
+		// Navigate to previous source in synthesis todo
+		if todo := p.detailTodo(); todo != nil && todo.Source == "merge" && p.cc != nil {
+			origIDs := db.DBGetOriginalIDs(p.cc.Merges, todo.ID)
+			if len(origIDs) > 0 && p.mergeSourceCursor > 0 {
+				p.mergeSourceCursor--
+			}
 		}
 		return plugin.ConsumedAction()
 	case "w":

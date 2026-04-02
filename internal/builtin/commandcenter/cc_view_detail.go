@@ -426,7 +426,7 @@ func (p *Plugin) buildSourcesSection(s *ccStyles, todo db.Todo, innerWidth int) 
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, "  "+s.Hint.Render("j/k select source \u00b7 U unmerge selected"))
+	lines = append(lines, "  "+s.Hint.Render("[/] select source \u00b7 U unmerge selected"))
 
 	return strings.Join(lines, "\n")
 }

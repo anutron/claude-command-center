@@ -113,8 +113,10 @@ Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectD
 | `g` | detail:viewing | Chord prefix for Gmail-style shortcuts (`gi`/`gu` = return to list view) |
 | `up`/`down` | detail:viewing | Scroll detail viewport |
 | `pgup`/`pgdown` | detail:viewing | Half-page scroll detail viewport |
-| `j` | detail:viewing | Navigate to next active todo (or next source in synthesis todo) |
-| `k` | detail:viewing | Navigate to previous active todo (or previous source in synthesis todo) |
+| `j` | detail:viewing | Navigate to next active todo |
+| `k` | detail:viewing | Navigate to previous active todo |
+| `]` | detail:viewing | Navigate to next source in synthesis todo |
+| `[` | detail:viewing | Navigate to previous source in synthesis todo |
 | `x` | detail:viewing | Complete todo (shows notice banner, auto-advances after 1s) |
 | `X` | detail:viewing | Dismiss todo (shows notice banner, auto-advances after 1s) |
 | `esc` | detail:viewing | Return to list |

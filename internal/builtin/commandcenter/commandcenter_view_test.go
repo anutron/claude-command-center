@@ -708,3 +708,85 @@ func TestView_DetailCompleteLastTodoAdvancesToPrevious(t *testing.T) {
 	view := renderView(p)
 	viewContains(t, view, "Bravo second")
 }
+
+// ---------------------------------------------------------------------------
+// Source navigation uses [/] not j/k (bug fix)
+// ---------------------------------------------------------------------------
+
+func TestView_SourceNavBracketKeys(t *testing.T) {
+	// Create a synthesis (merge) todo with two source todos.
+	synthTodo := db.Todo{
+		ID: "synth1", Title: "Merged todo", Status: db.StatusBacklog,
+		Source: "merge", CreatedAt: time.Now(),
+	}
+	origA := db.Todo{
+		ID: "origA", Title: "Original Alpha", Status: db.StatusBacklog,
+		Source: "github", DisplayID: 10, CreatedAt: time.Now(),
+	}
+	origB := db.Todo{
+		ID: "origB", Title: "Original Bravo", Status: db.StatusBacklog,
+		Source: "slack", DisplayID: 11, CreatedAt: time.Now(),
+	}
+
+	p := testPluginWithTodos(t, []db.Todo{synthTodo, origA, origB})
+	p.cc.Merges = []db.TodoMerge{
+		{SynthesisID: "synth1", OriginalID: "origA"},
+		{SynthesisID: "synth1", OriginalID: "origB"},
+	}
+
+	// Open detail view on the synthesis todo
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("detail view should be open")
+	}
+
+	// Render and verify sources section with hint text using [/]
+	view := renderView(p)
+	viewContains(t, view, "[/] select source")
+	viewNotContains(t, view, "j/k select source")
+
+	// mergeSourceCursor starts at 0; pressing ] should move to 1
+	p.HandleKey(keyMsg("]"))
+	if p.mergeSourceCursor != 1 {
+		t.Errorf("expected mergeSourceCursor=1 after ], got %d", p.mergeSourceCursor)
+	}
+
+	// pressing [ should move back to 0
+	p.HandleKey(keyMsg("["))
+	if p.mergeSourceCursor != 0 {
+		t.Errorf("expected mergeSourceCursor=0 after [, got %d", p.mergeSourceCursor)
+	}
+}
+
+func TestView_JKNavigateTodosOnMergeTodo(t *testing.T) {
+	// j/k should navigate between todos even when on a merge todo.
+	synthTodo := db.Todo{
+		ID: "synth1", Title: "Merged todo", Status: db.StatusBacklog,
+		Source: "merge", CreatedAt: time.Now(),
+	}
+	otherTodo := db.Todo{
+		ID: "t2", Title: "Other todo", Status: db.StatusBacklog,
+		Source: "manual", CreatedAt: time.Now(),
+	}
+
+	p := testPluginWithTodos(t, []db.Todo{synthTodo, otherTodo})
+	p.cc.Merges = []db.TodoMerge{
+		{SynthesisID: "synth1", OriginalID: "origA"},
+		{SynthesisID: "synth1", OriginalID: "origB"},
+	}
+
+	// Open detail view on the synthesis todo
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("detail view should be open")
+	}
+	if p.detailTodoID != "synth1" {
+		t.Fatalf("expected detail on synth1, got %s", p.detailTodoID)
+	}
+
+	// j should navigate to the next todo, NOT get captured by source nav
+	p.HandleKey(keyMsg("j"))
+	if p.detailTodoID != "t2" {
+		t.Errorf("expected j to navigate to t2, but detailTodoID=%s", p.detailTodoID)
+	}
+}
