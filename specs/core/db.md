@@ -68,17 +68,20 @@ All types are exported for use by other packages:
 ### Database Lifecycle
 1. `OpenDB(dbPath)` creates directories, opens SQLite, sets WAL + busy_timeout + synchronous=NORMAL, max 1 connection, runs `migrateSchema`
 2. Schema creates 16 tables: `cc_todos`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`, `cc_source_sync`, `cc_todo_merges`, `cc_pull_requests`, `cc_sessions`, `cc_automation_runs`, `cc_agent_costs`, `cc_budget_state`, `cc_archived_sessions`, `cc_ignored_repos`
-3. Unique indexes on `source_ref` for todos and pull requests (WHERE NOT NULL/empty)
-4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos
+3. Unique indexes on `source_ref` for todos and pull requests (WHERE NOT NULL/empty). The `idx_cc_todos_source_ref` index excludes soft-deleted rows (`WHERE source_ref IS NOT NULL AND source_ref != '' AND deleted_at IS NULL`)
+4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos, `deleted_at` (TEXT, nullable) on todos
 5. Post-DDL migration fixes duplicate `sort_order` values on `cc_learned_paths` using `ROW_NUMBER()` window function
 
 ### Todo Operations
-- `DBInsertTodo` -- auto-assigns sort_order = max+1 and display_id = max+1
+
+**Soft-delete**: Todos use soft-delete via a `deleted_at` column (TEXT, nullable). When non-null, the row is considered deleted. All read queries (`dbLoadTodos`, `DBLoadTodoByID`, `DBLoadTodoByDisplayID`, `DBIsEmpty`) filter out rows where `deleted_at IS NOT NULL`. Sort-order subqueries in `DBDeferTodo`, `DBPromoteTodo`, and `DBInsertTodo` also exclude soft-deleted rows so they don't affect ordering.
+
+- `DBInsertTodo` -- auto-assigns sort_order = max+1 (excluding soft-deleted) and display_id = max+1 (including soft-deleted — display_ids are globally unique across all rows)
 - `DBCompleteTodo` -- sets status=completed, completed_at=now
 - `DBDismissTodo` -- sets status=dismissed
 - `DBRestoreTodo` -- restores to given status and completed_at (for undo)
-- `DBDeferTodo` -- sets sort_order to max+1 (moves to bottom)
-- `DBPromoteTodo` -- sets sort_order to min-1 (moves to top)
+- `DBDeferTodo` -- sets sort_order to max+1 (moves to bottom; excludes soft-deleted from max calc)
+- `DBPromoteTodo` -- sets sort_order to min-1 (moves to top; excludes soft-deleted from min calc)
 - `DBUpdateTodo` -- updates all fields except sort_order
 - `DBAcceptTodo` -- transitions a todo from "new" to "backlog"
 - `DBUpdateTodoStatus` -- updates only the status column
@@ -87,10 +90,10 @@ All types are exported for use by other packages:
 - `DBUpdateTodoSessionID` -- updates only the session_id column (NULLIF empty)
 - `DBUpdateTodoSessionSummary` -- updates only the session_summary column (NULLIF empty)
 - `DBUpdateTodoSourceContext` -- focused update for source_context and source_context_at columns
-- `DBDeleteTodo` -- hard deletes a todo row by ID
+- `DBDeleteTodo` -- soft-deletes a todo by setting `deleted_at` and `updated_at` to now (does not remove the row)
 - `DBSwapTodoOrder` -- swaps sort_order of two todos by ID within a transaction
-- `DBLoadTodoByID` -- loads a single todo by its internal ID; returns nil, nil if not found
-- `DBLoadTodoByDisplayID` -- loads a single todo by its display_id; returns nil, nil if not found
+- `DBLoadTodoByID` -- loads a single todo by its internal ID; returns nil, nil if not found (excludes soft-deleted)
+- `DBLoadTodoByDisplayID` -- loads a single todo by its display_id; returns nil, nil if not found (excludes soft-deleted)
 
 ### Calendar & Suggestions
 - **Calendar day-clamping on load**: `dbLoadCalendar` clamps multi-day event times to their day boundaries. Events whose start is before the day start are clamped to midnight; events whose end extends past the day end are clamped to end-of-day. Events are then re-sorted by effective start time. This ensures multi-day events sort and display correctly (e.g., a 3-day conference shows as starting at midnight today, not at its original start time days ago).
@@ -310,4 +313,7 @@ All types are exported for use by other packages:
 - `DBSwapTodoOrder` swaps sort_order transactionally
 - `DBSwapPathOrder` swaps sort_order transactionally
 - `DBAcceptTodo` transitions status from new to backlog
-- `DBDeleteTodo` removes the row entirely
+- `DBDeleteTodo` soft-deletes by setting `deleted_at`; row remains in DB
+- Soft-deleted todos excluded from `dbLoadTodos`, `DBLoadTodoByID`, `DBLoadTodoByDisplayID`, `DBIsEmpty`
+- Soft-deleted todos excluded from sort_order subqueries in defer/promote/insert
+- `display_id` assignment includes soft-deleted rows (globally unique)
