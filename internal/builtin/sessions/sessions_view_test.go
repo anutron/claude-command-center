@@ -424,6 +424,12 @@ func TestView_SubTabBarRendered(t *testing.T) {
 	assertViewContains(t, view, "[2] Saved")
 	assertViewContains(t, view, "[3] Recent")
 	assertViewContains(t, view, "[4] Worktrees")
+	// Default sub-tab is New Session — verify its content renders.
+	assertViewContains(t, view, "Browse...")
+	// Other sub-tab content should NOT appear.
+	assertViewNotContains(t, view, "No saved sessions")
+	assertViewNotContains(t, view, "No active sessions")
+	assertViewNotContains(t, view, "No worktrees found")
 }
 
 // ---------------------------------------------------------------------------
@@ -436,26 +442,35 @@ func TestView_NumberKeySwitchesSubTab(t *testing.T) {
 	// Press '2' to switch to Saved sub-tab.
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	view := p.View(120, 38, 0)
-	// Saved sub-tab should show saved sessions content (or empty state).
-	// The unified view with saved-only filter should be active.
-	// At minimum, verify the sub-tab bar still renders and we're on Saved.
 	assertViewContains(t, view, "[2] Saved")
+	assertViewContains(t, view, "No saved sessions")
+	assertViewNotContains(t, view, "Browse...")
+	assertViewNotContains(t, view, "No active sessions")
 
 	// Press '3' to switch to Recent sub-tab.
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	view = p.View(120, 38, 0)
 	assertViewContains(t, view, "[3] Recent")
+	assertViewContains(t, view, "No active sessions")
+	assertViewNotContains(t, view, "Browse...")
+	assertViewNotContains(t, view, "No saved sessions")
 
 	// Press '4' to switch to Worktrees sub-tab.
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
 	view = p.View(120, 38, 0)
 	assertViewContains(t, view, "[4] Worktrees")
+	assertViewContains(t, view, "No worktrees found")
+	assertViewNotContains(t, view, "Browse...")
+	assertViewNotContains(t, view, "No active sessions")
 
 	// Press '1' to go back to New Session.
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
 	view = p.View(120, 38, 0)
 	assertViewContains(t, view, "[1] New Session")
 	assertViewContains(t, view, "Browse...")
+	assertViewNotContains(t, view, "No saved sessions")
+	assertViewNotContains(t, view, "No active sessions")
+	assertViewNotContains(t, view, "No worktrees found")
 }
 
 // ---------------------------------------------------------------------------
@@ -465,35 +480,45 @@ func TestView_NumberKeySwitchesSubTab(t *testing.T) {
 func TestView_ArrowKeyCyclesSubTabs(t *testing.T) {
 	p := setupPlugin(t)
 	// Default sub-tab is New Session (0).
+	view := p.View(120, 38, 0)
+	assertViewContains(t, view, "Browse...")
 
 	// Right from New Session → Saved (1).
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
-	view := p.View(120, 38, 0)
-	// Should be on Saved now — verify by checking for saved-specific content or empty state.
-	assertViewContains(t, view, "[2] Saved")
+	view = p.View(120, 38, 0)
+	assertViewContains(t, view, "No saved sessions")
+	assertViewNotContains(t, view, "Browse...")
 
 	// Right from Saved → Recent (2).
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
+	view = p.View(120, 38, 0)
+	assertViewContains(t, view, "No active sessions")
+	assertViewNotContains(t, view, "No saved sessions")
 
 	// Right from Recent → Worktrees (3).
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
 	view = p.View(120, 38, 0)
-	assertViewContains(t, view, "[4] Worktrees")
+	assertViewContains(t, view, "No worktrees found")
+	assertViewNotContains(t, view, "No active sessions")
 
 	// Right from Worktrees wraps → New Session (0).
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
 	view = p.View(120, 38, 0)
 	assertViewContains(t, view, "Browse...")
+	assertViewNotContains(t, view, "No worktrees found")
 }
 
 func TestView_LeftArrowWrapsFromNewSession(t *testing.T) {
 	p := setupPlugin(t)
 	// Default sub-tab is New Session (0).
+	view := p.View(120, 38, 0)
+	assertViewContains(t, view, "Browse...")
 
 	// Left from New Session wraps → Worktrees (3).
 	p.HandleKey(tea.KeyMsg{Type: tea.KeyLeft})
-	view := p.View(120, 38, 0)
-	assertViewContains(t, view, "[4] Worktrees")
+	view = p.View(120, 38, 0)
+	assertViewContains(t, view, "No worktrees found")
+	assertViewNotContains(t, view, "Browse...")
 }
 
 // ---------------------------------------------------------------------------
