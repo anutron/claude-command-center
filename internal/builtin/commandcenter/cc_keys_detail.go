@@ -145,7 +145,10 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			if dc := p.daemonClient(); dc != nil {
 				if status, err := dc.AgentStatus(todo.ID); err == nil && (status.Status == "processing" || status.Status == "blocked") {
 					p.initSessionViewer(todo.ID)
-					p.sessionViewerReplayEvents = nil
+					// Don't clear sessionViewerReplayEvents here — the daemon's
+					// StreamAgentOutput returns the full event history from offset 0,
+					// so replay events will be populated by the polling loop. Clearing
+					// them caused a brief empty-viewer flash during the 500ms poll delay.
 					if !p.sessionViewerListening {
 						p.sessionViewerListening = true
 						return plugin.Action{Type: plugin.ActionNoop, TeaCmd: listenForDaemonAgentEvents(todo.ID, dc, 0)}

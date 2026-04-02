@@ -337,7 +337,7 @@ The session viewer is a sub-view of the detail view (`sessionViewerActive = true
 
 #### Opening
 
-- **Live daemon session** (`w` when daemon reports agent is active via `AgentStatus` RPC): Initializes the viewer with a polling loop that calls `StreamAgentOutput` RPC every 500ms via `listenForDaemonAgentEvents`
+- **Live daemon session** (`w` when daemon reports agent is active via `AgentStatus` RPC): Initializes the viewer and starts a polling loop that calls `StreamAgentOutput` RPC every 500ms via `listenForDaemonAgentEvents`. The daemon returns the full event history from offset 0, so previously loaded replay events are not cleared — this avoids a brief empty-viewer flash during the initial poll delay.
 - **Saved log** (`w` when `todo.SessionLogPath` is set but no active session): Replays events from the saved log file on disk
 - **No session**: Shows flash "No active session for this todo"
 
