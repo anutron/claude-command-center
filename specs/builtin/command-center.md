@@ -252,6 +252,7 @@ Instead of polling on a timer, the command center uses lifecycle messages to rel
 
 - **TabViewMsg:** Reload from DB if stale (>2s since last read)
 - **ReturnMsg:** Always reload from DB (returning from a Claude session)
+  - **Interactive session return:** When the user returns from any interactive Claude session (new, resume, or join), the associated todo transitions to `"review"` status unconditionally. Daemon-managed headless agents have their own completion path via `agent.finished` events and are not affected by this transition.
 - **NotifyMsg:** Reload from DB (cross-instance notifications)
 
 ### Refresh (ai-cron)

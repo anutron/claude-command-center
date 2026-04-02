@@ -108,6 +108,7 @@ All types are exported for use by other packages:
   3. Reactivate archived PRs that reappear — set `state = "open"`
 - **Load**: `DBLoadPullRequests` filters to `state != "archived"` AND `ignored = 0` AND `repo NOT IN (SELECT repo FROM cc_ignored_repos)`, ordered by `last_activity_at DESC`
 - `DBUpdatePRAgentStatus(db, prID, agentStatus, agentSessionID, agentCategory, agentHeadSHA, agentSummary)` — focused update for agent tracking columns on a single PR
+- `DBUpdatePRAgentSessionID(db, prID, sessionID)` — updates only the `agent_session_id` column for a PR; sets to NULL if empty string. Avoids overwriting other agent columns.
 - `DBSetPRIgnored(db, prID, ignored bool)` — sets the `ignored` flag on a single PR
 - `DBAddIgnoredRepo(db, repo string)` — inserts a repo into `cc_ignored_repos` (INSERT OR IGNORE)
 - `DBRemoveIgnoredRepo(db, repo string)` — removes a repo from `cc_ignored_repos`
@@ -124,7 +125,7 @@ All types are exported for use by other packages:
 - `WerePreviouslyMergedAndVetoed(merges, idA, idB)` -- in-memory helper: checks if two todo IDs were ever in the same synthesis group and one was vetoed out. Prevents re-merging a specific pair while allowing each ID to merge with unrelated todos.
 
 ### Bulk Refresh
-- `DBSaveRefreshResult` -- atomically replaces all refresh-managed data (todos, pull requests, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`.
+- `DBSaveRefreshResult` -- atomically saves all refresh-managed data (todos, pull requests, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`. Todos use a delete-only-known-IDs strategy: before re-inserting, only IDs present in `cc.Todos` are deleted. Todos not in the batch (e.g., manually created during refresh) survive. Other data types (PRs, calendar, suggestions, pending actions) still use full replace.
 
 ### Bookmarks & Paths (DB)
 - `DBLoadBookmarks`, `DBInsertBookmark`, `DBRemoveBookmark`
@@ -178,7 +179,7 @@ All types are exported for use by other packages:
 
 ### Agent Costs
 - **Schema**: `cc_agent_costs` table with auto-increment `id`, `agent_id` (TEXT), `automation` (TEXT), `started_at` (TEXT), `finished_at` (TEXT, nullable), `duration_sec` (INTEGER, nullable), `budget_usd` (REAL, default 0), `cost_usd` (REAL, default 0), `input_tokens` (INTEGER, default 0), `output_tokens` (INTEGER, default 0), `cost_source` (TEXT, default 'estimate'), `exit_code` (INTEGER, nullable), `status` (TEXT, default 'running'). Indexed on `started_at`.
-- `DBInsertAgentCost(db, agentID, automation, budget, startedAt)` -- inserts a new cost row with `status='running'`; returns the auto-generated row ID
+- `DBInsertAgentCost(db, agentID, automation, projectDir, budget, startedAt)` -- inserts a new cost row with `status='running'`; returns the auto-generated row ID
 - `DBUpdateAgentCostFinished(db, rowID, durationSec, exitCode, status)` -- marks a cost row as finished (`finished_at` set to now); does NOT overwrite `cost_usd`/`input_tokens`/`output_tokens` (those are tracked by `RecordCost`)
 - `DBSumCostsSince(db, since)` -- returns total `cost_usd` for all agent runs started since the given time; returns 0 if no rows match
 - `DBCountLaunchesSince(db, automation, since)` -- returns number of agent launches for a specific automation since the given time

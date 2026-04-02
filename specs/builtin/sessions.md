@@ -219,6 +219,8 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 3. New sub-tab shows project paths + Browse option
 4. Worktrees sub-tab shows all CCC-managed worktrees grouped by project
 5. Enter on a live/saved/archived session resumes it (`--resume <session_id>`). For live sessions, the daemon's CCC-generated session_id differs from Claude CLI's session UUID, so the plugin resolves the real Claude session_id by scanning `~/.claude/projects/<encoded-project>/` for the most recently modified `.jsonl` file. If no file is found, falls back to the daemon session_id.
+
+**Resolving Claude session IDs:** When the user presses `enter` on a live session, CCC resolves the Claude session UUID by finding the most recently modified JSONL file in `~/.claude/projects/<encoded-path>/`. The path is encoded by replacing all path separators (`/`) with `-` (e.g., `/Users/aaron/project` → `-Users-aaron-project`). If no JSONL file is found, the daemon session ID is used for `--resume`.
 6. Enter on a project path launches Claude in that directory
 7. `b` on a live session bookmarks it; on an archived session promotes it to Saved
 8. `d` dismisses live ended sessions, removes bookmarks, or deletes archived sessions (tier-dependent)
