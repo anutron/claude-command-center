@@ -34,7 +34,7 @@ func assertViewNotContains(t *testing.T, view, substr string) {
 func setupNewTabPlugin(t *testing.T) *Plugin {
 	t.Helper()
 	p := setupPlugin(t)
-	p.subTab = "new"
+	p.subTab = subTabNew
 	return p
 }
 
@@ -140,7 +140,7 @@ func TestView_WorktreeSubTabSwitch(t *testing.T) {
 
 func TestView_WorktreeEmptyState(t *testing.T) {
 	p := setupPlugin(t)
-	p.subTab = "worktrees"
+	p.subTab = subTabWorktrees
 
 	view := p.View(120, 38, 0)
 	assertViewContains(t, view, "No worktrees found")
@@ -148,7 +148,7 @@ func TestView_WorktreeEmptyState(t *testing.T) {
 
 func TestView_WorktreeDeleteConfirmation(t *testing.T) {
 	p := setupPlugin(t)
-	p.subTab = "worktrees"
+	p.subTab = subTabWorktrees
 
 	p.worktreeItems = []worktreeItem{
 		{
@@ -219,7 +219,7 @@ func TestView_ResumeTabDismissOnSavedSession(t *testing.T) {
 
 func TestView_WorktreePruneConfirmation(t *testing.T) {
 	p := setupPlugin(t)
-	p.subTab = "worktrees"
+	p.subTab = subTabWorktrees
 
 	p.worktreeItems = []worktreeItem{
 		{info: worktree.WorktreeInfo{Path: "/tmp/wt-a", Branch: "branch-a", RepoRoot: "/tmp/repo", CreatedAt: time.Now()}, project: "repo"},
@@ -349,7 +349,8 @@ func TestView_WorktreeWarningOverlay(t *testing.T) {
 
 func TestView_LiveSessionShowsProjectName(t *testing.T) {
 	p := setupPlugin(t)
-	// Active tab is default — shows live sessions.
+	// Switch to Recent sub-tab to see live sessions.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	p.unified.liveSessions = []daemon.SessionInfo{
 		{
 			SessionID:    "live-001",
@@ -367,6 +368,7 @@ func TestView_LiveSessionShowsProjectName(t *testing.T) {
 
 func TestView_LiveSessionShowsTopicWhenSet(t *testing.T) {
 	p := setupPlugin(t)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	p.unified.liveSessions = []daemon.SessionInfo{
 		{
 			SessionID:    "live-002",
@@ -384,6 +386,7 @@ func TestView_LiveSessionShowsTopicWhenSet(t *testing.T) {
 
 func TestView_LiveSessionShowsBranchInSuffix(t *testing.T) {
 	p := setupPlugin(t)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
 	p.unified.liveSessions = []daemon.SessionInfo{
 		{
 			SessionID:    "live-003",

@@ -215,6 +215,18 @@ func (f *fzfProcess) Run() error {
 }
 
 // ---------------------------------------------------------------------------
+// Sub-tab constants
+// ---------------------------------------------------------------------------
+
+const (
+	subTabNew       = 0
+	subTabSaved     = 1
+	subTabRecent    = 2
+	subTabWorktrees = 3
+	subTabCount     = 4
+)
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
@@ -237,7 +249,7 @@ type Plugin struct {
 	spinner       spinner.Model
 	width         int
 	height        int
-	subTab        string // "sessions", "new", or "worktrees"
+	subTab        int // one of subTabNew, subTabSaved, subTabRecent, subTabWorktrees
 	frame         int
 
 	// Worktrees sub-tab state
@@ -285,7 +297,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 		p.grad = ui.NewGradientColors(pal)
 	}
 
-	p.subTab = "sessions"
+	p.subTab = subTabNew
 
 	paths, _ := db.DBLoadPaths(p.db)
 	// Ensure home_dir is in the paths list (at the front) if configured
@@ -325,7 +337,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	// Initialise unified view (daemon client getter wired later via SetDaemonClientFunc)
 	p.unified = NewUnifiedView(nil, p.styles)
 	p.unified.db = p.db
-	p.unified.viewFilter = ViewFilterLiveOnly // Active tab is the default
+	p.unified.viewFilter = ViewFilterLiveOnly // default for when Recent is selected
 
 	// Load initial saved/archived sessions into unified view
 	if p.db != nil {
@@ -355,7 +367,7 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 				Due:        due,
 				Effort:     effort,
 			}
-			p.subTab = "new"
+			p.subTab = subTabNew
 		})
 		// NOTE: data.refreshed and session.* events are handled via
 		// plugin.NotifyMsg in HandleMessage, which dispatches an async
@@ -391,7 +403,8 @@ func (p *Plugin) Routes() []plugin.Route {
 	return []plugin.Route{
 		{Slug: "active", Description: "Active sessions (live only)"},
 		{Slug: "resume", Description: "Resume sessions (saved/bookmarked)"},
-		{Slug: "sessions", Description: "Sessions sub-tab (alias for active)"},
+		{Slug: "saved", Description: "Saved sessions (alias for resume)"},
+		{Slug: "sessions", Description: "Sessions landing (alias for new)"},
 		{Slug: "new", Description: "New session sub-tab"},
 		{Slug: "worktrees", Description: "Worktrees sub-tab"},
 	}
@@ -401,22 +414,25 @@ func (p *Plugin) Routes() []plugin.Route {
 func (p *Plugin) NavigateTo(route string, args map[string]string) {
 	p.filterText = ""
 	switch route {
-	case "active", "sessions":
-		p.subTab = "sessions"
+	case "active":
+		p.subTab = subTabRecent
 		if p.unified != nil {
 			p.unified.viewFilter = ViewFilterLiveOnly
 		}
-		// Refresh dispatched asynchronously via TabViewMsg → HandleMessage.
-	case "resume":
-		p.subTab = "sessions"
+	case "sessions":
+		// Host sends "sessions" when selecting the Sessions tab — land on New Session.
+		p.subTab = subTabNew
+		p.applyFilter()
+	case "resume", "saved", "sessions/saved":
+		p.subTab = subTabSaved
 		if p.unified != nil {
 			p.unified.viewFilter = ViewFilterSavedOnly
 		}
-	case "new":
-		p.subTab = "new"
+	case "new", "sessions/new":
+		p.subTab = subTabNew
 		p.applyFilter()
 	case "worktrees":
-		p.subTab = "worktrees"
+		p.subTab = subTabWorktrees
 		p.refreshWorktreeList()
 	}
 	if todoTitle, ok := args["pending_todo_title"]; ok {
@@ -471,9 +487,8 @@ func (p *Plugin) Refresh() tea.Cmd {
 // KeyBindings returns the key bindings for this plugin.
 func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 	return []plugin.KeyBinding{
-		{Key: "s", Description: "Sessions sub-tab", Promoted: true},
-		{Key: "n", Description: "New session sub-tab", Promoted: true},
-		{Key: "t", Description: "Worktrees sub-tab", Promoted: true},
+		{Key: "1-4", Description: "Switch sub-tabs", Promoted: true},
+		{Key: "←/→", Description: "Cycle sub-tabs", Promoted: true},
 		{Key: "a", Description: "Archive session", Promoted: true},
 		{Key: "A", Description: "View archive", Promoted: true},
 		{Key: "w", Description: "Launch in worktree", Promoted: true},
@@ -503,13 +518,31 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	}
 
 	// When a filter is active on the new tab, only allow navigation keys
-	// and filter-editing keys — don't match single-char shortcuts (s/n/t).
-	filtering := p.filterText != "" && p.subTab == "new"
+	// and filter-editing keys — don't match single-char shortcuts.
+	filtering := p.filterText != "" && p.subTab == subTabNew
 
 	switch msg.String() {
-	case "s":
+	case "1":
 		if !filtering {
-			p.subTab = "sessions"
+			p.subTab = subTabNew
+			p.filterText = ""
+			return plugin.NoopAction()
+		}
+	case "2":
+		if !filtering {
+			p.subTab = subTabSaved
+			p.filterText = ""
+			if p.unified != nil {
+				p.unified.viewFilter = ViewFilterSavedOnly
+			}
+			if cmd := p.Refresh(); cmd != nil {
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
+			}
+			return plugin.NoopAction()
+		}
+	case "3":
+		if !filtering {
+			p.subTab = subTabRecent
 			p.filterText = ""
 			if p.unified != nil {
 				p.unified.viewFilter = ViewFilterLiveOnly
@@ -519,17 +552,27 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 			}
 			return plugin.NoopAction()
 		}
-	case "n":
+	case "4":
 		if !filtering {
-			p.subTab = "new"
-			p.filterText = ""
-			return plugin.NoopAction()
-		}
-	case "t":
-		if !filtering {
-			p.subTab = "worktrees"
+			p.subTab = subTabWorktrees
 			p.filterText = ""
 			p.refreshWorktreeList()
+			return plugin.NoopAction()
+		}
+	case "left":
+		if !filtering {
+			prev := p.subTab
+			p.subTab = (p.subTab - 1 + subTabCount) % subTabCount
+			p.filterText = ""
+			p.syncSubTabState(prev)
+			return plugin.NoopAction()
+		}
+	case "right":
+		if !filtering {
+			prev := p.subTab
+			p.subTab = (p.subTab + 1) % subTabCount
+			p.filterText = ""
+			p.syncSubTabState(prev)
 			return plugin.NoopAction()
 		}
 	case "esc":
@@ -539,8 +582,8 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 			p.applyFilter()
 			return plugin.NoopAction()
 		}
-		if p.subTab == "sessions" || p.subTab == "worktrees" {
-			p.subTab = "new"
+		if p.subTab == subTabSaved || p.subTab == subTabRecent || p.subTab == subTabWorktrees {
+			p.subTab = subTabNew
 			return plugin.NoopAction()
 		}
 		if p.pendingLaunchTodo != nil {
@@ -558,22 +601,60 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	}
 
 	switch p.subTab {
-	case "sessions":
+	case subTabRecent, subTabSaved:
 		return p.handleSessionsTab(msg)
-	case "new":
+	case subTabNew:
 		return p.handleNewTab(msg)
-	case "worktrees":
+	case subTabWorktrees:
 		return p.handleWorktreesTab(msg)
 	}
 	return plugin.NoopAction()
 }
 
+// syncSubTabState sets viewFilter and triggers refresh when switching sub-tabs
+// via arrow keys. Called after p.subTab has been updated.
+func (p *Plugin) syncSubTabState(_ int) {
+	switch p.subTab {
+	case subTabSaved:
+		if p.unified != nil {
+			p.unified.viewFilter = ViewFilterSavedOnly
+		}
+	case subTabRecent:
+		if p.unified != nil {
+			p.unified.viewFilter = ViewFilterLiveOnly
+		}
+	case subTabWorktrees:
+		p.refreshWorktreeList()
+	}
+}
+
 // applyFilter sets the filter text on the active list for the current sub-tab.
 func (p *Plugin) applyFilter() {
 	switch p.subTab {
-	case "new":
+	case subTabNew:
 		p.newList.SetFilterText(p.filterText)
 	}
+}
+
+// savedCount returns the number of saved sessions.
+func (p *Plugin) savedCount() int {
+	if p.unified == nil {
+		return 0
+	}
+	return len(p.unified.savedSessions)
+}
+
+// recentCount returns the number of live sessions.
+func (p *Plugin) recentCount() int {
+	if p.unified == nil {
+		return 0
+	}
+	return len(p.unified.liveSessions)
+}
+
+// worktreeCount returns the number of worktree items.
+func (p *Plugin) worktreeCount() int {
+	return len(p.worktreeItems)
 }
 
 // HandleMessage processes non-key messages.
@@ -605,7 +686,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		return false, plugin.NoopAction()
 
 	case plugin.TabViewMsg:
-		if msg.Route == "active" || msg.Route == "sessions" || msg.Route == "resume" {
+		if msg.Route == "active" || msg.Route == "sessions" || msg.Route == "resume" || msg.Route == "saved" || msg.Route == "sessions/saved" || msg.Route == "sessions/new" {
 			if cmd := p.Refresh(); cmd != nil {
 				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 			}
@@ -664,7 +745,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 
 	// Delegate to active list for unhandled messages
 	switch p.subTab {
-	case "new":
+	case subTabNew:
 		var cmd tea.Cmd
 		p.newList, cmd = p.newList.Update(msg)
 		if cmd != nil {
@@ -679,17 +760,19 @@ func (p *Plugin) View(width, height, frame int) string {
 	p.frame = frame
 	p.newList.SetDelegate(itemDelegate{frame: frame, styles: &p.styles, grad: &p.grad})
 
+	tabBar := p.renderSubTabBar()
+
 	var content string
 	switch p.subTab {
-	case "sessions":
+	case subTabRecent, subTabSaved:
 		content = p.viewSessionsTab()
-	case "new":
+	case subTabNew:
 		content = p.viewNewTab()
-	case "worktrees":
+	case subTabWorktrees:
 		content = p.viewWorktreesTab()
 	}
 
-	return content
+	return tabBar + content
 }
 
 // ---------------------------------------------------------------------------
@@ -1208,6 +1291,34 @@ func gitRepoRootFor(dir string) string {
 // Internal: views
 // ---------------------------------------------------------------------------
 
+func (p *Plugin) renderSubTabBar() string {
+	type tabInfo struct {
+		name  string
+		count int
+	}
+	tabs := []tabInfo{
+		{"New Session", -1}, // -1 means don't show count
+		{"Saved", p.savedCount()},
+		{"Recent", p.recentCount()},
+		{"Worktrees", p.worktreeCount()},
+	}
+	var parts []string
+	for i, t := range tabs {
+		var label string
+		if t.count >= 0 {
+			label = fmt.Sprintf("[%d] %s (%d)", i+1, t.name, t.count)
+		} else {
+			label = fmt.Sprintf("[%d] %s", i+1, t.name)
+		}
+		if i == p.subTab {
+			parts = append(parts, p.styles.activeTab.Render(label))
+		} else {
+			parts = append(parts, p.styles.inactiveTab.Render(label))
+		}
+	}
+	return "  " + strings.Join(parts, "  ") + "\n"
+}
+
 func (p *Plugin) viewSessionsTab() string {
 	if p.unified == nil {
 		return p.styles.hint.Render("  Daemon not connected.")
@@ -1347,22 +1458,22 @@ func (p *Plugin) renderHints() string {
 		}
 	} else {
 		switch p.subTab {
-		case "sessions":
+		case subTabRecent, subTabSaved:
 			if p.unified != nil && p.unified.archiveMode {
-				hints = p.styles.hint.Render("enter resume   b save   d delete   j/k navigate   A back   n new   t worktrees")
+				hints = p.styles.hint.Render("enter resume   b save   d delete   j/k navigate   A back   1-4 tabs   ←/→ cycle")
 			} else {
-				hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive   n new   t worktrees")
+				hints = p.styles.hint.Render("enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive   1-4 tabs   ←/→ cycle")
 			}
-		case "new":
+		case subTabNew:
 			if p.filterText != "" {
 				hints = p.styles.hint.Render(fmt.Sprintf("filter: %s   enter launch   esc clear   backspace edit", p.filterText))
 			} else {
-				hints = p.styles.hint.Render("type to filter   enter launch   w worktree   s sessions   n new   t worktrees   shift+up/down reorder   del remove   esc quit")
+				hints = p.styles.hint.Render("type to filter   enter launch   w worktree   1-4 tabs   ←/→ cycle   shift+up/down reorder   del remove   esc quit")
 			}
-		case "worktrees":
-			hints = p.styles.hint.Render("enter launch   d delete   p prune   s sessions   n new   esc back")
+		case subTabWorktrees:
+			hints = p.styles.hint.Render("enter launch   d delete   p prune   1-4 tabs   ←/→ cycle   esc back")
 		default:
-			hints = p.styles.hint.Render("s sessions   n new   t worktrees   esc quit")
+			hints = p.styles.hint.Render("1-4 tabs   ←/→ cycle   esc quit")
 		}
 	}
 	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, hints)
@@ -1441,7 +1552,7 @@ func (p *Plugin) movePathDown() plugin.Action {
 func (p *Plugin) SetPendingLaunchTodo(todo *db.Todo) {
 	p.pendingLaunchTodo = todo
 	if todo != nil {
-		p.subTab = "new"
+		p.subTab = subTabNew
 	}
 }
 

@@ -326,8 +326,8 @@ Session labels follow this fallback order:
 
 For **live sessions** (Recent sub-tab):
 
-- **With topic:** `topic  project (branch)  age` — matches saved session format but adds age
-- **Without topic:** `project (branch)  age` — same as current
+- **With topic:** `topic  project (branch)  age` — project basename appears in suffix when topic displaces it from label
+- **Without topic:** `project (branch)  age` — project basename is the label
 
 For **saved sessions** (Saved sub-tab), the suffix shows project basename and branch: `claude-command-center (main)`
 
