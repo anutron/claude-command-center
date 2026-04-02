@@ -317,3 +317,4 @@ All types are exported for use by other packages:
 - Soft-deleted todos excluded from `dbLoadTodos`, `DBLoadTodoByID`, `DBLoadTodoByDisplayID`, `DBIsEmpty`
 - Soft-deleted todos excluded from sort_order subqueries in defer/promote/insert
 - `display_id` assignment includes soft-deleted rows (globally unique)
+- Soft-deleted source_ref freed from unique index, allowing re-insert with same source_ref

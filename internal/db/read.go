@@ -64,7 +64,7 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 	rows, err := db.Query(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
 		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
-		FROM cc_todos ORDER BY sort_order ASC`)
+		FROM cc_todos WHERE deleted_at IS NULL ORDER BY sort_order ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -461,7 +461,7 @@ func DBLoadTodoByID(db *sql.DB, id string) (*Todo, error) {
 	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
 		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
-		FROM cc_todos WHERE id = ?`, id).
+		FROM cc_todos WHERE id = ? AND deleted_at IS NULL`, id).
 		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
 			&proposedPrompt, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt,
@@ -505,7 +505,7 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
 		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
-		FROM cc_todos WHERE display_id = ?`, displayID).
+		FROM cc_todos WHERE display_id = ? AND deleted_at IS NULL`, displayID).
 		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
 			&proposedPrompt, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt,
@@ -645,7 +645,7 @@ func DBLoadIgnoredPRs(d *sql.DB) ([]PullRequest, error) {
 // DBIsEmpty returns true if no todos exist in the database yet.
 func DBIsEmpty(db *sql.DB) bool {
 	var count int
-	err := db.QueryRow(`SELECT COUNT(*) FROM cc_todos`).Scan(&count)
+	err := db.QueryRow(`SELECT COUNT(*) FROM cc_todos WHERE deleted_at IS NULL`).Scan(&count)
 	return err != nil || count == 0
 }
 

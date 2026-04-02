@@ -48,7 +48,7 @@ func DBRestoreTodo(db *sql.DB, id, status string, completedAt *time.Time) error 
 
 func DBDeferTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed')), updated_at = ? WHERE id = ?`,
+	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed') AND deleted_at IS NULL), updated_at = ? WHERE id = ?`,
 		now, id)
 	if err != nil {
 		return fmt.Errorf("defer todo %s: %w", id, err)
@@ -58,7 +58,7 @@ func DBDeferTodo(db *sql.DB, id string) error {
 
 func DBPromoteTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed')), updated_at = ? WHERE id = ?`,
+	_, err := db.Exec(`UPDATE cc_todos SET sort_order = (SELECT COALESCE(MIN(sort_order), 0) - 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed') AND deleted_at IS NULL), updated_at = ? WHERE id = ?`,
 		now, id)
 	if err != nil {
 		return fmt.Errorf("promote todo %s: %w", id, err)
@@ -85,7 +85,7 @@ func DBInsertTodo(db *sql.DB, t Todo) error {
 		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 		(SELECT COALESCE(MAX(display_id), 0) + 1 FROM cc_todos),
-		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed')),
+		(SELECT COALESCE(MAX(sort_order), 0) + 1 FROM cc_todos WHERE status NOT IN ('completed', 'dismissed') AND deleted_at IS NULL),
 		?, ?, ?)`,
 		t.ID, t.Title, t.Status, t.Source, t.SourceRef, t.Context, t.Detail,
 		t.WhoWaiting, t.ProjectDir, t.Due, t.Effort, t.SessionID, t.ProposedPrompt, t.SessionSummary,
@@ -697,7 +697,8 @@ func DBDeleteSynthesisMerges(db *sql.DB, synthesisID string) error {
 }
 
 func DBDeleteTodo(db *sql.DB, id string) error {
-	_, err := db.Exec(`DELETE FROM cc_todos WHERE id = ?`, id)
+	now := FormatTime(time.Now())
+	_, err := db.Exec(`UPDATE cc_todos SET deleted_at = ?, updated_at = ? WHERE id = ?`, now, now, id)
 	return err
 }
 

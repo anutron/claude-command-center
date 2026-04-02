@@ -315,6 +315,11 @@ func migrateSchema(db *sql.DB) error {
 		ended_at      TEXT NOT NULL
 	)`)
 
+	// Soft-delete support: add deleted_at column and update unique index to exclude soft-deleted rows
+	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN deleted_at TEXT`)
+	_, _ = db.Exec(`DROP INDEX IF EXISTS idx_cc_todos_source_ref`)
+	_, _ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_todos_source_ref ON cc_todos(source_ref) WHERE source_ref IS NOT NULL AND source_ref != '' AND deleted_at IS NULL`)
+
 	return nil
 }
 

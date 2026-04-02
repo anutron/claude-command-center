@@ -1780,3 +1780,104 @@ func TestDBAcceptTodoOnlyFromNew(t *testing.T) {
 		t.Errorf("DBAcceptTodo should transition 'new' to 'backlog', got %q", todo2.Status)
 	}
 }
+
+func TestDBDeleteTodoSoftDelete(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	todo := Todo{
+		ID:        "soft-del-1",
+		Title:     "Soft delete me",
+		Status:    StatusBacklog,
+		Source:    "manual",
+		CreatedAt: time.Now(),
+	}
+	if err := DBInsertTodo(db, todo); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// Delete (soft)
+	if err := DBDeleteTodo(db, "soft-del-1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	// DBLoadTodoByID should return nil (filtered out)
+	loaded, err := DBLoadTodoByID(db, "soft-del-1")
+	if err != nil {
+		t.Fatalf("load by id: %v", err)
+	}
+	if loaded != nil {
+		t.Fatal("expected nil from DBLoadTodoByID after soft delete")
+	}
+
+	// Row still exists in DB with non-null deleted_at
+	var deletedAt string
+	err = db.QueryRow(`SELECT deleted_at FROM cc_todos WHERE id = ?`, "soft-del-1").Scan(&deletedAt)
+	if err != nil {
+		t.Fatalf("direct query: %v", err)
+	}
+	if deletedAt == "" {
+		t.Fatal("expected non-empty deleted_at")
+	}
+
+	// DBIsEmpty should return true (only soft-deleted todos)
+	if !DBIsEmpty(db) {
+		t.Fatal("expected DBIsEmpty to return true when only soft-deleted todos exist")
+	}
+}
+
+func TestSoftDeletedSourceRefAllowsReinsert(t *testing.T) {
+	dir := t.TempDir()
+	db, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer db.Close()
+
+	// Insert todo with source_ref
+	todo1 := Todo{
+		ID:        "sr-1",
+		Title:     "Original",
+		Status:    StatusBacklog,
+		Source:    "granola",
+		SourceRef: "https://meeting/123",
+		CreatedAt: time.Now(),
+	}
+	if err := DBInsertTodo(db, todo1); err != nil {
+		t.Fatalf("insert first: %v", err)
+	}
+
+	// Soft-delete it
+	if err := DBDeleteTodo(db, "sr-1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	// Insert new todo with same source_ref — should succeed (no unique constraint violation)
+	todo2 := Todo{
+		ID:        "sr-2",
+		Title:     "Replacement",
+		Status:    StatusBacklog,
+		Source:    "granola",
+		SourceRef: "https://meeting/123",
+		CreatedAt: time.Now(),
+	}
+	if err := DBInsertTodo(db, todo2); err != nil {
+		t.Fatalf("insert second with same source_ref should succeed: %v", err)
+	}
+
+	// Verify the new todo is loadable
+	loaded, err := DBLoadTodoByID(db, "sr-2")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("expected to find sr-2")
+	}
+	if loaded.Title != "Replacement" {
+		t.Fatalf("expected title 'Replacement', got %s", loaded.Title)
+	}
+}
