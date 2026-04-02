@@ -219,6 +219,17 @@ func (s *Server) watchAgentSessionID(id string, sess *agent.Session) {
 	for {
 		select {
 		case <-sess.Done():
+			// Final check — session may have captured the ID just before exiting.
+			sess.Mu.Lock()
+			sid := sess.SessionID
+			sess.Mu.Unlock()
+			if sid != "" {
+				data, _ := json.Marshal(map[string]interface{}{
+					"id":         id,
+					"session_id": sid,
+				})
+				s.Broadcast(Event{Type: "agent.session_id", Data: data})
+			}
 			return
 		case <-ticker.C:
 			sess.Mu.Lock()

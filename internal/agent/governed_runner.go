@@ -49,7 +49,8 @@ func NewGovernedRunner(inner Runner, db *sql.DB, cfg *config.AgentConfig) *Gover
 		budget:   NewBudgetTracker(db, cfg),
 		limiter:  NewRateLimiter(db, cfg),
 		cfg:      cfg,
-		costRows: make(map[string]costEntry),
+		costRows:        make(map[string]costEntry),
+		lastBroadcastAt: make(map[string]time.Time),
 	}
 }
 
@@ -96,9 +97,6 @@ func (g *GovernedRunner) LaunchOrQueue(req Request) (queued bool, cmd tea.Cmd) {
 		last := g.lastBroadcastAt[req.ID]
 		shouldBroadcast := fn != nil && time.Since(last) >= 2*time.Second
 		if shouldBroadcast {
-			if g.lastBroadcastAt == nil {
-				g.lastBroadcastAt = make(map[string]time.Time)
-			}
 			g.lastBroadcastAt[req.ID] = time.Now()
 		}
 		g.mu.Unlock()

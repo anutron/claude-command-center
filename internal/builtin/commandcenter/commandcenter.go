@@ -158,7 +158,7 @@ type Plugin struct {
 	sessionViewerVP           viewport.Model
 	sessionViewerAutoScroll   bool
 	sessionViewerDone         bool           // true when session has ended
-	sessionViewerListening    bool           // true when listenForAgentEvent cmd is active
+	sessionViewerListening    bool           // true when listenForDaemonAgentEvents polling cmd is active
 	sessionViewerInputting    bool           // true when textarea input is active
 	sessionViewerInput        textarea.Model // textarea for sending messages to agent
 	sessionViewerReplayEvents []sessionEvent // events loaded from disk for post-session replay

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/anutron/claude-command-center/internal/agent"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -83,15 +82,3 @@ func renderEventLine(ev sessionEvent, styles *ccStyles, wrapWidth int) string {
 	}
 }
 
-// listenForAgentEvent returns a tea.Cmd that blocks on the event channel and
-// returns an agentEventMsg when an event arrives, or agentEventsDoneMsg when
-// the channel is closed.
-func listenForAgentEvent(todoID string, ch <-chan agent.SessionEvent) tea.Cmd {
-	return func() tea.Msg {
-		ev, ok := <-ch
-		if !ok {
-			return agentEventsDoneMsg{todoID: todoID}
-		}
-		return agentEventMsg{todoID: todoID, event: ev}
-	}
-}
