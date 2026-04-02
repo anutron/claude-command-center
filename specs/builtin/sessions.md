@@ -2,17 +2,29 @@
 
 ## Purpose
 
-Manage sessions, project launching, and worktrees as a plugin. Users can browse active/saved/archived sessions, launch new Claude sessions from project paths, and manage git worktrees.
+Manage sessions, project launching, and worktrees as a single plugin with internal sub-tabs. The nav bar shows one "Sessions" entry; the plugin renders four sub-tabs internally (following the PRs plugin pattern). Users can launch new Claude sessions, browse saved/live sessions, and manage git worktrees.
 
 ## Slug: `sessions`
 
 ## Routes
 
-- `sessions/active` — live sessions only (Active tab, default)
-- `sessions/resume` — saved/bookmarked sessions only (Resume tab)
-- `sessions/new` — new session list
-- `sessions/worktrees` — worktrees sub-tab
-- `sessions/sessions` — legacy alias for `active`
+- `sessions` — default route, renders the New Session sub-tab
+- `sessions/new` — New Session sub-tab (project picker)
+- `sessions/saved` — Saved sub-tab (bookmarked sessions, ViewFilterSavedOnly)
+- `sessions/recent` — Recent sub-tab (live daemon sessions, ViewFilterLiveOnly)
+- `sessions/worktrees` — Worktrees sub-tab
+
+**Legacy aliases** (for backward compatibility):
+
+- `sessions/active` → redirects to `sessions/recent`
+- `sessions/resume` → redirects to `sessions/saved`
+- `sessions/sessions` → redirects to `sessions/recent`
+
+## Nav Bar
+
+The Sessions plugin registers a **single host tab** in the nav bar with route `sessions`. `Tab`/`Shift-Tab` at the host level skips to the next/previous plugin (Command Center, PRs, etc.) — it does NOT cycle sub-tabs.
+
+Inside the plugin, a sub-tab bar renders at the top: `[1] New Session  [2] Saved  [3] Recent  [4] Worktrees`
 
 ## State
 
@@ -21,7 +33,7 @@ Manage sessions, project launching, and worktrees as a plugin. Users can browse 
 - paths []string
 - confirming, confirmYes bool
 - confirmItem
-- sub-tab: "sessions" (active), "resume", "new", or "worktrees"
+- subTab int — 0=new, 1=saved, 2=recent, 3=worktrees
 - worktreeItems []worktreeItem
 - worktreeCursor int
 - worktreeWarning string (non-empty = show warning overlay)
@@ -55,16 +67,16 @@ A session that is both live in the daemon AND bookmarked appears in **Live** onl
 
 ### View Modes
 
-The Active and Resume tabs each have their own view filter. The `A` key (shift-a) toggles archive mode within the current tab. The `a` key (lowercase) archives the selected session.
+The Saved and Recent sub-tabs each have their own view filter. The `A` key (shift-a) toggles archive mode within the current sub-tab. The `a` key (lowercase) archives the selected session.
 
-| Tab / Mode | Contents | Default |
-|------------|----------|---------|
-| **Active** (main) | Live sessions only | Yes |
-| **Active** (archive) | Archived sessions only | No |
-| **Resume** (main) | Saved/bookmarked sessions only | Yes |
-| **Resume** (archive) | Archived sessions only | No |
+| Sub-Tab / Mode | Contents | Default |
+|----------------|----------|---------|
+| **Recent** (main) | Live sessions only | Yes |
+| **Recent** (archive) | Archived sessions only | No |
+| **Saved** (main) | Saved/bookmarked sessions only | Yes |
+| **Saved** (archive) | Archived sessions only | No |
 
-The Active tab MUST NOT show saved sessions. Saved sessions appear exclusively in the Resume tab.
+The Recent sub-tab MUST NOT show saved sessions. Saved sessions appear exclusively in the Saved sub-tab.
 
 ### Auto-Archiving
 
@@ -74,27 +86,31 @@ When `Refresh()` polls the daemon, it compares the current session list against 
 
 ## Key Bindings
 
-### Global (available from any sub-tab, when not in overlay)
+### Sub-Tab Navigation (available from any sub-tab, when not in overlay)
 
 | Key | Description | Promoted |
 |-----|-------------|----------|
-| s | Switch to Sessions sub-tab | yes |
-| n | Switch to New sub-tab | yes |
-| t | Switch to Worktrees sub-tab | yes |
-| esc | Quit (or back to new from sessions/worktrees) | yes |
+| 1 | Switch to New Session sub-tab | yes |
+| 2 | Switch to Saved sub-tab | yes |
+| 3 | Switch to Recent sub-tab | yes |
+| 4 | Switch to Worktrees sub-tab | yes |
+| left/right | Cycle sub-tabs (wraps around) | yes |
+| esc | Back to New Session; from New Session, quit | yes |
 
-### Sessions sub-tab (main mode)
+`Tab`/`Shift-Tab` are NOT consumed by the plugin — they propagate to the host for switching between top-level plugins.
+
+### Saved / Recent sub-tabs (main mode)
 
 | Key | Description | Promoted |
 |-----|-------------|----------|
 | enter | Resume selected session | yes |
-| b | Bookmark live session → Saved | yes |
+| b | Bookmark live session → Saved (Recent only) | yes |
 | d | Dismiss/remove (tier-dependent) | yes |
 | a | Archive selected session (verb action) | yes |
 | A | View archive list (toggle archive mode) | yes |
 | j/k or up/down | Navigate list | yes |
 
-### Sessions sub-tab (archive mode)
+### Saved / Recent sub-tabs (archive mode)
 
 | Key | Description | Promoted |
 |-----|-------------|----------|
@@ -104,7 +120,7 @@ When `Refresh()` polls the daemon, it compares the current session list against 
 | A | Return to main mode | yes |
 | j/k or up/down | Navigate list | yes |
 
-### New sub-tab
+### New Session sub-tab
 
 | Key | Description | Promoted |
 |-----|-------------|----------|
@@ -123,7 +139,7 @@ When `Refresh()` polls the daemon, it compares the current session list against 
 | d | Delete selected worktree (with confirmation) | yes |
 | p | Prune all worktrees for selected project (with confirmation) | yes |
 | up/down/k/j | Navigate worktree list | yes |
-| esc | Back to new sub-tab | - |
+| esc | Back to New Session sub-tab | - |
 
 ### Confirmation dialogs (delete path)
 
@@ -152,10 +168,12 @@ When `Refresh()` polls the daemon, it compares the current session list against 
 
 Each sub-tab displays a hint bar at the bottom:
 
-- **Sessions (main):** `enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive   n new   t worktrees`
-- **Sessions (archive):** `enter resume   b save   d delete   j/k navigate   A back   n new   t worktrees`
-- **New:** `type to filter   enter launch   w worktree   s sessions   n new   t worktrees   shift+up/down reorder   del remove   esc quit`
-- **Worktrees:** `enter launch   d delete   p prune   s sessions   n new   esc back`
+- **New Session:** `type to filter   enter launch   w worktree   shift+up/down reorder   del remove   esc quit`
+- **Saved (main):** `enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive`
+- **Saved (archive):** `enter resume   b save   d delete   j/k navigate   A back`
+- **Recent (main):** `enter resume   b bookmark   d dismiss   j/k navigate   a archive   A view archive`
+- **Recent (archive):** `enter resume   b save   d delete   j/k navigate   A back`
+- **Worktrees:** `enter launch   d delete   p prune   esc back`
 - **Worktree warning:** `⚠ Not a git repository — worktrees require git.` + `[enter] Launch directly in this directory   [esc] Cancel`
 - **Delete confirmation:** `Delete worktree <label>?` + `[y] Yes, delete   [n] Cancel`
 - **Prune confirmation:** `Remove all worktrees for <project>? (<count> worktrees)` + `[y] Yes, prune all   [n] Cancel`
@@ -166,7 +184,17 @@ Each sub-tab displays a hint bar at the bottom:
 - Publishes: `pending.todo.cancel` when user cancels a pending todo launch
 - Subscribes: `pending.todo` to set a pending launch context
 - Handles `plugin.NotifyMsg` for `data.refreshed`, `session.registered`, `session.updated`, `session.ended` — dispatches async `Refresh()` cmd
-- Subscribes (event bus): `pending.todo` to set a pending launch context
+
+## Topic Bridge (CCC_SESSION_ID)
+
+When CCC launches a Claude session, it sets the `CCC_SESSION_ID` environment variable to the daemon session ID. The CLAUDE.md snippet in the user's global config uses this to call `ccc update-session --session-id "$CCC_SESSION_ID" --topic "..."`, which:
+
+1. Updates the daemon's session record with the topic text
+2. The daemon broadcasts a `session.updated` event
+3. The TUI receives the notification and triggers an async `Refresh()`
+4. The Recent sub-tab re-renders, now showing the updated topic for that session
+
+This creates a closed loop: Claude sets its topic via the CLI, the daemon propagates the change, and the TUI reflects it in real time.
 
 ## Storage
 
@@ -215,24 +243,26 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 ## Behavior
 
 1. On Init, loads paths from DB, bookmarks from DB, archived sessions from DB, creates unified view
-2. Sessions sub-tab shows live sessions (from daemon) + saved sessions (bookmarks), with archive toggle
-3. New sub-tab shows project paths + Browse option
-4. Worktrees sub-tab shows all CCC-managed worktrees grouped by project
-5. Enter on a live/saved/archived session resumes it (`--resume <session_id>`). For live sessions, the daemon's CCC-generated session_id differs from Claude CLI's session UUID, so the plugin resolves the real Claude session_id by scanning `~/.claude/projects/<encoded-project>/` for the most recently modified `.jsonl` file. If no file is found, falls back to the daemon session_id.
+2. Recent sub-tab shows live sessions (from daemon) with archive toggle
+3. Saved sub-tab shows bookmarked sessions with archive toggle
+4. New Session sub-tab shows project paths + Browse option
+5. Worktrees sub-tab shows all CCC-managed worktrees grouped by project
+6. Enter on a live/saved/archived session resumes it (`--resume <session_id>`). For live sessions, the daemon's CCC-generated session_id differs from Claude CLI's session UUID, so the plugin resolves the real Claude session_id by scanning `~/.claude/projects/<encoded-project>/` for the most recently modified `.jsonl` file. If no file is found, falls back to the daemon session_id.
 
 **Resolving Claude session IDs:** When the user presses `enter` on a live session, CCC resolves the Claude session UUID by finding the most recently modified JSONL file in `~/.claude/projects/<encoded-path>/`. The path is encoded by replacing all path separators (`/`) with `-` (e.g., `/Users/aaron/project` → `-Users-aaron-project`). If no JSONL file is found, the daemon session ID is used for `--resume`.
-6. Enter on a project path launches Claude in that directory
-7. `b` on a live session bookmarks it; on an archived session promotes it to Saved
-8. `d` dismisses live ended sessions, removes bookmarks, or deletes archived sessions (tier-dependent)
-9. `a` in sessions sub-tab archives the selected session (writes to `cc_archived_sessions`, removes from current view); `A` toggles between main and archive modes
-10. `w` on a path in new sub-tab launches Claude in a new worktree
+7. Enter on a project path launches Claude in that directory (sets `CCC_SESSION_ID` env var)
+8. `b` on a live session bookmarks it; on an archived session promotes it to Saved
+9. `d` dismisses live ended sessions, removes bookmarks, or deletes archived sessions (tier-dependent)
+10. `a` in Saved/Recent sub-tabs archives the selected session (writes to `cc_archived_sessions`, removes from current view); `A` toggles between main and archive modes
+11. `w` on a path in New Session sub-tab launches Claude in a new worktree
     - If the path is not a git repo, shows a warning overlay
-11. Worktrees sub-tab scans all saved paths for git repos, lists their worktrees grouped by project
-12. Delete/backspace on paths shows confirmation dialog
-13. Shift+up/down swaps selected path, persisted via `sort_order` column
-14. When pendingLaunchTodo is set (via event bus), shows banner "Select project for: <title>"
-15. If `config.HomeDir` is set, auto-added to paths list on Init
-16. `esc` from sessions/worktrees returns to new sub-tab
+12. Worktrees sub-tab scans all saved paths for git repos, lists their worktrees grouped by project
+13. Delete/backspace on paths shows confirmation dialog
+14. Shift+up/down swaps selected path, persisted via `sort_order` column
+15. When pendingLaunchTodo is set (via event bus), shows banner "Select project for: <title>"
+16. If `config.HomeDir` is set, auto-added to paths list on Init
+17. `esc` from Saved/Recent/Worktrees returns to New Session sub-tab
+18. `1/2/3/4` switch directly to sub-tabs; `left/right` arrows cycle sub-tabs (wraps)
 
 ### LLM Path Descriptions
 
@@ -294,8 +324,13 @@ Session labels follow this fallback order:
 2. **Project basename** — `filepath.Base(project)` (e.g., "claude-command-center")
 3. **Branch** — last resort when both topic and project are empty
 
-For **live sessions**, the suffix shows branch in parentheses and session age: `(main)  2h ago`
-For **saved sessions**, the suffix shows project basename and branch: `claude-command-center (main)`
+For **live sessions** (Recent sub-tab):
+
+- **With topic:** `topic  project (branch)  age` — matches saved session format but adds age
+- **Without topic:** `project (branch)  age` — same as current
+
+For **saved sessions** (Saved sub-tab), the suffix shows project basename and branch: `claude-command-center (main)`
+
 For **archived sessions**, the suffix shows how long ago the session ended
 
 ### Blocked Session Rendering
@@ -312,52 +347,92 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 
 ## Test Cases
 
-- Init loads paths, bookmarks, and archived sessions
-- Active tab shows only Live sessions in main mode (no Saved)
-- Resume tab shows only Saved sessions in main mode (no Live)
-- Sessions tab shows Archived section in archive mode
+### Sub-tab navigation
+
+- `1` key switches to New Session sub-tab (subTab=0)
+- `2` key switches to Saved sub-tab (subTab=1)
+- `3` key switches to Recent sub-tab (subTab=2)
+- `4` key switches to Worktrees sub-tab (subTab=3)
+- `right` arrow from New Session goes to Saved; from Worktrees wraps to New Session
+- `left` arrow from New Session wraps to Worktrees; from Saved goes to New Session
+- `esc` from Saved/Recent/Worktrees returns to New Session
+- `esc` from New Session quits (returns ActionQuit)
+- `Tab`/`Shift-Tab` are NOT consumed — propagate to host for plugin switching
+- Sub-tab bar renders with active tab highlighted (e.g., `[1] New Session  [2] Saved  ...`)
+
+### Session display and filtering
+
+- Recent sub-tab shows only live sessions in main mode (no Saved)
+- Saved sub-tab shows only bookmarked sessions in main mode (no Live)
+- Both sub-tabs show Archived section in archive mode
 - Toggle archive mode resets cursor
-- Deduplication: bookmarked live session shows ★, not duplicated in Saved
-- Empty state shows appropriate message
+- Deduplication: bookmarked live session shows ★ in Recent, not duplicated in Saved
+- Empty state shows appropriate message per sub-tab
+- Init loads paths, bookmarks, and archived sessions
+
+### Session label rendering
+
+- Live session with topic: renders `topic  project (branch)  age`
+- Live session without topic: renders `project (branch)  age`
+- Saved session label shows topic or project basename + branch
+- Archived session suffix shows how long ago it ended
+
+### Session actions
+
 - Enter on live session returns ActionLaunch with correct dir and resume_id (resolved from Claude session files, not daemon ID)
 - Enter on saved session returns ActionLaunch
 - Enter on archived session returns ActionLaunch
-- Live session label shows project basename when topic is empty (not branch)
-- Live session label shows topic when topic is set
-- Live session suffix shows branch in parentheses and age
 - `b` on live session saves bookmark to DB
 - `b` on archived session promotes to Saved, removes from archive
 - `d` on running session shows "Can't dismiss" flash
 - `d` on saved session removes bookmark
 - `d` on archived session deletes from DB
-- Auto-archive: ended session (not bookmarked) written to cc_archived_sessions
-- Auto-archive: bookmarked ended session NOT archived
-- HandleKey "enter" on path sets Launch action
-- HandleKey "delete" enters confirming mode
-- Sub-tab switching works (s, n, t)
-- Shift+up/down reorders paths
-- HandleKey "w" on a git repo path sets Launch with worktree=true
-- HandleKey "w" on a non-git path shows worktree warning
-- Worktree confirmation y executes action, n/esc cancels
-- Esc from sessions/worktrees sub-tab returns to new
-- LLMDescribePath with README.md returns LLM-generated summary
-- LLMDescribePath without README.md or CLAUDE.md falls back to heuristic
-- LLMDescribePath on LLM error falls back to heuristic
-- Browse (fzf) selection adds path to DB, writes heuristic description, fires background LLM upgrade, launches session
-- Browse (fzf) cancellation (esc/error) is a no-op
 - `d` on ended live session calls daemon ArchiveSession RPC and removes from view
-- `d` on active/running session shows "Can't dismiss" flash
-- NavigateTo with `pending_todo_title` arg sets pending launch context and shows banner
-- Esc with pending todo clears it, publishes `pending.todo.cancel`, navigates to command-center
-- Blocked session (agent status == "blocked") renders yellow dot and "Blocked" text
-- Active non-blocked session renders green dot
-- Ended session renders muted hollow dot
-- NavigateTo("resume") sets subTab to "sessions" (not left unchanged)
-- NavigateTo("active") sets subTab to "sessions" (not left unchanged)
-- Switching from New Session tab to Resume tab renders sessions content, not project list
-- Tab switching does not corrupt other tabs' content (each NavigateTo resets subTab correctly)
 - `a` on ended live session archives it to DB and removes from view
 - `a` on running/active live session shows "Can't archive running session" flash
 - `a` on saved session archives it to DB, removes bookmark, removes from view
 - `A` toggles archive mode (view archive list)
 - `A` in archive mode returns to main mode
+- Auto-archive: ended session (not bookmarked) written to cc_archived_sessions
+- Auto-archive: bookmarked ended session NOT archived
+
+### Topic bridge
+
+- Launching a session sets `CCC_SESSION_ID` env var to the daemon session ID
+- `session.updated` notification triggers async Refresh
+- After topic update via `ccc update-session`, Recent sub-tab shows the new topic in the session label
+
+### New Session sub-tab
+
+- HandleKey "enter" on path sets Launch action
+- HandleKey "delete" enters confirming mode
+- Shift+up/down reorders paths
+- HandleKey "w" on a git repo path sets Launch with worktree=true
+- HandleKey "w" on a non-git path shows worktree warning
+- LLMDescribePath with README.md returns LLM-generated summary
+- LLMDescribePath without README.md or CLAUDE.md falls back to heuristic
+- LLMDescribePath on LLM error falls back to heuristic
+- Browse (fzf) selection adds path to DB, writes heuristic description, fires background LLM upgrade, launches session
+- Browse (fzf) cancellation (esc/error) is a no-op
+
+### Worktrees sub-tab
+
+- Worktree confirmation y executes action, n/esc cancels
+- Esc from Worktrees sub-tab returns to New Session
+
+### Routing / NavigateTo
+
+- NavigateTo("sessions/saved") sets subTab to 1 (Saved)
+- NavigateTo("sessions/recent") sets subTab to 2 (Recent)
+- NavigateTo("sessions/active") redirects to Recent (subTab=2)
+- NavigateTo("sessions/resume") redirects to Saved (subTab=1)
+- NavigateTo("sessions") sets subTab to 0 (New Session)
+- Switching sub-tabs does not corrupt other sub-tabs' content
+- NavigateTo with `pending_todo_title` arg sets pending launch context and shows banner
+- Esc with pending todo clears it, publishes `pending.todo.cancel`, navigates to command-center
+
+### Blocked sessions
+
+- Blocked session (agent status == "blocked") renders yellow dot and "Blocked" text
+- Active non-blocked session renders green dot
+- Ended session renders muted hollow dot
