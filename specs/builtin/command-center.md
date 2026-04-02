@@ -101,7 +101,7 @@ Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectD
 |-----|---------|-------------|
 | `tab` | detail:viewing | Cycle to next editable field |
 | `shift+tab` | detail:viewing | Cycle to previous editable field |
-| `enter` | detail:viewing | Edit selected field (Status opens inline selector; Due opens text input; ProjectDir opens scrollable path picker) |
+| `enter` | detail:viewing | Edit selected field (Status opens inline selector with backlog/blocked/completed/dismissed; Due opens text input; ProjectDir opens scrollable path picker) |
 | `enter` | detail:editing | Confirm field edit |
 | `c` | detail:viewing | Open command input to edit todo via Claude LLM (blocked when agent is active on this todo) |
 | `o` | detail:viewing | Join session (if session_id exists and session file is live) or open task runner |
@@ -619,7 +619,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Expanded view left/right paginates at column edges
 - Detail view shows "TODO #N" title with display_id
 - Detail view tracks todo by ID (not index) — status changes don't jump to different todo
-- Detail view `enter` edits selected field (Status opens inline selector, Due opens text input, ProjectDir opens path picker)
+- Detail view `enter` edits selected field (Status opens inline selector with backlog/blocked/completed/dismissed, Due opens text input, ProjectDir opens path picker)
 - Detail view `x` completes todo with notice banner, auto-advances after 1s
 - Detail view `X` dismisses todo with notice banner, auto-advances after 1s
 - Detail view `j`/`k` navigates between active todos
