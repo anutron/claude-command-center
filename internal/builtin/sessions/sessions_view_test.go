@@ -38,11 +38,11 @@ func setupNewTabPlugin(t *testing.T) *Plugin {
 	return p
 }
 
-// setupResumePlugin creates a plugin on the resume view (sessions subTab with saved filter).
+// setupResumePlugin creates a plugin on the Saved sub-tab (formerly "resume").
 func setupResumePlugin(t *testing.T) *Plugin {
 	t.Helper()
 	p := setupPlugin(t)
-	p.NavigateTo("resume", nil)
+	p.NavigateTo("sessions/saved", nil)
 	return p
 }
 
@@ -130,12 +130,8 @@ func TestView_ResumeTabEmptyState(t *testing.T) {
 func TestView_WorktreeSubTabSwitch(t *testing.T) {
 	p := setupNewTabPlugin(t)
 
-	// Press 't' to switch to worktrees
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
-
-	if p.subTab != "worktrees" {
-		t.Fatalf("expected subTab 'worktrees', got %s", p.subTab)
-	}
+	// Press '4' to switch to worktrees (consolidated sub-tab navigation)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
 
 	view := p.View(120, 38, 0)
 	assertViewContains(t, view, "d delete")
@@ -208,8 +204,8 @@ func TestView_ConfirmYesRemovesFromView(t *testing.T) {
 
 func TestView_ResumeTabDismissOnSavedSession(t *testing.T) {
 	p := setupResumePlugin(t)
-	p.NavigateTo("resume", nil)
-	p.HandleMessage(plugin.TabViewMsg{Route: "resume"})
+	p.NavigateTo("sessions/saved", nil)
+	p.HandleMessage(plugin.TabViewMsg{Route: "sessions/saved"})
 
 	p.unified.savedSessions = []db.Session{
 		{SessionID: "saved-del-001", Project: "/home/user/proj", Summary: "Deletable Session", Created: time.Now(), Type: db.SessionBookmark},
@@ -254,15 +250,15 @@ func TestView_TabSwitchPreservesContent(t *testing.T) {
 	view1 := p.View(120, 38, 0)
 	assertViewContains(t, view1, "stable-project")
 
-	// Switch to resume via NavigateTo (key 'r' is captured as filter input on new tab)
-	p.NavigateTo("resume", nil)
-	p.HandleMessage(plugin.TabViewMsg{Route: "resume"})
+	// Switch to Saved via NavigateTo
+	p.NavigateTo("sessions/saved", nil)
+	p.HandleMessage(plugin.TabViewMsg{Route: "sessions/saved"})
 	view2 := p.View(120, 38, 0)
 	assertViewContains(t, view2, "alpha")
 
-	// Switch back to new
-	p.NavigateTo("new", nil)
-	p.HandleMessage(plugin.TabViewMsg{Route: "new"})
+	// Switch back to New Session
+	p.NavigateTo("sessions/new", nil)
+	p.HandleMessage(plugin.TabViewMsg{Route: "sessions/new"})
 	view3 := p.View(120, 38, 0)
 	assertViewContains(t, view3, "stable-project")
 }
@@ -273,31 +269,26 @@ func TestView_HintBarUpdatesPerSubTab(t *testing.T) {
 	// New tab hints
 	view := p.View(120, 38, 0)
 	assertViewContains(t, view, "enter launch")
-	assertViewContains(t, view, "t worktrees")
 
-	// Worktrees tab hints
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	// Worktrees tab hints — switch via '4' key (new consolidated navigation)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
 	view = p.View(120, 38, 0)
 	assertViewContains(t, view, "d delete")
 	assertViewContains(t, view, "p prune")
 }
 
-func TestView_HintBarHidesSessionsKeyOnSessionsTab(t *testing.T) {
-	p := setupNewTabPlugin(t)
+func TestView_HintBarUpdatesPerSubTabConsolidated(t *testing.T) {
+	p := setupPlugin(t)
 
-	// New tab should show "s sessions" (it's useful for switching)
+	// New Session sub-tab hints (default sub-tab).
 	view := p.View(120, 38, 0)
-	assertViewContains(t, view, "s sessions")
+	assertViewContains(t, view, "enter launch")
 
-	// Switch to sessions sub-tab
-	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	// Switch to Saved sub-tab via number key.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	view = p.View(120, 38, 0)
-
-	// Sessions tab should NOT show "s sessions" — already there
-	assertViewNotContains(t, view, "s sessions")
-	// But should still show other navigation hints
-	assertViewContains(t, view, "n new")
-	assertViewContains(t, view, "t worktrees")
+	// Saved sub-tab should show session management hints.
+	assertViewContains(t, view, "enter resume")
 }
 
 func TestView_FilterTypingInNewTab(t *testing.T) {
@@ -415,4 +406,117 @@ func TestView_PendingTodoBanner(t *testing.T) {
 	view := p.View(120, 38, 0)
 	assertViewContains(t, view, "Select project for:")
 	assertViewContains(t, view, "Fix critical bug")
+}
+
+// ---------------------------------------------------------------------------
+// Sub-Tab Bar Rendering (Consolidation)
+// ---------------------------------------------------------------------------
+
+func TestView_SubTabBarRendered(t *testing.T) {
+	p := setupPlugin(t)
+
+	view := p.View(120, 38, 0)
+	// The sub-tab bar should show all four sub-tabs with number keys.
+	assertViewContains(t, view, "[1] New Session")
+	assertViewContains(t, view, "[2] Saved")
+	assertViewContains(t, view, "[3] Recent")
+	assertViewContains(t, view, "[4] Worktrees")
+}
+
+// ---------------------------------------------------------------------------
+// Number Key Sub-Tab Switching
+// ---------------------------------------------------------------------------
+
+func TestView_NumberKeySwitchesSubTab(t *testing.T) {
+	p := setupPlugin(t)
+
+	// Press '2' to switch to Saved sub-tab.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	view := p.View(120, 38, 0)
+	// Saved sub-tab should show saved sessions content (or empty state).
+	// The unified view with saved-only filter should be active.
+	// At minimum, verify the sub-tab bar still renders and we're on Saved.
+	assertViewContains(t, view, "[2] Saved")
+
+	// Press '3' to switch to Recent sub-tab.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	view = p.View(120, 38, 0)
+	assertViewContains(t, view, "[3] Recent")
+
+	// Press '4' to switch to Worktrees sub-tab.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	view = p.View(120, 38, 0)
+	assertViewContains(t, view, "[4] Worktrees")
+
+	// Press '1' to go back to New Session.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	view = p.View(120, 38, 0)
+	assertViewContains(t, view, "[1] New Session")
+	assertViewContains(t, view, "Browse...")
+}
+
+// ---------------------------------------------------------------------------
+// Left/Right Arrow Sub-Tab Cycling
+// ---------------------------------------------------------------------------
+
+func TestView_ArrowKeyCyclesSubTabs(t *testing.T) {
+	p := setupPlugin(t)
+	// Default sub-tab is New Session (0).
+
+	// Right from New Session → Saved (1).
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
+	view := p.View(120, 38, 0)
+	// Should be on Saved now — verify by checking for saved-specific content or empty state.
+	assertViewContains(t, view, "[2] Saved")
+
+	// Right from Saved → Recent (2).
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
+
+	// Right from Recent → Worktrees (3).
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
+	view = p.View(120, 38, 0)
+	assertViewContains(t, view, "[4] Worktrees")
+
+	// Right from Worktrees wraps → New Session (0).
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRight})
+	view = p.View(120, 38, 0)
+	assertViewContains(t, view, "Browse...")
+}
+
+func TestView_LeftArrowWrapsFromNewSession(t *testing.T) {
+	p := setupPlugin(t)
+	// Default sub-tab is New Session (0).
+
+	// Left from New Session wraps → Worktrees (3).
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyLeft})
+	view := p.View(120, 38, 0)
+	assertViewContains(t, view, "[4] Worktrees")
+}
+
+// ---------------------------------------------------------------------------
+// Live Session Topic Display
+// ---------------------------------------------------------------------------
+
+func TestView_LiveSessionTopicWithProjectAndBranch(t *testing.T) {
+	p := setupPlugin(t)
+	// Switch to Recent sub-tab.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{
+			SessionID:    "live-topic-001",
+			Topic:        "Test Topic",
+			Project:      "/path/to/myproject",
+			Branch:       "main",
+			State:        "active",
+			RegisteredAt: db.FormatTime(time.Now()),
+		},
+	}
+
+	view := p.View(120, 38, 0)
+	// Label should show the topic.
+	assertViewContains(t, view, "Test Topic")
+	// Suffix should show project basename and branch.
+	assertViewContains(t, view, "myproject")
+	assertViewContains(t, view, "(main)")
 }

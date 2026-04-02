@@ -41,8 +41,9 @@ func TestNewModel(t *testing.T) {
 	if m.Launch != nil {
 		t.Error("expected Launch to be nil initially")
 	}
-	if len(m.tabs) != 6 {
-		t.Errorf("expected 6 tabs, got %d", len(m.tabs))
+	// After consolidation: Sessions(0), Command Center(1), PRs(2), Settings(3)
+	if len(m.tabs) != 4 {
+		t.Errorf("expected 4 tabs (Sessions consolidated), got %d", len(m.tabs))
 	}
 }
 
@@ -56,44 +57,33 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 
 	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
-	// Tab forward through all 6 tabs: Active(0), New Session(1), Resume(2), Command(3), PRs(4), Settings(5)
+	// After consolidation: Sessions(0), Command Center(1), PRs(2), Settings(3)
+	// Tab forward through all 4 tabs.
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
-	if m.activeTab != tabLaunch {
-		t.Errorf("expected tabLaunch after one tab, got %d", m.activeTab)
-	}
-
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	m = result.(Model)
-	if m.activeTab != tabResume {
-		t.Errorf("expected tabResume after two tabs, got %d", m.activeTab)
-	}
-
-	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	m = result.(Model)
 	if m.activeTab != tabCommand {
-		t.Errorf("expected tabCommand after three tabs, got %d", m.activeTab)
+		t.Errorf("expected tabCommand after one tab, got %d", m.activeTab)
 	}
 
-	// PRs tab (index 4)
+	// PRs tab (index 2)
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
-	if m.activeTab != 4 {
-		t.Errorf("expected tab 4 (PRs) after four tabs, got %d", m.activeTab)
+	if m.activeTab != 2 {
+		t.Errorf("expected tab 2 (PRs) after two tabs, got %d", m.activeTab)
 	}
 
-	// Settings tab (index 5)
+	// Settings tab (index 3)
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
-	if m.activeTab != 5 {
-		t.Errorf("expected tab 5 (Settings) after five tabs, got %d", m.activeTab)
+	if m.activeTab != 3 {
+		t.Errorf("expected tab 3 (Settings) after three tabs, got %d", m.activeTab)
 	}
 
-	// Wrap back to tabNew (0)
+	// Wrap back to Sessions (0)
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
 	if m.activeTab != tabNew {
-		t.Errorf("expected tabNew after six tabs (wrap), got %d", m.activeTab)
+		t.Errorf("expected tabNew (Sessions) after four tabs (wrap), got %d", m.activeTab)
 	}
 }
 
@@ -161,8 +151,8 @@ func TestTabBarVisibleWhenBannerHidden(t *testing.T) {
 	// The tab bar should contain tab labels regardless of banner visibility.
 	// BUG-123: The budget widget overlay was overwriting the tab bar row when
 	// the banner was hidden because it unconditionally targeted row 1.
-	if !strings.Contains(v, "New Session") {
-		t.Error("tab bar label 'New Session' missing from view when banner is hidden")
+	if !strings.Contains(v, "Sessions") {
+		t.Error("tab bar label 'Sessions' missing from view when banner is hidden")
 	}
 	if !strings.Contains(v, "Command Center") {
 		t.Error("tab bar label 'Command Center' missing from view when banner is hidden")
@@ -219,14 +209,12 @@ func TestEscQuits(t *testing.T) {
 
 	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
-	// Default sub-tab is "sessions". First Esc navigates sessions→new (not quit).
-	newM, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	if cmd != nil {
-		t.Error("first esc should navigate to new tab, not quit")
-	}
+	// Default sub-tab is now 0 (New Session). First Esc from New Session
+	// should set pendingQuit in the host (since the plugin returns ActionQuit).
+	newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 
-	// Second Esc from the new sub-tab should quit.
-	_, cmd = newM.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	// Second Esc should quit.
+	_, cmd := newM.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Error("expected non-nil cmd (tea.Quit) on second esc")
 	}
@@ -273,22 +261,20 @@ func TestPluginTabMapping(t *testing.T) {
 
 	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
-	// First three tabs should be sessions plugin (Active, New Session, Resume)
-	for i := 0; i < 3; i++ {
-		if m.tabs[i].plugin.Slug() != "sessions" {
-			t.Errorf("expected tab %d to be sessions, got %s", i, m.tabs[i].plugin.Slug())
-		}
+	// After consolidation: Sessions(0), Command Center(1), PRs(2), Settings(3)
+	if m.tabs[0].plugin.Slug() != "sessions" {
+		t.Errorf("expected tab 0 to be sessions, got %s", m.tabs[0].plugin.Slug())
 	}
-	// Next should be commandcenter
-	if m.tabs[3].plugin.Slug() != "commandcenter" {
-		t.Errorf("expected tab 3 to be commandcenter, got %s", m.tabs[3].plugin.Slug())
+	if m.tabs[0].label != "Sessions" {
+		t.Errorf("expected tab 0 label 'Sessions', got %q", m.tabs[0].label)
 	}
-	// Next should be prs
-	if m.tabs[4].plugin.Slug() != "prs" {
-		t.Errorf("expected tab 4 to be prs, got %s", m.tabs[4].plugin.Slug())
+	if m.tabs[1].plugin.Slug() != "commandcenter" {
+		t.Errorf("expected tab 1 to be commandcenter, got %s", m.tabs[1].plugin.Slug())
 	}
-	// Last tab should be settings
-	if m.tabs[5].plugin.Slug() != "settings" {
-		t.Errorf("expected tab 5 to be settings, got %s", m.tabs[5].plugin.Slug())
+	if m.tabs[2].plugin.Slug() != "prs" {
+		t.Errorf("expected tab 2 to be prs, got %s", m.tabs[2].plugin.Slug())
+	}
+	if m.tabs[3].plugin.Slug() != "settings" {
+		t.Errorf("expected tab 3 to be settings, got %s", m.tabs[3].plugin.Slug())
 	}
 }

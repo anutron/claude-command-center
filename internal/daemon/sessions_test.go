@@ -256,3 +256,54 @@ func TestRegisterSessionPersistsToDB(t *testing.T) {
 		t.Fatal("expected sess-persist to survive daemon restart")
 	}
 }
+
+func TestUpdateSessionBroadcastsEvent(t *testing.T) {
+	d := testDB(t)
+	sockPath := shortSockPath(t, "broadcast")
+
+	srv, client, _ := startTestDaemonWithDB(t, d, sockPath)
+
+	// Register a session first.
+	err := client.RegisterSession(daemon.RegisterSessionParams{
+		SessionID: "sess-broadcast",
+		PID:       os.Getpid(),
+		Project:   "/tmp/broadcast-proj",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a subscriber client on a separate connection.
+	subClient, err := daemon.NewClient(sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subClient.Close()
+
+	events := make(chan daemon.Event, 10)
+	go subClient.Subscribe(func(e daemon.Event) {
+		events <- e
+	})
+	time.Sleep(50 * time.Millisecond) // let subscribe register
+
+	// Update the session's topic.
+	err = client.UpdateSession(daemon.UpdateSessionParams{
+		SessionID: "sess-broadcast",
+		Topic:     "New Feature Work",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The subscriber should receive a "session.updated" event.
+	select {
+	case evt := <-events:
+		if evt.Type != "session.updated" {
+			t.Fatalf("expected session.updated event, got %s", evt.Type)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for session.updated event after topic update")
+	}
+
+	_ = srv // keep reference
+}
