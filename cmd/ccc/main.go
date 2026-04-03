@@ -269,7 +269,7 @@ func main() {
 		daemonConn := tui.NewDaemonConn(logger, bus)
 		m.SetDaemonConn(daemonConn)
 
-		p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus())
+		p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus(), tea.WithMouseCellMotion())
 
 		// Start unix socket listener for cross-instance notifications
 		cleanupNotify := tui.StartNotifyListener(p)

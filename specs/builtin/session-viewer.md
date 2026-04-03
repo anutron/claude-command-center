@@ -237,7 +237,7 @@ The detail view uses a `viewport.Model` for its body content, allowing full cont
 ### Scrolling Controls
 - **Up/down arrows** — scroll viewport line by line
 - **PgUp/PgDown** — scroll half-page
-- **Mouse wheel / trackpad** — not available (mouse mode is disabled to allow terminal text selection; use keyboard shortcuts instead)
+- **Mouse wheel / trackpad** — scrolls the viewport (mouse cell motion is enabled; use Option+click for text selection)
 
 ### Content Rendering
 - Session summary, detail, and prompt sections render at full length (no truncation)
