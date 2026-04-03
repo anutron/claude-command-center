@@ -3,6 +3,7 @@ package commandcenter
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/daemon"
@@ -80,6 +81,11 @@ func (p *Plugin) killAgent(todoID string) tea.Cmd {
 	}
 
 	if err := dc.StopAgent(todoID); err != nil {
+		// "agent not found" is expected when completing/dismissing a todo
+		// that has no running agent — silently ignore it.
+		if strings.Contains(err.Error(), "agent not found") {
+			return nil
+		}
 		if p.logger != nil {
 			p.logger.Warn("commandcenter", "daemon StopAgent failed", "err", err)
 		}

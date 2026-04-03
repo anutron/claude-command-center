@@ -252,10 +252,11 @@ When a headless agent submits a session summary via `ccc update-todo --session-s
 
 When a todo is completed (`x`) or dismissed (`X`) from either the list view or detail view, any running agent session for that todo is automatically killed via `killAgent`:
 
-1. Call `agentRunner.Kill(todoID)` which closes stdin, sends SIGKILL, and removes the session internally
-2. Set todo session status to `"failed"`
-3. Publish `agent.killed` event
-4. If session viewer is watching this session, mark it done
+1. Call `dc.StopAgent(todoID)` via daemon RPC
+2. If the daemon returns "agent not found" (no agent running for this todo), silently ignore — this is the normal case for todos without agents
+3. Set todo status to backlog (kill) or completed/dismissed
+4. Publish `agent.killed` event
+5. If session viewer is watching this session, mark it done
 
 Note: the plugin accesses agent sessions through the `agentRunner` (`agent.Runner` interface), not through direct map access. `agentRunner.Session(id)` returns the session handle or nil.
 
