@@ -58,6 +58,27 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			}
 			return true, plugin.NoopAction()
 		}
+		// Handle mouse wheel in the main todo list view.
+		if msg.Type == tea.MouseWheelUp || msg.Type == tea.MouseWheelDown {
+			activeTodos := p.filteredTodos()
+			todoViewHeight := p.normalMaxVisibleTodos()
+			if msg.Type == tea.MouseWheelDown {
+				if p.ccCursor < len(activeTodos)-1 {
+					p.ccCursor++
+					if p.ccCursor >= p.ccScrollOffset+todoViewHeight {
+						p.ccScrollOffset++
+					}
+				}
+			} else {
+				if p.ccCursor > 0 {
+					p.ccCursor--
+					if p.ccCursor < p.ccScrollOffset {
+						p.ccScrollOffset = p.ccCursor
+					}
+				}
+			}
+			return true, plugin.NoopAction()
+		}
 		return false, plugin.NoopAction()
 
 	case ccLoadedMsg:
