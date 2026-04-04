@@ -758,6 +758,103 @@ func TestView_SourceNavBracketKeys(t *testing.T) {
 	}
 }
 
+func TestView_ExpandedCompleteRemovesItem(t *testing.T) {
+	todos := []db.Todo{
+		{ID: "t1", DisplayID: 1, Title: "Alpha task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t2", DisplayID: 2, Title: "Bravo task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t3", DisplayID: 3, Title: "Charlie task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	}
+	p := testPluginWithTodos(t, todos)
+
+	// Enter expanded view
+	p.HandleKey(keyMsg(" "))
+	if !p.ccExpanded {
+		t.Fatal("should be in expanded view")
+	}
+
+	// All 3 items visible
+	view := renderView(p)
+	viewContains(t, view, "Alpha task")
+	viewContains(t, view, "Bravo task")
+	viewContains(t, view, "Charlie task")
+
+	// Complete the first item (cursor at 0)
+	p.HandleKey(keyMsg("x"))
+
+	// After completing, the item should be gone from the view
+	view = renderView(p)
+	viewNotContains(t, view, "Alpha task")
+	viewContains(t, view, "Bravo task")
+	viewContains(t, view, "Charlie task")
+
+	// Verify no duplication: each remaining item appears exactly once
+	if strings.Count(view, "Bravo task") != 1 {
+		t.Errorf("expected 'Bravo task' exactly once, got %d occurrences", strings.Count(view, "Bravo task"))
+	}
+	if strings.Count(view, "Charlie task") != 1 {
+		t.Errorf("expected 'Charlie task' exactly once, got %d occurrences", strings.Count(view, "Charlie task"))
+	}
+}
+
+func TestView_ExpandedDismissRemovesItem(t *testing.T) {
+	todos := []db.Todo{
+		{ID: "t1", DisplayID: 1, Title: "Delta task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t2", DisplayID: 2, Title: "Echo task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	}
+	p := testPluginWithTodos(t, todos)
+	p.HandleKey(keyMsg(" "))
+
+	// Dismiss first item
+	p.HandleKey(keyMsg("X"))
+
+	view := renderView(p)
+	viewNotContains(t, view, "Delta task")
+	viewContains(t, view, "Echo task")
+	if strings.Count(view, "Echo task") != 1 {
+		t.Errorf("expected 'Echo task' exactly once, got %d occurrences", strings.Count(view, "Echo task"))
+	}
+}
+
+func TestView_ExpandedUndoRestoresItem(t *testing.T) {
+	todos := []db.Todo{
+		{ID: "t1", DisplayID: 1, Title: "Foxtrot task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t2", DisplayID: 2, Title: "Golf task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	}
+	p := testPluginWithTodos(t, todos)
+	p.HandleKey(keyMsg(" "))
+
+	// Complete then undo
+	p.HandleKey(keyMsg("x"))
+	view := renderView(p)
+	viewNotContains(t, view, "Foxtrot task")
+
+	p.HandleKey(keyMsg("u"))
+	view = renderView(p)
+	viewContains(t, view, "Foxtrot task")
+	viewContains(t, view, "Golf task")
+}
+
+func TestView_ExpandedOffsetClampedAfterComplete(t *testing.T) {
+	todos := []db.Todo{
+		{ID: "t1", DisplayID: 1, Title: "Hotel task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t2", DisplayID: 2, Title: "India task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t3", DisplayID: 3, Title: "Juliet task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	}
+	p := testPluginWithTodos(t, todos)
+	p.HandleKey(keyMsg(" ")) // expand
+
+	// Artificially set offset beyond what the list can support after removal
+	p.ccExpandedOffset = 20
+	p.ccCursor = 0
+
+	// Complete an item — clampExpandedOffset should fix the stale offset
+	p.HandleKey(keyMsg("x"))
+
+	if p.ccExpandedOffset != 0 {
+		t.Errorf("expected ccExpandedOffset=0 after clamping (only 2 items left), got %d", p.ccExpandedOffset)
+	}
+}
+
 func TestView_JKNavigateTodosOnMergeTodo(t *testing.T) {
 	// j/k should navigate between todos even when on a merge todo.
 	synthTodo := db.Todo{
