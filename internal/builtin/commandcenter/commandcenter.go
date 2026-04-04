@@ -527,6 +527,23 @@ func (p *Plugin) expandedRowsPerCol() int {
 	return rows
 }
 
+// clampExpandedOffset ensures ccExpandedOffset stays valid after list size changes.
+func (p *Plugin) clampExpandedOffset() {
+	total := len(p.filteredTodos())
+	pageSize := p.expandedRowsPerCol() * p.expandedNumCols()
+	if pageSize <= 0 {
+		p.ccExpandedOffset = 0
+		return
+	}
+	maxOffset := ((total - 1) / pageSize) * pageSize
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if p.ccExpandedOffset > maxOffset {
+		p.ccExpandedOffset = maxOffset
+	}
+}
+
 func (p *Plugin) expandedNumCols() int {
 	if p.ccExpandedCols == 1 {
 		return 1

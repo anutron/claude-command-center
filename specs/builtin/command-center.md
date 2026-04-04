@@ -633,6 +633,8 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Detail view `enter` edits selected field (Status opens inline selector with backlog/blocked/completed/dismissed, Due opens text input, ProjectDir opens path picker)
 - Detail view `x` completes todo with notice banner, auto-advances after 1s, and notifies peer instances
 - Detail view `X` dismisses todo with notice banner, auto-advances after 1s, and notifies peer instances
+- Completing/dismissing/undoing a todo issues `tea.ClearScreen` to force a full repaint (prevents ghost artifacts from bubbletea's differential renderer when list size changes)
+- Completing/dismissing a todo clamps `ccExpandedOffset` so the expanded view doesn't show a stale page
 - Detail view `x`/`X` after `j`/`k` navigation advances to the correct next item (not index 0)
 - Detail view `j`/`k` navigates between active todos
 - Detail view blocks keys (except esc) while notice banner is showing

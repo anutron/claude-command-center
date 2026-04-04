@@ -314,8 +314,9 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			if p.ccScrollOffset > p.ccCursor {
 				p.ccScrollOffset = p.ccCursor
 			}
+			p.clampExpandedOffset()
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBCompleteTodo(database, todoID) })
-			cmds := []tea.Cmd{dbCmd}
+			cmds := []tea.Cmd{dbCmd, tea.ClearScreen}
 			if killCmd != nil {
 				cmds = append(cmds, killCmd)
 			}
@@ -349,8 +350,9 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			if p.ccScrollOffset > p.ccCursor {
 				p.ccScrollOffset = p.ccCursor
 			}
+			p.clampExpandedOffset()
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBDismissTodo(database, todoID) })
-			cmds := []tea.Cmd{dbCmd}
+			cmds := []tea.Cmd{dbCmd, tea.ClearScreen}
 			if killCmd != nil {
 				cmds = append(cmds, killCmd)
 			}
@@ -380,7 +382,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 				return db.DBRestoreTodo(database, entry.todoID, prevStatus, prevDoneAt)
 			})
-			cmds := []tea.Cmd{dbCmd}
+			cmds := []tea.Cmd{dbCmd, tea.ClearScreen}
 			if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
 				cmds = append(cmds, focusCmd)
 			}

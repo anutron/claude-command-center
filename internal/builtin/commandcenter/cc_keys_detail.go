@@ -345,7 +345,7 @@ func (p *Plugin) detailCompleteTodo() plugin.Action {
 	p.detailNoticeAt = time.Now()
 
 	dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBCompleteTodo(database, todoID) })
-	cmds := []tea.Cmd{dbCmd}
+	cmds := []tea.Cmd{dbCmd, tea.ClearScreen}
 	if killCmd != nil {
 		cmds = append(cmds, killCmd)
 	}
@@ -397,7 +397,7 @@ func (p *Plugin) detailDismissTodo() plugin.Action {
 	p.detailNoticeAt = time.Now()
 
 	dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBDismissTodo(database, todoID) })
-	cmds := []tea.Cmd{dbCmd}
+	cmds := []tea.Cmd{dbCmd, tea.ClearScreen}
 	if killCmd != nil {
 		cmds = append(cmds, killCmd)
 	}
