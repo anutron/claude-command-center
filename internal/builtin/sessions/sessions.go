@@ -1015,12 +1015,18 @@ func (p *Plugin) handleSessionsTab(msg tea.KeyMsg) plugin.Action {
 				resumeID = claudeID
 			}
 		}
+		args := map[string]string{
+			"dir":       dir,
+			"resume_id": resumeID,
+		}
+		// Pass the CCC session ID so the TUI reuses it instead of
+		// generating a new one — this preserves the session's topic.
+		if sel.SessionID != "" {
+			args["session_id"] = sel.SessionID
+		}
 		return plugin.Action{
 			Type: plugin.ActionLaunch,
-			Args: map[string]string{
-				"dir":       dir,
-				"resume_id": resumeID,
-			},
+			Args: args,
 		}
 
 	case "b":
@@ -1316,7 +1322,8 @@ func (p *Plugin) renderSubTabBar() string {
 			parts = append(parts, p.styles.inactiveTab.Render(label))
 		}
 	}
-	return "  " + strings.Join(parts, "  ") + "\n"
+	bar := strings.Join(parts, "  ")
+	return lipgloss.PlaceHorizontal(ui.ContentMaxWidth, lipgloss.Center, bar) + "\n"
 }
 
 func (p *Plugin) viewSessionsTab() string {

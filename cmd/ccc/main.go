@@ -297,8 +297,11 @@ func main() {
 		// Register the session with the daemon around the claude launch.
 		// Generate a placeholder session ID (claude's real session ID is
 		// unknown until the hook fires, but this lets us track the process).
-		launchSessionID := uuid.New().String()
-		fm.Launch.SessionID = launchSessionID
+		launchSessionID := fm.Launch.SessionID
+		if launchSessionID == "" {
+			launchSessionID = uuid.New().String()
+			fm.Launch.SessionID = launchSessionID
+		}
 		resolvedDir, err := tui.RunClaude(*fm.Launch, func(pid int) {
 			if client := daemonConn.Client(); client != nil {
 				regErr := client.RegisterSession(daemon.RegisterSessionParams{
@@ -314,9 +317,13 @@ func main() {
 
 		// Mark the session as ended now that claude has exited.
 		if client := daemonConn.Client(); client != nil {
-			_ = client.EndSession(daemon.EndSessionParams{
+			if endErr := client.EndSession(daemon.EndSessionParams{
 				SessionID: launchSessionID,
-			})
+			}); endErr != nil {
+				logger.Info("launch", fmt.Sprintf("EndSession failed for %s: %v", launchSessionID[:min(8, len(launchSessionID))], endErr))
+			}
+		} else {
+			logger.Info("launch", "EndSession skipped: daemon connection lost")
 		}
 		daemonConn.Close()
 

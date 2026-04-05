@@ -735,6 +735,9 @@ func (m Model) processAction(action plugin.Action) (tea.Model, tea.Cmd) {
 		if todoID := action.Args["todo_id"]; todoID != "" {
 			la.ReturnToTodoID = todoID
 		}
+		if sid := action.Args["session_id"]; sid != "" {
+			la.SessionID = sid
+		}
 		m.Launch = la
 		// Broadcast LaunchMsg to all plugins before quitting.
 		var cmds []tea.Cmd

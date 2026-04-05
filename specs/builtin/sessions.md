@@ -24,7 +24,7 @@ Manage sessions, project launching, and worktrees as a single plugin with intern
 
 The Sessions plugin registers a **single host tab** in the nav bar with route `sessions`. `Tab`/`Shift-Tab` at the host level skips to the next/previous plugin (Command Center, PRs, etc.) — it does NOT cycle sub-tabs.
 
-Inside the plugin, a sub-tab bar renders at the top: `[1] New Session  [2] Saved  [3] Recent  [4] Worktrees`
+Inside the plugin, a sub-tab bar renders at the top, **centered horizontally**: `[1] New Session  [2] Saved  [3] Recent  [4] Worktrees`
 
 ## State
 
@@ -195,6 +195,8 @@ When CCC launches a Claude session, it sets the `CCC_SESSION_ID` environment var
 4. The Recent sub-tab re-renders, now showing the updated topic for that session
 
 This creates a closed loop: Claude sets its topic via the CLI, the daemon propagates the change, and the TUI reflects it in real time.
+
+**Session ID reuse on resume:** When the user resumes a session (enter on a live/saved session), the plugin passes the original CCC session ID back through `ActionLaunch.Args["session_id"]`. The TUI reuses this ID instead of generating a new UUID, so the resumed Claude process writes to the same daemon session record — preserving the topic and session continuity.
 
 ## Storage
 
@@ -379,7 +381,7 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 
 ### Session actions
 
-- Enter on live session returns ActionLaunch with correct dir and resume_id (resolved from Claude session files, not daemon ID)
+- Enter on live session returns ActionLaunch with correct dir, resume_id (resolved from Claude session files, not daemon ID), and session_id (CCC session ID for topic continuity)
 - Enter on saved session returns ActionLaunch
 - Enter on archived session returns ActionLaunch
 - `b` on live session saves bookmark to DB
@@ -398,7 +400,8 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 
 ### Topic bridge
 
-- Launching a session sets `CCC_SESSION_ID` env var to the daemon session ID
+- Launching a new session generates a fresh UUID for `CCC_SESSION_ID` env var
+- Resuming a session reuses the original CCC session ID (preserves topic)
 - `session.updated` notification triggers async Refresh
 - After topic update via `ccc update-session`, Recent sub-tab shows the new topic in the session label
 
