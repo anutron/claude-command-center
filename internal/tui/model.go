@@ -45,8 +45,8 @@ var _ plugin.Starter = (*commandcenter.Plugin)(nil)
 type tab int
 
 const (
-	tabNew     tab = iota // "Sessions" consolidated tab
-	tabCommand            // "Command Center" tab
+	tabCommand tab = iota // "Command Center" tab
+	tabNew                // "Sessions" consolidated tab
 )
 
 type tabEntry struct {
@@ -132,8 +132,8 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 
 	// Build registry with all plugins.
 	registry := plugin.NewRegistry()
-	registry.Register(sessPlug)
 	registry.Register(ccPlug)
+	registry.Register(sessPlug)
 	registry.Register(prsPlug)
 	for _, ep := range extPlugins {
 		registry.Register(ep)
@@ -163,8 +163,8 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	// Build the full tab list (allTabs); rebuildTabs filters to visible.
 	var allTabs []tabEntry
 	allTabs = append(allTabs,
-		tabEntry{label: "Sessions", plugin: sessPlug, route: "sessions", ownerSlug: "sessions"},
 		tabEntry{label: "Command Center", plugin: ccPlug, route: "commandcenter", ownerSlug: "commandcenter"},
+		tabEntry{label: "Sessions", plugin: sessPlug, route: "sessions", ownerSlug: "sessions"},
 		tabEntry{label: "PRs", plugin: prsPlug, route: "waiting", ownerSlug: "prs"},
 	)
 	// Track which external plugins were loaded (started at boot).

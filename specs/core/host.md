@@ -61,10 +61,8 @@ Each tab maps a label to a plugin and a route within that plugin. Multiple tabs 
 
 | Tab | Plugin | Route |
 |-----|--------|-------|
-| Active | sessions | `active` |
-| New Session | sessions | `new` |
-| Resume | sessions | `resume` |
 | Command Center | commandcenter | `commandcenter` |
+| Sessions | sessions | `sessions` |
 | PRs | prs | `waiting` |
 | *(external plugin tabs)* | *(external)* | *(plugin-defined)* |
 | *(stub tabs for disabled plugins)* | *(stub)* | *(plugin name)* |

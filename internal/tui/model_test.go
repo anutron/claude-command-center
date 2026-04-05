@@ -35,13 +35,13 @@ func TestNewModel(t *testing.T) {
 	if m.cfg.Name != "Test Center" {
 		t.Errorf("expected name 'Test Center', got %q", m.cfg.Name)
 	}
-	if m.activeTab != tabNew {
-		t.Errorf("expected initial tab to be tabNew")
+	if m.activeTab != tabCommand {
+		t.Errorf("expected initial tab to be tabCommand")
 	}
 	if m.Launch != nil {
 		t.Error("expected Launch to be nil initially")
 	}
-	// After consolidation: Sessions(0), Command Center(1), PRs(2), Settings(3)
+	// After consolidation: Command Center(0), Sessions(1), PRs(2), Settings(3)
 	if len(m.tabs) != 4 {
 		t.Errorf("expected 4 tabs (Sessions consolidated), got %d", len(m.tabs))
 	}
@@ -57,12 +57,12 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 
 	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
-	// After consolidation: Sessions(0), Command Center(1), PRs(2), Settings(3)
+	// After consolidation: Command Center(0), Sessions(1), PRs(2), Settings(3)
 	// Tab forward through all 4 tabs.
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
-	if m.activeTab != tabCommand {
-		t.Errorf("expected tabCommand after one tab, got %d", m.activeTab)
+	if m.activeTab != tabNew {
+		t.Errorf("expected tabNew (Sessions) after one tab, got %d", m.activeTab)
 	}
 
 	// PRs tab (index 2)
@@ -79,11 +79,11 @@ func TestTabNavigationWithKeyTab(t *testing.T) {
 		t.Errorf("expected tab 3 (Settings) after three tabs, got %d", m.activeTab)
 	}
 
-	// Wrap back to Sessions (0)
+	// Wrap back to Command Center (0)
 	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
-	if m.activeTab != tabNew {
-		t.Errorf("expected tabNew (Sessions) after four tabs (wrap), got %d", m.activeTab)
+	if m.activeTab != tabCommand {
+		t.Errorf("expected tabCommand after four tabs (wrap), got %d", m.activeTab)
 	}
 }
 
@@ -261,15 +261,15 @@ func TestPluginTabMapping(t *testing.T) {
 
 	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
 
-	// After consolidation: Sessions(0), Command Center(1), PRs(2), Settings(3)
-	if m.tabs[0].plugin.Slug() != "sessions" {
-		t.Errorf("expected tab 0 to be sessions, got %s", m.tabs[0].plugin.Slug())
+	// After consolidation: Command Center(0), Sessions(1), PRs(2), Settings(3)
+	if m.tabs[0].plugin.Slug() != "commandcenter" {
+		t.Errorf("expected tab 0 to be commandcenter, got %s", m.tabs[0].plugin.Slug())
 	}
-	if m.tabs[0].label != "Sessions" {
-		t.Errorf("expected tab 0 label 'Sessions', got %q", m.tabs[0].label)
+	if m.tabs[0].label != "Command Center" {
+		t.Errorf("expected tab 0 label 'Command Center', got %q", m.tabs[0].label)
 	}
-	if m.tabs[1].plugin.Slug() != "commandcenter" {
-		t.Errorf("expected tab 1 to be commandcenter, got %s", m.tabs[1].plugin.Slug())
+	if m.tabs[1].plugin.Slug() != "sessions" {
+		t.Errorf("expected tab 1 to be sessions, got %s", m.tabs[1].plugin.Slug())
 	}
 	if m.tabs[2].plugin.Slug() != "prs" {
 		t.Errorf("expected tab 2 to be prs, got %s", m.tabs[2].plugin.Slug())

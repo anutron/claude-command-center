@@ -79,13 +79,13 @@ func TestView_DoubleEscQuitFlow(t *testing.T) {
 func TestView_TabRoutesSendTabViewMsg(t *testing.T) {
 	m := newTestModel(t)
 
-	// Initial tab is tabNew (0). Tab forward.
+	// Initial tab is tabCommand (0). Tab forward.
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = result.(Model)
 
 	// Should advance to next tab.
-	if m.activeTab == tabNew {
-		t.Errorf("expected tab to advance past tabNew after Tab key")
+	if m.activeTab == tabCommand {
+		t.Errorf("expected tab to advance past tabCommand after Tab key")
 	}
 
 	// View should render without panic and show tab bar.
@@ -116,7 +116,7 @@ func TestView_TabBarDoesNotShowOldSessionLabels(t *testing.T) {
 	// but NOT in the host-level tab bar. We check the tab bar region specifically.
 	// Since the host tab bar is rendered before plugin content, we check that
 	// "Active" and "Resume" don't appear as top-level tab labels.
-	// The host tab bar should only contain: Sessions, Command Center, PRs, Settings.
+	// The host tab bar should only contain: Command Center, Sessions, PRs, Settings.
 	assertViewNotContains(t, v, "> Active")
 	assertViewNotContains(t, v, "> Resume")
 }
