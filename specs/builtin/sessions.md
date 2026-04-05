@@ -185,16 +185,20 @@ Each sub-tab displays a hint bar at the bottom:
 - Subscribes: `pending.todo` to set a pending launch context
 - Handles `plugin.NotifyMsg` for `data.refreshed`, `session.registered`, `session.updated`, `session.ended` — dispatches async `Refresh()` cmd
 
-## Topic Bridge (CCC_SESSION_ID)
+## Topic Bridge (filesystem watcher)
 
-When CCC launches a Claude session, it sets the `CCC_SESSION_ID` environment variable to the daemon session ID. The CLAUDE.md snippet in the user's global config uses this to call `ccc update-session --session-id "$CCC_SESSION_ID" --topic "..."`, which:
+The daemon watches `~/.claude/session-topics/` for topic file changes every 3 seconds. Claude Code writes topic text to `{session-uuid}.txt` files; the watcher maps those UUIDs back to CCC session IDs:
 
-1. Updates the daemon's session record with the topic text
-2. The daemon broadcasts a `session.updated` event
-3. The TUI receives the notification and triggers an async `Refresh()`
-4. The Recent sub-tab re-renders, now showing the updated topic for that session
+1. `pid-{PID}.map` files map process IDs → Claude session UUIDs
+2. CCC sessions are registered with their PID
+3. Watcher reads `.txt` files, resolves Claude UUID → PID → CCC session ID
+4. Updates the session record and broadcasts `session.updated`
+5. The TUI receives the notification and triggers an async `Refresh()`
+6. The Recent sub-tab re-renders, now showing the updated topic
 
-This creates a closed loop: Claude sets its topic via the CLI, the daemon propagates the change, and the TUI reflects it in real time.
+This is fully automatic — no CLAUDE.md snippet or CLI call needed. Any session launched from CCC (or any Claude session whose PID has a map file) gets its topic synced.
+
+**Manual override:** `ccc update-session --session-id <id> --topic <topic>` still works for direct topic updates via the daemon RPC.
 
 **Session ID reuse on resume:** When the user resumes a session (enter on a live/saved session), the plugin passes the original CCC session ID back through `ActionLaunch.Args["session_id"]`. The TUI reuses this ID instead of generating a new UUID, so the resumed Claude process writes to the same daemon session record — preserving the topic and session continuity.
 

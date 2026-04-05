@@ -139,6 +139,20 @@ func (r *sessionRegistry) list() []SessionInfo {
 	return out
 }
 
+// sessionIDForPID returns the CCC session ID for a given PID, or "" if not found.
+// Only checks active sessions.
+func (r *sessionRegistry) sessionIDForPID(pid int) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, info := range r.sessions {
+		if info.PID == pid && info.State == "active" {
+			return info.SessionID
+		}
+	}
+	return ""
+}
+
 // pruneDead checks each active session's PID and marks dead ones as "ended".
 func (r *sessionRegistry) pruneDead() {
 	r.mu.Lock()
