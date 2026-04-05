@@ -40,7 +40,7 @@ func runAddTodo(args []string) error {
 	t := db.Todo{
 		ID:         db.GenID(),
 		Title:      *title,
-		Status:     "active",
+		Status:     db.StatusBacklog,
 		Source:     *source,
 		SourceRef:  *sourceRef,
 		Context:    *ctx,

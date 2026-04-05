@@ -151,7 +151,7 @@ Triggers an immediate data refresh via the daemon.
 Creates a new todo in the Command Center database.
 
 - Flags: `--title` (required), `--source` (default `cli`), `--source-ref`, `--context`, `--detail`, `--who-waiting`, `--project-dir`, `--session-id`, `--due` (YYYY-MM-DD), `--effort`
-- Generates a unique ID and sets status to `active`
+- Generates a unique ID and sets status to `backlog`
 - Sends `reload` notification to all running CCC instances after insert
 - Prints the created todo title and ID
 
