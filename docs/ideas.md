@@ -65,3 +65,31 @@ Expose CCC's data and tools as an MCP server available to all Claude sessions on
 **Origin:** Inspired by Argus's MCP injection pattern (auto-injects KB tools into every agent), but broader — CCC would be a live system API, not just a knowledge base.
 
 **Prerequisite:** Daemon (#2 below) would be the natural host for the MCP HTTP server, since it's already a persistent process.
+
+---
+
+## Terminal Tooling for Multi-Agent Workflows
+
+Recommendations from a fellow engineer for improving the agentic coding flow. Three tools worth tracking:
+
+### diffnav — TUI diff pager with file tree
+- **What:** Git diff pager with a GitHub-style file tree sidebar for navigating diffs. Built on delta.
+- **URL:** https://github.com/dlvhdr/diffnav
+- **Why:** Reviewing agent-generated diffs across many files is painful with raw `git diff`. File tree navigation is a big UX win.
+- **Install:** `brew install dlvhdr/formulae/diffnav`
+- **Status:** Open source (MIT), Go, actively maintained. Same author as `gh-dash`.
+- **Verdict:** Adopt immediately — low cost, high payoff.
+
+### Worktrunk — Ergonomic git worktree CLI
+- **What:** Rust CLI (`wt`) that wraps git worktrees with commands designed for parallel agent work. `wt switch -c -x claude feature-a` replaces the multi-step worktree+cd+claude dance. Includes status summaries, merge workflows, and auto-cleanup.
+- **URL:** https://worktrunk.dev/
+- **Why:** CCC already has worktree conventions (`.claude/worktree/`, `/close-worktree`), but Worktrunk may handle merge/cleanup better — especially the "never remove a worktree from inside it" footgun.
+- **Install:** `brew install worktrunk` or `cargo install worktrunk`
+- **Status:** Open source, Rust.
+- **Verdict:** Evaluate next time parallel worktree work is happening. Could replace or supplement CCC's hand-rolled worktree management.
+
+### Cmux — Terminal emulator for multi-agent sessions
+- **What:** Native macOS terminal emulator (built on Ghostty) purpose-built for running multiple AI coding agents. Notification rings when an agent needs attention, socket API for automation.
+- **URL:** https://cmux.com/
+- **Why:** Solves "which of my 5 Claude sessions needs me?" problem.
+- **Verdict:** Skip for now — CCC already provides session awareness, and adopting Cmux means replacing the terminal. Revisit if session-juggling pain increases.
