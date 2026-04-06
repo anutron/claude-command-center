@@ -138,7 +138,12 @@ This ensures the repo's `servers/` and `.claude/skills/` directories are found e
 
 Manages a zsh shell hook that auto-launches CCC on interactive shell startup.
 
-**Hook behavior:** The snippet is appended to `~/.zshrc` between sentinel comments (`# BEGIN CCC` / `# END CCC`). When an interactive shell starts (and is not inside Claude Code or `CCC_SKIP` is set), it runs `ccc`. After CCC exits, if a `last-dir` file exists, the shell `cd`s into that directory and removes the file.
+**Hook behavior:** The snippet is appended to `~/.zshrc` between sentinel comments (`# BEGIN CCC` / `# END CCC`). When an interactive shell starts, the hook skips CCC if any of these conditions are true:
+- `$CLAUDE_CODE` or `$CLAUDECODE` is set (direct Claude Code child process)
+- `$CCC_SKIP` is set (user override)
+- Any ancestor process in the process tree has "claude" in its command name (catches agent-spawned terminals where env vars aren't inherited, e.g., new iTerm2 windows opened by Claude Code's Agent tool)
+
+If none of these skip conditions apply, it runs `ccc`. After CCC exits, if a `last-dir` file exists, the shell `cd`s into that directory and removes the file.
 
 - `IsShellHookInstalled()`: checks `~/.zshrc` for the sentinel comment. Returns false if file doesn't exist.
 - `InstallShellHook()`: appends the hook snippet to `~/.zshrc` if not already present. Creates the file if missing. Idempotent.

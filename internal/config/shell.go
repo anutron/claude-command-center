@@ -11,13 +11,28 @@ const shellHookBegin = "# BEGIN CCC — managed by ccc, do not edit"
 const shellHookEnd = "# END CCC"
 
 const shellHookSnippet = `# BEGIN CCC — managed by ccc, do not edit
-if [[ $- == *i* ]] && [[ -z "$CLAUDE_CODE" ]] && [[ -z "$CCC_SKIP" ]]; then
-  ccc
-  _ccc_last_dir="$HOME/.config/ccc/data/last-dir"
-  if [[ -f "$_ccc_last_dir" ]]; then
-    cd "$(cat "$_ccc_last_dir")" 2>/dev/null
-    rm -f "$_ccc_last_dir"
+if [[ $- == *i* ]] && [[ -z "$CLAUDE_CODE" ]] && [[ -z "$CLAUDECODE" ]] && [[ -z "$CCC_SKIP" ]]; then
+  # Also skip if an ancestor process is claude (catches agent-spawned terminals)
+  _ccc_skip=0
+  _ccc_pid=$$
+  while [[ $_ccc_pid -gt 1 ]]; do
+    _ccc_pid=$(ps -o ppid= -p "$_ccc_pid" 2>/dev/null | tr -d ' ')
+    [[ -z "$_ccc_pid" ]] && break
+    _ccc_comm=$(ps -o comm= -p "$_ccc_pid" 2>/dev/null)
+    if [[ "$_ccc_comm" == *claude* ]]; then
+      _ccc_skip=1
+      break
+    fi
+  done
+  if [[ $_ccc_skip -eq 0 ]]; then
+    ccc
+    _ccc_last_dir="$HOME/.config/ccc/data/last-dir"
+    if [[ -f "$_ccc_last_dir" ]]; then
+      cd "$(cat "$_ccc_last_dir")" 2>/dev/null
+      rm -f "$_ccc_last_dir"
+    fi
   fi
+  unset _ccc_skip _ccc_pid _ccc_comm
 fi
 # END CCC`
 
