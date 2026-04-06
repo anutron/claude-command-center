@@ -140,7 +140,7 @@ Content layout (top to bottom):
 
 **Action options** (contextual):
 - All sources: "Verify credentials" (live API check)
-- Google sources (with existing creds on disk): "Re-authenticate (browser only)", "Re-enter client credentials + authenticate", "Open Google Cloud Console"
+- Google sources (with existing creds on disk): "Re-authenticate with Google", "Change OAuth client credentials", "Open Google Cloud Console"
 - Google sources (no existing creds): "Authenticate (enter client credentials + OAuth)", "Open Google Cloud Console"
 - Slack: "Enter Slack token"
 
@@ -151,8 +151,8 @@ Content layout (top to bottom):
 **Credential verification**: "Verify credentials" always does a live API check. For Slack, calls `auth.test`. Results respect the `Live` flag — a live "ok" skips the sync-aware downgrade that would otherwise show stale DB errors.
 
 **Two-action re-authentication**: When existing client credentials are found on disk for a Google data source, the action menu splits into two options:
-- **"Re-authenticate (browser only)"** (`reauth`) — loads `clientId`/`clientSecret` from the token file and goes straight to the OAuth browser flow. No credential form shown.
-- **"Re-enter client credentials + authenticate"** (`auth`) — always shows the full credential input form, then launches OAuth.
+- **"Re-authenticate with Google"** (`reauth`) — loads `clientId`/`clientSecret` from the token file and goes straight to the OAuth browser flow. No credential form shown. This is the common case (token expired, scopes changed).
+- **"Change OAuth client credentials"** (`auth`) — shows the full credential input form, then launches OAuth. For when the actual GCP client ID/secret need replacing.
 
 When no existing credentials are found, only the single "Authenticate" option appears (which shows the credential form). Token file paths checked:
 - Calendar: `~/.config/google-calendar-mcp/credentials.json`

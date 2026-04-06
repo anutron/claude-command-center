@@ -44,8 +44,8 @@ func (p *Plugin) buildDatasourceForm(item *NavItem) *huh.Form {
 		// re-auth that skips the credential form and just bounces to browser.
 		if existingCreds := p.loadExistingGoogleCreds(item.Slug); existingCreds != nil {
 			options = append(options,
-				huh.NewOption("Re-authenticate (browser only)", "reauth"),
-				huh.NewOption("Re-enter client credentials + authenticate", "auth"),
+				huh.NewOption("Re-authenticate with Google", "reauth"),
+				huh.NewOption("Change OAuth client credentials", "auth"),
 			)
 		} else {
 			options = append(options,
