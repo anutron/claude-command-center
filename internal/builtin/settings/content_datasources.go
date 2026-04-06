@@ -40,8 +40,19 @@ func (p *Plugin) buildDatasourceForm(item *NavItem) *huh.Form {
 		huh.NewOption("Verify credentials", "recheck"),
 	}
 	if isGoogleDatasource(item.Slug) {
+		// If we already have client credentials on disk, offer a quick
+		// re-auth that skips the credential form and just bounces to browser.
+		if existingCreds := p.loadExistingGoogleCreds(item.Slug); existingCreds != nil {
+			options = append(options,
+				huh.NewOption("Re-authenticate (browser only)", "reauth"),
+				huh.NewOption("Re-enter client credentials + authenticate", "auth"),
+			)
+		} else {
+			options = append(options,
+				huh.NewOption("Authenticate (enter client credentials + OAuth)", "auth"),
+			)
+		}
 		options = append(options,
-			huh.NewOption("Authenticate (enter client credentials + OAuth)", "auth"),
 			huh.NewOption("Open Google Cloud Console", "console"),
 		)
 	} else if item.Slug == "slack" {
@@ -116,6 +127,20 @@ func (p *Plugin) handleDatasourceFormCompletion(slug string) tea.Cmd {
 
 		return tea.Batch(cmds...)
 
+	case "reauth":
+		// Quick re-auth: reuse existing client credentials, just bounce to browser.
+		if existingCreds := p.loadExistingGoogleCreds(slug); existingCreds != nil {
+			p.pendingAuthCreds = existingCreds
+			p.pendingAuthSlug = slug
+			label := slug
+			if item != nil {
+				label = item.Label
+			}
+			p.flashMessage = "Re-authenticating " + label + "..."
+			p.flashMessageAt = currentTime()
+			return p.startAuthFlowForDatasource()
+		}
+
 	case "auth":
 		if slug == "slack" {
 			form, tok := newSlackTokenForm(p.styles.huhTheme)
@@ -130,20 +155,6 @@ func (p *Plugin) handleDatasourceFormCompletion(slug string) tea.Cmd {
 			return initCmd
 		}
 		if isGoogleDatasource(slug) {
-			// Try to reuse existing client credentials from the token file
-			// so users don't have to re-enter them when re-authenticating
-			// (e.g. to upgrade scopes).
-			if existingCreds := p.loadExistingGoogleCreds(slug); existingCreds != nil {
-				p.pendingAuthCreds = existingCreds
-				p.pendingAuthSlug = slug
-				label := slug
-				if item != nil {
-					label = item.Label
-				}
-				p.flashMessage = "Re-authenticating " + label + " with existing credentials..."
-				p.flashMessageAt = currentTime()
-				return p.startAuthFlowForDatasource()
-			}
 			form, creds := newClientCredForm(p.styles.huhTheme)
 			p.activeForm = form
 			p.activeFormSlug = slug
