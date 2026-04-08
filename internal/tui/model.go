@@ -325,11 +325,13 @@ func (m *Model) SetDaemonConn(dc *DaemonConn) {
 			durationMs, _ := payload["duration_ms"].(int64)
 			errMsg, _ := payload["error"].(string)
 			status, _ := payload["status"].(string)
+			startedAt, _ := payload["started_at"].(time.Time)
 			now := time.Now()
 			go client.ReportLLMActivity(daemon.LLMActivityEvent{
 				ID:         id,
 				Operation:  operation,
 				Source:     source,
+				StartedAt:  startedAt,
 				FinishedAt: &now,
 				DurationMs: int(durationMs),
 				Error:      errMsg,

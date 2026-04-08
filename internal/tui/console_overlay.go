@@ -187,19 +187,8 @@ func (o *consoleOverlay) renderList(width, height int) string {
 			Render("llm activity")
 		lines = append(lines, llmHeader)
 		for _, evt := range o.llmActivity {
-			icon := "●"
-			color := lipgloss.Color("#565f89")
-			switch evt.Status {
-			case "running":
-				icon = "◐"
-				color = lipgloss.Color("#e0af68")
-			case "completed":
-				icon = "✓"
-				color = lipgloss.Color("#9ece6a")
-			case "failed":
-				icon = "✗"
-				color = lipgloss.Color("#f7768e")
-			}
+			icon := ui.LLMStatusIcon(evt.Status)
+			color := ui.LLMStatusColor(evt.Status)
 			iconStyled := lipgloss.NewStyle().Foreground(color).Render(icon)
 			label := evt.Operation
 			if evt.Source != "" {

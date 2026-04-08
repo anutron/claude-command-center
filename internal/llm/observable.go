@@ -72,6 +72,7 @@ func (o *ObservableLLM) Complete(ctx context.Context, prompt string) (string, er
 		"operation":   op,
 		"source":      o.source,
 		"duration_ms": elapsed,
+		"started_at":  start,
 	}
 
 	if err != nil {

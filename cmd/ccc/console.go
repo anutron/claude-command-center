@@ -278,20 +278,7 @@ func (m consoleModel) renderSidebar(width int) string {
 	if len(m.llmActivity) > 0 {
 		lines = append(lines, dimStyle.Render("── llm ──"))
 		for i, evt := range m.llmActivity {
-			icon := "●"
-			color := lipgloss.Color("#565f89")
-			switch evt.Status {
-			case "running":
-				icon = "◐"
-				color = lipgloss.Color("#e0af68")
-			case "completed":
-				icon = "✓"
-				color = lipgloss.Color("#9ece6a")
-			case "failed":
-				icon = "✗"
-				color = lipgloss.Color("#f7768e")
-			}
-			iconStyled := lipgloss.NewStyle().Foreground(color).Render(icon)
+			iconStyled := lipgloss.NewStyle().Foreground(ui.LLMStatusColor(evt.Status)).Render(ui.LLMStatusIcon(evt.Status))
 			label := evt.Source + "/" + evt.Operation
 			if evt.DurationMs > 0 {
 				secs := evt.DurationMs / 1000
@@ -435,21 +422,7 @@ func (m consoleModel) renderLLMFocus(evt daemon.LLMActivityEvent, width int) str
 		return labelStyle.Render(fmt.Sprintf("%-14s", label+":")) + " " + valueStyle.Render(value)
 	}
 
-	statusColor := lipgloss.Color("#565f89")
-	statusIcon := "●"
-	switch evt.Status {
-	case "running":
-		statusIcon = "◐"
-		statusColor = lipgloss.Color("#e0af68")
-	case "completed":
-		statusIcon = "✓"
-		statusColor = lipgloss.Color("#9ece6a")
-	case "failed":
-		statusIcon = "✗"
-		statusColor = lipgloss.Color("#f7768e")
-	}
-
-	header := lipgloss.NewStyle().Foreground(statusColor).Render(statusIcon+" "+evt.Source+"/"+evt.Operation)
+	header := lipgloss.NewStyle().Foreground(ui.LLMStatusColor(evt.Status)).Render(ui.LLMStatusIcon(evt.Status)+" "+evt.Source+"/"+evt.Operation)
 
 	var lines []string
 	lines = append(lines, header)

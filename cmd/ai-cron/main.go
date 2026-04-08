@@ -88,9 +88,11 @@ func main() {
 				durationMs, _ := payload["duration_ms"].(int64)
 				errMsg, _ := payload["error"].(string)
 				status, _ := payload["status"].(string)
+				startedAt, _ := payload["started_at"].(time.Time)
 				go daemonClient.ReportLLMActivity(daemon.LLMActivityEvent{
 					ID: id, Operation: op, Source: src,
-					FinishedAt: &now, DurationMs: int(durationMs),
+					StartedAt: startedAt, FinishedAt: &now,
+					DurationMs: int(durationMs),
 					Error: errMsg, Status: status,
 				})
 			}

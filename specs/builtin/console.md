@@ -163,8 +163,10 @@ All data comes from existing tables via joins:
 ### Shared Formatting Helpers (`internal/ui/agent_format.go`)
 
 Shared formatting functions used by both the overlay and standalone console:
-- `AgentStatusIcon(status)` — returns status character icon
-- `AgentStatusColor(status)` — returns lipgloss color for status
+- `AgentStatusIcon(status)` — returns status character icon for agents
+- `AgentStatusColor(status)` — returns lipgloss color for agent status
+- `LLMStatusIcon(status)` — returns status character icon for LLM activity (`◐` running, `✓` completed, `✗` failed)
+- `LLMStatusColor(status)` — returns lipgloss color for LLM activity status
 - `FormatAgentElapsed(entry)` — returns human-readable elapsed time
 - `FormatDuration(d)` — formats a duration as short string
 

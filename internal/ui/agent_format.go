@@ -46,6 +46,34 @@ func AgentStatusColor(status string) lipgloss.Color {
 	}
 }
 
+// LLMStatusIcon returns a single-character icon for the given LLM activity status.
+func LLMStatusIcon(status string) string {
+	switch status {
+	case "running":
+		return "◐"
+	case "completed":
+		return "✓"
+	case "failed":
+		return "✗"
+	default:
+		return "●"
+	}
+}
+
+// LLMStatusColor returns the lipgloss color for the given LLM activity status.
+func LLMStatusColor(status string) lipgloss.Color {
+	switch status {
+	case "running":
+		return lipgloss.Color("#e0af68")
+	case "completed":
+		return lipgloss.Color("#9ece6a")
+	case "failed":
+		return lipgloss.Color("#f7768e")
+	default:
+		return lipgloss.Color("#565f89")
+	}
+}
+
 // FormatAgentElapsed returns a human-readable elapsed time for the entry.
 func FormatAgentElapsed(e db.AgentHistoryEntry) string {
 	if e.Status == "queued" {
