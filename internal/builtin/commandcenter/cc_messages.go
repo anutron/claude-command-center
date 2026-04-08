@@ -170,6 +170,7 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 			p.detailTodoID = msg.TodoID
 			p.detailMode = "viewing"
 			p.detailSelectedField = 0
+			p.mergeSourceCursor = 0
 
 			// Update session status when returning from a Claude session.
 			// Both resume/join and interactive sessions transition to "review".
