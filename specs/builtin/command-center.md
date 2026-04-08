@@ -248,6 +248,63 @@ In the normal (collapsed) view:
 - All Claude calls run as background `tea.Cmd` (non-blocking)
 - Uses `LLM` abstraction layer (not direct CLI calls)
 
+### Command LLM Delegation
+
+The command LLM (`c` key) is a stateless text completion with no tool access — it can only reason about the CC state JSON it receives. When a user asks for something that requires external data or tools, the command LLM delegates to a real agent.
+
+#### Allowed Actions (Command LLM)
+
+1. **Create todos** — extract action items from what the user says
+2. **Complete todos** — mark existing todos as done
+3. **Answer quick questions** — about the current state (calendar, todos, threads)
+4. **Calendar actions** — decline/accept events, only when explicitly asked
+5. **Slack/Gmail actions** — send messages, only when explicitly asked
+6. **Delegate to agent** — if the instruction requires reading external data (Granola transcripts, Slack messages, emails, files, GitHub PRs), performing real work (writing code, sending messages), or anything not answerable from the command center state, set `delegate` with a rewritten prompt for the agent
+
+#### Decision Logic
+
+1. If the user describes something they need to do → create a todo
+2. If the user says "done with X" or "finished X" → complete the matching todo
+3. If the user explicitly says "decline", "accept", "send", "message" → take that action
+4. If the user asks a question about their state → answer from command center data
+5. If the instruction requires external data or tools → delegate to an agent
+6. Otherwise → create a todo
+
+#### Response Format
+
+```json
+{
+  "message": "Brief summary of what you did",
+  "ask": "",
+  "delegate": {
+    "prompt": "Rewritten agent prompt with full context",
+    "project_dir": ""
+  },
+  "todos": [],
+  "complete_todo_ids": []
+}
+```
+
+The `delegate.prompt` is a rewritten version of the user's instruction — expanded for clarity, with enough context for a Claude Code agent to execute it. `delegate.project_dir` defaults to empty (agent uses `$HOME`).
+
+#### Delegation Handler
+
+In `handleClaudeCommandFinished`, when `resp.Delegate` is non-empty:
+
+1. Create a todo with title derived from the delegate prompt (first ~60 chars)
+2. Set `todo.Detail` to the full delegate prompt
+3. Set `todo.ProjectDir` to delegate's project_dir (or `$HOME` if empty)
+4. Insert into DB
+5. Call `launchOrQueueAgent()` with a `queuedSession` built from the todo
+6. Flash message: "Delegating to agent: <truncated title>"
+
+#### Edge Cases
+
+- **Delegation + ask**: If both `delegate` and `ask` are set, prefer `ask` (LLM needs clarification before delegating)
+- **Delegation + todos**: Handle both — create the simple todos, then launch the agent for the delegated work
+- **Empty delegate prompt**: Ignore — treat as no delegation
+- **Daemon not connected**: Flash "Daemon not connected — cannot delegate to agent"
+
 ### Data Loading (Lifecycle Messages)
 
 Instead of polling on a timer, the command center uses lifecycle messages to reload data from the DB at the right moments:

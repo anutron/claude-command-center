@@ -190,6 +190,112 @@ Shared formatting functions used by both the overlay and standalone console:
 
 Box: 70 chars wide (or width-4 if narrow), rounded border `#3b4261`, padding 1,2, centered via `lipgloss.Place`.
 
+## Feature 3: LLM Activity Observability
+
+### LLM Activity Events
+
+Two event types on the plugin event bus:
+
+- `llm.started` — published when an `llm.Complete` call begins
+- `llm.finished` — published when an `llm.Complete` call returns (success or error)
+
+Payload for both:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | UUID linking started→finished |
+| `operation` | string | Operation name (see below) |
+| `source` | string | Plugin or subsystem name |
+| `todo_id` | string | Optional, if associated with a specific todo |
+
+`llm.finished` adds:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `duration_ms` | int | Call duration in milliseconds |
+| `error` | string | Empty on success, error message on failure |
+
+Operation names: `command`, `edit`, `enrich`, `focus`, `date-parse`, `synthesize`, `review-address`, `refine`, `train`, `describe`.
+
+### Instrumentation: ObservableLLM Wrapper
+
+An `ObservableLLM` in `internal/llm/observable.go` wraps `llm.LLM` with a publish callback. On every `Complete` call, it publishes `llm.started` before and `llm.finished` after. Operation name is passed via `context.WithValue` using `llm.WithOperation(ctx, name)` / `llm.OperationFrom(ctx)`.
+
+For v1, only TUI-side LLM calls are instrumented (commandcenter + sessions). The `ai-cron` refresh pipeline runs as a separate process with its own LLM instance — instrumenting it requires a separate `ReportLLMActivity` RPC path, deferred.
+
+### Daemon LLM Activity Buffer
+
+#### `ReportLLMActivity` RPC
+
+TUI sends LLM activity events to the daemon. Accepts an `LLMActivityEvent`:
+
+```go
+type LLMActivityEvent struct {
+    ID         string     `json:"id"`
+    Operation  string     `json:"operation"`
+    Source     string     `json:"source"`
+    TodoID     string     `json:"todo_id,omitempty"`
+    StartedAt  time.Time  `json:"started_at"`
+    FinishedAt *time.Time `json:"finished_at,omitempty"`
+    DurationMs int        `json:"duration_ms,omitempty"`
+    Error      string     `json:"error,omitempty"`
+    Status     string     `json:"status"` // "running", "completed", "failed"
+}
+```
+
+On receive: insert or update the ring buffer entry (match by ID), then broadcast `llm.started` or `llm.finished` event to all subscribers.
+
+#### Ring Buffer
+
+In-memory, 100 entries max, no DB persistence. On `llm.started`: insert new entry with `Status: "running"`. On `llm.finished`: find matching entry by ID, update `FinishedAt`, `DurationMs`, `Error`, `Status`.
+
+#### `ListLLMActivity` RPC
+
+Returns the current ring buffer contents. Used by `ccc console` and the `~` overlay.
+
+#### Event Flow
+
+```
+TUI → ObservableLLM publishes "llm.started" on event bus
+    → TUI model forwards to daemon via ReportLLMActivity RPC
+    → Daemon stores in ring buffer, broadcasts "llm.started"
+    → ccc console (subscribed) re-polls ListLLMActivity
+    → ~overlay (if open) re-polls ListLLMActivity
+```
+
+### `~` Overlay: LLM Activity Section
+
+Below the agent list, a "── llm activity ──" section appears when there are in-flight or recently completed (last 30 seconds) LLM calls.
+
+```
+── llm activity ──
+⠋ command  (12s)
+✓ focus    (3s)
+✓ enrich   (2s)
+```
+
+- Status icon: `⠋` running, `✓` completed, `✗` failed
+- Shows operation name + elapsed (running) or duration (completed)
+- Informational only — not navigable with `j`/`k`
+- Completed entries fade out after 30 seconds
+- Only rendered when entries exist (no empty section)
+
+### `ccc console`: LLM Activity in Sidebar
+
+LLM activity appears in the sidebar below the agent separator:
+
+```
+── llm ──
+⠋ command   12s
+✓ focus      3s
+✓ enrich     2s
+```
+
+- Dimmed style to visually distinguish from agents
+- Not selectable (no focus pane content for LLM entries)
+- Fetched via `ListLLMActivity` RPC on each 1-second poll tick
+- Same 30-second fade for completed entries
+
 ## Out of Scope
 
 - Agent control (stop/restart/requeue) from either surface
@@ -197,6 +303,9 @@ Box: 70 chars wide (or width-4 if narrow), rounded border `#3b4261`, padding 1,2
 - Changes to the refresh pipeline
 - New database tables
 - The console does not access the DB directly — all data comes via daemon RPCs
+- Cost tracking for individual LLM calls
+- Cancellation of in-flight LLM calls
+- `ai-cron` LLM instrumentation (deferred — separate process)
 
 ## Test Cases
 
@@ -213,3 +322,14 @@ Box: 70 chars wide (or width-4 if narrow), rounded border `#3b4261`, padding 1,2
 - Console handles 5+ agents (sidebar scrolls)
 - Selecting a completed agent in console shows its output history
 - Origin labels display correctly for todo-sourced and PR-sourced agents
+- ObservableLLM publishes `llm.started` and `llm.finished` events with correct operation, ID, duration
+- ObservableLLM publishes `llm.finished` with error field when inner LLM fails
+- Ring buffer inserts new entries on `llm.started`
+- Ring buffer updates matching entry on `llm.finished`
+- Ring buffer evicts oldest entry when at capacity (100)
+- `ListLLMActivity` returns current buffer contents
+- Overlay LLM activity section renders when in-flight entries exist
+- Overlay LLM activity section hidden when no entries
+- Overlay LLM activity section hides completed entries after 30 seconds
+- `ccc console` sidebar shows LLM activity below agent separator
+- `ccc console` LLM entries are not selectable
