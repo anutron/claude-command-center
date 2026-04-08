@@ -682,7 +682,8 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Toggle backlog (b) shows/hides completed items
 - Booking mode enter/exit and duration selection
 - View renders without panic (with and without data)
-- Help overlay toggles
+- Help overlay toggles on `?` and renders KEYBOARD SHORTCUTS content; returns ConsumedAction so the host does not apply fallback key handling
+- Help overlay dismisses on any subsequent key press and restores the previous view
 - HandleMessage processes async results
 - Expanded view navigation (left/right columns)
 - Expanded view left/right paginates at column edges

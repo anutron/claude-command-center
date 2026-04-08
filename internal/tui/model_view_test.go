@@ -532,3 +532,31 @@ func TestView_ConsoleOverlay_NoLLMActivity(t *testing.T) {
 		t.Error("should not show 'llm activity' section when no LLM entries")
 	}
 }
+
+func TestView_HelpOverlay_QuestionMarkShowsHelp(t *testing.T) {
+	m := newTestModel(t)
+
+	// Ensure we're on the command center tab.
+	if m.activeTab != tabCommand {
+		t.Fatal("expected initial tab to be command center")
+	}
+
+	// Before pressing ?, the view should NOT show the help overlay.
+	v := m.View()
+	assertViewNotContains(t, v, "KEYBOARD SHORTCUTS")
+
+	// Send ? key through the full TUI Update path.
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = result.(Model)
+
+	// The view should now show the help overlay.
+	v = m.View()
+	assertViewContains(t, v, "KEYBOARD SHORTCUTS")
+	assertViewContains(t, v, "Toggle this help")
+
+	// Pressing any key should dismiss the overlay and show the command center again.
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = result.(Model)
+	v = m.View()
+	assertViewNotContains(t, v, "KEYBOARD SHORTCUTS")
+}

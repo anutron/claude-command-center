@@ -7,6 +7,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
+	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -886,4 +887,78 @@ func TestView_JKNavigateTodosOnMergeTodo(t *testing.T) {
 	if p.detailTodoID != "t2" {
 		t.Errorf("expected j to navigate to t2, but detailTodoID=%s", p.detailTodoID)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Help Overlay (3 tests)
+// ---------------------------------------------------------------------------
+
+func TestView_HelpOverlayShowsKeyboardShortcuts(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	// Before ?, no help overlay.
+	view := renderView(p)
+	viewNotContains(t, view, "KEYBOARD SHORTCUTS")
+
+	// Press ? to toggle help on.
+	action := p.HandleKey(keyMsg("?"))
+	if !p.showHelp {
+		t.Fatal("? should toggle showHelp on")
+	}
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("? should return ConsumedAction, got %q", action.Type)
+	}
+
+	view = renderView(p)
+	viewContains(t, view, "KEYBOARD SHORTCUTS")
+	viewContains(t, view, "Toggle this help")
+	viewContains(t, view, "Command Center")
+}
+
+func TestView_HelpOverlayDismissesOnAnyKey(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	// Open help overlay.
+	p.HandleKey(keyMsg("?"))
+	if !p.showHelp {
+		t.Fatal("? should toggle showHelp on")
+	}
+
+	// Any key should dismiss.
+	action := p.HandleKey(keyMsg("q"))
+	if p.showHelp {
+		t.Fatal("any key should dismiss help overlay")
+	}
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("dismiss key should return ConsumedAction, got %q", action.Type)
+	}
+
+	// View should no longer contain help overlay.
+	view := renderView(p)
+	viewNotContains(t, view, "KEYBOARD SHORTCUTS")
+}
+
+func TestView_HelpOverlayInDetailView(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Detail help test", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+
+	// Open detail view.
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("enter should open detail view")
+	}
+
+	// Press ? in detail view.
+	action := p.HandleKey(keyMsg("?"))
+	if !p.showHelp {
+		t.Fatal("? should toggle showHelp on in detail view")
+	}
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("? in detail view should return ConsumedAction, got %q", action.Type)
+	}
+
+	view := renderView(p)
+	viewContains(t, view, "KEYBOARD SHORTCUTS")
+	viewContains(t, view, "Todo Detail")
 }
