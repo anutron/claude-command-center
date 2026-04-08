@@ -214,6 +214,31 @@ Budget RPCs require a `GovernedRunner` to be configured; they return an error if
 2. Broadcasts `budget.resumed` event
 3. Returns `{resumed: true}`
 
+### LLM Activity RPCs
+
+The daemon maintains an in-memory ring buffer of LLM activity events, providing observability into LLM calls made by the system (command delegation, refresh summarization, etc.).
+
+**Ring buffer:**
+
+- Fixed capacity of 100 events
+- On insert: if an event with the same ID already exists, update it in place; otherwise append as new
+- When inserting a new event at capacity, the oldest entry is evicted
+- `List()` returns a copy of all events sorted newest-first (by `StartedAt` desc), goroutine-safe
+
+**LLMActivityEvent fields:** `ID, Operation, Source, TodoID (optional), StartedAt, FinishedAt (optional), DurationMs (optional), Error (optional), Status ("running"|"completed"|"failed")`
+
+**ReportLLMActivity(LLMActivityEvent):**
+
+1. Calls `buf.Report(evt)` to insert or update the event
+2. Broadcasts an event:
+   - If `evt.Status == "running"`: broadcasts `llm.started` with `{id, operation}`
+   - Otherwise: broadcasts `llm.finished` with `{id, operation, duration_ms}`
+3. Returns `{"ok": true}`
+
+**ListLLMActivity():**
+
+- Returns `buf.List()` — all events, newest-first
+
 ### Event Subscription
 
 The subscriber system provides push delivery of server events to connected TUI clients.
@@ -239,6 +264,7 @@ The subscriber system provides push delivery of server events to connected TUI c
 - `daemon.paused` / `daemon.resumed` — daemon state changes
 - `agent.started` / `agent.session_id` / `agent.cost_updated` / `agent.finished` / `agent.stopped` — agent lifecycle
 - `budget.emergency_stop` / `budget.resumed` — budget governance events
+- `llm.started` / `llm.finished` — LLM activity lifecycle
 
 **TUI integration:**
 
