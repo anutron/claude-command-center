@@ -266,6 +266,25 @@ func (c *Client) StreamAgentOutput(agentID string) (StreamAgentOutputResult, err
 	return resp, nil
 }
 
+// ReportLLMActivity reports an LLM activity event to the daemon.
+func (c *Client) ReportLLMActivity(evt LLMActivityEvent) error {
+	_, err := c.call("ReportLLMActivity", evt)
+	return err
+}
+
+// ListLLMActivity returns all LLM activity events from the daemon's ring buffer.
+func (c *Client) ListLLMActivity() ([]LLMActivityEvent, error) {
+	result, err := c.call("ListLLMActivity", nil)
+	if err != nil {
+		return nil, err
+	}
+	var events []LLMActivityEvent
+	if err := json.Unmarshal(result, &events); err != nil {
+		return nil, fmt.Errorf("unmarshal llm activity: %w", err)
+	}
+	return events, nil
+}
+
 // Subscribe blocks, reading events forever. Must be called on a dedicated Client
 // instance — this connection cannot be used for RPCs after subscribing.
 func (c *Client) Subscribe(handler func(Event)) error {

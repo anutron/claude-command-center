@@ -44,18 +44,20 @@ type Server struct {
 	governed     *agent.GovernedRunner // non-nil when budget governance is enabled
 	paused       atomic.Bool           // when true, refresh and agent launches are blocked
 	topicWatcher *topicWatcher
+	llmActivity  *llmActivityBuffer
 }
 
 // NewServer creates a new daemon server with the given configuration.
 func NewServer(cfg ServerConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
-		cfg:      cfg,
-		ctx:      ctx,
-		cancel:   cancel,
-		registry: newSessionRegistry(cfg.DB),
-		runner:   cfg.AgentRunner,
-		governed: cfg.GovernedRunner,
+		cfg:         cfg,
+		ctx:         ctx,
+		cancel:      cancel,
+		registry:    newSessionRegistry(cfg.DB),
+		runner:      cfg.AgentRunner,
+		governed:    cfg.GovernedRunner,
+		llmActivity: newLLMActivityBuffer(100),
 	}
 	// Wire cost broadcast on the governed runner so subscribers get
 	// throttled agent.cost_updated events as agents incur cost.
@@ -339,6 +341,11 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 		return s.handleShutdownDaemon(req)
 	case "GetDaemonStatus":
 		return s.handleGetDaemonStatus(req)
+
+	case "ReportLLMActivity":
+		return s.handleReportLLMActivity(req)
+	case "ListLLMActivity":
+		return s.handleListLLMActivity(req)
 
 	default:
 		return nil, &RPCError{Code: -32601, Message: fmt.Sprintf("method not found: %s", req.Method)}
