@@ -44,6 +44,16 @@ func (b *llmActivityBuffer) Report(evt LLMActivityEvent) {
 	// Try to find and update an existing event with the same ID.
 	for i := range b.entries {
 		if b.entries[i].ID == evt.ID {
+			// Merge: preserve StartedAt from original, update finish fields.
+			if evt.StartedAt.IsZero() {
+				evt.StartedAt = b.entries[i].StartedAt
+			}
+			if evt.Source == "" {
+				evt.Source = b.entries[i].Source
+			}
+			if evt.TodoID == "" {
+				evt.TodoID = b.entries[i].TodoID
+			}
 			b.entries[i] = evt
 			return
 		}

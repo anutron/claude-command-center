@@ -251,7 +251,7 @@ On receive: insert or update the ring buffer entry (match by ID), then broadcast
 
 #### Ring Buffer
 
-In-memory, 100 entries max, no DB persistence. On `llm.started`: insert new entry with `Status: "running"`. On `llm.finished`: find matching entry by ID, update `FinishedAt`, `DurationMs`, `Error`, `Status`.
+In-memory, 100 entries max, no DB persistence. On `llm.started`: insert new entry with `Status: "running"`. On `llm.finished`: find matching entry by ID, merge fields — preserves `StartedAt`, `Source`, and `TodoID` from the original entry while updating `FinishedAt`, `DurationMs`, `Error`, `Status`.
 
 #### `ListLLMActivity` RPC
 
