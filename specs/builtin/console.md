@@ -274,9 +274,10 @@ Below the agent list, a "── llm activity ──" section appears when there 
 ✓ enrich   (2s)
 ```
 
-- Status icon: `⠋` running, `✓` completed, `✗` failed
+- Status icon: `◐` running (yellow), `✓` completed (green), `✗` failed (red)
 - Shows operation name + elapsed (running) or duration (completed)
 - Informational only — not navigable with `j`/`k`
+- When no agents exist but LLM activity is present, the sidebar skips the "No agents running" empty state and shows only the LLM section
 - Completed entries fade out after 30 seconds
 - Only rendered when entries exist (no empty section)
 

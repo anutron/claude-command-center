@@ -19,13 +19,14 @@ import (
 
 // consoleModel is the bubbletea model for the standalone console TUI.
 type consoleModel struct {
-	client  *daemon.Client
-	entries []db.AgentHistoryEntry
-	cursor  int
-	width   int
-	height  int
-	events  []agent.SessionEvent
-	done    bool
+	client      *daemon.Client
+	entries     []db.AgentHistoryEntry
+	llmActivity []daemon.LLMActivityEvent
+	cursor      int
+	width       int
+	height      int
+	events      []agent.SessionEvent
+	done        bool
 }
 
 // consolePollMsg is sent on each tick to trigger a data refresh.
@@ -66,7 +67,7 @@ func (m consoleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case consolePollMsg:
-		return m, tea.Batch(m.fetchHistory(), consoleTick())
+		return m, tea.Batch(m.fetchHistory(), m.fetchLLMActivity(), consoleTick())
 
 	case consoleHistoryMsg:
 		m.entries = msg.entries
@@ -80,6 +81,10 @@ func (m consoleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case consoleOutputMsg:
 		m.events = msg.events
 		m.done = msg.done
+		return m, nil
+
+	case consoleLLMActivityMsg:
+		m.llmActivity = msg.events
 		return m, nil
 	}
 
@@ -97,6 +102,11 @@ type consoleOutputMsg struct {
 	done   bool
 }
 
+// consoleLLMActivityMsg carries refreshed LLM activity events.
+type consoleLLMActivityMsg struct {
+	events []daemon.LLMActivityEvent
+}
+
 func (m consoleModel) fetchHistory() tea.Cmd {
 	return func() tea.Msg {
 		entries, err := m.client.ListAgentHistory(24)
@@ -104,6 +114,19 @@ func (m consoleModel) fetchHistory() tea.Cmd {
 			return consoleHistoryMsg{entries: m.entries} // keep old on error
 		}
 		return consoleHistoryMsg{entries: entries}
+	}
+}
+
+func (m consoleModel) fetchLLMActivity() tea.Cmd {
+	return func() tea.Msg {
+		if m.client == nil {
+			return consoleLLMActivityMsg{}
+		}
+		events, err := m.client.ListLLMActivity()
+		if err != nil {
+			return consoleLLMActivityMsg{events: m.llmActivity}
+		}
+		return consoleLLMActivityMsg{events: events}
 	}
 }
 
@@ -175,7 +198,7 @@ func (m consoleModel) renderSidebar(width int) string {
 	lines = append(lines, titleStyle.Render("AGENTS"))
 	lines = append(lines, "")
 
-	if len(m.entries) == 0 {
+	if len(m.entries) == 0 && len(m.llmActivity) == 0 {
 		lines = append(lines, dimStyle.Render("No agents running"))
 		lines = append(lines, dimStyle.Render("Watching..."))
 		return strings.Join(lines, "\n")
@@ -232,6 +255,40 @@ func (m consoleModel) renderSidebar(width int) string {
 		lines = append(lines, sep)
 		for _, i := range completedIdx {
 			lines = append(lines, renderItem(i, true))
+		}
+	}
+
+	// LLM activity section
+	if len(m.llmActivity) > 0 {
+		lines = append(lines, dimStyle.Render("── llm ──"))
+		for _, evt := range m.llmActivity {
+			icon := "●"
+			color := lipgloss.Color("#565f89")
+			switch evt.Status {
+			case "running":
+				icon = "◐"
+				color = lipgloss.Color("#e0af68")
+			case "completed":
+				icon = "✓"
+				color = lipgloss.Color("#9ece6a")
+			case "failed":
+				icon = "✗"
+				color = lipgloss.Color("#f7768e")
+			}
+			iconStyled := lipgloss.NewStyle().Foreground(color).Render(icon)
+			label := evt.Operation
+			if evt.DurationMs > 0 {
+				secs := evt.DurationMs / 1000
+				if secs > 0 {
+					label += fmt.Sprintf(" %ds", secs)
+				} else {
+					label += fmt.Sprintf(" %dms", evt.DurationMs)
+				}
+			} else if evt.Status == "running" {
+				elapsed := time.Since(evt.StartedAt).Truncate(time.Second)
+				label += fmt.Sprintf(" %s", elapsed)
+			}
+			lines = append(lines, iconStyled+" "+dimStyle.Render(label))
 		}
 	}
 
