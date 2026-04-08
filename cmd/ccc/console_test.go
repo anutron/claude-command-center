@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/anutron/claude-command-center/internal/agent"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 )
 
@@ -261,5 +262,47 @@ func TestConsoleSidebar_OnlyActiveAgents(t *testing.T) {
 	// Should not have the completed separator when there are no completed agents.
 	if strings.Contains(v, "── completed ──") {
 		t.Errorf("unexpected 'completed' separator when no completed agents")
+	}
+}
+
+func TestConsoleSidebar_LLMActivity(t *testing.T) {
+	now := time.Now()
+	m := newTestConsoleModel(nil, nil, false)
+	m.llmActivity = []daemon.LLMActivityEvent{
+		{
+			ID:        "llm-1",
+			Operation: "command",
+			Source:    "commandcenter",
+			StartedAt: now.Add(-12 * time.Second),
+			Status:    "running",
+		},
+		{
+			ID:        "llm-2",
+			Operation: "focus",
+			Source:    "commandcenter",
+			StartedAt: now.Add(-5 * time.Second),
+			Status:    "completed",
+		},
+	}
+
+	v := m.View()
+	if !strings.Contains(v, "llm") {
+		t.Errorf("expected 'llm' separator in sidebar, got:\n%s", v)
+	}
+	if !strings.Contains(v, "command") {
+		t.Errorf("expected 'command' operation in sidebar, got:\n%s", v)
+	}
+	if !strings.Contains(v, "focus") {
+		t.Errorf("expected 'focus' operation in sidebar, got:\n%s", v)
+	}
+}
+
+func TestConsoleSidebar_NoLLMActivity(t *testing.T) {
+	m := newTestConsoleModel(nil, nil, false)
+	m.llmActivity = nil
+
+	v := m.View()
+	if strings.Contains(v, "── llm ──") {
+		t.Errorf("should not show LLM separator when no LLM activity")
 	}
 }

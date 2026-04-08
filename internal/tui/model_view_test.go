@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
@@ -488,5 +489,46 @@ func TestView_ConsoleOverlay_ConsumesKeysWhileOpen(t *testing.T) {
 
 	if !m.console.visible {
 		t.Error("expected overlay to remain visible after non-navigation key")
+	}
+}
+
+func TestView_ConsoleOverlay_LLMActivity(t *testing.T) {
+	m := newTestModel(t)
+	m.console.visible = true
+	m.console.entries = nil // no agents
+
+	now := time.Now()
+	m.console.llmActivity = []daemon.LLMActivityEvent{
+		{
+			ID:        "llm-1",
+			Operation: "command",
+			Source:    "commandcenter",
+			StartedAt: now.Add(-12 * time.Second),
+			Status:    "running",
+		},
+		{
+			ID:        "llm-2",
+			Operation: "focus",
+			Source:    "commandcenter",
+			StartedAt: now.Add(-5 * time.Second),
+			Status:    "completed",
+		},
+	}
+
+	v := m.View()
+	assertViewContains(t, v, "llm activity")
+	assertViewContains(t, v, "command")
+	assertViewContains(t, v, "focus")
+}
+
+func TestView_ConsoleOverlay_NoLLMActivity(t *testing.T) {
+	m := newTestModel(t)
+	m.console.visible = true
+	m.console.entries = nil
+	m.console.llmActivity = nil
+
+	v := m.View()
+	if strings.Contains(v, "llm activity") {
+		t.Error("should not show 'llm activity' section when no LLM entries")
 	}
 }

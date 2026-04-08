@@ -2259,3 +2259,144 @@ func TestDaemonAgentPollStopsWhenViewerClosed(t *testing.T) {
 	}
 }
 
+// ==========================================
+// Command LLM Delegation Tests
+// ==========================================
+
+func TestHandleClaudeCommandFinished_Delegate(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	msg := claudeCommandFinishedMsg{
+		output: `{"message":"Delegating to agent...","delegate":{"prompt":"Read Granola call notes and summarize","project_dir":"/Users/test/project"},"todos":[],"complete_todo_ids":[]}`,
+	}
+
+	handled, action := p.handleClaudeCommandFinished(msg)
+	if !handled {
+		t.Fatal("expected message to be handled")
+	}
+
+	if !strings.Contains(p.flashMessage, "Delegat") {
+		t.Errorf("flash message = %q, want to contain 'Delegat'", p.flashMessage)
+	}
+
+	if p.cc == nil {
+		t.Fatal("cc should not be nil")
+	}
+
+	var delegateTodo *db.Todo
+	for i := range p.cc.Todos {
+		if strings.Contains(p.cc.Todos[i].Detail, "Read Granola call") ||
+			strings.Contains(p.cc.Todos[i].ProposedPrompt, "Read Granola call") {
+			delegateTodo = &p.cc.Todos[i]
+			break
+		}
+	}
+	if delegateTodo == nil {
+		t.Fatal("expected a new todo created for the delegate prompt")
+	}
+	if delegateTodo.ProjectDir != "/Users/test/project" {
+		t.Errorf("delegate todo project_dir = %q, want '/Users/test/project'", delegateTodo.ProjectDir)
+	}
+
+	if action.TeaCmd == nil {
+		t.Error("delegate should return a TeaCmd for launching/queuing the agent")
+	}
+}
+
+func TestHandleClaudeCommandFinished_DelegateAndTodos(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	msg := claudeCommandFinishedMsg{
+		output: `{
+			"message":"Created todo and delegating...",
+			"delegate":{"prompt":"Investigate the bug","project_dir":"/tmp/proj"},
+			"todos":[{"title":"Follow up on PR review","due":"","who_waiting":"","effort":"","context":"","detail":"","project_dir":""}],
+			"complete_todo_ids":[]
+		}`,
+	}
+
+	todosBefore := len(p.cc.Todos)
+	handled, _ := p.handleClaudeCommandFinished(msg)
+	if !handled {
+		t.Fatal("expected message to be handled")
+	}
+
+	todosAfter := len(p.cc.Todos)
+	newTodos := todosAfter - todosBefore
+	if newTodos < 2 {
+		t.Errorf("expected at least 2 new todos (1 simple + 1 delegate), got %d new", newTodos)
+	}
+
+	var foundSimple bool
+	for _, todo := range p.cc.Todos {
+		if todo.Title == "Follow up on PR review" {
+			foundSimple = true
+			break
+		}
+	}
+	if !foundSimple {
+		t.Error("expected simple todo 'Follow up on PR review' to be created")
+	}
+}
+
+func TestHandleClaudeCommandFinished_DelegateAndAsk(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	msg := claudeCommandFinishedMsg{
+		output: `{
+			"message":"",
+			"ask":"Which project should I delegate to?",
+			"delegate":{"prompt":"Do the thing","project_dir":"/tmp/proj"},
+			"todos":[],
+			"complete_todo_ids":[]
+		}`,
+	}
+
+	todosBefore := len(p.cc.Todos)
+	handled, _ := p.handleClaudeCommandFinished(msg)
+	if !handled {
+		t.Fatal("expected message to be handled")
+	}
+
+	todosAfter := len(p.cc.Todos)
+	if todosAfter != todosBefore {
+		t.Errorf("ask should prevent delegation; todos before=%d, after=%d", todosBefore, todosAfter)
+	}
+
+	if !p.addingTodoRich {
+		t.Error("ask should set addingTodoRich to true for conversation continuation")
+	}
+
+	if !strings.Contains(p.flashMessage, "Which project") {
+		t.Errorf("flash message = %q, want to contain the ask question", p.flashMessage)
+	}
+}
+
+func TestHandleClaudeCommandFinished_EmptyDelegate(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	msg := claudeCommandFinishedMsg{
+		output: `{
+			"message":"Done",
+			"delegate":{"prompt":"","project_dir":""},
+			"todos":[],
+			"complete_todo_ids":[]
+		}`,
+	}
+
+	todosBefore := len(p.cc.Todos)
+	handled, _ := p.handleClaudeCommandFinished(msg)
+	if !handled {
+		t.Fatal("expected message to be handled")
+	}
+
+	todosAfter := len(p.cc.Todos)
+	if todosAfter != todosBefore {
+		t.Errorf("empty delegate should not create new todos; before=%d, after=%d", todosBefore, todosAfter)
+	}
+
+	if p.flashMessage != "Done" {
+		t.Errorf("flash message = %q, want 'Done'", p.flashMessage)
+	}
+}
+
