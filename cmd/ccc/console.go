@@ -78,12 +78,16 @@ func (m consoleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case consoleHistoryMsg:
 		m.entries = msg.entries
-		// Keep cursor in bounds.
-		if m.cursor >= len(m.entries) && len(m.entries) > 0 {
-			m.cursor = len(m.entries) - 1
+		// Keep cursor in bounds of total items (agents + LLM).
+		total := len(m.entries) + len(m.llmActivity)
+		if total > 0 && m.cursor >= total {
+			m.cursor = total - 1
 		}
-		// Also refresh the selected agent's output.
-		return m, m.fetchSelected()
+		// Only fetch agent output if cursor is on an agent entry.
+		if m.cursor < len(m.entries) {
+			return m, m.fetchSelected()
+		}
+		return m, nil
 
 	case consoleOutputMsg:
 		m.events = msg.events
@@ -143,7 +147,7 @@ func (m consoleModel) fetchLLMActivity() tea.Cmd {
 }
 
 func (m consoleModel) fetchSelected() tea.Cmd {
-	if len(m.entries) == 0 {
+	if len(m.entries) == 0 || m.cursor >= len(m.entries) {
 		return nil
 	}
 	agentID := m.entries[m.cursor].AgentID

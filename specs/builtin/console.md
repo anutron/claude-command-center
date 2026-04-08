@@ -282,7 +282,6 @@ Below the agent list, a "── llm activity ──" section appears when there 
 - Shows operation name + elapsed (running) or duration (completed)
 - Informational only — not navigable with `j`/`k`
 - When no agents exist but LLM activity is present, the sidebar skips the "No agents running" empty state and shows only the LLM section
-- Completed entries fade out after 30 seconds
 - Only rendered when entries exist (no empty section)
 
 ### `ccc console`: LLM Activity in Sidebar
@@ -299,7 +298,6 @@ LLM activity appears in the sidebar below the agent separator:
 - Dimmed style to visually distinguish from agents
 - Selectable with `j`/`k` cursor — selecting shows detail in focus pane (status, operation, source, timestamps, duration, todo ID, error)
 - Fetched via `ListLLMActivity` RPC on each 1-second poll tick
-- Same 30-second fade for completed entries
 
 ## Out of Scope
 
@@ -310,7 +308,6 @@ LLM activity appears in the sidebar below the agent separator:
 - The console does not access the DB directly — all data comes via daemon RPCs
 - Cost tracking for individual LLM calls
 - Cancellation of in-flight LLM calls
-- `ai-cron` LLM instrumentation (deferred — separate process)
 
 ## Test Cases
 

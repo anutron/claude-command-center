@@ -114,8 +114,8 @@ func TestLLMActivityBuffer_UpdateNotFound(t *testing.T) {
 	})
 
 	events := buf.List()
-	if len(events) > 1 {
-		t.Errorf("expected 0 or 1 events, got %d", len(events))
+	if len(events) != 1 {
+		t.Errorf("expected 1 event (inserted as new), got %d", len(events))
 	}
 }
 

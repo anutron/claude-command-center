@@ -693,17 +693,16 @@ func (p *Plugin) handleClaudeCommandFinished(msg claudeCommandFinishedMsg) (bool
 				ensureCC(&p.cc)
 
 				// Create a todo for the delegated work.
-				titleFromPrompt := resp.Delegate.Prompt
-				if len(titleFromPrompt) > 60 {
-					titleFromPrompt = titleFromPrompt[:60]
-				}
+				titleFromPrompt := truncateToWidth(resp.Delegate.Prompt, 60)
 				todo := p.cc.AddTodo(titleFromPrompt)
 				todo.Detail = resp.Delegate.Prompt
+				todo.ProposedPrompt = resp.Delegate.Prompt
 				projectDir := resp.Delegate.ProjectDir
 				if projectDir == "" {
 					projectDir, _ = os.UserHomeDir()
 				}
 				todo.ProjectDir = projectDir
+				todo.LaunchMode = "normal"
 				t := *todo
 				p.publishEvent("todo.created", map[string]interface{}{"id": t.ID, "title": t.Title, "source": "command"})
 				allCmds = append(allCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBInsertTodo(database, t) }))
@@ -714,8 +713,8 @@ func (p *Plugin) handleClaudeCommandFinished(msg claudeCommandFinishedMsg) (bool
 					Prompt:     resp.Delegate.Prompt,
 					ProjectDir: todo.ProjectDir,
 					Mode:       "normal",
-					Perm:       "default",
-					Budget:     0,
+					Perm:       p.cfg.Agent.DefaultPermission,
+					Budget:     p.cfg.Agent.DefaultBudget,
 					AutoStart:  true,
 				}
 				allCmds = append(allCmds, p.launchOrQueueAgent(qs))
