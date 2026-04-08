@@ -18,10 +18,10 @@ var triageFilterOrder = []string{"todo", "inbox", "agents", "review", "all"}
 
 // HandleKey handles key input and returns an action.
 func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
-	// Help overlay
+	// Help overlay: any key dismisses
 	if p.showHelp {
 		p.showHelp = false
-		return plugin.NoopAction()
+		return plugin.ConsumedAction()
 	}
 
 	// Two-key chord: "g" prefix (Gmail-style shortcuts)
@@ -77,7 +77,7 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 	// Help toggle
 	if msg.String() == "?" {
 		p.showHelp = !p.showHelp
-		return plugin.NoopAction()
+		return plugin.ConsumedAction()
 	}
 
 	// Esc handling

@@ -294,7 +294,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		return plugin.ConsumedAction()
 	case "?":
 		p.showHelp = !p.showHelp
-		return plugin.NoopAction()
+		return plugin.ConsumedAction()
 	case "g":
 		p.gPending = true
 		return plugin.NoopAction()
