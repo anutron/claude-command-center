@@ -107,7 +107,7 @@ Expect 0-2 results from these %d candidates.
 Emails:
 %s`, len(candidates), sb.String())
 
-	text, err := l.Complete(ctx, prompt)
+	text, err := l.Complete(llm.WithOperation(ctx, "gmail-extract"), prompt)
 	if err != nil {
 		return fmt.Errorf("commitment extraction: %w", err)
 	}
@@ -176,7 +176,7 @@ Emails:
 
 	log.Printf("gmail: generating titles for %d labeled emails", len(emails))
 
-	text, err := l.Complete(ctx, prompt)
+	text, err := l.Complete(llm.WithOperation(ctx, "gmail-titles"), prompt)
 	if err != nil {
 		return nil, fmt.Errorf("gmail title generation: %w", err)
 	}

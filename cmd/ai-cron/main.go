@@ -7,9 +7,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/anutron/claude-command-center/internal/automation"
 	"github.com/anutron/claude-command-center/internal/config"
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/llm"
 	"github.com/anutron/claude-command-center/internal/lockfile"
@@ -52,6 +54,13 @@ func main() {
 	}
 	defer release()
 
+	// Connect to daemon for LLM activity reporting (best-effort, non-fatal).
+	sockPath := filepath.Join(config.ConfigDir(), "daemon.sock")
+	daemonClient, _ := daemon.NewClient(sockPath)
+	if daemonClient != nil {
+		defer daemonClient.Close()
+	}
+
 	// Construct LLM implementations.
 	// Haiku for extraction (cheap, wide net), sonnet for routing (validates + writes prompts).
 	var l llm.LLM
@@ -61,6 +70,35 @@ func main() {
 		routingLLM = llm.ClaudeCLI{Model: "sonnet"}
 	} else {
 		l = llm.NoopLLM{}
+	}
+
+	// Wrap LLMs with observability — reports activity to daemon for console visibility.
+	if daemonClient != nil {
+		report := func(topic string, payload llm.EventPayload) {
+			id, _ := payload["id"].(string)
+			op, _ := payload["operation"].(string)
+			src, _ := payload["source"].(string)
+			if topic == "llm.started" {
+				go daemonClient.ReportLLMActivity(daemon.LLMActivityEvent{
+					ID: id, Operation: op, Source: src,
+					StartedAt: time.Now(), Status: "running",
+				})
+			} else {
+				now := time.Now()
+				durationMs, _ := payload["duration_ms"].(int64)
+				errMsg, _ := payload["error"].(string)
+				status, _ := payload["status"].(string)
+				go daemonClient.ReportLLMActivity(daemon.LLMActivityEvent{
+					ID: id, Operation: op, Source: src,
+					FinishedAt: &now, DurationMs: int(durationMs),
+					Error: errMsg, Status: status,
+				})
+			}
+		}
+		l = llm.NewObservableLLM(l, report, "ai-cron")
+		if routingLLM != nil {
+			routingLLM = llm.NewObservableLLM(routingLLM, report, "ai-cron-routing")
+		}
 	}
 
 	// Build calendar IDs from config (only enabled calendars)

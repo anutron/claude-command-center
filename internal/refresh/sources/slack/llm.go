@@ -78,7 +78,7 @@ Messages:
 		log.Printf("slack: candidate %d: channel=%s text=%q", i+1, c.Channel, truncate(c.Message, 80))
 	}
 
-	text, err := l.Complete(ctx, prompt)
+	text, err := l.Complete(llm.WithOperation(ctx, "slack-extract"), prompt)
 	if err != nil {
 		return nil, fmt.Errorf("slack commitment extraction: %w", err)
 	}

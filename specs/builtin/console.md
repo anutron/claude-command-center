@@ -221,7 +221,11 @@ Operation names: `command`, `edit`, `enrich`, `focus`, `date-parse`, `synthesize
 
 An `ObservableLLM` in `internal/llm/observable.go` wraps `llm.LLM` with a publish callback. On every `Complete` call, it publishes `llm.started` before and `llm.finished` after. Operation name is passed via `context.WithValue` using `llm.WithOperation(ctx, name)` / `llm.OperationFrom(ctx)`.
 
-For v1, only TUI-side LLM calls are instrumented (commandcenter + sessions). The `ai-cron` refresh pipeline runs as a separate process with its own LLM instance — instrumenting it requires a separate `ReportLLMActivity` RPC path, deferred.
+All LLM call sites are instrumented:
+- **TUI-side** (commandcenter + sessions): wrapped in `Init()` via `ObservableLLM`, events flow through the plugin event bus to the daemon
+- **ai-cron**: connects to the daemon socket at startup, wraps both haiku (extraction) and sonnet (routing) LLMs with `ObservableLLM`, reports directly via `ReportLLMActivity` RPC
+
+Refresh pipeline operation names: `gmail-extract`, `gmail-titles`, `slack-extract`, `granola-extract`, `todo-synthesis`, `focus`, `todo-prompts`, `todo-routing`.
 
 ### Daemon LLM Activity Buffer
 

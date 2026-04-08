@@ -41,7 +41,7 @@ type TodoPromptResult struct {
 func GenerateTodoPrompt(ctx context.Context, l llm.LLM, todo db.Todo, paths PathContext, activeTodos []db.Todo) (*TodoPromptResult, error) {
 	prompt := buildRoutingPrompt(todo, paths, activeTodos)
 
-	text, err := l.Complete(ctx, prompt)
+	text, err := l.Complete(llm.WithOperation(ctx, "todo-routing"), prompt)
 	if err != nil {
 		return nil, fmt.Errorf("todo routing LLM call: %w", err)
 	}

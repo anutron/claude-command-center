@@ -24,7 +24,7 @@ type SynthesisResult struct {
 // The newest original (last in slice) is source of truth on overlap.
 func Synthesize(ctx context.Context, l llm.LLM, originals []db.Todo) (*SynthesisResult, error) {
 	prompt := buildSynthesisPrompt(originals)
-	text, err := l.Complete(ctx, prompt)
+	text, err := l.Complete(llm.WithOperation(ctx, "todo-synthesis"), prompt)
 	if err != nil {
 		return nil, fmt.Errorf("synthesis LLM call: %w", err)
 	}

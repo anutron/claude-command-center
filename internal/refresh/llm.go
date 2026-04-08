@@ -33,7 +33,7 @@ Return ONLY JSON with this exact structure, no other text:
 Current state:
 %s`, string(state))
 
-	text, err := l.Complete(ctx, prompt)
+	text, err := l.Complete(llm.WithOperation(ctx, "focus"), prompt)
 	if err != nil {
 		return nil, fmt.Errorf("suggestion generation: %w", err)
 	}
@@ -225,7 +225,7 @@ Example: {"id1": "## Objective\nAdd rate limiting to the API...\n\n## Context\n.
 Todos:
 %s`, string(input))
 
-	text, err := l.Complete(ctx, prompt)
+	text, err := l.Complete(llm.WithOperation(ctx, "todo-prompts"), prompt)
 	if err != nil {
 		return todos
 	}
