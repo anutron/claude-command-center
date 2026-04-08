@@ -292,7 +292,15 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.logger = ctx.Logger
 	p.notifyPeers = ctx.NotifyPeers
 	if ctx.LLM != nil {
-		p.llm = ctx.LLM
+		p.llm = llm.NewObservableLLM(ctx.LLM, func(topic string, payload llm.EventPayload) {
+			if p.bus != nil {
+				p.bus.Publish(plugin.Event{
+					Source:  "commandcenter",
+					Topic:   topic,
+					Payload: payload,
+				})
+			}
+		}, "commandcenter")
 	} else {
 		p.llm = llm.NoopLLM{}
 	}

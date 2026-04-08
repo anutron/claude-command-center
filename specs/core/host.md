@@ -90,7 +90,7 @@ The host maintains a `DaemonConn` that wraps two daemon RPC connections: one for
 
 1. **Pre-allocation**: `main.go` creates a `DaemonConn` via `NewDaemonConn(logger, bus)` and attaches it to the model via `SetDaemonConn()` before `tea.NewProgram` runs. This two-phase init is required because `Model` is a value type copied by `NewProgram` — the pointer must be shared.
 2. **Auto-start**: `Connect(p)` calls `connectDaemon()` which first tries a direct socket connection. If that fails, it calls `daemon.StartProcess()` to spawn the daemon as a detached background process, waits 500ms, and retries. The TUI runs without a daemon connection if both attempts fail (not fatal).
-3. **Plugin injection**: `SetDaemonConn()` iterates `allPlugins` and calls `SetDaemonClientFunc(fn)` on any plugin implementing the `daemonAware` interface, giving plugins lazy access to the daemon client.
+3. **Plugin injection**: `SetDaemonConn()` iterates `allPlugins` and calls `SetDaemonClientFunc(fn)` on any plugin implementing the `daemonAware` interface, giving plugins lazy access to the daemon client. It also subscribes to `llm.started` and `llm.finished` events on the event bus and forwards them to the daemon via `client.ReportLLMActivity()` in fire-and-forget goroutines.
 4. **Event subscription**: `Connect()` opens a second socket connection and starts a goroutine that calls `subClient.Subscribe()`. Each daemon event is injected into the bubbletea program as a `DaemonEventMsg`.
 5. **DaemonEventMsg routing**: When a `DaemonEventMsg` arrives in `Update()`, the host does two things:
    - Publishes to the event bus via `routeDaemonEvent()` (converts to `plugin.Event{Source: "daemon", Topic: evt.Type, Payload: evt.Data}`)

@@ -79,7 +79,7 @@ type claudeSynthesizeFinishedMsg struct {
 
 func claudeSynthesizeCmd(l llm.LLM, originals []db.Todo, target *db.Todo) tea.Cmd {
 	return func() tea.Msg {
-		result, err := refresh.Synthesize(context.Background(), l, originals)
+		result, err := refresh.Synthesize(llm.WithOperation(context.Background(), "synthesize"), l, originals)
 		if err != nil {
 			return claudeSynthesizeFinishedMsg{err: err}
 		}
@@ -95,7 +95,7 @@ func claudeSynthesizeCmd(l llm.LLM, originals []db.Todo, target *db.Todo) tea.Cm
 
 func claudeEditCmd(l llm.LLM, prompt, todoID string) tea.Cmd {
 	return func() tea.Msg {
-		out, err := l.Complete(context.Background(), prompt)
+		out, err := l.Complete(llm.WithOperation(context.Background(), "edit"), prompt)
 		if err != nil {
 			logLLMFailure("edit", prompt, err, todoID)
 		}
@@ -109,7 +109,7 @@ func claudeEditCmd(l llm.LLM, prompt, todoID string) tea.Cmd {
 
 func claudeEnrichCmd(l llm.LLM, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		out, err := l.Complete(context.Background(), prompt)
+		out, err := l.Complete(llm.WithOperation(context.Background(), "enrich"), prompt)
 		if err != nil {
 			logLLMFailure("enrich", prompt, err, "")
 		}
@@ -122,7 +122,7 @@ func claudeEnrichCmd(l llm.LLM, prompt string) tea.Cmd {
 
 func claudeCommandCmd(l llm.LLM, prompt, projectDir string) tea.Cmd {
 	return func() tea.Msg {
-		out, err := l.Complete(context.Background(), prompt)
+		out, err := l.Complete(llm.WithOperation(context.Background(), "command"), prompt)
 		if err != nil {
 			logLLMFailure("command", prompt, err, "")
 		}
@@ -137,7 +137,7 @@ func claudeDateParseCmd(l llm.LLM, input string, todoID string) tea.Cmd {
 	prompt := fmt.Sprintf("Parse this into YYYY-MM-DD format. Today is %s. Input: %s. Reply with only the date in YYYY-MM-DD format, nothing else.",
 		time.Now().Format("2006-01-02"), input)
 	return func() tea.Msg {
-		out, err := l.Complete(context.Background(), prompt)
+		out, err := l.Complete(llm.WithOperation(context.Background(), "date-parse"), prompt)
 		if err != nil {
 			logLLMFailure("date-parse", prompt, err, todoID)
 		}
@@ -173,7 +173,7 @@ Annotated prompt (with the user's changes/comments):
 
 Output ONLY the updated prompt text. No explanation, no quotes, no markdown fences wrapping the whole thing.`, original, annotated)
 	return func() tea.Msg {
-		out, err := l.Complete(context.Background(), prompt)
+		out, err := l.Complete(llm.WithOperation(context.Background(), "review-address"), prompt)
 		if err != nil {
 			logLLMFailure("review-address", prompt, err, todoID)
 		}
@@ -204,7 +204,7 @@ Original prompt:
 
 Output ONLY the refined prompt text. No explanation, no quotes, no markdown fences wrapping the whole thing.`, currentPrompt)
 	return func() tea.Msg {
-		out, err := l.Complete(context.Background(), prompt)
+		out, err := l.Complete(llm.WithOperation(context.Background(), "refine"), prompt)
 		if err != nil {
 			logLLMFailure("refine", prompt, err, todoID)
 		}
@@ -231,7 +231,7 @@ Current prompt:
 
 Rewrite the prompt according to the user's instructions. Output ONLY the rewritten prompt text. No explanation, no quotes, no markdown fences wrapping the whole thing.`, instruction, currentPrompt)
 	return func() tea.Msg {
-		out, err := l.Complete(context.Background(), prompt)
+		out, err := l.Complete(llm.WithOperation(context.Background(), "refine"), prompt)
 		if err != nil {
 			logLLMFailure("refine", prompt, err, todoID)
 		}
@@ -246,7 +246,7 @@ Rewrite the prompt according to the user's instructions. Output ONLY the rewritt
 func claudeTrainCmd(l llm.LLM, todo db.Todo, instruction string) tea.Cmd {
 	prompt := buildTrainPrompt(todo, instruction)
 	return func() tea.Msg {
-		out, err := l.Complete(context.Background(), prompt)
+		out, err := l.Complete(llm.WithOperation(context.Background(), "train"), prompt)
 		if err != nil {
 			logLLMFailure("train", prompt, err, todo.ID)
 		}
@@ -311,7 +311,7 @@ Return ONLY the JSON object, no markdown fences, no explanation.`, todo.Title, t
 
 func claudeFocusCmd(l llm.LLM, prompt string) tea.Cmd {
 	return func() tea.Msg {
-		out, err := l.Complete(context.Background(), prompt)
+		out, err := l.Complete(llm.WithOperation(context.Background(), "focus"), prompt)
 		if err != nil {
 			logLLMFailure("focus", prompt, err, "")
 		}

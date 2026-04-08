@@ -111,6 +111,18 @@ Same sandboxed `ClaudeCLI` as TUI (also pure text completion).
 
 ### commandcenter plugin
 
+In `Init`, the plugin wraps `ctx.LLM` with `ObservableLLM`, publishing events to the plugin event bus with source `"commandcenter"`. All LLM call sites use `llm.WithOperation(ctx, "<op>")` to tag operations:
+
+- `claudeEditCmd` → `"edit"`
+- `claudeEnrichCmd` → `"enrich"`
+- `claudeCommandCmd` → `"command"`
+- `claudeDateParseCmd` → `"date-parse"`
+- `claudeReviewAddressCmd` → `"review-address"`
+- `claudeRefinePromptCmd` / `claudeRefinePromptWithInstructionCmd` → `"refine"`
+- `claudeTrainCmd` → `"train"`
+- `claudeFocusCmd` → `"focus"`
+- `claudeSynthesizeCmd` → `"synthesize"`
+
 The `claudeEditCmd`, `claudeEnrichCmd`, `claudeCommandCmd`, `claudeFocusCmd`, `claudeTrainCmd`, `claudeDateParseCmd`, `claudeRefinePromptCmd`, `claudeReviewAddressCmd` functions accept `llm.LLM` and use it instead of shelling out to `claude` directly.
 
 All handlers show flash messages on error:

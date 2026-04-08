@@ -33,7 +33,7 @@ func LLMDescribePath(l llm.LLM, dir string) (string, error) {
 	}
 
 	prompt := buildDescribePrompt(readme, claudeMD)
-	desc, err := l.Complete(context.Background(), prompt)
+	desc, err := l.Complete(llm.WithOperation(context.Background(), "describe"), prompt)
 	if err != nil {
 		// LLM failed — fall back to heuristic
 		fallback := db.AutoDescribePath(dir)

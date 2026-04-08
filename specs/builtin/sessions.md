@@ -270,6 +270,10 @@ Flags: `--session-id`, `--project`, `--repo`, `--branch`, `--summary` (required)
 17. `esc` from Saved/Recent/Worktrees returns to New Session sub-tab
 18. `1/2/3/4` switch directly to sub-tabs; `left/right` arrows cycle sub-tabs (wraps)
 
+### LLM Observability
+
+In `Init`, the sessions plugin wraps `ctx.LLM` with `ObservableLLM`, publishing events to the event bus with source `"sessions"`. The `LLMDescribePath` call uses `llm.WithOperation(ctx, "describe")` to tag the operation.
+
 ### LLM Path Descriptions
 
 When a new path is added (via Browse or `config.HomeDir`), the plugin generates a project description:

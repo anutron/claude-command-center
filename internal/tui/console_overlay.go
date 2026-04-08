@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/ui"
 	"github.com/charmbracelet/lipgloss"
@@ -11,11 +12,12 @@ import (
 
 // consoleOverlay manages the agent history overlay state.
 type consoleOverlay struct {
-	visible bool
-	entries []db.AgentHistoryEntry
-	cursor  int
-	detail  bool // true = detail view for selected entry
-	scroll  int  // scroll offset in detail view
+	visible     bool
+	entries     []db.AgentHistoryEntry
+	llmActivity []daemon.LLMActivityEvent
+	cursor      int
+	detail      bool // true = detail view for selected entry
+	scroll      int  // scroll offset in detail view
 }
 
 // toggle flips the overlay visibility, loading entries and resetting state.
@@ -173,6 +175,40 @@ func (o *consoleOverlay) renderList(width, height int) string {
 			}
 
 			lines = append(lines, row)
+		}
+	}
+
+	// Append LLM activity section if there are events.
+	if len(o.llmActivity) > 0 {
+		lines = append(lines, "")
+		llmHeader := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7aa2f7")).
+			Render("llm activity")
+		lines = append(lines, llmHeader)
+		for _, evt := range o.llmActivity {
+			icon := "●"
+			color := lipgloss.Color("#565f89")
+			switch evt.Status {
+			case "running":
+				icon = "◐"
+				color = lipgloss.Color("#e0af68")
+			case "completed":
+				icon = "✓"
+				color = lipgloss.Color("#9ece6a")
+			case "failed":
+				icon = "✗"
+				color = lipgloss.Color("#f7768e")
+			}
+			iconStyled := lipgloss.NewStyle().Foreground(color).Render(icon)
+			label := evt.Operation
+			if evt.Source != "" {
+				label = evt.Source + "/" + evt.Operation
+			}
+			if evt.DurationMs > 0 {
+				label += fmt.Sprintf(" (%dms)", evt.DurationMs)
+			}
+			lines = append(lines, fmt.Sprintf("%s %s", iconStyled, label))
 		}
 	}
 

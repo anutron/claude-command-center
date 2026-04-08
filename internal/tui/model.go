@@ -286,6 +286,57 @@ func (m *Model) SetDaemonConn(dc *DaemonConn) {
 			da.SetDaemonClientFunc(dc.Client)
 		}
 	}
+
+	// Subscribe to LLM activity events and forward to daemon (fire-and-forget).
+	if m.bus != nil {
+		m.bus.Subscribe("llm.started", func(evt plugin.Event) {
+			client := dc.Client()
+			if client == nil {
+				return
+			}
+			payload, ok := evt.Payload.(llm.EventPayload)
+			if !ok {
+				return
+			}
+			id, _ := payload["id"].(string)
+			operation, _ := payload["operation"].(string)
+			source, _ := payload["source"].(string)
+			go client.ReportLLMActivity(daemon.LLMActivityEvent{
+				ID:        id,
+				Operation: operation,
+				Source:    source,
+				StartedAt: time.Now(),
+				Status:    "running",
+			})
+		})
+
+		m.bus.Subscribe("llm.finished", func(evt plugin.Event) {
+			client := dc.Client()
+			if client == nil {
+				return
+			}
+			payload, ok := evt.Payload.(llm.EventPayload)
+			if !ok {
+				return
+			}
+			id, _ := payload["id"].(string)
+			operation, _ := payload["operation"].(string)
+			source, _ := payload["source"].(string)
+			durationMs, _ := payload["duration_ms"].(int64)
+			errMsg, _ := payload["error"].(string)
+			status, _ := payload["status"].(string)
+			now := time.Now()
+			go client.ReportLLMActivity(daemon.LLMActivityEvent{
+				ID:         id,
+				Operation:  operation,
+				Source:     source,
+				FinishedAt: &now,
+				DurationMs: int(durationMs),
+				Error:      errMsg,
+				Status:     status,
+			})
+		})
+	}
 }
 
 // DaemonClient returns the daemon RPC client, or nil if not connected.
@@ -550,6 +601,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var entries []db.AgentHistoryEntry
 			if client := m.DaemonClient(); client != nil {
 				entries, _ = client.ListAgentHistory(24)
+				if activity, err := client.ListLLMActivity(); err == nil {
+					m.console.llmActivity = activity
+				}
 			}
 			m.console.toggle(entries)
 			return m, nil
@@ -572,6 +626,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.console.cursor >= len(entries) {
 							m.console.cursor = max(0, len(entries)-1)
 						}
+					}
+				}
+			case "llm.started", "llm.finished":
+				if client := m.DaemonClient(); client != nil {
+					if activity, err := client.ListLLMActivity(); err == nil {
+						m.console.llmActivity = activity
 					}
 				}
 			}

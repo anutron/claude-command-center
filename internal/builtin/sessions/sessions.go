@@ -284,7 +284,15 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.bus = ctx.Bus
 	p.logger = ctx.Logger
 	if ctx.LLM != nil {
-		p.llm = ctx.LLM
+		p.llm = llm.NewObservableLLM(ctx.LLM, func(topic string, payload llm.EventPayload) {
+			if p.bus != nil {
+				p.bus.Publish(plugin.Event{
+					Source:  "sessions",
+					Topic:   topic,
+					Payload: payload,
+				})
+			}
+		}, "sessions")
 	} else {
 		p.llm = llm.NoopLLM{}
 	}
