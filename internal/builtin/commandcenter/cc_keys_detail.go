@@ -261,6 +261,36 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			if len(origIDs) > 0 && p.mergeSourceCursor < len(origIDs) {
 				selectedOrigID := origIDs[p.mergeSourceCursor]
 				synthID := todo.ID
+
+				// Build a display name for the flash message
+				unmergedName := selectedOrigID
+				if orig := p.cc.FindTodo(selectedOrigID); orig != nil {
+					unmergedName = flattenTitle(orig.Title)
+				}
+
+				// Update in-memory merges immediately so the view reflects the change
+				for i := range p.cc.Merges {
+					if p.cc.Merges[i].SynthesisID == synthID && p.cc.Merges[i].OriginalID == selectedOrigID {
+						p.cc.Merges[i].Vetoed = true
+						break
+					}
+				}
+
+				// Adjust cursor if it's now out of bounds
+				remainingIDs := db.DBGetOriginalIDs(p.cc.Merges, synthID)
+				if len(remainingIDs) <= 1 {
+					// Will delete synthesis — exit detail view
+					p.detailView = false
+					p.detailMode = "viewing"
+					p.flashMessage = fmt.Sprintf("Unmerged: %s (synthesis dissolved)", truncateToWidth(unmergedName, 40))
+				} else {
+					if p.mergeSourceCursor >= len(remainingIDs) {
+						p.mergeSourceCursor = len(remainingIDs) - 1
+					}
+					p.flashMessage = fmt.Sprintf("Unmerged: %s", truncateToWidth(unmergedName, 40))
+				}
+				p.flashMessageAt = time.Now()
+
 				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.dbWriteCmd(func(database *sql.DB) error {
 					if err := db.DBSetMergeVetoed(database, synthID, selectedOrigID, true); err != nil {
 						return err

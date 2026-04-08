@@ -540,6 +540,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				p.detailTodoID = todoID
 				p.detailMode = "viewing"
 				p.detailSelectedField = 0
+				p.mergeSourceCursor = 0
 				p.textInput.Reset()
 				p.textInput.Placeholder = "Tell me what changed..."
 				p.detailFieldInput.Reset()
@@ -582,6 +583,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			p.detailTodoID = activeTodos[p.ccCursor].ID
 			p.detailMode = "viewing"
 			p.detailSelectedField = 0
+			p.mergeSourceCursor = 0
 			p.textInput.Reset()
 			p.textInput.Placeholder = "Tell me what changed..."
 			p.detailFieldInput.Reset()
@@ -623,6 +625,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			p.detailTodoID = todo.ID
 			p.detailMode = "viewing"
 			p.detailSelectedField = 0
+			p.mergeSourceCursor = 0
 			p.textInput.Reset()
 			p.detailFieldInput.Reset()
 			p.enterTaskRunner(todo)
@@ -768,6 +771,7 @@ func (p *Plugin) handleSearchInput(msg tea.KeyMsg) plugin.Action {
 			p.detailTodoID = filtered[p.ccCursor].ID
 			p.detailMode = "viewing"
 			p.detailSelectedField = 0
+			p.mergeSourceCursor = 0
 			p.textInput.Reset()
 			p.textInput.Placeholder = "Tell me what changed..."
 			p.detailFieldInput.Reset()

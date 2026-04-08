@@ -389,17 +389,21 @@ During the refresh cycle (`dedupTodos` in `internal/refresh/refresh.go`), the ro
 In the detail view, synthesis todos (where `todo.Source == "merge"`) show a **SOURCES** section listing all original todos with:
 
 - `#display_id — title (source)` for each original
-- A cursor (`mergeSourceCursor`) navigable with `j`/`k` within the sources list
-- When viewing a synthesis todo, `j`/`k` navigate within the sources list instead of between todos (falls through to next/prev todo navigation only when there are no sources)
-- Hint bar shows "j/k select source . U unmerge selected"
+- A cursor (`mergeSourceCursor`) navigable with `]`/`[` within the sources list
+- `j`/`k` always navigate between todos in detail view; `]`/`[` navigate sources independently
+- Hint bar shows "[/] select source . U unmerge selected"
+- `mergeSourceCursor` is reset to 0 each time the detail view is opened (prevents stale cursor from a previously viewed synthesis todo)
 
 #### Unmerge (`U`)
 
 Pressing `U` on a synthesis todo detaches the currently selected source:
 
 1. Sets the merge record as "vetoed" in the DB via `DBSetMergeVetoed`
-2. Counts remaining non-vetoed originals
-3. If only 0-1 originals remain, deletes the synthesis todo and its merge records entirely (the remaining original stands alone)
+2. Removes the vetoed merge from `p.cc.Merges` in memory so the view updates immediately
+3. Shows a flash message confirming the unmerge: "Unmerged: <source title>"
+4. Adjusts `mergeSourceCursor` if it would be out of bounds after removal
+5. Counts remaining non-vetoed originals
+6. If only 0-1 originals remain, deletes the synthesis todo and its merge records entirely, exits detail view, and shows flash
 
 ### Session Viewer
 
@@ -778,6 +782,9 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Wizard auto-open path picker: opens when todo has no project_dir and no saved selection
 - AI prompt refinement: opens instruction textarea first, then sends instructions + prompt to LLM
 - Merge display: synthesis todos show SOURCES section with navigable source list
-- Merge display: j/k navigate source list when viewing synthesis todo (not between todos)
+- Merge display: ]/[ navigate source list when viewing synthesis todo; j/k navigate between todos
+- Merge display: mergeSourceCursor reset to 0 when entering detail view
+- Unmerge (`U`): shows flash message confirming unmerge and updates view immediately
+- Unmerge (`U`): adjusts mergeSourceCursor when out of bounds after removal
 - Merge auto-detection: enrichment LLM returns merge_into for duplicate detection
 - Merge auto-detection: refresh dedupTodos groups flagged duplicates and calls Synthesize

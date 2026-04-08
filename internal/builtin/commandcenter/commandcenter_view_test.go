@@ -752,10 +752,169 @@ func TestView_SourceNavBracketKeys(t *testing.T) {
 		t.Errorf("expected mergeSourceCursor=1 after ], got %d", p.mergeSourceCursor)
 	}
 
+	// View should show > cursor on Bravo (index 1), not Alpha
+	view = renderView(p)
+	viewContains(t, view, "> #11")  // Bravo is now selected
+	viewContains(t, view, "Original Bravo")
+
 	// pressing [ should move back to 0
 	p.HandleKey(keyMsg("["))
 	if p.mergeSourceCursor != 0 {
 		t.Errorf("expected mergeSourceCursor=0 after [, got %d", p.mergeSourceCursor)
+	}
+
+	// View should show > cursor back on Alpha (index 0)
+	view = renderView(p)
+	viewContains(t, view, "> #10")  // Alpha is selected again
+}
+
+func TestView_MergeSourceCursorResetOnDetailOpen(t *testing.T) {
+	// When opening a new detail view, mergeSourceCursor should reset to 0
+	// to prevent stale cursor positions from a previously viewed synthesis todo.
+	synthTodo := db.Todo{
+		ID: "synth1", Title: "Merged todo", Status: db.StatusBacklog,
+		Source: "merge", CreatedAt: time.Now(),
+	}
+	origA := db.Todo{
+		ID: "origA", Title: "Original Alpha", Status: db.StatusBacklog,
+		Source: "github", DisplayID: 10, CreatedAt: time.Now(),
+	}
+	origB := db.Todo{
+		ID: "origB", Title: "Original Bravo", Status: db.StatusBacklog,
+		Source: "slack", DisplayID: 11, CreatedAt: time.Now(),
+	}
+
+	p := testPluginWithTodos(t, []db.Todo{synthTodo, origA, origB})
+	p.cc.Merges = []db.TodoMerge{
+		{SynthesisID: "synth1", OriginalID: "origA"},
+		{SynthesisID: "synth1", OriginalID: "origB"},
+	}
+
+	// Open detail view and move cursor to index 1
+	p.HandleKey(keyMsg("enter"))
+	p.HandleKey(keyMsg("]"))
+	if p.mergeSourceCursor != 1 {
+		t.Fatalf("expected mergeSourceCursor=1, got %d", p.mergeSourceCursor)
+	}
+
+	// Close and reopen detail view
+	p.HandleKey(keyMsg("esc"))
+	if p.detailView {
+		t.Fatal("detail view should be closed after esc")
+	}
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("detail view should be open after enter")
+	}
+
+	// mergeSourceCursor should be reset to 0
+	if p.mergeSourceCursor != 0 {
+		t.Errorf("expected mergeSourceCursor=0 after reopening detail, got %d", p.mergeSourceCursor)
+	}
+}
+
+func TestView_UnmergeShowsFeedback(t *testing.T) {
+	// Pressing U on a synthesis todo with 3 sources should show a flash message,
+	// remove the source from in-memory merges, and keep the detail view open.
+	synthTodo := db.Todo{
+		ID: "synth1", Title: "Merged todo", Status: db.StatusBacklog,
+		Source: "merge", CreatedAt: time.Now(),
+	}
+	origA := db.Todo{
+		ID: "origA", Title: "Original Alpha", Status: db.StatusBacklog,
+		Source: "github", DisplayID: 10, CreatedAt: time.Now(),
+	}
+	origB := db.Todo{
+		ID: "origB", Title: "Original Bravo", Status: db.StatusBacklog,
+		Source: "slack", DisplayID: 11, CreatedAt: time.Now(),
+	}
+	origC := db.Todo{
+		ID: "origC", Title: "Original Charlie", Status: db.StatusBacklog,
+		Source: "gmail", DisplayID: 12, CreatedAt: time.Now(),
+	}
+
+	p := testPluginWithTodos(t, []db.Todo{synthTodo, origA, origB, origC})
+	p.cc.Merges = []db.TodoMerge{
+		{SynthesisID: "synth1", OriginalID: "origA"},
+		{SynthesisID: "synth1", OriginalID: "origB"},
+		{SynthesisID: "synth1", OriginalID: "origC"},
+	}
+
+	// Open detail view (cursor on synth1)
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("detail view should be open")
+	}
+
+	// Cursor is at 0 (origA). Press U to unmerge it.
+	action := p.HandleKey(keyMsg("U"))
+
+	// Should return a tea.Cmd for the DB write
+	if action.TeaCmd == nil {
+		t.Error("expected U to return a tea.Cmd for DB write")
+	}
+
+	// Flash message should confirm the unmerge
+	if p.flashMessage == "" {
+		t.Error("expected flash message after unmerge")
+	}
+	if !strings.Contains(p.flashMessage, "Unmerged") {
+		t.Errorf("expected flash message to contain 'Unmerged', got %q", p.flashMessage)
+	}
+
+	// Detail view should remain open (2 sources remain)
+	if !p.detailView {
+		t.Error("detail view should remain open with 2+ sources remaining")
+	}
+
+	// In-memory merges should be updated (origA vetoed)
+	remainingIDs := db.DBGetOriginalIDs(p.cc.Merges, "synth1")
+	if len(remainingIDs) != 2 {
+		t.Errorf("expected 2 remaining sources after unmerge, got %d", len(remainingIDs))
+	}
+
+	// View should no longer show origA in sources section
+	view := renderView(p)
+	viewContains(t, view, "Original Bravo")
+	viewContains(t, view, "Original Charlie")
+}
+
+func TestView_UnmergeDissolvesWithTwoSources(t *testing.T) {
+	// When a synthesis todo has only 2 sources and one is unmerged,
+	// the synthesis should dissolve: detail view closes, flash shows dissolution.
+	synthTodo := db.Todo{
+		ID: "synth1", Title: "Merged todo", Status: db.StatusBacklog,
+		Source: "merge", CreatedAt: time.Now(),
+	}
+	origA := db.Todo{
+		ID: "origA", Title: "Original Alpha", Status: db.StatusBacklog,
+		Source: "github", DisplayID: 10, CreatedAt: time.Now(),
+	}
+	origB := db.Todo{
+		ID: "origB", Title: "Original Bravo", Status: db.StatusBacklog,
+		Source: "slack", DisplayID: 11, CreatedAt: time.Now(),
+	}
+
+	p := testPluginWithTodos(t, []db.Todo{synthTodo, origA, origB})
+	p.cc.Merges = []db.TodoMerge{
+		{SynthesisID: "synth1", OriginalID: "origA"},
+		{SynthesisID: "synth1", OriginalID: "origB"},
+	}
+
+	// Open detail view
+	p.HandleKey(keyMsg("enter"))
+
+	// Press U to unmerge origA — should dissolve the synthesis
+	p.HandleKey(keyMsg("U"))
+
+	// Detail view should be closed (synthesis dissolved)
+	if p.detailView {
+		t.Error("detail view should be closed after synthesis dissolution")
+	}
+
+	// Flash message should mention dissolution
+	if !strings.Contains(p.flashMessage, "dissolved") {
+		t.Errorf("expected flash message to mention dissolution, got %q", p.flashMessage)
 	}
 }
 
