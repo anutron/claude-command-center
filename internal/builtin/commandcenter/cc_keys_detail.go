@@ -106,6 +106,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		if idx >= 0 && idx < len(activeTodos)-1 {
 			p.detailTodoID = activeTodos[idx+1].ID
 			p.detailSelectedField = 0
+			p.detailVP.GotoTop()
 		}
 		return plugin.ConsumedAction()
 	case "k":
@@ -115,6 +116,7 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		if idx > 0 {
 			p.detailTodoID = activeTodos[idx-1].ID
 			p.detailSelectedField = 0
+			p.detailVP.GotoTop()
 		}
 		return plugin.ConsumedAction()
 	case "]":

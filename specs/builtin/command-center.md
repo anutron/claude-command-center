@@ -113,8 +113,8 @@ Editable fields are cycled with `tab`/`shift+tab`: Status (0), Due (1), ProjectD
 | `g` | detail:viewing | Chord prefix for Gmail-style shortcuts (`gi`/`gu` = return to list view) |
 | `up`/`down` | detail:viewing | Scroll detail viewport |
 | `pgup`/`pgdown` | detail:viewing | Half-page scroll detail viewport |
-| `j` | detail:viewing | Navigate to next active todo |
-| `k` | detail:viewing | Navigate to previous active todo |
+| `j` | detail:viewing | Navigate to next active todo (resets viewport scroll to top) |
+| `k` | detail:viewing | Navigate to previous active todo (resets viewport scroll to top) |
 | `]` | detail:viewing | Navigate to next source in synthesis todo |
 | `[` | detail:viewing | Navigate to previous source in synthesis todo |
 | `x` | detail:viewing | Complete todo (shows notice banner, auto-advances after 1s) |
@@ -695,7 +695,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Completing/dismissing/undoing a todo issues `tea.ClearScreen` to force a full repaint (prevents ghost artifacts from bubbletea's differential renderer when list size changes)
 - Completing/dismissing a todo clamps `ccExpandedOffset` so the expanded view doesn't show a stale page
 - Detail view `x`/`X` after `j`/`k` navigation advances to the correct next item (not index 0)
-- Detail view `j`/`k` navigates between active todos
+- Detail view `j`/`k` navigates between active todos and resets the viewport scroll position to the top
 - Detail view blocks keys (except esc) while notice banner is showing
 - Granola/Slack incremental sync skips already-processed items via `cc_source_sync`
 - Granola source_ref is deterministic (`{meeting_id}-{sha256(title)[:8]}`)

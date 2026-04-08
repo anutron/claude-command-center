@@ -962,3 +962,61 @@ func TestView_HelpOverlayInDetailView(t *testing.T) {
 	viewContains(t, view, "KEYBOARD SHORTCUTS")
 	viewContains(t, view, "Todo Detail")
 }
+
+func TestView_DetailJKResetsScrollPosition(t *testing.T) {
+	// Create todos with long detail text so the viewport can scroll
+	longDetail := strings.Repeat("Line of detail text.\n", 50)
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "First todo", Status: db.StatusBacklog, Source: "manual", Detail: longDetail, CreatedAt: time.Now()},
+		{ID: "t2", Title: "Second todo", Status: db.StatusBacklog, Source: "manual", Detail: longDetail, CreatedAt: time.Now()},
+		{ID: "t3", Title: "Third todo", Status: db.StatusBacklog, Source: "manual", Detail: longDetail, CreatedAt: time.Now()},
+	})
+
+	// Open detail view on first todo
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("enter should open detail view")
+	}
+
+	// Render to initialize viewport dimensions
+	renderView(p)
+
+	// Scroll down several lines
+	p.HandleKey(keyMsg("down"))
+	p.HandleKey(keyMsg("down"))
+	p.HandleKey(keyMsg("down"))
+	renderView(p) // apply scroll
+
+	if p.detailVP.YOffset == 0 {
+		t.Fatal("expected viewport to be scrolled down after arrow keys")
+	}
+
+	// Navigate to next todo with j
+	p.HandleKey(keyMsg("j"))
+
+	if p.detailTodoID != "t2" {
+		t.Fatalf("expected detailTodoID to be t2, got %s", p.detailTodoID)
+	}
+	if p.detailVP.YOffset != 0 {
+		t.Errorf("expected viewport YOffset to be 0 after j navigation, got %d", p.detailVP.YOffset)
+	}
+
+	// Now scroll down again and test k (previous)
+	renderView(p)
+	p.HandleKey(keyMsg("down"))
+	p.HandleKey(keyMsg("down"))
+	p.HandleKey(keyMsg("down"))
+	renderView(p)
+
+	if p.detailVP.YOffset == 0 {
+		t.Fatal("expected viewport to be scrolled down after arrow keys")
+	}
+
+	p.HandleKey(keyMsg("k"))
+	if p.detailTodoID != "t1" {
+		t.Fatalf("expected detailTodoID to be t1, got %s", p.detailTodoID)
+	}
+	if p.detailVP.YOffset != 0 {
+		t.Errorf("expected viewport YOffset to be 0 after k navigation, got %d", p.detailVP.YOffset)
+	}
+}
