@@ -106,7 +106,8 @@ func NewStyles(p config.Palette) Styles {
 		Suggestion: lipgloss.NewStyle().Foreground(colorPurple).Italic(true),
 		PanelBorder: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#3b4261")),
+			BorderForeground(lipgloss.Color("#3b4261")).
+			Padding(0, 1),
 		RefreshInfo: lipgloss.NewStyle().Foreground(colorMuted),
 
 		CalendarPast: lipgloss.NewStyle().Foreground(colorMuted).Faint(true),

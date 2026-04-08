@@ -77,7 +77,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 
 	var columns string
 	if calendarEnabled {
-		colWidth := width/2 - 2
+		colWidth := (width-1)/2 - 4
 		maxVisibleTodos := (panelHeight - 3) / 2
 		if maxVisibleTodos < 5 {
 			maxVisibleTodos = 5
@@ -582,7 +582,8 @@ func renderWarningBanner(s *ccStyles, warnings []db.Warning, width int) string {
 	warningHeaderStyle := lipgloss.NewStyle().Foreground(s.ColorYellow).Bold(true)
 	warningBorderStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(s.ColorYellow)
+		BorderForeground(s.ColorYellow).
+		Padding(0, 1)
 	warningMsgStyle := lipgloss.NewStyle().Foreground(s.ColorYellow)
 
 	header := warningHeaderStyle.Render(fmt.Sprintf("\u26a0 DATA SOURCE WARNINGS (%d)", len(warnings)))
@@ -596,7 +597,7 @@ func renderWarningBanner(s *ccStyles, warnings []db.Warning, width int) string {
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, append([]string{header}, wLines...)...)
-	return warningBorderStyle.Width(width - 2).Render(content)
+	return warningBorderStyle.Width(width - 4).Render(content)
 }
 
 func renderSuggestionBanner(s *ccStyles, suggestions *db.Suggestions, width int) string {
@@ -608,7 +609,7 @@ func renderSuggestionBanner(s *ccStyles, suggestions *db.Suggestions, width int)
 	body := s.Suggestion.Render(fmt.Sprintf("%q", suggestions.Focus))
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, body)
-	return s.PanelBorder.Width(width - 2).Render(content)
+	return s.PanelBorder.Width(width - 4).Render(content)
 }
 
 // wrapText delegates to ui.WrapText.
