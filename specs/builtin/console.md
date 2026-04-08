@@ -297,7 +297,7 @@ LLM activity appears in the sidebar below the agent separator:
 ```
 
 - Dimmed style to visually distinguish from agents
-- Not selectable (no focus pane content for LLM entries)
+- Selectable with `j`/`k` cursor — selecting shows detail in focus pane (status, operation, source, timestamps, duration, todo ID, error)
 - Fetched via `ListLLMActivity` RPC on each 1-second poll tick
 - Same 30-second fade for completed entries
 

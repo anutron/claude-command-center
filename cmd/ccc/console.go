@@ -50,18 +50,25 @@ func (m consoleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		totalItems := len(m.entries) + len(m.llmActivity)
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "j", "down":
-			if m.cursor < len(m.entries)-1 {
+			if m.cursor < totalItems-1 {
 				m.cursor++
-				return m, m.fetchSelected()
+				if m.cursor < len(m.entries) {
+					return m, m.fetchSelected()
+				}
+				return m, nil
 			}
 		case "k", "up":
 			if m.cursor > 0 {
 				m.cursor--
-				return m, m.fetchSelected()
+				if m.cursor < len(m.entries) {
+					return m, m.fetchSelected()
+				}
+				return m, nil
 			}
 		}
 		return m, nil
@@ -85,6 +92,11 @@ func (m consoleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case consoleLLMActivityMsg:
 		m.llmActivity = msg.events
+		// Keep cursor in bounds of total items.
+		total := len(m.entries) + len(m.llmActivity)
+		if m.cursor >= total && total > 0 {
+			m.cursor = total - 1
+		}
 		return m, nil
 	}
 
@@ -261,7 +273,7 @@ func (m consoleModel) renderSidebar(width int) string {
 	// LLM activity section
 	if len(m.llmActivity) > 0 {
 		lines = append(lines, dimStyle.Render("── llm ──"))
-		for _, evt := range m.llmActivity {
+		for i, evt := range m.llmActivity {
 			icon := "●"
 			color := lipgloss.Color("#565f89")
 			switch evt.Status {
@@ -276,7 +288,7 @@ func (m consoleModel) renderSidebar(width int) string {
 				color = lipgloss.Color("#f7768e")
 			}
 			iconStyled := lipgloss.NewStyle().Foreground(color).Render(icon)
-			label := evt.Operation
+			label := evt.Source + "/" + evt.Operation
 			if evt.DurationMs > 0 {
 				secs := evt.DurationMs / 1000
 				if secs > 0 {
@@ -288,7 +300,12 @@ func (m consoleModel) renderSidebar(width int) string {
 				elapsed := time.Since(evt.StartedAt).Truncate(time.Second)
 				label += fmt.Sprintf(" %s", elapsed)
 			}
-			lines = append(lines, iconStyled+" "+dimStyle.Render(label))
+			row := iconStyled + " " + dimStyle.Render(label)
+			llmIdx := len(m.entries) + i
+			if llmIdx == m.cursor {
+				row = selectedBg.Render(row)
+			}
+			lines = append(lines, row)
 		}
 	}
 
@@ -300,8 +317,18 @@ func (m consoleModel) renderFocus(width int) string {
 	redStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e"))
 	blueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7"))
 
-	if len(m.entries) == 0 {
+	// LLM activity detail view
+	llmIdx := m.cursor - len(m.entries)
+	if llmIdx >= 0 && llmIdx < len(m.llmActivity) {
+		return m.renderLLMFocus(m.llmActivity[llmIdx], width)
+	}
+
+	totalItems := len(m.entries) + len(m.llmActivity)
+	if totalItems == 0 {
 		return dimStyle.Render("No agents running. Watching for activity...")
+	}
+	if len(m.entries) == 0 || m.cursor >= len(m.entries) {
+		return dimStyle.Render("No agent selected")
 	}
 
 	e := m.entries[m.cursor]
@@ -389,6 +416,63 @@ func (m consoleModel) renderFocus(width int) string {
 			eventLines = eventLines[len(eventLines)-maxRows:]
 		}
 		lines = append(lines, eventLines...)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderLLMFocus renders the focus pane for a selected LLM activity entry.
+func (m consoleModel) renderLLMFocus(evt daemon.LLMActivityEvent, width int) string {
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7"))
+	valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#c0caf5"))
+
+	field := func(label, value string) string {
+		return labelStyle.Render(fmt.Sprintf("%-14s", label+":")) + " " + valueStyle.Render(value)
+	}
+
+	statusColor := lipgloss.Color("#565f89")
+	statusIcon := "●"
+	switch evt.Status {
+	case "running":
+		statusIcon = "◐"
+		statusColor = lipgloss.Color("#e0af68")
+	case "completed":
+		statusIcon = "✓"
+		statusColor = lipgloss.Color("#9ece6a")
+	case "failed":
+		statusIcon = "✗"
+		statusColor = lipgloss.Color("#f7768e")
+	}
+
+	header := lipgloss.NewStyle().Foreground(statusColor).Render(statusIcon+" "+evt.Source+"/"+evt.Operation)
+
+	var lines []string
+	lines = append(lines, header)
+	lines = append(lines, dimStyle.Render(strings.Repeat("─", width)))
+	lines = append(lines, field("Status", evt.Status))
+	lines = append(lines, field("Operation", evt.Operation))
+	lines = append(lines, field("Source", evt.Source))
+	lines = append(lines, field("Started", evt.StartedAt.Format("15:04:05")))
+
+	if evt.FinishedAt != nil {
+		lines = append(lines, field("Finished", evt.FinishedAt.Format("15:04:05")))
+	}
+	if evt.DurationMs > 0 {
+		if evt.DurationMs >= 1000 {
+			lines = append(lines, field("Duration", fmt.Sprintf("%.1fs", float64(evt.DurationMs)/1000)))
+		} else {
+			lines = append(lines, field("Duration", fmt.Sprintf("%dms", evt.DurationMs)))
+		}
+	} else if evt.Status == "running" {
+		elapsed := time.Since(evt.StartedAt).Truncate(time.Second)
+		lines = append(lines, field("Elapsed", elapsed.String()))
+	}
+	if evt.TodoID != "" {
+		lines = append(lines, field("Todo", evt.TodoID))
+	}
+	if evt.Error != "" {
+		lines = append(lines, field("Error", evt.Error))
 	}
 
 	return strings.Join(lines, "\n")

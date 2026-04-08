@@ -206,7 +206,11 @@ func (o *consoleOverlay) renderList(width, height int) string {
 				label = evt.Source + "/" + evt.Operation
 			}
 			if evt.DurationMs > 0 {
-				label += fmt.Sprintf(" (%dms)", evt.DurationMs)
+				if evt.DurationMs >= 1000 {
+					label += fmt.Sprintf(" (%.1fs)", float64(evt.DurationMs)/1000)
+				} else {
+					label += fmt.Sprintf(" (%dms)", evt.DurationMs)
+				}
 			}
 			lines = append(lines, fmt.Sprintf("%s %s", iconStyled, label))
 		}
