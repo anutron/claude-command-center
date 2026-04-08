@@ -189,7 +189,11 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		if nm, ok := msg.(plugin.NotifyMsg); ok {
 			switch nm.Event {
 			case "data.refreshed":
-				if p.database != nil {
+				// Skip reload if a DB write happened within the last 2 seconds.
+				// In-memory state is authoritative during this window — a reload
+				// would race with in-flight writes and clobber the user's changes
+				// (e.g., rapid dismiss/complete while a refresh completes).
+				if p.database != nil && time.Since(p.ccLastWrite) > 2*time.Second {
 					return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
 				}
 			case "agent.finished":

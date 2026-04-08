@@ -69,6 +69,7 @@ type Plugin struct {
 	// Command center state
 	cc             *db.CommandCenter
 	ccLastRead     time.Time
+	ccLastWrite    time.Time // last DB mutation; suppresses reload during write cooldown
 	ccCursor       int
 	ccScrollOffset int
 	showBacklog    bool
@@ -432,10 +433,12 @@ func (p *Plugin) Shutdown() {
 }
 
 // dbWriteCmd creates a tea.Cmd that performs a DB write.
+// Sets ccLastWrite to suppress reloads that would race with in-flight writes.
 func (p *Plugin) dbWriteCmd(fn func(*sql.DB) error) tea.Cmd {
 	if p.database == nil {
 		return nil
 	}
+	p.ccLastWrite = time.Now()
 	database := p.database
 	return func() tea.Msg {
 		return dbWriteResult{err: fn(database)}

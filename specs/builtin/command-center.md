@@ -321,7 +321,7 @@ When a user completes (`x`), dismisses (`X`), or changes the status of a todo in
 
 - **Mechanism:** After the DB write succeeds, a `"data.refreshed"` notification is sent via `NotifyPeers` (provided in `plugin.Context`). This reaches all other TUI instances through the notify socket system.
 - **Receiving side:** Other instances already handle `"data.refreshed"` NotifyMsg by calling `loadCCFromDBCmd()`, which reloads all command center data from the shared SQLite database.
-- **Self-notification is harmless:** The sending instance may also receive the notification and reload, but since it already updated in-memory state, the DB reload is a no-op from the user's perspective.
+- **Write cooldown:** After any `dbWriteCmd`, a 2-second cooldown suppresses `data.refreshed` reloads. This prevents a race where async DB writes haven't landed yet but a reload (from ai-cron refresh, peer notification, or self-notification) replaces in-memory state with stale DB data. The next stale check (>2s) picks up the final state.
 - **Scope:** Applies to `detailCompleteTodo`, `detailDismissTodo`, and status changes via `commitDetailFieldEdit`.
 
 ### Refresh (ai-cron)
