@@ -622,8 +622,13 @@ func (p *Plugin) handleClaudeCommandFinished(msg claudeCommandFinishedMsg) (bool
 				ProjectDir string `json:"project_dir"`
 			} `json:"todos"`
 			CompleteTodoIDs []string `json:"complete_todo_ids"`
+			Delegate        struct {
+				Prompt     string `json:"prompt"`
+				ProjectDir string `json:"project_dir"`
+			} `json:"delegate"`
 		}
 		if err := json.Unmarshal([]byte(jsonStr), &resp); err == nil {
+			// Ask takes priority — return to conversation mode.
 			if resp.Ask != "" {
 				p.commandConversation = append(p.commandConversation, commandTurn{role: "assistant", text: resp.Ask})
 				p.flashMessage = resp.Ask
@@ -637,10 +642,13 @@ func (p *Plugin) handleClaudeCommandFinished(msg claudeCommandFinishedMsg) (bool
 				p.flashMessage = resp.Message
 				p.flashMessageAt = time.Now()
 			}
-			mutated := len(resp.Todos) > 0 || len(resp.CompleteTodoIDs) > 0
-			if mutated {
+
+			var allCmds []tea.Cmd
+
+			// Handle simple todos and completions.
+			hasTodoMutations := len(resp.Todos) > 0 || len(resp.CompleteTodoIDs) > 0
+			if hasTodoMutations {
 				ensureCC(&p.cc)
-				var dbCmds []tea.Cmd
 				for _, item := range resp.Todos {
 					if item.Title == "" {
 						continue
@@ -654,19 +662,58 @@ func (p *Plugin) handleClaudeCommandFinished(msg claudeCommandFinishedMsg) (bool
 					todo.ProjectDir = item.ProjectDir
 					t := *todo
 					p.publishEvent("todo.created", map[string]interface{}{"id": t.ID, "title": t.Title, "source": "command"})
-					dbCmds = append(dbCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBInsertTodo(database, t) }))
+					allCmds = append(allCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBInsertTodo(database, t) }))
 				}
 				for _, id := range resp.CompleteTodoIDs {
 					p.cc.CompleteTodo(id)
 					p.publishEvent("todo.completed", map[string]interface{}{"id": id, "title": ""})
 					cid := id
-					dbCmds = append(dbCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBCompleteTodo(database, cid) }))
+					allCmds = append(allCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBCompleteTodo(database, cid) }))
 				}
 				if focusCmd := p.triggerFocusRefresh(); focusCmd != nil {
-					dbCmds = append(dbCmds, focusCmd)
+					allCmds = append(allCmds, focusCmd)
 				}
+			}
+
+			// Handle delegation to agent.
+			if resp.Delegate.Prompt != "" {
+				ensureCC(&p.cc)
+
+				// Create a todo for the delegated work.
+				titleFromPrompt := resp.Delegate.Prompt
+				if len(titleFromPrompt) > 60 {
+					titleFromPrompt = titleFromPrompt[:60]
+				}
+				todo := p.cc.AddTodo(titleFromPrompt)
+				todo.Detail = resp.Delegate.Prompt
+				projectDir := resp.Delegate.ProjectDir
+				if projectDir == "" {
+					projectDir, _ = os.UserHomeDir()
+				}
+				todo.ProjectDir = projectDir
+				t := *todo
+				p.publishEvent("todo.created", map[string]interface{}{"id": t.ID, "title": t.Title, "source": "command"})
+				allCmds = append(allCmds, p.dbWriteCmd(func(database *sql.DB) error { return db.DBInsertTodo(database, t) }))
+
+				// Build a queued session and launch the agent.
+				qs := queuedSession{
+					TodoID:     todo.ID,
+					Prompt:     resp.Delegate.Prompt,
+					ProjectDir: todo.ProjectDir,
+					Mode:       "normal",
+					Perm:       "default",
+					Budget:     0,
+					AutoStart:  true,
+				}
+				allCmds = append(allCmds, p.launchOrQueueAgent(qs))
+
+				p.flashMessage = "Delegating to agent: " + truncateToWidth(flattenTitle(todo.Title), 40)
+				p.flashMessageAt = time.Now()
+			}
+
+			if hasTodoMutations || resp.Delegate.Prompt != "" {
 				p.commandConversation = nil
-				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmds...)}
+				return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(allCmds...)}
 			}
 			p.commandConversation = nil
 		} else {

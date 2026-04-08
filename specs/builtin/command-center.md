@@ -205,6 +205,7 @@ In the normal (collapsed) view:
 ### Claude Integration
 
 - `c` key opens rich textarea; `ctrl+d` submits text to Claude LLM for todo creation
+- **Command LLM delegation:** When the command LLM determines an instruction requires external data (Granola transcripts, Slack messages, emails, files, GitHub PRs) or real work it cannot perform, it returns a `delegate` field. The handler creates a todo from the delegate prompt, sets its detail and project directory, and launches an agent session to do the real work. Ask takes priority over delegation; both delegation and simple todos can be processed in the same response.
 - `space` on todo opens detail view with edit input for Claude-powered enrichment
 - Focus suggestion is always visible — never renders as empty:
   - Auto-generates on data load when focus is empty (first launch, DB clear, post-refresh)

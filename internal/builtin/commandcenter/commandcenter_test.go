@@ -1361,3 +1361,120 @@ func TestSearchFilterMatchesDisplayID(t *testing.T) {
 	}
 }
 
+// --- Command LLM delegation tests ---
+
+func TestHandleClaudeCommandFinished_Delegate(t *testing.T) {
+	p := testPlugin(t)
+	p.cc = &db.CommandCenter{GeneratedAt: time.Now()}
+
+	output := `{"message":"Delegating to agent","delegate":{"prompt":"Summarize my last Granola call about the Q3 roadmap","project_dir":"/tmp/test-project"}}`
+	_, action := p.handleClaudeCommandFinished(claudeCommandFinishedMsg{output: output})
+
+	// Should have created a todo for the delegation.
+	if len(p.cc.Todos) != 1 {
+		t.Fatalf("expected 1 todo, got %d", len(p.cc.Todos))
+	}
+	todo := p.cc.Todos[0]
+	if todo.Detail != "Summarize my last Granola call about the Q3 roadmap" {
+		t.Errorf("todo.Detail = %q, want delegate prompt", todo.Detail)
+	}
+	if todo.ProjectDir != "/tmp/test-project" {
+		t.Errorf("todo.ProjectDir = %q, want /tmp/test-project", todo.ProjectDir)
+	}
+
+	// Flash message should mention delegation.
+	if !strings.Contains(p.flashMessage, "Delegating to agent") {
+		t.Errorf("flashMessage = %q, want to contain 'Delegating to agent'", p.flashMessage)
+	}
+
+	// Conversation should be cleared.
+	if p.commandConversation != nil {
+		t.Errorf("commandConversation should be nil after delegation")
+	}
+
+	// Should return a tea.Cmd (batch of db write + agent launch).
+	if action.TeaCmd == nil {
+		t.Error("expected non-nil TeaCmd for delegation")
+	}
+}
+
+func TestHandleClaudeCommandFinished_DelegateAndTodos(t *testing.T) {
+	p := testPlugin(t)
+	p.cc = &db.CommandCenter{GeneratedAt: time.Now()}
+
+	output := `{"message":"Created todo and delegating","todos":[{"title":"Buy groceries"}],"delegate":{"prompt":"Check Slack for the deployment thread","project_dir":""}}`
+	_, action := p.handleClaudeCommandFinished(claudeCommandFinishedMsg{output: output})
+
+	// Should have 2 todos: one from todos array, one from delegation.
+	if len(p.cc.Todos) != 2 {
+		t.Fatalf("expected 2 todos, got %d", len(p.cc.Todos))
+	}
+
+	// First todo is the simple one.
+	if p.cc.Todos[0].Title != "Buy groceries" {
+		t.Errorf("first todo title = %q, want 'Buy groceries'", p.cc.Todos[0].Title)
+	}
+
+	// Second todo is the delegated one.
+	delegated := p.cc.Todos[1]
+	if delegated.Detail != "Check Slack for the deployment thread" {
+		t.Errorf("delegated todo.Detail = %q, want delegate prompt", delegated.Detail)
+	}
+	// Empty project_dir should default to home dir.
+	if delegated.ProjectDir == "" {
+		t.Error("delegated todo.ProjectDir should not be empty (should default to home dir)")
+	}
+
+	if action.TeaCmd == nil {
+		t.Error("expected non-nil TeaCmd")
+	}
+}
+
+func TestHandleClaudeCommandFinished_DelegateAndAsk(t *testing.T) {
+	p := testPlugin(t)
+	p.cc = &db.CommandCenter{GeneratedAt: time.Now()}
+
+	// When ask and delegate are both set, ask takes priority.
+	output := `{"ask":"Which Granola call do you mean?","delegate":{"prompt":"Summarize Granola call","project_dir":""}}`
+	p.handleClaudeCommandFinished(claudeCommandFinishedMsg{output: output})
+
+	// Ask should win — no delegation, no new todos.
+	if len(p.cc.Todos) != 0 {
+		t.Fatalf("expected 0 todos (ask takes priority), got %d", len(p.cc.Todos))
+	}
+
+	// Flash should be the ask question.
+	if p.flashMessage != "Which Granola call do you mean?" {
+		t.Errorf("flashMessage = %q, want ask question", p.flashMessage)
+	}
+
+	// Conversation should have the assistant turn appended.
+	if len(p.commandConversation) == 0 {
+		t.Error("commandConversation should have the ask turn")
+	}
+}
+
+func TestHandleClaudeCommandFinished_EmptyDelegate(t *testing.T) {
+	p := testPlugin(t)
+	p.cc = &db.CommandCenter{GeneratedAt: time.Now()}
+
+	// Empty delegate prompt should be ignored entirely.
+	output := `{"message":"Here is what I found","delegate":{"prompt":"","project_dir":""}}`
+	p.handleClaudeCommandFinished(claudeCommandFinishedMsg{output: output})
+
+	// No todos created.
+	if len(p.cc.Todos) != 0 {
+		t.Fatalf("expected 0 todos (empty delegate), got %d", len(p.cc.Todos))
+	}
+
+	// Flash should be the message.
+	if p.flashMessage != "Here is what I found" {
+		t.Errorf("flashMessage = %q, want 'Here is what I found'", p.flashMessage)
+	}
+
+	// Conversation should be cleared.
+	if p.commandConversation != nil {
+		t.Errorf("commandConversation should be nil")
+	}
+}
+
