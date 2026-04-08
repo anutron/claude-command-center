@@ -28,7 +28,7 @@ Thumbs.db
 *.swo
 
 # Claude Code
-.claude/worktrees/
+.claude/worktree/
 .claude/reviews/
 
 # Credentials (never commit)
@@ -39,4 +39,3 @@ config.yaml
 todo_instructions.md
 .superpowers/
 .bug-bash/
-.claude/worktree/

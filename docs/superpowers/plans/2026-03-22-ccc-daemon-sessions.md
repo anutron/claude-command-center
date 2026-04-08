@@ -1713,21 +1713,21 @@ git commit -m "Add blocked status indicator and session viewer daemon reconnecti
 ### Task 17: CLAUDE.md Integration
 
 **Files:**
-- Modify: Files in `~/Personal/AI-RON/claude-rules/` — Add CCC update-session call
+- Modify: Claude skills repo ([github.com/anutron/claude-skills](https://github.com/anutron/claude-skills)) — Add CCC update-session call
 
-- [ ] **Step 1: Find the /set-topic invocation in AI-RON claude-rules**
+- [ ] **Step 1: Find the /set-topic invocation in claude-skills**
 
-Look in `/Users/aaron/Personal/AI-RON/claude-rules/` for the file that contains the `/set-topic` instruction.
+Look in the claude-skills repo for the file that contains the `/set-topic` instruction.
 
 - [ ] **Step 2: Add CCC update-session call right before it**
 
 Add a line instructing Claude to call `ccc update-session --session-id $SESSION_ID --topic "..."` right before the `/set-topic` invocation. This ensures CCC gets the topic before the statusline does.
 
-- [ ] **Step 3: Commit in AI-RON repo**
+- [ ] **Step 3: Commit in claude-skills repo**
 
 ```bash
-cd ~/Personal/AI-RON
-git add claude-rules/
+cd <claude-skills-repo>
+git add .
 git commit -m "Add CCC session topic registration before /set-topic"
 ```
 

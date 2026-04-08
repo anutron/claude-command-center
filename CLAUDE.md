@@ -32,7 +32,7 @@ Every behavioral change follows this process:
 Specs live in `specs/` organized by area:
 - `specs/core/` — config, db, host, refresh
 - `specs/plugin/` — interface, event-bus, registry, protocol
-- `specs/builtin/` — sessions, command-center, settings, pomodoro
+- `specs/builtin/` — sessions, command-center, settings, prs, console
 
 ```markdown
 # SPEC: Feature Name
@@ -99,20 +99,34 @@ Every behavioral change — bug fix, feature, refactor — follows this order:
 
 ```
 cmd/ccc/              # TUI binary entrypoint
-cmd/ai-cron/      # Refresh binary entrypoint
+cmd/ai-cron/          # Refresh binary entrypoint
 internal/
-  builtin/            # Built-in plugins (sessions, command-center, settings)
+  agent/              # Agent runner, budget, rate limiting, PTY, log tailing
+  auth/               # OAuth/authentication helpers
+  automation/         # Automation process framework
+  builtin/            # Built-in plugins (command-center, prs, sessions, settings)
   config/             # Config loading, validation
+  daemon/             # Background daemon (session registry, RPCs, events)
   db/                 # SQLite schema, queries, types (single source of truth for data types)
+  doctor/             # Diagnostic checks
   external/           # External plugin subprocess adapter
+  llm/                # LLM client wrappers, observable instrumentation
+  lockfile/           # File locking
   plugin/             # Plugin interface, registry, event bus, logger, migrations
   refresh/            # Data fetch, merge, locking
-  tui/                # Bubbletea host, tab navigation, styles
+  sanitize/           # Output sanitization
+  testutil/           # Shared test infrastructure (view helpers, mock runner, daemon helpers)
+  tui/                # Bubbletea host, tab navigation, styles, console overlay
+  ui/                 # Shared UI formatting helpers
+  worktree/           # Git worktree utilities
 specs/                # Feature specifications
 docs/                 # Roadmap, ideas, product requirements
 examples/             # Example external plugins
-servers/              # MCP servers (gmail)
+scripts/              # Utility scripts
+sdk/                  # SDK (Python)
+servers/              # MCP servers
   gmail/              # Gmail MCP server (TypeScript)
+  things/             # Things MCP server
 ```
 
 ## Architecture Conventions

@@ -275,7 +275,7 @@ func (p *Plugin) categoryCounts() [4]int {
 
 // resolveRepoDir finds the local directory for a GitHub repo by scanning
 // learned paths' .git/config for a matching remote URL.
-// repo is in "owner/repo" format (e.g. "thanx/thanx-merchant-ui").
+// repo is in "owner/repo" format (e.g. "octocat/hello-world").
 func (p *Plugin) resolveRepoDir(repo string) string {
 	if p.database == nil {
 		return ""

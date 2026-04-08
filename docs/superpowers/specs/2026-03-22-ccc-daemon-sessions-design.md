@@ -77,7 +77,7 @@ Two integration points:
 
 1. **Session start → Claude Code hook.** A `session_start` hook in Claude Code settings calls `ccc register --session-id $ID --pid $PPID --project $PWD`. This registers the session immediately, even before a topic is set. If the daemon is not running, `ccc register` starts it automatically (same auto-start behavior as the TUI). If auto-start fails, `ccc register` writes directly to `cc_sessions` in SQLite as a fallback — the daemon will pick it up on next start.
 
-2. **Topic update → CLAUDE.md instruction.** The user's CLAUDE.md snippet (managed in `~/Personal/AI-RON/claude-rules/`) instructs Claude to call `ccc update-session --topic "..."` after setting the topic via `/set-topic`. This keeps `/set-topic` generic and open-sourceable. CCC documents this as an optional setup step for users who want named sessions.
+2. **Topic update → CLAUDE.md instruction.** The user's CLAUDE.md snippet (managed via [claude-skills](https://github.com/anutron/claude-skills)) instructs Claude to call `ccc update-session --topic "..."` after setting the topic via `/set-topic`. This keeps `/set-topic` generic and open-sourceable. CCC documents this as an optional setup step for users who want named sessions.
 
 ### Session Record
 
@@ -230,7 +230,7 @@ This is the hardest phase — threading, process lifecycle, reconnection after T
 
 ### CLAUDE.md Integration
 
-The plan should look at `/Users/aaron/Personal/AI-RON/claude-rules/` to find the `/set-topic` invocation and add the appropriate CCC `update-session` call right before it.
+The plan should look at the user's claude-skills repo (see [github.com/anutron/claude-skills](https://github.com/anutron/claude-skills)) to find the `/set-topic` invocation and add the appropriate CCC `update-session` call right before it.
 
 ### Session Registration Setup
 

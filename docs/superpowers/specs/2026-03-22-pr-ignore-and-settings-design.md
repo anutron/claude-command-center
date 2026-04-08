@@ -74,8 +74,8 @@ List of repos from `cc_ignored_repos`:
 
 ```
 IGNORED REPOS
-  thanx/thanx-cortex          [x remove]
-  thanx/thanx-snowflake       [x remove]
+  acme/acme-api               [x remove]
+  acme/acme-infra             [x remove]
 ```
 
 Selecting a repo and pressing enter (or `x`) removes it from `cc_ignored_repos`, restoring all PRs from that repo on next load.
@@ -86,7 +86,7 @@ List of currently ignored open PRs (from `cc_pull_requests WHERE ignored = 1 AND
 
 ```
 IGNORED PRS
-  thanx/thanx-dbt#774  Apply masking policies...    [x restore]
+  acme/acme-data#774  Apply masking policies...    [x restore]
 ```
 
 Selecting a PR and pressing enter (or `x`) sets `ignored = 0`, restoring it.

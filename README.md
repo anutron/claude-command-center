@@ -52,13 +52,26 @@ Extend CCC with plugins written in any language. Plugins communicate over JSON-l
 
 ![External Plugin](docs/images/external-plugin.png)
 
+### Pull Requests
+
+Dedicated PR tracking tab with GitHub integration. Auto-review agents, ignore/archive workflows, and per-repo filtering.
+
+### Console Overlay
+
+Real-time agent and LLM activity observability. Toggle with `~` to see active agents, cost tracking, and streaming output. Also available as a standalone TUI via `ccc console`.
+
+### Background Daemon
+
+Session registry, agent lifecycle management, budget enforcement, event distribution, and refresh scheduling — all managed by a background daemon that auto-starts with the TUI.
+
 ## Architecture
 
-CCC is two binaries and a plugin system:
+CCC is two binaries, a daemon, and a plugin system:
 
-- **`ccc`** — The TUI. Built with [bubbletea](https://github.com/charmbracelet/bubbletea). Renders the dashboard, manages sessions, and launches Claude.
+- **`ccc`** — The TUI + daemon + CLI subcommands. Built with [bubbletea](https://github.com/charmbracelet/bubbletea).
 - **`ai-cron`** — The data fetcher. Runs on a schedule (or manually) to pull data from all connected sources into a local SQLite database.
-- **Plugin system** — Built-in plugins (sessions, command center, settings) plus external plugins that run as subprocesses speaking JSON-lines.
+- **Daemon** — Background process managing sessions, agents, refresh, and event distribution. Communicates via Unix socket JSON-RPC.
+- **Plugin system** — Built-in plugins (command center, PRs, sessions, settings) plus external plugins that run as subprocesses speaking JSON-lines.
 - **Automations** — Headless scripts executed during refresh cycles for background tasks like auto-accepting calendar invites. Written in Python via the included SDK.
 
 Data flows one way: `ai-cron` writes to SQLite, `ccc` reads from it. The TUI never hits external APIs directly.
@@ -77,6 +90,42 @@ Each connector has its own setup guide with prerequisites, step-by-step configur
 
 All connectors are optional. CCC is useful with zero sources configured — the session launcher and todo system work standalone.
 
+## Prerequisites
+
+- Go 1.24+
+- Node.js 18+ (for MCP servers)
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (for agent features)
+- GitHub CLI (`gh`) configured with auth
+
+## Quick Start
+
+```bash
+git clone https://github.com/anutron/claude-command-center.git
+cd claude-command-center
+make build
+
+# Install (symlinks binaries to /usr/local/bin)
+make install
+
+# Create config
+mkdir -p ~/.config/ccc
+cp config.example.yaml ~/.config/ccc/config.yaml
+# Edit config.yaml with your settings
+
+# Run
+ccc
+```
+
+## Build Commands
+
+```bash
+make build     # Build ccc + ai-cron binaries
+make test      # Run all tests
+make install   # Build + symlink binaries + build MCP servers
+make servers   # Build MCP servers (gmail)
+make clean     # Remove built binaries
+```
+
 ## Getting Started
 
-See [AGENTS.md](AGENTS.md) for installation and setup instructions. That document is designed to be followed by a Claude agent end-to-end, but works fine for humans too.
+See [AGENTS.md](AGENTS.md) for detailed installation and setup instructions. That document is designed to be followed by a Claude agent end-to-end, but works fine for humans too.
