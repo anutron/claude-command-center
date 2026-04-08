@@ -3,206 +3,165 @@ package llm
 import (
 	"context"
 	"errors"
-	"sync"
+	"strings"
 	"testing"
 )
 
-// mockLLM is a test double that returns canned responses.
-type mockLLM struct {
-	output string
+// --- Context helpers ---
+
+func TestWithOperation_RoundTrip(t *testing.T) {
+	ctx := WithOperation(context.Background(), "summarize")
+	got := OperationFrom(ctx)
+	if got != "summarize" {
+		t.Errorf("OperationFrom = %q, want %q", got, "summarize")
+	}
+}
+
+func TestOperationFrom_EmptyWhenNotSet(t *testing.T) {
+	got := OperationFrom(context.Background())
+	if got != "" {
+		t.Errorf("OperationFrom on bare context = %q, want empty", got)
+	}
+}
+
+// --- ObservableLLM ---
+
+type stubLLM struct {
+	result string
 	err    error
 }
 
-func (m mockLLM) Complete(ctx context.Context, prompt string) (string, error) {
-	return m.output, m.err
+func (s *stubLLM) Complete(_ context.Context, _ string) (string, error) {
+	return s.result, s.err
+}
+
+type capturedEvent struct {
+	topic   string
+	payload EventPayload
 }
 
 func TestObservableLLM_PublishesStartedAndFinished(t *testing.T) {
-	inner := mockLLM{output: `{"message":"ok"}`, err: nil}
-
-	var mu sync.Mutex
-	var events []struct {
-		topic   string
-		payload EventPayload
+	inner := &stubLLM{result: "hello"}
+	var events []capturedEvent
+	pub := func(topic string, payload EventPayload) {
+		events = append(events, capturedEvent{topic, payload})
 	}
 
-	publish := func(topic string, payload EventPayload) {
-		mu.Lock()
-		defer mu.Unlock()
-		events = append(events, struct {
-			topic   string
-			payload EventPayload
-		}{topic, payload})
-	}
+	obs := NewObservableLLM(inner, pub, "test-source")
+	ctx := WithOperation(context.Background(), "greet")
+	result, err := obs.Complete(ctx, "say hi")
 
-	obs := NewObservableLLM(inner, publish, "command-center")
-	ctx := WithOperation(context.Background(), "command")
-
-	result, err := obs.Complete(ctx, "test prompt")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result != `{"message":"ok"}` {
-		t.Errorf("result = %q, want %q", result, `{"message":"ok"}`)
+	if result != "hello" {
+		t.Errorf("result = %q, want %q", result, "hello")
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
 	if len(events) != 2 {
-		t.Fatalf("expected 2 events (started + finished), got %d", len(events))
+		t.Fatalf("expected 2 events, got %d", len(events))
 	}
 
-	if events[0].topic != "llm.started" {
-		t.Errorf("event[0].topic = %q, want 'llm.started'", events[0].topic)
+	// Check started event
+	started := events[0]
+	if started.topic != "llm.started" {
+		t.Errorf("first event topic = %q, want %q", started.topic, "llm.started")
 	}
-	startedID, ok := events[0].payload["id"].(string)
-	if !ok || startedID == "" {
-		t.Error("started event should have a non-empty 'id' field")
+	if started.payload["operation"] != "greet" {
+		t.Errorf("started operation = %v, want %q", started.payload["operation"], "greet")
 	}
-	if events[0].payload["operation"] != "command" {
-		t.Errorf("started event operation = %v, want 'command'", events[0].payload["operation"])
-	}
-	if events[0].payload["source"] != "command-center" {
-		t.Errorf("started event source = %v, want 'command-center'", events[0].payload["source"])
+	if started.payload["source"] != "test-source" {
+		t.Errorf("started source = %v, want %q", started.payload["source"], "test-source")
 	}
 
-	if events[1].topic != "llm.finished" {
-		t.Errorf("event[1].topic = %q, want 'llm.finished'", events[1].topic)
+	// Check finished event
+	finished := events[1]
+	if finished.topic != "llm.finished" {
+		t.Errorf("second event topic = %q, want %q", finished.topic, "llm.finished")
 	}
-	finishedID, ok := events[1].payload["id"].(string)
-	if !ok || finishedID == "" {
-		t.Error("finished event should have a non-empty 'id' field")
+	if finished.payload["status"] != "completed" {
+		t.Errorf("finished status = %v, want %q", finished.payload["status"], "completed")
 	}
-	if startedID != finishedID {
-		t.Errorf("started id %q != finished id %q — should match", startedID, finishedID)
+	if finished.payload["id"] != started.payload["id"] {
+		t.Errorf("id mismatch: started=%v finished=%v", started.payload["id"], finished.payload["id"])
 	}
-	if events[1].payload["status"] != "completed" {
-		t.Errorf("finished event status = %v, want 'completed'", events[1].payload["status"])
-	}
-	if _, ok := events[1].payload["duration_ms"]; !ok {
-		t.Error("finished event should have 'duration_ms' field")
+	if _, ok := finished.payload["duration_ms"]; !ok {
+		t.Error("finished event missing duration_ms")
 	}
 }
 
-func TestObservableLLM_PublishesErrorOnFailure(t *testing.T) {
-	inner := mockLLM{output: "", err: errors.New("API overloaded")}
-
-	var mu sync.Mutex
-	var events []struct {
-		topic   string
-		payload EventPayload
+func TestObservableLLM_ErrorStatus(t *testing.T) {
+	inner := &stubLLM{err: errors.New("boom")}
+	var events []capturedEvent
+	pub := func(topic string, payload EventPayload) {
+		events = append(events, capturedEvent{topic, payload})
 	}
 
-	publish := func(topic string, payload EventPayload) {
-		mu.Lock()
-		defer mu.Unlock()
-		events = append(events, struct {
-			topic   string
-			payload EventPayload
-		}{topic, payload})
-	}
+	obs := NewObservableLLM(inner, pub, "err-source")
+	_, err := obs.Complete(context.Background(), "fail")
 
-	obs := NewObservableLLM(inner, publish, "test")
-	ctx := WithOperation(context.Background(), "edit")
-
-	_, err := obs.Complete(ctx, "test prompt")
 	if err == nil {
-		t.Fatal("expected error from inner LLM")
+		t.Fatal("expected error, got nil")
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
 	if len(events) != 2 {
-		t.Fatalf("expected 2 events even on error, got %d", len(events))
+		t.Fatalf("expected 2 events, got %d", len(events))
 	}
 
 	finished := events[1]
-	if finished.topic != "llm.finished" {
-		t.Errorf("event[1].topic = %q, want 'llm.finished'", finished.topic)
-	}
-	errField, ok := finished.payload["error"].(string)
-	if !ok || errField == "" {
-		t.Error("finished event on failure should have non-empty 'error' field")
-	}
 	if finished.payload["status"] != "failed" {
-		t.Errorf("finished event status = %v, want 'failed'", finished.payload["status"])
+		t.Errorf("status = %v, want %q", finished.payload["status"], "failed")
+	}
+	if finished.payload["error"] != "boom" {
+		t.Errorf("error = %v, want %q", finished.payload["error"], "boom")
 	}
 }
 
-func TestObservableLLM_PassesThroughResult(t *testing.T) {
-	inner := mockLLM{output: "hello world", err: nil}
-	publish := func(topic string, payload EventPayload) {}
-
-	obs := NewObservableLLM(inner, publish, "test")
-	result, err := obs.Complete(context.Background(), "prompt")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != "hello world" {
-		t.Errorf("result = %q, want 'hello world'", result)
+func TestObservableLLM_DefaultsToUnknownOperation(t *testing.T) {
+	inner := &stubLLM{result: "ok"}
+	var events []capturedEvent
+	pub := func(topic string, payload EventPayload) {
+		events = append(events, capturedEvent{topic, payload})
 	}
 
-	innerErr := mockLLM{output: "", err: errors.New("fail")}
-	obs2 := NewObservableLLM(innerErr, publish, "test")
-	_, err = obs2.Complete(context.Background(), "prompt")
-	if err == nil || err.Error() != "fail" {
-		t.Errorf("expected error 'fail', got %v", err)
-	}
-}
-
-func TestObservableLLM_DefaultOperationName(t *testing.T) {
-	inner := mockLLM{output: "ok", err: nil}
-
-	var mu sync.Mutex
-	var events []struct {
-		topic   string
-		payload EventPayload
-	}
-
-	publish := func(topic string, payload EventPayload) {
-		mu.Lock()
-		defer mu.Unlock()
-		events = append(events, struct {
-			topic   string
-			payload EventPayload
-		}{topic, payload})
-	}
-
-	obs := NewObservableLLM(inner, publish, "test")
-	_, err := obs.Complete(context.Background(), "prompt")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
+	obs := NewObservableLLM(inner, pub, "src")
+	// No WithOperation on context
+	_, _ = obs.Complete(context.Background(), "test")
 
 	if len(events) < 1 {
-		t.Fatal("expected at least 1 event")
+		t.Fatal("no events captured")
 	}
-
-	op, ok := events[0].payload["operation"].(string)
-	if !ok || op == "" {
-		t.Error("operation should have a default value when not set via context")
-	}
-	if op != "unknown" {
-		t.Errorf("default operation = %q, want 'unknown'", op)
+	if events[0].payload["operation"] != "unknown" {
+		t.Errorf("operation = %v, want %q", events[0].payload["operation"], "unknown")
 	}
 }
 
-func TestWithOperation_RoundTrip(t *testing.T) {
-	ctx := WithOperation(context.Background(), "focus")
-	got := OperationFrom(ctx)
-	if got != "focus" {
-		t.Errorf("OperationFrom = %q, want 'focus'", got)
+func TestObservableLLM_UniqueIDs(t *testing.T) {
+	inner := &stubLLM{result: "ok"}
+	var ids []string
+	pub := func(topic string, payload EventPayload) {
+		if topic == "llm.started" {
+			ids = append(ids, payload["id"].(string))
+		}
+	}
+
+	obs := NewObservableLLM(inner, pub, "src")
+	for i := 0; i < 10; i++ {
+		_, _ = obs.Complete(context.Background(), "test")
+	}
+
+	seen := make(map[string]bool)
+	for _, id := range ids {
+		if seen[id] {
+			t.Fatalf("duplicate id: %s", id)
+		}
+		seen[id] = true
+		// Basic UUID format check: 8-4-4-4-12
+		parts := strings.Split(id, "-")
+		if len(parts) != 5 {
+			t.Errorf("id %q does not look like a UUID", id)
+		}
 	}
 }
 
-func TestOperationFrom_EmptyContext(t *testing.T) {
-	got := OperationFrom(context.Background())
-	if got != "" {
-		t.Errorf("OperationFrom on empty context = %q, want empty string", got)
-	}
+func TestObservableLLM_ImplementsLLMInterface(t *testing.T) {
+	var _ LLM = &ObservableLLM{}
 }

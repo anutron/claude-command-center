@@ -45,6 +45,24 @@ Package-level function that checks whether the `claude` CLI binary is on PATH.
 - Returns `""`, `nil` for every call
 - Used when `--no-llm` flag is set or `claude` binary is not found
 
+### ObservableLLM
+
+- Wraps any `LLM` and publishes observability events via a `PublishFunc` callback
+- Constructor: `NewObservableLLM(inner LLM, publish PublishFunc, source string) *ObservableLLM`
+- On each `Complete` call:
+  1. Generates a UUID (v4, crypto/rand, no external deps)
+  2. Reads operation name from context via `OperationFrom(ctx)`, defaults to `"unknown"`
+  3. Publishes `"llm.started"` with `{id, operation, source}`
+  4. Delegates to inner LLM
+  5. Publishes `"llm.finished"` with `{id, operation, source, duration_ms, status, error?}`
+  6. `status` is `"completed"` on success, `"failed"` on error
+- Context helpers:
+  - `WithOperation(ctx, op) context.Context` — attaches operation name to context
+  - `OperationFrom(ctx) string` — extracts operation name, empty string if not set
+- Types:
+  - `EventPayload = map[string]interface{}`
+  - `PublishFunc = func(topic string, payload EventPayload)`
+
 ## Error Parsing
 
 ### `ParseClaudeError(stderr string) string`
@@ -136,3 +154,10 @@ The refresh pipeline uses two LLM tiers:
 - `ParseClaudeError` with empty string → `"unknown error"`
 - `ParseClaudeError` with long message → truncated to ~80 chars
 - `LogFailure` writes valid JSON-lines, all fields present, appends correctly
+- `WithOperation` / `OperationFrom` round-trip stores and retrieves operation name
+- `OperationFrom` on bare context returns empty string
+- `ObservableLLM.Complete` publishes `llm.started` then `llm.finished` with matching IDs
+- `ObservableLLM.Complete` on error sets status `"failed"` with error message
+- `ObservableLLM.Complete` defaults operation to `"unknown"` when context has no operation
+- `ObservableLLM` generates unique IDs across multiple calls
+- `ObservableLLM` implements the `LLM` interface (compile-time check)
