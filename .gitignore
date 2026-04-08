@@ -39,3 +39,4 @@ config.yaml
 todo_instructions.md
 .superpowers/
 .bug-bash/
+.claude/worktree/
