@@ -170,6 +170,8 @@ Todos have a `display_id` column (auto-incrementing integer) for stable, human-r
 ### Command Center View
 
 1. Left panel: calendar (today's events with times, colors from config)
+   - Each timed event renders on a single line: connector, time, title, and duration
+   - The content width passed to calendar rendering must account for the panel border's horizontal frame size (border + padding) so that event lines fit within the panel without wrapping
 2. Right panel: todos sorted by sort_order, with status indicators
 3. Focus suggestion banner at top when available
 4. Warning bar when data is stale or services are unreachable
@@ -685,6 +687,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Shift+up/down swaps todo with neighbor, persists via DB sort_order swap (transaction-based)
 - Toggle backlog (b) shows/hides completed items
 - Booking mode enter/exit and duration selection
+- Calendar event line (time + title + duration) fits on a single line within the panel border — duration does not wrap to a new line
 - View renders without panic (with and without data)
 - Help overlay toggles on `?` and renders KEYBOARD SHORTCUTS content; returns ConsumedAction so the host does not apply fallback key handling
 - Help overlay dismisses on any subsequent key press and restores the previous view

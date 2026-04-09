@@ -76,28 +76,40 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 	}
 
 	var columns string
+	// PanelBorder.Width() in lipgloss v1 sets the width including padding but
+	// excluding borders. Content rendered inside the panel must fit within
+	// (panelWidth - horizontal padding), otherwise lines wrap.
+	panelPad := s.PanelBorder.GetHorizontalPadding()
 	if calendarEnabled {
-		colWidth := (width-1)/2 - 4
+		panelWidth := (width-1)/2 - 4
+		contentWidth := panelWidth - panelPad
+		if contentWidth < 10 {
+			contentWidth = 10
+		}
 		maxVisibleTodos := (panelHeight - 3) / 2
 		if maxVisibleTodos < 5 {
 			maxVisibleTodos = 5
 		}
-		calCol := renderCalendarColumn(s, calendars, &cc.Calendar, colWidth, panelHeight)
-		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, colWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
-		calPanel := s.PanelBorder.Width(colWidth).Render(calCol)
-		todoPanel := s.PanelBorder.Width(colWidth).Render(todoCol)
+		calCol := renderCalendarColumn(s, calendars, &cc.Calendar, contentWidth, panelHeight)
+		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
+		calPanel := s.PanelBorder.Width(panelWidth).Render(calCol)
+		todoPanel := s.PanelBorder.Width(panelWidth).Render(todoCol)
 		columns = lipgloss.JoinHorizontal(lipgloss.Top, calPanel, " ", todoPanel)
 	} else {
 		// Calendar disabled: full-width todos with hint
-		todoWidth := width - 4
+		panelWidth := width - 4
+		contentWidth := panelWidth - panelPad
+		if contentWidth < 10 {
+			contentWidth = 10
+		}
 		maxVisibleTodos := (panelHeight - 3) / 2
 		if maxVisibleTodos < 5 {
 			maxVisibleTodos = 5
 		}
-		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, todoWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
+		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
 		hint := s.CalendarFree.Render("  Configure calendar in Settings to see your schedule here")
 		todoContent := lipgloss.JoinVertical(lipgloss.Left, todoCol, "", hint)
-		columns = s.PanelBorder.Width(todoWidth).Render(todoContent)
+		columns = s.PanelBorder.Width(panelWidth).Render(todoContent)
 	}
 
 	footer := renderCCFooter(s, cc.GeneratedAt, width, refreshing, frame, lastRefreshError)

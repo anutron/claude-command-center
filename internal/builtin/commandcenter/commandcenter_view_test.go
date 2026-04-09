@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
 	"github.com/anutron/claude-command-center/internal/plugin"
@@ -1177,5 +1178,62 @@ func TestView_DetailJKResetsScrollPosition(t *testing.T) {
 	}
 	if p.detailVP.YOffset != 0 {
 		t.Errorf("expected viewport YOffset to be 0 after k navigation, got %d", p.detailVP.YOffset)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Calendar Event Duration Inline (Bug Fix)
+// ---------------------------------------------------------------------------
+
+func TestView_CalendarEventDurationOnSameLine(t *testing.T) {
+	// Calendar event duration must render on the same line as the time and title,
+	// not wrap to a new line due to width miscalculation with panel borders.
+	p := testPlugin(t)
+	p.cfg.Calendar.Enabled = true
+	p.cfg.Calendar.Calendars = []config.CalendarEntry{
+		{ID: "cal1", Label: "Work", Color: "#7aa2f7"},
+	}
+
+	now := time.Now()
+	// Create an event that starts in the future (so it's not "past")
+	eventStart := time.Date(now.Year(), now.Month(), now.Day(), 14, 0, 0, 0, now.Location())
+	eventEnd := eventStart.Add(90 * time.Minute)
+
+	p.cc = &db.CommandCenter{
+		GeneratedAt: now,
+		Calendar: db.CalendarData{
+			Today: []db.CalendarEvent{
+				{
+					Title:      "Team Standup Meeting",
+					Start:      eventStart,
+					End:        eventEnd,
+					CalendarID: "cal1",
+				},
+			},
+		},
+		Todos: []db.Todo{
+			{ID: "t1", Title: "Test todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: now},
+		},
+	}
+	p.width = 120
+	p.height = 40
+
+	view := renderView(p)
+
+	// The duration "1h30m" must be on the same line as the event title.
+	// Split the view into lines and find the line with the event title.
+	lines := strings.Split(view, "\n")
+	foundTitleLine := false
+	for _, line := range lines {
+		if strings.Contains(line, "Team Standup Meeting") {
+			foundTitleLine = true
+			if !strings.Contains(line, "1h30m") {
+				t.Errorf("duration '1h30m' should be on the same line as 'Team Standup Meeting', but it was not.\nLine: %q\nFull view:\n%s", line, view)
+			}
+			break
+		}
+	}
+	if !foundTitleLine {
+		t.Fatalf("expected to find 'Team Standup Meeting' in view but did not.\nFull view:\n%s", view)
 	}
 }
