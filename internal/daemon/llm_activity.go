@@ -81,16 +81,11 @@ func (b *llmActivityBuffer) List() []LLMActivityEvent {
 	return result
 }
 
-// handleReportLLMActivity handles the ReportLLMActivity RPC.
-func (s *Server) handleReportLLMActivity(req *RPCRequest) (interface{}, *RPCError) {
-	var evt LLMActivityEvent
-	if err := json.Unmarshal(req.Params, &evt); err != nil {
-		return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}
-	}
-
+// ReportLLMActivity records an LLM activity event and broadcasts it to subscribers.
+// This is the direct (non-RPC) entry point for in-process callers like the daemon refresh.
+func (s *Server) ReportLLMActivity(evt LLMActivityEvent) {
 	s.llmActivity.Report(evt)
 
-	// Broadcast appropriate event.
 	if evt.Status == "running" {
 		data, _ := json.Marshal(map[string]interface{}{
 			"id":        evt.ID,
@@ -105,7 +100,16 @@ func (s *Server) handleReportLLMActivity(req *RPCRequest) (interface{}, *RPCErro
 		})
 		s.Broadcast(Event{Type: "llm.finished", Data: data})
 	}
+}
 
+// handleReportLLMActivity handles the ReportLLMActivity RPC.
+func (s *Server) handleReportLLMActivity(req *RPCRequest) (interface{}, *RPCError) {
+	var evt LLMActivityEvent
+	if err := json.Unmarshal(req.Params, &evt); err != nil {
+		return nil, &RPCError{Code: -32602, Message: "invalid params: " + err.Error()}
+	}
+
+	s.ReportLLMActivity(evt)
 	return map[string]bool{"ok": true}, nil
 }
 

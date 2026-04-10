@@ -207,13 +207,17 @@ func runDaemonInternal() error {
 		}
 	}
 
+	// llmReport will be wired to the daemon server's LLM activity buffer
+	// after the server is created (see below).
+	var llmReport llm.PublishFunc
+
 	refreshFunc := func() error {
 		// Reload config each refresh to pick up changes.
 		freshCfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("reload config: %w", err)
 		}
-		return runRefresh(freshCfg, database)
+		return runRefresh(freshCfg, database, llmReport)
 	}
 
 	// Create agent runner wrapped with budget/rate-limit governance.
@@ -250,6 +254,32 @@ func runDaemonInternal() error {
 		BinaryMtime:     binaryMtime,
 	})
 
+	// Wire the LLM report callback now that the server exists.
+	// This lets daemon-side refresh calls appear in the console overlay.
+	llmReport = func(topic string, payload llm.EventPayload) {
+		id, _ := payload["id"].(string)
+		op, _ := payload["operation"].(string)
+		src, _ := payload["source"].(string)
+		if topic == "llm.started" {
+			srv.ReportLLMActivity(daemon.LLMActivityEvent{
+				ID: id, Operation: op, Source: src,
+				StartedAt: time.Now(), Status: "running",
+			})
+		} else {
+			now := time.Now()
+			durationMs, _ := payload["duration_ms"].(int64)
+			errMsg, _ := payload["error"].(string)
+			status, _ := payload["status"].(string)
+			startedAt, _ := payload["started_at"].(time.Time)
+			srv.ReportLLMActivity(daemon.LLMActivityEvent{
+				ID: id, Operation: op, Source: src,
+				StartedAt: startedAt, FinishedAt: &now,
+				DurationMs: int(durationMs),
+				Error: errMsg, Status: status,
+			})
+		}
+	}
+
 	// Handle shutdown signals.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -265,12 +295,16 @@ func runDaemonInternal() error {
 
 // runRefresh builds data sources, runs a refresh cycle, and then executes
 // any configured automations (same logic as ai-cron but running inside the daemon).
-func runRefresh(cfg *config.Config, database *sql.DB) error {
+// publish is optional — when non-nil, LLM calls are reported for console visibility.
+func runRefresh(cfg *config.Config, database *sql.DB, publish llm.PublishFunc) error {
 	var l llm.LLM
 	if llm.Available() {
 		l = llm.ClaudeCLI{Model: "haiku"}
 	} else {
 		l = llm.NoopLLM{}
+	}
+	if publish != nil {
+		l = llm.NewObservableLLM(l, publish, "daemon-refresh")
 	}
 
 	var calendarIDs []string

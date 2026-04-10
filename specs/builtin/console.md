@@ -226,6 +226,7 @@ An `ObservableLLM` in `internal/llm/observable.go` wraps `llm.LLM` with a publis
 All LLM call sites are instrumented:
 - **TUI-side** (commandcenter + sessions): wrapped in `Init()` via `ObservableLLM`, events flow through the plugin event bus to the daemon
 - **ai-cron**: connects to the daemon socket at startup, wraps both haiku (extraction) and sonnet (routing) LLMs with `ObservableLLM`, reports directly via `ReportLLMActivity` RPC
+- **Daemon refresh**: wraps its LLM with `ObservableLLM` using the server's `ReportLLMActivity` method directly (no RPC hop since it runs in-process)
 
 Refresh pipeline operation names: `gmail-extract`, `gmail-titles`, `slack-extract`, `granola-extract`, `todo-synthesis`, `focus`, `todo-prompts`, `todo-routing`.
 
