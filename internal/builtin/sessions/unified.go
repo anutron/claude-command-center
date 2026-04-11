@@ -64,6 +64,7 @@ type unifiedView struct {
 	archivedSessions []db.ArchivedSession
 	agentsByID       map[string]daemon.AgentStatusResult
 	cursor           int
+	scrollOffset     int // first visible line index for viewport scrolling
 	archiveMode      bool
 	viewFilter       string // ViewFilterAll, ViewFilterLiveOnly, or ViewFilterSavedOnly
 	daemonClient     func() *daemon.Client
@@ -85,6 +86,7 @@ func NewUnifiedView(clientFn func() *daemon.Client, styles sessionStyles) *unifi
 func (uv *unifiedView) ToggleArchive() {
 	uv.archiveMode = !uv.archiveMode
 	uv.cursor = 0
+	uv.scrollOffset = 0
 }
 
 // displayItems delegates to mainItems or archivedItems based on mode.
@@ -194,7 +196,7 @@ func (uv *unifiedView) archivedItems() []UnifiedItem {
 	return items
 }
 
-// View renders the unified view.
+// View renders the unified view, constraining output to the given height.
 func (uv *unifiedView) View(width, height int) string {
 	items := uv.displayItems()
 
@@ -212,7 +214,9 @@ func (uv *unifiedView) View(width, height int) string {
 		}
 	}
 
+	// Build all lines and track which line index the cursor sits on.
 	var lines []string
+	cursorLine := 0
 	prevTier := ""
 
 	for i, item := range items {
@@ -232,6 +236,10 @@ func (uv *unifiedView) View(width, height int) string {
 			}
 			lines = append(lines, header)
 			prevTier = item.Tier
+		}
+
+		if i == uv.cursor {
+			cursorLine = len(lines)
 		}
 
 		// Pointer.
@@ -323,6 +331,50 @@ func (uv *unifiedView) View(width, height int) string {
 		lines = append(lines, line)
 	}
 
+	// Apply viewport scrolling if height is constrained.
+	// Reserve lines for chrome outside this view (tab bar, hints, flash, padding).
+	// The caller (viewSessionsTab) adds: blank line + hints (~1 line) = ~2 extra lines,
+	// plus the tab bar above (~2 lines). Reserve 6 lines for surrounding chrome.
+	maxVisible := height - 6
+	if maxVisible < 5 {
+		maxVisible = 5
+	}
+
+	if len(lines) > maxVisible {
+		// Adjust scroll offset to keep cursor visible.
+		if cursorLine < uv.scrollOffset {
+			uv.scrollOffset = cursorLine
+		}
+		if cursorLine >= uv.scrollOffset+maxVisible {
+			uv.scrollOffset = cursorLine - maxVisible + 1
+		}
+		// Clamp scroll offset.
+		if uv.scrollOffset < 0 {
+			uv.scrollOffset = 0
+		}
+		if uv.scrollOffset > len(lines)-maxVisible {
+			uv.scrollOffset = len(lines) - maxVisible
+		}
+
+		visEnd := uv.scrollOffset + maxVisible
+		if visEnd > len(lines) {
+			visEnd = len(lines)
+		}
+
+		var visible []string
+		if uv.scrollOffset > 0 {
+			above := uv.scrollOffset
+			visible = append(visible, uv.styles.descMuted.Render(fmt.Sprintf("  ▲ %d more above", above)))
+		}
+		visible = append(visible, lines[uv.scrollOffset:visEnd]...)
+		if visEnd < len(lines) {
+			below := len(lines) - visEnd
+			visible = append(visible, uv.styles.descMuted.Render(fmt.Sprintf("  ▼ %d more below", below)))
+		}
+		return strings.Join(visible, "\n")
+	}
+
+	uv.scrollOffset = 0
 	return strings.Join(lines, "\n")
 }
 
@@ -335,6 +387,7 @@ func (uv *unifiedView) MoveDown() {
 	uv.cursor++
 	if uv.cursor >= total {
 		uv.cursor = 0
+		uv.scrollOffset = 0
 	}
 }
 
@@ -347,6 +400,7 @@ func (uv *unifiedView) MoveUp() {
 	uv.cursor--
 	if uv.cursor < 0 {
 		uv.cursor = total - 1
+		// scrollOffset will be adjusted by View() to show the last item.
 	}
 }
 

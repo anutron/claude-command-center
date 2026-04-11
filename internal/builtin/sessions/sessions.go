@@ -766,6 +766,8 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 // View renders the plugin's current view.
 func (p *Plugin) View(width, height, frame int) string {
 	p.frame = frame
+	p.width = width
+	p.height = height
 	p.newList.SetDelegate(itemDelegate{frame: frame, styles: &p.styles, grad: &p.grad})
 
 	tabBar := p.renderSubTabBar()

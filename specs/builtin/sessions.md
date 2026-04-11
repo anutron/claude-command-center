@@ -343,6 +343,24 @@ For **saved sessions** (Saved sub-tab), the suffix shows project basename and br
 
 For **archived sessions**, the suffix shows how long ago the session ended
 
+### Session List Viewport Scrolling
+
+The session list (Saved, Recent, and Archive modes) scrolls within the available terminal height instead of growing unbounded. The `unifiedView.View(width, height)` method constrains output to fit:
+
+1. Computes `maxVisible = height - 6` (reserving lines for tab bar, hints, and padding); minimum 5
+2. Builds the full line list (section headers + session rows)
+3. If total lines exceed `maxVisible`, applies a scroll window:
+   - Tracks which rendered line the cursor sits on
+   - Adjusts `scrollOffset` to keep the cursor line visible
+   - Renders only `lines[scrollOffset : scrollOffset+maxVisible]`
+   - Shows `▲ N more above` indicator when scrolled past the top
+   - Shows `▼ N more below` indicator when content extends past the bottom
+4. If total lines fit within `maxVisible`, renders all lines and resets `scrollOffset` to 0
+
+Cursor wrap-around (MoveDown past last item → first item) resets `scrollOffset` to 0. Cursor wrap-up (MoveUp past first item → last item) lets `View()` adjust the offset to show the last item.
+
+`ToggleArchive()` resets both `cursor` and `scrollOffset` to 0.
+
 ### Blocked Session Rendering
 
 Blocked sessions are detected by cross-referencing live sessions with daemon agent statuses:
@@ -441,6 +459,15 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 - Switching sub-tabs does not corrupt other sub-tabs' content
 - NavigateTo with `pending_todo_title` arg sets pending launch context and shows banner
 - Esc with pending todo clears it, publishes `pending.todo.cancel`, navigates to command-center
+
+### Session list viewport scrolling
+
+- With 30 sessions in a 20-line terminal, view output is bounded (not all 30+ lines rendered)
+- "more below" indicator appears when items extend past the viewport
+- Scrolling cursor down past the viewport shows "more above" indicator and keeps cursor item visible
+- With 3 sessions in a 38-line terminal, all items render with no scroll indicators
+- Cursor wrap from bottom to top resets scroll to top
+- Toggle archive resets scroll offset
 
 ### Blocked sessions
 

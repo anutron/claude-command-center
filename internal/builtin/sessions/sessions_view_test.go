@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -547,4 +548,90 @@ func TestView_LiveSessionTopicWithProjectAndBranch(t *testing.T) {
 	// Suffix should show project basename and branch.
 	assertViewContains(t, view, "myproject")
 	assertViewContains(t, view, "(main)")
+}
+
+// ---------------------------------------------------------------------------
+// Session List Viewport Scrolling
+// ---------------------------------------------------------------------------
+
+func TestView_SessionListScrollsWithinHeight(t *testing.T) {
+	p := setupPlugin(t)
+	// Switch to Recent sub-tab to see live sessions.
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+
+	// Create 30 live sessions — more than any reasonable terminal height.
+	var sessions []daemon.SessionInfo
+	for i := 0; i < 30; i++ {
+		sessions = append(sessions, daemon.SessionInfo{
+			SessionID:    fmt.Sprintf("scroll-%03d", i),
+			Topic:        fmt.Sprintf("Session %d", i),
+			Project:      fmt.Sprintf("/home/user/project-%d", i),
+			Branch:       "main",
+			State:        "active",
+			RegisteredAt: db.FormatTime(time.Now().Add(-time.Duration(i) * time.Hour)),
+		})
+	}
+	p.unified.liveSessions = sessions
+
+	// Render with a small terminal height (20 lines total).
+	view := p.View(120, 20, 0)
+	lines := strings.Split(view, "\n")
+
+	// The output should be bounded — not all 30+ lines rendered.
+	if len(lines) > 25 {
+		t.Errorf("expected view to be constrained by height, got %d lines", len(lines))
+	}
+
+	// First few sessions should be visible.
+	assertViewContains(t, view, "Session 0")
+	// "more below" indicator should appear.
+	assertViewContains(t, view, "more below")
+}
+
+func TestView_SessionListScrollsOnCursorDown(t *testing.T) {
+	p := setupPlugin(t)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+
+	var sessions []daemon.SessionInfo
+	for i := 0; i < 30; i++ {
+		sessions = append(sessions, daemon.SessionInfo{
+			SessionID:    fmt.Sprintf("scroll-%03d", i),
+			Topic:        fmt.Sprintf("Session %d", i),
+			Project:      fmt.Sprintf("/home/user/project-%d", i),
+			Branch:       "main",
+			State:        "ended",
+			RegisteredAt: db.FormatTime(time.Now().Add(-time.Duration(i) * time.Hour)),
+		})
+	}
+	p.unified.liveSessions = sessions
+
+	// Move cursor down past the visible window.
+	for i := 0; i < 18; i++ {
+		p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	}
+
+	view := p.View(120, 20, 0)
+	// The cursor item (Session 18) should be visible.
+	assertViewContains(t, view, "Session 18")
+	// "more above" indicator should appear since we scrolled past the top.
+	assertViewContains(t, view, "more above")
+}
+
+func TestView_SessionListNoScrollWhenFitsInHeight(t *testing.T) {
+	p := setupPlugin(t)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+
+	// Only 3 sessions — should fit without scrolling.
+	p.unified.liveSessions = []daemon.SessionInfo{
+		{SessionID: "a", Topic: "Alpha", State: "active", RegisteredAt: db.FormatTime(time.Now())},
+		{SessionID: "b", Topic: "Beta", State: "active", RegisteredAt: db.FormatTime(time.Now())},
+		{SessionID: "c", Topic: "Gamma", State: "active", RegisteredAt: db.FormatTime(time.Now())},
+	}
+
+	view := p.View(120, 38, 0)
+	assertViewContains(t, view, "Alpha")
+	assertViewContains(t, view, "Beta")
+	assertViewContains(t, view, "Gamma")
+	assertViewNotContains(t, view, "more above")
+	assertViewNotContains(t, view, "more below")
 }
