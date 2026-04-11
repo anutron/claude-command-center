@@ -129,7 +129,7 @@ Refresh locking uses `syscall.Flock()` for atomic advisory file locking (`intern
 
 | Source | Auth | Data |
 |--------|------|------|
-| Google Calendar | OAuth2 token from `~/.config/google-calendar-mcp/` | Today/tomorrow events from configured calendar IDs |
+| Google Calendar | OAuth2 token from `~/.config/google-calendar-mcp/` | Today/tomorrow events from configured calendar IDs. DateTime strings parsed with fallback chain: RFC3339, RFC3339Nano, bare datetime (no timezone, treated as UTC). Parse failures are logged with the calendar ID, raw value, and event title. |
 | Gmail | OAuth2 token from `~/.gmail-mcp/work.json` | Unread emails from last 3 days |
 | GitHub | `gh` CLI auth | Open PRs authored by user, with review comment counts |
 | Slack | `SLACK_BOT_TOKEN` env var | Messages with commitment language + thread context |
@@ -149,6 +149,8 @@ Refresh locking uses `syscall.Flock()` for atomic advisory file locking (`intern
 - OAuth state parameter is random and validated on callback
 - PKCE code verifier/challenge generated per flow and round-trips correctly
 - Lock file acquired atomically via flock (concurrent acquisition returns ErrAlreadyLocked)
+- Calendar datetime parsing handles RFC3339, RFC3339Nano, and bare datetime without timezone
+- Calendar datetime parse failures are logged (not silently swallowed)
 - Calendar replaced entirely on merge
 - Dismissed todo never recreated from fresh data
 - Existing todo updated (preserves ID, status, created_at)

@@ -139,11 +139,15 @@ func listEvents(ctx context.Context, srv *gcal.Service, calendarID string, timeM
 				ev.End = t
 			}
 		} else {
-			if t, err := time.Parse(time.RFC3339, item.Start.DateTime); err == nil {
+			if t, err := parseDateTime(item.Start.DateTime); err == nil {
 				ev.Start = t
+			} else {
+				log.Printf("calendar %s: unparseable start datetime %q for %q: %v", calendarID, item.Start.DateTime, item.Summary, err)
 			}
-			if t, err := time.Parse(time.RFC3339, item.End.DateTime); err == nil {
+			if t, err := parseDateTime(item.End.DateTime); err == nil {
 				ev.End = t
+			} else {
+				log.Printf("calendar %s: unparseable end datetime %q for %q: %v", calendarID, item.End.DateTime, item.Summary, err)
 			}
 		}
 
@@ -158,6 +162,26 @@ func listEvents(ctx context.Context, srv *gcal.Service, calendarID string, timeM
 	}
 
 	return result, nil
+}
+
+// parseDateTime tries multiple datetime formats that Google Calendar may return.
+// The API nominally uses RFC3339 but Exchange-synced calendars, external iCal
+// subscriptions, and recurring-event expansions sometimes produce variants
+// (e.g., missing timezone offset, fractional seconds with offset).
+func parseDateTime(s string) (time.Time, error) {
+	formats := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05",       // no timezone (treat as UTC)
+		"2006-01-02T15:04:05-07:00", // explicit, same as RFC3339 but for clarity
+		"2006-01-02T15:04:05Z07:00", // Go's RFC3339 constant (redundant, but safe)
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("no known format matched %q", s)
 }
 
 // autoAccept accepts pending events from organizers matching the given domains.
