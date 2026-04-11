@@ -2323,6 +2323,72 @@ func TestNotifyMsgAgentFinishedRouting(t *testing.T) {
 	}
 }
 
+func TestNotifyMsgAgentStartedPersistsLogPath(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].Status = db.StatusRunning
+
+	// Send an agent.started NotifyMsg with a log path — this is what the
+	// daemon broadcasts when an agent session starts.
+	msg := plugin.NotifyMsg{
+		Event: "agent.started",
+		Data:  []byte(`{"id":"t1","status":"processing","log_path":"/tmp/test-session.jsonl"}`),
+	}
+	handled, action := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("expected HandleMessage to handle agent.started NotifyMsg")
+	}
+	if action.TeaCmd == nil {
+		t.Fatal("expected non-nil TeaCmd for DB persistence")
+	}
+	// Verify in-memory update
+	if p.cc.Todos[0].SessionLogPath != "/tmp/test-session.jsonl" {
+		t.Errorf("expected SessionLogPath %q, got %q", "/tmp/test-session.jsonl", p.cc.Todos[0].SessionLogPath)
+	}
+}
+
+func TestNotifyMsgAgentStartedNoLogPath(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.cc.Todos[0].Status = db.StatusRunning
+
+	// Send an agent.started NotifyMsg without a log path.
+	msg := plugin.NotifyMsg{
+		Event: "agent.started",
+		Data:  []byte(`{"id":"t1","status":"processing"}`),
+	}
+	handled, action := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("expected HandleMessage to handle agent.started NotifyMsg")
+	}
+	// No log path means no DB write needed
+	if action.TeaCmd != nil {
+		t.Error("expected nil TeaCmd when no log path is present")
+	}
+	// SessionLogPath should remain empty
+	if p.cc.Todos[0].SessionLogPath != "" {
+		t.Errorf("expected empty SessionLogPath, got %q", p.cc.Todos[0].SessionLogPath)
+	}
+}
+
+func TestNotifyMsgAgentStartedUnknownID(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	// Send an agent.started for a todo ID that doesn't exist.
+	msg := plugin.NotifyMsg{
+		Event: "agent.started",
+		Data:  []byte(`{"id":"nonexistent","log_path":"/tmp/test.jsonl"}`),
+	}
+	handled, _ := p.HandleMessage(msg)
+	if !handled {
+		t.Fatal("expected HandleMessage to handle agent.started NotifyMsg even for unknown ID")
+	}
+	// Verify no panic and no side effects on existing todos
+	for _, todo := range p.cc.Todos {
+		if todo.SessionLogPath != "" {
+			t.Errorf("todo %s should not have SessionLogPath set, got %q", todo.ID, todo.SessionLogPath)
+		}
+	}
+}
+
 func TestBUG124_AutoExpandSetsTriageFilterAll(t *testing.T) {
 	p := testPlugin(t)
 	p.height = 30

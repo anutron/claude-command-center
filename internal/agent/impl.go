@@ -121,6 +121,7 @@ func (r *defaultRunner) Status(id string) *SessionStatus {
 		SessionID: sess.SessionID,
 		Question:  sess.Question,
 		StartedAt: sess.StartedAt,
+		LogPath:   sess.LogPath,
 	}
 }
 

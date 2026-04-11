@@ -216,6 +216,8 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 				if p.database != nil && time.Since(p.ccLastWrite) > 2*time.Second {
 					return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
 				}
+			case "agent.started":
+				return p.handleDaemonAgentStarted(nm.Data)
 			case "agent.finished":
 				// Daemon-managed agent completed. Parse the event data and run
 				// the same completion logic as locally-managed agents.
@@ -986,6 +988,25 @@ func (p *Plugin) handleLaunchMsg(msg plugin.LaunchMsg) (bool, plugin.Action) {
 		}
 	}
 	return false, plugin.NoopAction() // Let host continue with the launch
+}
+
+// handleDaemonAgentStarted processes an agent.started event from the daemon.
+// It extracts the LogPath and persists it to the todo's session_log_path column
+// so completed agents can be replayed from disk.
+func (p *Plugin) handleDaemonAgentStarted(data []byte) (bool, plugin.Action) {
+	var payload struct {
+		ID      string `json:"id"`
+		LogPath string `json:"log_path"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.ID == "" {
+		return false, plugin.NoopAction()
+	}
+
+	if payload.LogPath != "" {
+		p.setTodoSessionLogPath(payload.ID, payload.LogPath)
+		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionLogPath(payload.ID, payload.LogPath)}
+	}
+	return true, plugin.NoopAction()
 }
 
 // handleDaemonAgentFinished processes an agent.finished event from the daemon.

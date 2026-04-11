@@ -144,6 +144,7 @@ type SessionStatus struct {
 	SessionID string
 	Question  string
 	StartedAt time.Time
+	LogPath   string
 }
 
 // SessionInfo is a lightweight view for listing active sessions.

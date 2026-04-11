@@ -41,9 +41,24 @@ Manages headless Claude Code agent sessions from within CCC. Provides process li
 
 ## Behavior
 
+### SessionStatus
+
+The `SessionStatus` struct returned by `Runner.Status()` includes:
+
+- `ID` — agent request ID
+- `Status` — current status string
+- `SessionID` — Claude session UUID
+- `Question` — question text when blocked
+- `StartedAt` — session start time
+- `LogPath` — path to the CCC session log file (`~/.config/ccc/data/session-logs/<timestamp>_<id>.jsonl`)
+
+`LogPath` is set when the session is created and remains stable for the session's lifetime. It is included in daemon RPC responses (`AgentStatusResult`) and in `agent.started` broadcast events so the TUI can persist it to the todo's `session_log_path` DB column for post-completion replay.
+
 ### TUI Consumption Model
 
 TUI consumers (plugins) receive agent state exclusively via daemon push events (`agent.started`, `agent.finished`, `agent.session_id`, `agent.cost_updated`), not local runner messages. The command center plugin has no local agent runner — all agent operations go through daemon RPCs. The PR plugin retains a local runner as a fallback but prefers the daemon path when connected.
+
+The `agent.started` event includes the session's `LogPath` so the command center can immediately persist the log path to the todo's `session_log_path` DB column. This ensures completed agents can be replayed from disk even after the in-memory session is cleaned up.
 
 ### Runner (core process lifecycle)
 

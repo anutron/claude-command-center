@@ -196,9 +196,12 @@ If the agent fails before the goroutine starts (stdout pipe, stdin pipe, or `cmd
 
 ### Log Path Persistence
 
-The log file path is stored on the todo in the `session_log_path` DB column (`Todo.SessionLogPath` field). The path is computed deterministically from the todo ID and current timestamp **before** the background goroutine starts, stored on the `agent.Session.LogPath` field (accessed via `agentRunner.Session(id)`), and persisted to the DB when `agentStartedInternalMsg` is handled.
+The log file path is stored on the todo in the `session_log_path` DB column (`Todo.SessionLogPath` field). The path is computed deterministically from the todo ID and current timestamp **before** the background goroutine starts, stored on the `agent.Session.LogPath` field, and persisted to the DB via two mechanisms:
 
-This enables the session viewer to replay logs from disk after the agent finishes and the in-memory session is cleaned up.
+1. **Daemon broadcast**: When the daemon starts an agent, it broadcasts an `agent.started` event that includes the `LogPath`. The command center handles this event by calling `setTodoSessionLogPath` (in-memory) and `persistSessionLogPath` (DB write).
+2. **Agent status RPC**: The `AgentStatusResult` and `handleListAgents` responses include `LogPath`, so the TUI can retrieve it on demand.
+
+This ensures completed agents can be replayed from disk even after the in-memory session is cleaned up by `CleanupFinished`.
 
 ### Replay from Disk (`initSessionViewerFromLog`)
 

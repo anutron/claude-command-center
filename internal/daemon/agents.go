@@ -44,6 +44,7 @@ type AgentStatusResult struct {
 	SessionID string `json:"session_id,omitempty"`
 	Question  string `json:"question,omitempty"`
 	StartedAt string `json:"started_at,omitempty"`
+	LogPath   string `json:"log_path,omitempty"`
 }
 
 // Agent dispatch handlers on the Server.
@@ -95,6 +96,7 @@ func (s *Server) handleLaunchAgent(req *RPCRequest) (interface{}, *RPCError) {
 					ID:        started.ID,
 					Status:    "processing",
 					StartedAt: time.Now().Format(time.RFC3339),
+					LogPath:   started.Session.LogPath,
 				})
 				s.Broadcast(Event{
 					Type: "agent.started",
@@ -163,6 +165,7 @@ func (s *Server) handleAgentStatus(req *RPCRequest) (interface{}, *RPCError) {
 		Status:    status.Status,
 		SessionID: status.SessionID,
 		Question:  status.Question,
+		LogPath:   status.LogPath,
 	}
 	if !status.StartedAt.IsZero() {
 		result.StartedAt = status.StartedAt.Format(time.RFC3339)
@@ -296,6 +299,7 @@ func (s *Server) drainNextAgent() {
 						ID:        started.ID,
 						Status:    "processing",
 						StartedAt: time.Now().Format(time.RFC3339),
+						LogPath:   started.Session.LogPath,
 					})
 					s.Broadcast(Event{
 						Type: "agent.started",
