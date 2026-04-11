@@ -212,15 +212,16 @@ Manual todos created via `t` enter as `backlog` directly (skip `new`).
 
 When the expanded multi-column view is active, a tab bar appears below the header showing filter categories:
 
-| Tab | Shows statuses |
-|-----|---------------|
+| Tab | Shows |
+|-----|-------|
+| focus | todos where `Focus == true` |
 | todo | `backlog` |
 | inbox | `new` |
 | agents | `enqueued`, `running`, `blocked` |
 | review | `review`, `failed` |
 | all | all non-terminal (everything except `completed`, `dismissed`) |
 
-- **Tab order**: todo, inbox, agents, review, all
+- **Tab order**: focus, todo, inbox, agents, review, all
 - **Default tab**: todo
 - `tab` cycles filter forward, `shift+tab` cycles backward
 - Switching tabs resets cursor and scroll offset to 0
@@ -229,8 +230,19 @@ When the expanded multi-column view is active, a tab bar appears below the heade
 
 In the normal (collapsed) view:
 
-- **Todo list** shows all non-new todos (backlog, running, review, enqueued, blocked, failed)
+- **Todo list** shows only starred todos (`Starred == true`); sorted starred-first within results
+- **Nudge message** "No starred items. Press space to expand, f to focus, s to star." renders when no starred todos exist (replaces empty-list message)
 - **Triage status bar** appears below the todo list showing counts per tab — only displayed if any count is non-zero
+
+#### Star Indicators
+
+Todos render a star prefix character in both collapsed and expanded views:
+
+- **Starred** (`Starred == true`): yellow `★ ` prefix
+- **Focused-not-starred** (`Focus == true` and `Starred == false`): gray `☆ ` prefix
+- **Neither**: no prefix (2 spaces of padding to align with starred items)
+
+Title max-width is reduced by 2 to account for the star prefix character.
 
 #### Triage Actions
 

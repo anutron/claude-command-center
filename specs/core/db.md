@@ -43,7 +43,7 @@ All types are exported for use by other packages:
 - `CalendarData` -- today/tomorrow event lists
 - `CalendarEvent` -- title, start/end times, all-day, declined, calendar_id
 - `CalendarConflict` -- overlap between two events
-- `Todo` -- task with status, source, due date, effort, project_dir, session_id, source_context, source_context_at, etc.
+- `Todo` -- task with status, source, due date, effort, project_dir, session_id, source_context, source_context_at, focus (bool), starred (bool), etc.
 - `Suggestions` -- AI-generated focus and ranked todo ordering with per-todo reasons
 - `PendingAction` -- queued actions (e.g., calendar bookings)
 - `Warning` -- system warnings (source, message, timestamp)
@@ -69,7 +69,7 @@ All types are exported for use by other packages:
 1. `OpenDB(dbPath)` creates directories, opens SQLite, sets WAL + busy_timeout + synchronous=NORMAL, max 1 connection, runs `migrateSchema`
 2. Schema creates 16 tables: `cc_todos`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`, `cc_source_sync`, `cc_todo_merges`, `cc_pull_requests`, `cc_sessions`, `cc_automation_runs`, `cc_agent_costs`, `cc_budget_state`, `cc_archived_sessions`, `cc_ignored_repos`
 3. Unique indexes on `source_ref` for todos and pull requests (WHERE NOT NULL/empty). The `idx_cc_todos_source_ref` index excludes soft-deleted rows (`WHERE source_ref IS NOT NULL AND source_ref != '' AND deleted_at IS NULL`)
-4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos, `deleted_at` (TEXT, nullable) on todos
+4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos, `deleted_at` (TEXT, nullable) on todos, `focus` (BOOLEAN, default false) on todos, `starred` (BOOLEAN, default false) on todos
 5. Post-DDL migration fixes duplicate `sort_order` values on `cc_learned_paths` using `ROW_NUMBER()` window function
 
 ### Todo Operations

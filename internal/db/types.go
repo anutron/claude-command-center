@@ -198,6 +198,8 @@ type Todo struct {
 	SessionLogPath string     `json:"session_log_path,omitempty"`
 	SourceContext    string     `json:"source_context,omitempty"`
 	SourceContextAt  string     `json:"source_context_at,omitempty"`
+	Focus          bool       `json:"focus"`
+	Starred        bool       `json:"starred"`
 	CreatedAt      time.Time  `json:"created_at"`
 	CompletedAt    *time.Time `json:"completed_at"`
 	MergeInto      string     `json:"-"` // transient — not persisted to DB
