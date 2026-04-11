@@ -276,7 +276,7 @@ When the expanded multi-column view is active, a tab bar appears below the heade
 |-----|-------|
 | Focus | todos where `Focus == true` |
 | New | `new` status items (formerly "Inbox") |
-| Backlog | `completed`, `dismissed` items (terminal states) |
+| Backlog | `backlog` status items (accepted, not yet in focus) |
 | Agents | `enqueued`, `running`, `blocked` |
 | Review | `review`, `failed` |
 | All | all non-terminal (everything except `completed`, `dismissed`) |
@@ -773,7 +773,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Defer (d) moves todo to bottom
 - Promote (p) moves todo to top
 - Shift+up/down swaps todo with neighbor, persists via DB sort_order swap (transaction-based)
-- Toggle backlog (b) switches the primary todo list between active and completed/dismissed items; when active, `filteredTodos()` returns `CompletedTodos()` and the panel header shows "BACKLOG (N completed)" instead of "TODOS (N active)"; pressing `b` again returns to the active view; cursor resets to 0 on toggle
+- `b` key jumps to the Backlog tab (expands view if collapsed, sets triageFilter to "backlog"), showing items with `StatusBacklog` (accepted but not in focus)
 - Booking mode enter/exit and duration selection
 - Calendar event line (time + title + duration) fits on a single line within the panel border — duration does not wrap to a new line
 - View renders without panic (with and without data)

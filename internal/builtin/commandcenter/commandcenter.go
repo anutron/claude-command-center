@@ -616,8 +616,12 @@ func (p *Plugin) filteredTodos() []db.Todo {
 				}
 			}
 		case "backlog":
-			// Backlog tab: show completed/dismissed items.
-			result = p.cc.CompletedTodos()
+			// Backlog tab: show items with backlog status (accepted, not in focus).
+			for _, t := range allActive {
+				if t.Status == db.StatusBacklog {
+					result = append(result, t)
+				}
+			}
 		case "agents":
 			for _, t := range allActive {
 				if t.Status == db.StatusEnqueued || t.Status == db.StatusRunning || t.Status == db.StatusBlocked {
@@ -676,7 +680,7 @@ func (p *Plugin) triageCounts() map[string]int {
 		}
 		switch t.Status {
 		case db.StatusBacklog:
-			counts["todo"]++
+			counts["backlog"]++
 		case db.StatusNew:
 			counts["new"]++
 		case db.StatusEnqueued, db.StatusRunning, db.StatusBlocked:
@@ -684,10 +688,6 @@ func (p *Plugin) triageCounts() map[string]int {
 		case db.StatusReview, db.StatusFailed:
 			counts["review"]++
 		}
-	}
-	// Backlog count comes from completed/dismissed items
-	if p.cc != nil {
-		counts["backlog"] = len(p.cc.CompletedTodos())
 	}
 	return counts
 }

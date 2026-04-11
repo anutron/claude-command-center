@@ -1841,11 +1841,11 @@ func TestView_BacklogTabShowsCompletedItems(t *testing.T) {
 	}
 
 	view = renderView(p)
-	// Completed items should be visible
-	viewContains(t, view, "Completed task bravo")
-	viewContains(t, view, "Dismissed task charlie")
-	// Active items should NOT be in the backlog tab
-	viewNotContains(t, view, "Active task alpha")
+	// Backlog status items should be visible
+	viewContains(t, view, "Active task alpha")
+	// Completed/dismissed items should NOT be in the backlog tab
+	viewNotContains(t, view, "Completed task bravo")
+	viewNotContains(t, view, "Dismissed task charlie")
 }
 
 func TestView_BacklogTabResetsCursor(t *testing.T) {
@@ -1873,10 +1873,10 @@ func TestView_BacklogTabResetsCursor(t *testing.T) {
 func TestView_BacklogTabEmptyState(t *testing.T) {
 	now := time.Now()
 	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Only active", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true},
+		{ID: "t1", Title: "Only new", Status: db.StatusNew, Source: "github", CreatedAt: now},
 	})
 
-	// Press b to jump to backlog — no completed items
+	// Press b to jump to backlog — no backlog-status items
 	p.HandleKey(keyMsg("b"))
 	view := renderView(p)
 	// Should show "No active todos" (expanded view empty state)
@@ -1894,8 +1894,8 @@ func TestView_BacklogTabCountInTabBar(t *testing.T) {
 
 	p.HandleKey(keyMsg("b"))
 	view := renderView(p)
-	// Tab bar should show Backlog count
-	viewContains(t, view, "Backlog (2)")
+	// Tab bar should show Backlog count (items with StatusBacklog, not completed)
+	viewContains(t, view, "Backlog (1)")
 }
 
 // ---------------------------------------------------------------------------
