@@ -275,7 +275,7 @@ Todos render a star prefix character in both collapsed and expanded views:
 - **Focused-not-starred** (`Focus == true` and `Starred == false`): gray `☆ ` prefix
 - **Neither**: no prefix (2 spaces of padding to align with starred items)
 
-Title max-width is reduced by 2 to account for the star prefix character.
+Title max-width is reduced by 2 to account for the star prefix character. Both collapsed and expanded views compute the available title width dynamically based on the display-ID digit count, pointer width, separator, and star prefix to prevent line overflow.
 
 #### Triage Actions
 
@@ -759,6 +759,8 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - handleRefreshFinished respects write cooldown — skips DB reload if a dbWriteCmd was issued within last 2 seconds (prevents star/focus loss from stale reload after ai-cron completes)
 - Starred todos sort before non-starred todos within any filtered view
 - Starring an inbox item (status "new") auto-accepts it via AcceptTodo, moving it from Inbox to Todo tab
+- Star prefix width (2 chars) is included in title max-width calculation for both collapsed and expanded views — prevents line overflow and visual duplication (BUG-136)
+- Collapsed view computes title max-width per-item based on display-ID digit count
 - HandleMessage processes async results
 - Expanded view navigation (left/right columns)
 - Expanded view left/right paginates at column edges

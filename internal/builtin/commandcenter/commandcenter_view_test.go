@@ -12,6 +12,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/plugin"
 	"github.com/anutron/claude-command-center/internal/ui"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // ---------------------------------------------------------------------------
@@ -1758,4 +1759,144 @@ func TestView_BacklogHeaderShowsCount(t *testing.T) {
 	p.HandleKey(keyMsg("b"))
 	view := renderView(p)
 	viewContains(t, view, "BACKLOG (2 completed)")
+}
+
+// ---------------------------------------------------------------------------
+// BUG-136: Star toggle duplicate line rendering
+// ---------------------------------------------------------------------------
+
+func TestView_StarToggleNoDuplicateLine(t *testing.T) {
+	// BUG-136: After pressing 's' to star a todo, the title must appear exactly
+	// once in the todo list area. The flash message adds a second occurrence of the
+	// title (without the display-ID number), so we check "153." appears only once.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Build the Thanx Security Plugin", DisplayID: 153, Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.ccExpandedCols = 1
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Press 's' to star
+	p.HandleKey(keyMsg("s"))
+
+	view := renderView(p)
+
+	// "153." must appear exactly once — it only lives in the todo list, not the flash.
+	numCount := strings.Count(view, "153.")
+	if numCount != 1 {
+		t.Errorf("after starring: expected '153.' exactly 1 time, got %d\nView:\n%s", numCount, view)
+	}
+
+	// The flash message should be present (schedule offer)
+	viewContains(t, view, "Schedule time")
+}
+
+func TestView_StarToggleExpandedTitleMaxWidth(t *testing.T) {
+	// Verify that long titles with stars don't wrap inside the column, which would
+	// produce a duplicate-looking line (BUG-136 root cause).
+	longTitle := "Build the Thanx Security Plugin with extensive documentation and comprehensive testing coverage for all modules"
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: longTitle, DisplayID: 153, Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+	})
+	p.ccExpanded = true
+	p.ccExpandedCols = 2
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	view := renderView(p)
+
+	// "153." must appear exactly once — no wrapping should duplicate the prefix.
+	numCount := strings.Count(view, "153.")
+	if numCount != 1 {
+		t.Errorf("long title 2-col: expected '153.' exactly 1 time, got %d\nView:\n%s", numCount, view)
+	}
+}
+
+func TestView_StarPrefixWidthExpandedItem(t *testing.T) {
+	// Directly verify renderExpandedTodoItem produces exactly 2 lines for both
+	// starred and unstarred items at various column widths.
+	p := testPlugin(t)
+
+	todo := db.Todo{
+		ID: "t1", Title: "Build the Thanx Security Plugin", DisplayID: 153,
+		Status: db.StatusBacklog, Source: "manual", Starred: true,
+	}
+
+	for _, colWidth := range []int{40, 50, 58, 60, 80, 120} {
+		rendered := renderExpandedTodoItem(&p.styles, &p.grad, todo, 153, true, colWidth, 0, false)
+		lineCount := strings.Count(rendered, "\n") + 1
+		if lineCount != 2 {
+			t.Errorf("starred item at width %d: expected 2 lines, got %d\nRendered:\n%q", colWidth, lineCount, rendered)
+		}
+	}
+}
+
+func TestView_StarPrefixWidthOverflow(t *testing.T) {
+	// Verify that the star prefix width is properly accounted for in the
+	// expanded view. A title filling the full titleMax should NOT cause
+	// the rendered line to exceed maxWidth (which would cause lipgloss
+	// to wrap, producing extra lines).
+	p := testPlugin(t)
+
+	// At colWidth=58: current prefixWidth = 2 + len("153. ") = 7
+	// titleMax = 58 - 7 = 51
+	// line width = pointer(2) + num(3) + ". "(2) + star(2) + title(51) = 60
+	// This overflows colWidth=58 by 2!
+	colWidth := 58
+	title := strings.Repeat("A", 60) // long enough to fill titleMax after truncation
+
+	todo := db.Todo{
+		ID: "t1", Title: title, DisplayID: 153,
+		Status: db.StatusBacklog, Source: "manual", Starred: true,
+	}
+
+	rendered := renderExpandedTodoItem(&p.styles, &p.grad, todo, 153, true, colWidth, 0, false)
+
+	// The item should produce exactly 2 lines (title + details).
+	// If the title line overflows maxWidth, lipgloss column wrapping in
+	// renderExpandedTodoView will split it into more lines.
+	lines := strings.Split(rendered, "\n")
+	if len(lines) != 2 {
+		t.Errorf("starred item at colWidth=%d with max-length title: expected 2 lines, got %d\nRendered:\n%q", colWidth, len(lines), rendered)
+	}
+
+	// Additionally, the visual width of line1 should not exceed colWidth.
+	line1Width := lipgloss.Width(lines[0])
+	if line1Width > colWidth {
+		t.Errorf("line1 visual width (%d) exceeds colWidth (%d) — star prefix width not accounted for\nLine1: %q", line1Width, colWidth, lines[0])
+	}
+}
+
+func TestView_CollapsedStarPrefixWidthOverflow(t *testing.T) {
+	// In the collapsed view, titleMaxWidth = width - 8.
+	// But for 3-digit display IDs, the actual prefix is wider:
+	// pointer(2) + numStr(3) + ". "(2) + star(2) + title = contentWidth + numLen - 4
+	// For numLen=3: contentWidth - 1 (fits)
+	// For numLen=4: contentWidth (fits exactly)
+	// For numLen=1: contentWidth - 3 (fits)
+	// Actually: line = 2 + numLen + 2 + 2 + (width-8) = numLen + width - 2
+	// For numLen=3: 3 + width - 2 = width + 1 -> OVERFLOWS by 1!
+	p := testPlugin(t)
+
+	contentWidth := 50 // simulate content area
+
+	todo := db.Todo{
+		ID: "t1", Title: strings.Repeat("B", 100), DisplayID: 153,
+		Status: db.StatusBacklog, Source: "manual", Starred: true,
+	}
+
+	todos := []db.Todo{todo}
+	rendered := renderTodoPanel(&p.styles, &p.grad, todos, nil, 0, 0, 5, contentWidth, 0, "", nil, 3, false)
+
+	// Find the line with "153."
+	for _, line := range strings.Split(rendered, "\n") {
+		if strings.Contains(line, "153.") {
+			w := lipgloss.Width(line)
+			if w > contentWidth {
+				t.Errorf("collapsed todo line visual width (%d) exceeds contentWidth (%d)\nLine: %q", w, contentWidth, line)
+			}
+			break
+		}
+	}
 }

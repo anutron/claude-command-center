@@ -485,19 +485,19 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 		lines = append(lines, s.CalendarTime.Render(fmt.Sprintf("  \u25b2 %d more above", visStart)))
 	}
 
-	titleMaxWidth := width - 8
-	if titleMaxWidth < 20 {
-		titleMaxWidth = 20
-	}
-
 	for i := visStart; i < visEnd; i++ {
 		todo := todos[i]
 
 		isLoading := loadingTodoID != "" && todo.ID == loadingTodoID
 
 		prefix := starPrefix(s, todo)
-		title := truncateToWidth(flattenTitle(todo.Title), titleMaxWidth)
 		numStr := fmt.Sprintf("%d", todo.DisplayID)
+		// pointer(2) + numStr + ". "(2) + star(2) + title = width
+		titleMaxWidth := width - 6 - len(numStr)
+		if titleMaxWidth < 20 {
+			titleMaxWidth = 20
+		}
+		title := truncateToWidth(flattenTitle(todo.Title), titleMaxWidth)
 		if isLoading {
 			numStr = loadingSpinnerChar(frame)
 		}
@@ -739,7 +739,7 @@ var flattenTitle = ui.FlattenTitle
 
 func renderExpandedTodoItem(s *ccStyles, g *gradientColors, todo db.Todo, num int, isCursor bool, maxWidth int, frame int, isLoading bool) string {
 	prefix := fmt.Sprintf("%d. ", num)
-	prefixWidth := 2 + len(prefix)
+	prefixWidth := 2 + len(prefix) + 2 // +2 for star prefix (★·☆·spaces)
 	titleMax := maxWidth - prefixWidth
 	if titleMax < 10 {
 		titleMax = 10
