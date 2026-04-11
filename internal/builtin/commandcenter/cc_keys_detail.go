@@ -118,21 +118,21 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "j":
-		// Next todo
-		activeTodos := p.cc.ActiveTodos()
+		// Next todo in the current filtered list (respects triage tab)
+		filtered := p.filteredTodos()
 		idx := p.detailTodoActiveIndex()
-		if idx >= 0 && idx < len(activeTodos)-1 {
-			p.detailTodoID = activeTodos[idx+1].ID
+		if idx >= 0 && idx < len(filtered)-1 {
+			p.detailTodoID = filtered[idx+1].ID
 			p.detailSelectedField = 0
 			p.detailVP.GotoTop()
 		}
 		return plugin.ConsumedAction()
 	case "k":
-		// Previous todo
-		activeTodos := p.cc.ActiveTodos()
+		// Previous todo in the current filtered list (respects triage tab)
+		filtered := p.filteredTodos()
 		idx := p.detailTodoActiveIndex()
 		if idx > 0 {
-			p.detailTodoID = activeTodos[idx-1].ID
+			p.detailTodoID = filtered[idx-1].ID
 			p.detailSelectedField = 0
 			p.detailVP.GotoTop()
 		}

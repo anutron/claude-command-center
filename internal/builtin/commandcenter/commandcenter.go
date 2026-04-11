@@ -983,12 +983,13 @@ func (p *Plugin) syncCursorToDetailTodo() {
 	}
 }
 
-// detailTodoActiveIndex returns the index of the detail todo within ActiveTodos(), or -1.
+// detailTodoActiveIndex returns the index of the detail todo within the current
+// filtered list (respecting the active triage tab), or -1.
 func (p *Plugin) detailTodoActiveIndex() int {
 	if p.cc == nil || p.detailTodoID == "" {
 		return -1
 	}
-	for i, t := range p.cc.ActiveTodos() {
+	for i, t := range p.filteredTodos() {
 		if t.ID == p.detailTodoID {
 			return i
 		}

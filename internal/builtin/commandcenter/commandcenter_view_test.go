@@ -1232,6 +1232,61 @@ func TestView_DetailJKResetsScrollPosition(t *testing.T) {
 	}
 }
 
+func TestView_DetailJKNavigatesFilteredListNotAllActive(t *testing.T) {
+	// Bug: j/k in detail view navigated through ALL active todos instead of
+	// the current filtered list. When the Focus tab is active (default),
+	// j/k should only cycle through focused items, skipping non-focused ones.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Focused first", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Focus: true, Starred: true},
+		{ID: "t2", Title: "Not focused", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Focus: false, Starred: false},
+		{ID: "t3", Title: "Focused second", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Focus: true, Starred: true},
+	})
+
+	// Default state: collapsed view, triageFilter="focus"
+	// Collapsed view shows only starred items. Expand to use the focus filter.
+	p.HandleKey(keyMsg(" ")) // expand
+	if !p.ccExpanded {
+		t.Fatal("space should expand the view")
+	}
+	// triageFilter defaults to "focus"
+	if p.triageFilter != "focus" {
+		t.Fatalf("expected triageFilter=focus, got %s", p.triageFilter)
+	}
+
+	// filteredTodos should return only t1 and t3 (focused)
+	filtered := p.filteredTodos()
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 filtered todos on focus tab, got %d", len(filtered))
+	}
+
+	// Enter detail on first focused todo
+	p.HandleKey(keyMsg("enter"))
+	if !p.detailView {
+		t.Fatal("enter should open detail view")
+	}
+	if p.detailTodoID != "t1" {
+		t.Fatalf("expected detail on t1, got %s", p.detailTodoID)
+	}
+
+	// Press j — should navigate to t3 (next focused), NOT t2 (next in all active)
+	p.HandleKey(keyMsg("j"))
+	if p.detailTodoID != "t3" {
+		t.Errorf("expected j to navigate to t3 (next focused), got %s", p.detailTodoID)
+	}
+
+	// Press k — should navigate back to t1
+	p.HandleKey(keyMsg("k"))
+	if p.detailTodoID != "t1" {
+		t.Errorf("expected k to navigate back to t1, got %s", p.detailTodoID)
+	}
+
+	// Press k again — should stay on t1 (no previous focused item)
+	p.HandleKey(keyMsg("k"))
+	if p.detailTodoID != "t1" {
+		t.Errorf("expected k at start to stay on t1, got %s", p.detailTodoID)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Calendar Event Duration Inline (Bug Fix)
 // ---------------------------------------------------------------------------
