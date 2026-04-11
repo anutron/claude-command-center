@@ -80,7 +80,8 @@ func (p *Plugin) renderDetailViewScrollable(width, height int) string {
 // buildDetailBody renders the full detail content for the viewport (no truncation).
 func (p *Plugin) buildDetailBody(s *ccStyles, todo db.Todo, innerWidth int, hasActiveSession bool) string {
 	title := s.SectionHeader.Render(fmt.Sprintf("TODO #%d", todo.DisplayID))
-	todoTitle := lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(todo.Title)
+	star := starPrefix(s, todo)
+	todoTitle := lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(star + todo.Title)
 
 	// Two-column layout for fields
 	colWidth := (innerWidth - 6) / 2
@@ -435,7 +436,7 @@ func (p *Plugin) buildSourcesSection(s *ccStyles, todo db.Todo, innerWidth int) 
 func (p *Plugin) buildDetailHints(s *ccStyles, todo db.Todo, hasActiveSession bool) string {
 	switch p.detailMode {
 	case "viewing":
-		baseHints := "j/k navigate \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch"
+		baseHints := "j/k navigate \u00b7 f focus \u00b7 s star \u00b7 S schedule \u00b7 x done \u00b7 X remove \u00b7 tab cycle \u00b7 enter edit \u00b7 o launch"
 		if todo.Source == "merge" && p.cc != nil && len(db.DBGetOriginalIDs(p.cc.Merges, todo.ID)) > 0 {
 			baseHints += " \u00b7 U unmerge"
 		}

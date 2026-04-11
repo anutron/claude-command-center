@@ -99,6 +99,25 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			p.flashMessageAt = time.Now()
 		}
 		return plugin.ConsumedAction()
+	case "f":
+		// Focus toggle — delegate to the same logic as list view
+		if todo := p.detailTodo(); todo != nil {
+			return p.handleDetailFocusToggle(todo)
+		}
+		return plugin.ConsumedAction()
+	case "s":
+		// Star toggle — delegate to the same logic as list view
+		if todo := p.detailTodo(); todo != nil {
+			return p.handleDetailStarToggle(todo)
+		}
+		return plugin.ConsumedAction()
+	case "S":
+		// Schedule — enter booking mode
+		if todo := p.detailTodo(); todo != nil {
+			p.bookingMode = true
+			p.bookingCursor = 2
+		}
+		return plugin.ConsumedAction()
 	case "j":
 		// Next todo
 		activeTodos := p.cc.ActiveTodos()
@@ -798,4 +817,121 @@ func (p *Plugin) persistSessionID(todoID, sessionID string) {
 	go func() {
 		_ = db.DBUpdateTodoSessionID(p.database, todoID, sessionID)
 	}()
+}
+
+// handleDetailStarToggle handles the 's' key in detail view.
+func (p *Plugin) handleDetailStarToggle(todo *db.Todo) plugin.Action {
+	todoID := todo.ID
+	if !todo.Starred {
+		// Star it
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == todoID {
+				p.cc.Todos[i].Starred = true
+				p.cc.Todos[i].Focus = true
+				break
+			}
+		}
+		p.scheduleOfferMode = true
+		p.flashMessage = "★ " + todo.Title + " — Schedule time? S = yes, any key = skip"
+		p.flashMessageAt = time.Now()
+		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+			return db.DBSetTodoStar(database, todoID, true)
+		})
+		tickCmd := tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return scheduleOfferTimeoutMsg{}
+		})
+		cmds := []tea.Cmd{dbCmd, tickCmd}
+		if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+			cmds = append(cmds, notifyCmd)
+		}
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
+	}
+	// Unstar: check for future bookings
+	futureBookings, _ := db.DBGetFutureBookingsForTodo(p.database, todoID)
+	if len(futureBookings) == 0 {
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == todoID {
+				p.cc.Todos[i].Starred = false
+				break
+			}
+		}
+		p.flashMessage = "Unstarred: " + todo.Title
+		p.flashMessageAt = time.Now()
+		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+			return db.DBSetTodoStar(database, todoID, false)
+		})
+		cmds := []tea.Cmd{dbCmd}
+		if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+			cmds = append(cmds, notifyCmd)
+		}
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
+	}
+	// Future bookings exist — enter confirm mode
+	p.unstarConfirmMode = true
+	p.unstarConfirmTodoID = todoID
+	if len(futureBookings) == 1 {
+		p.flashMessage = "Release calendar block? (y/n)"
+	} else {
+		p.flashMessage = fmt.Sprintf("Release %d calendar blocks? (y/n)", len(futureBookings))
+	}
+	p.flashMessageAt = time.Now()
+	return plugin.ConsumedAction()
+}
+
+// handleDetailFocusToggle handles the 'f' key in detail view.
+func (p *Plugin) handleDetailFocusToggle(todo *db.Todo) plugin.Action {
+	todoID := todo.ID
+	if todo.Focus {
+		// If starred with future bookings, trigger unstar cleanup
+		if todo.Starred {
+			futureBookings, _ := db.DBGetFutureBookingsForTodo(p.database, todoID)
+			if len(futureBookings) > 0 {
+				p.unstarConfirmMode = true
+				p.unstarConfirmTodoID = todoID
+				p.unstarConfirmAlsoUnfocus = true
+				if len(futureBookings) == 1 {
+					p.flashMessage = "Release calendar block? (y/n)"
+				} else {
+					p.flashMessage = fmt.Sprintf("Release %d calendar blocks? (y/n)", len(futureBookings))
+				}
+				p.flashMessageAt = time.Now()
+				return plugin.ConsumedAction()
+			}
+		}
+		// Unfocus
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == todoID {
+				p.cc.Todos[i].Focus = false
+				p.cc.Todos[i].Starred = false
+				break
+			}
+		}
+		p.flashMessage = "Unfocused: " + todo.Title
+		p.flashMessageAt = time.Now()
+		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+			return db.DBSetTodoFocus(database, todoID, false)
+		})
+		cmds := []tea.Cmd{dbCmd}
+		if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+			cmds = append(cmds, notifyCmd)
+		}
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
+	}
+	// Focus it
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == todoID {
+			p.cc.Todos[i].Focus = true
+			break
+		}
+	}
+	p.flashMessage = "Focused: " + todo.Title
+	p.flashMessageAt = time.Now()
+	dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+		return db.DBSetTodoFocus(database, todoID, true)
+	})
+	cmds := []tea.Cmd{dbCmd}
+	if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+		cmds = append(cmds, notifyCmd)
+	}
+	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 }

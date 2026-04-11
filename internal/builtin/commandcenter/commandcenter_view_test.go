@@ -1462,3 +1462,50 @@ func TestView_SortStarredFirst(t *testing.T) {
 		t.Errorf("expected first item to be starred, got %q (starred=%v)", filtered[0].Title, filtered[0].Starred)
 	}
 }
+
+func TestView_DetailShowsStarIndicator(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Starred detail task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true, Focus: true},
+	})
+	p.width = 120
+	p.height = 40
+	// Enter detail view
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := p.View(120, 40, 0)
+	viewContains(t, view, "★")
+	viewContains(t, view, "Starred detail task")
+}
+
+func TestView_DetailShowsFocusIndicator(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Focused detail task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: true},
+	})
+	p.width = 120
+	p.height = 40
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := p.View(120, 40, 0)
+	viewContains(t, view, "☆")
+	viewContains(t, view, "Focused detail task")
+}
+
+func TestView_DetailHintsShowFSKeys(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Detail hints task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+	})
+	p.width = 120
+	p.height = 40
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := p.View(120, 40, 0)
+	viewContains(t, view, "f focus")
+	viewContains(t, view, "s star")
+	viewContains(t, view, "S schedule")
+}
