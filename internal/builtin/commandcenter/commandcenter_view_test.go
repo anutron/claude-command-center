@@ -1380,7 +1380,7 @@ func TestView_HelpOverlayShowsFSKeys(t *testing.T) {
 	// s key entry
 	viewContains(t, view, "Toggle star")
 	// S key entry
-	viewContains(t, view, "Schedule calendar block")
+	viewContains(t, view, "Schedule block")
 	// Old "Schedule time block" entry should be gone
 	viewNotContains(t, view, "Schedule time block for todo")
 }

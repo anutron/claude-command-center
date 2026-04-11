@@ -585,6 +585,10 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 	// --- Todos: delete only IDs we're about to re-insert ---
 	// This preserves any todos created during the refresh window (race-safe).
 	// Todos not in cc.Todos (e.g., manual todos added mid-refresh) survive.
+
+	// Snapshot focus/starred before delete so we can restore them after re-insert.
+	// These are user-set priority flags that must survive refresh cycles.
+	prioritySnapshot := make(map[string][2]bool) // id -> {focus, starred}
 	if len(cc.Todos) > 0 {
 		ids := make([]interface{}, len(cc.Todos))
 		placeholders := make([]string, len(cc.Todos))
@@ -592,6 +596,19 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			ids[i] = t.ID
 			placeholders[i] = "?"
 		}
+		rows, err := tx.Query(`SELECT id, COALESCE(focus, 0), COALESCE(starred, 0) FROM cc_todos WHERE id IN (`+strings.Join(placeholders, ",")+`)`, ids...)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var id string
+				var focusInt, starredInt int
+				if rows.Scan(&id, &focusInt, &starredInt) == nil {
+					prioritySnapshot[id] = [2]bool{focusInt == 1, starredInt == 1}
+				}
+			}
+			rows.Close()
+		}
+
 		query := `DELETE FROM cc_todos WHERE id IN (` + strings.Join(placeholders, ",") + `)`
 		if _, err := tx.Exec(query, ids...); err != nil {
 			return fmt.Errorf("clear known todos: %w", err)
@@ -640,6 +657,22 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			displayID, i, createdAt, completedAt, now)
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)
+		}
+	}
+
+	// Restore focus/starred from snapshot.
+	for id, flags := range prioritySnapshot {
+		if flags[0] || flags[1] {
+			focusVal, starVal := 0, 0
+			if flags[0] {
+				focusVal = 1
+			}
+			if flags[1] {
+				starVal = 1
+			}
+			if _, err := tx.Exec(`UPDATE cc_todos SET focus = ?, starred = ? WHERE id = ?`, focusVal, starVal, id); err != nil {
+				return fmt.Errorf("restore priority for todo %s: %w", id, err)
+			}
 		}
 	}
 

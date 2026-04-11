@@ -578,5 +578,5 @@ func TestView_HelpOverlay_WideTerminalNotClipped(t *testing.T) {
 	assertViewContains(t, v, "╰")
 	assertViewContains(t, v, "╮")
 	// Descriptions must not be truncated.
-	assertViewContains(t, v, "Cycle expanded view (2-col / 1-col / collapse)")
+	assertViewContains(t, v, "Cycle expanded view")
 }

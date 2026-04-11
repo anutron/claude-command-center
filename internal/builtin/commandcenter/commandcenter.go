@@ -182,6 +182,7 @@ type Plugin struct {
 	scheduleOfferMode     bool   // after starring: intercepts next keypress (S=schedule, other=skip)
 	unstarConfirmMode     bool   // after unstarring with future bookings: intercepts y/n
 	unstarConfirmTodoID   string // which todo is pending unstar confirmation
+	unstarConfirmAlsoUnfocus bool // true when confirm was triggered from f-key (should also clear focus)
 
 	// Merge source cursor for unmerge UX in detail view
 	mergeSourceCursor int
@@ -280,7 +281,9 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "X", Description: "Dismiss todo"},
 		{Key: "d", Description: "Defer todo"},
 		{Key: "p", Description: "Promote todo to top"},
-		{Key: "s", Description: "Schedule time block"},
+		{Key: "s", Description: "Star / unstar todo"},
+		{Key: "S", Description: "Schedule time block"},
+		{Key: "f", Description: "Toggle focus"},
 		{Key: "/", Description: "Search/filter todos"},
 		{Key: "y", Description: "Accept todo (triage)"},
 		{Key: "tab", Description: "Cycle triage filter (expanded)"},

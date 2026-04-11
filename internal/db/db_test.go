@@ -429,6 +429,114 @@ func TestDBSaveRefreshResult(t *testing.T) {
 	}
 }
 
+// TestDBSaveRefreshResultPreservesFocusStar verifies that a refresh cycle
+// (DBSaveRefreshResult) does not zero out focus and starred flags that the
+// user set before the refresh ran.
+func TestDBSaveRefreshResultPreservesFocusStar(t *testing.T) {
+	dir := t.TempDir()
+	database, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	now := time.Now()
+
+	// Initial refresh: insert a todo.
+	cc := &CommandCenter{
+		GeneratedAt: now,
+		Todos: []Todo{
+			{ID: "t1", Title: "Todo one", Status: StatusBacklog, Source: "github", CreatedAt: now},
+		},
+	}
+	if err := DBSaveRefreshResult(database, cc); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+
+	// User stars the todo (sets starred=1, focus=1).
+	if err := DBSetTodoStar(database, "t1", true); err != nil {
+		t.Fatalf("DBSetTodoStar: %v", err)
+	}
+
+	// Verify flags are set before second refresh.
+	loaded, err := LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("load after star: %v", err)
+	}
+	var t1 *Todo
+	for i := range loaded.Todos {
+		if loaded.Todos[i].ID == "t1" {
+			t1 = &loaded.Todos[i]
+		}
+	}
+	if t1 == nil {
+		t.Fatal("t1 not found after initial save")
+	}
+	if !t1.Starred {
+		t.Error("t1 should be starred before refresh")
+	}
+	if !t1.Focus {
+		t.Error("t1 should be focused before refresh")
+	}
+
+	// Simulate a second refresh cycle with the same todo (title updated).
+	cc2 := &CommandCenter{
+		GeneratedAt: now.Add(time.Minute),
+		Todos: []Todo{
+			{ID: "t1", Title: "Todo one (updated)", Status: StatusBacklog, Source: "github", CreatedAt: now},
+		},
+	}
+	if err := DBSaveRefreshResult(database, cc2); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+
+	// Focus and starred should survive the refresh.
+	loaded2, err := LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("load after refresh: %v", err)
+	}
+	var t1after *Todo
+	for i := range loaded2.Todos {
+		if loaded2.Todos[i].ID == "t1" {
+			t1after = &loaded2.Todos[i]
+		}
+	}
+	if t1after == nil {
+		t.Fatal("t1 not found after second refresh")
+	}
+	if !t1after.Starred {
+		t.Error("starred flag should be preserved across refresh")
+	}
+	if !t1after.Focus {
+		t.Error("focus flag should be preserved across refresh")
+	}
+	if t1after.Title != "Todo one (updated)" {
+		t.Errorf("title should be updated by refresh, got %q", t1after.Title)
+	}
+
+	// A newly-added todo should default to focus=false, starred=false.
+	cc3 := &CommandCenter{
+		GeneratedAt: now.Add(2 * time.Minute),
+		Todos: []Todo{
+			{ID: "t2", Title: "Brand new todo", Status: StatusBacklog, Source: "github", CreatedAt: now},
+		},
+	}
+	if err := DBSaveRefreshResult(database, cc3); err != nil {
+		t.Fatalf("third save: %v", err)
+	}
+	loaded3, _ := LoadCommandCenterFromDB(database)
+	for _, td := range loaded3.Todos {
+		if td.ID == "t2" {
+			if td.Starred {
+				t.Error("new todo should not be starred by default")
+			}
+			if td.Focus {
+				t.Error("new todo should not be focused by default")
+			}
+		}
+	}
+}
+
 func TestDBLoadTodoByDisplayIDIncludesStatus(t *testing.T) {
 	dir := t.TempDir()
 	db, err := OpenDB(filepath.Join(dir, "test.db"))

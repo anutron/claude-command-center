@@ -311,3 +311,65 @@ func TestDeleteFutureBookings(t *testing.T) {
 		t.Errorf("expected gcal-past2 to remain, got %s", remaining[0].EventID)
 	}
 }
+
+func TestRefreshPreservesFocusStar(t *testing.T) {
+	dir := t.TempDir()
+	database, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	now := time.Now()
+
+	// Initial refresh: insert a todo.
+	cc := &CommandCenter{
+		GeneratedAt: now,
+		Todos: []Todo{
+			{ID: "t1", Title: "Todo one", Status: StatusBacklog, Source: "github", CreatedAt: now},
+		},
+	}
+	if err := DBSaveRefreshResult(database, cc); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+
+	// User stars the todo.
+	if err := DBSetTodoStar(database, "t1", true); err != nil {
+		t.Fatalf("DBSetTodoStar: %v", err)
+	}
+
+	// Simulate a second refresh with the same todo (title updated).
+	cc2 := &CommandCenter{
+		GeneratedAt: now.Add(time.Minute),
+		Todos: []Todo{
+			{ID: "t1", Title: "Todo one (updated)", Status: StatusBacklog, Source: "github", CreatedAt: now},
+		},
+	}
+	if err := DBSaveRefreshResult(database, cc2); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+
+	// Focus and starred should survive the refresh.
+	loaded, err := LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("load after refresh: %v", err)
+	}
+	var t1 *Todo
+	for i := range loaded.Todos {
+		if loaded.Todos[i].ID == "t1" {
+			t1 = &loaded.Todos[i]
+		}
+	}
+	if t1 == nil {
+		t.Fatal("t1 not found after second refresh")
+	}
+	if !t1.Starred {
+		t.Error("starred flag should be preserved across refresh")
+	}
+	if !t1.Focus {
+		t.Error("focus flag should be preserved across refresh")
+	}
+	if t1.Title != "Todo one (updated)" {
+		t.Errorf("title should be updated, got %q", t1.Title)
+	}
+}

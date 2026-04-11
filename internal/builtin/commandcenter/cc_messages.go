@@ -102,6 +102,13 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case releaseErrorMsg:
 		return p.handleReleaseError(msg)
 
+	case scheduleOfferTimeoutMsg:
+		if p.scheduleOfferMode {
+			p.scheduleOfferMode = false
+			p.flashMessage = ""
+		}
+		return false, plugin.NoopAction()
+
 	case claudeEditFinishedMsg:
 		return p.handleClaudeEditFinished(msg)
 

@@ -29,6 +29,9 @@ type bookingErrorMsg struct {
 	err error
 }
 
+// scheduleOfferTimeoutMsg fires after 3 seconds to auto-dismiss the scheduling offer.
+type scheduleOfferTimeoutMsg struct{}
+
 // releaseCompleteMsg is returned when future bookings have been released.
 type releaseCompleteMsg struct {
 	todoID  string

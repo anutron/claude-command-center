@@ -590,12 +590,12 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				p.flashMessage = "★ " + todo.Title + " — Schedule time? S = yes, any key = skip"
 				p.flashMessageAt = time.Now()
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
-					if err := db.DBSetTodoStar(database, todoID, true); err != nil {
-						return err
-					}
-					return db.DBSetTodoFocus(database, todoID, true)
+					return db.DBSetTodoStar(database, todoID, true)
 				})
-				cmds := []tea.Cmd{dbCmd}
+				tickCmd := tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+					return scheduleOfferTimeoutMsg{}
+				})
+				cmds := []tea.Cmd{dbCmd, tickCmd}
 				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
 					cmds = append(cmds, notifyCmd)
 				}
@@ -652,10 +652,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 					}
 				}
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
-					if err := db.DBSetTodoStar(database, todoID, true); err != nil {
-						return err
-					}
-					return db.DBSetTodoFocus(database, todoID, true)
+					return db.DBSetTodoStar(database, todoID, true)
 				})
 				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
 			}
@@ -668,6 +665,22 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			todo := activeTodos[p.ccCursor]
 			todoID := todo.ID
 			if todo.Focus {
+				// If starred with future bookings, trigger unstar cleanup flow first
+				if todo.Starred {
+					futureBookings, _ := db.DBGetFutureBookingsForTodo(p.database, todoID)
+					if len(futureBookings) > 0 {
+						p.unstarConfirmMode = true
+						p.unstarConfirmTodoID = todoID
+						p.unstarConfirmAlsoUnfocus = true
+						if len(futureBookings) == 1 {
+							p.flashMessage = "Release calendar block? (y/n)"
+						} else {
+							p.flashMessage = fmt.Sprintf("Release %d calendar blocks? (y/n)", len(futureBookings))
+						}
+						p.flashMessageAt = time.Now()
+						return plugin.NoopAction()
+					}
+				}
 				// Unfocus: remove focus and star
 				for i := range p.cc.Todos {
 					if p.cc.Todos[i].ID == todoID {
@@ -892,23 +905,30 @@ func (p *Plugin) handleScheduleOffer(msg tea.KeyMsg) plugin.Action {
 
 func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {
 	todoID := p.unstarConfirmTodoID
+	alsoUnfocus := p.unstarConfirmAlsoUnfocus
 	p.unstarConfirmMode = false
 	p.unstarConfirmTodoID = ""
+	p.unstarConfirmAlsoUnfocus = false
 	p.flashMessage = ""
 
 	switch msg.String() {
 	case "y":
-		// Unstar and release bookings: delete calendar events + DB records
+		// Unstar and release bookings: delete calendar events + DB records.
 		for i := range p.cc.Todos {
 			if p.cc.Todos[i].ID == todoID {
 				p.cc.Todos[i].Starred = false
+				if alsoUnfocus {
+					p.cc.Todos[i].Focus = false
+				}
 				break
 			}
 		}
 		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
-			return db.DBSetTodoStar(database, todoID, false)
+			if alsoUnfocus {
+				return db.DBSetTodoFocus(database, todoID, false) // clears both
+			}
+			return db.DBSetTodoStar(database, todoID, false) // clears only star
 		})
-		// Also delete the actual Google Calendar events via releaseBookingsCmd.
 		relCmd := releaseBookingsCmd(p, todoID)
 		cmdsY := []tea.Cmd{dbCmd, relCmd}
 		if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
@@ -917,14 +937,20 @@ func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {
 		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmdsY...)}
 
 	case "n":
-		// Unstar but keep bookings
+		// Unstar but keep bookings.
 		for i := range p.cc.Todos {
 			if p.cc.Todos[i].ID == todoID {
 				p.cc.Todos[i].Starred = false
+				if alsoUnfocus {
+					p.cc.Todos[i].Focus = false
+				}
 				break
 			}
 		}
 		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+			if alsoUnfocus {
+				return db.DBSetTodoFocus(database, todoID, false)
+			}
 			return db.DBSetTodoStar(database, todoID, false)
 		})
 		cmdsN := []tea.Cmd{dbCmd}
