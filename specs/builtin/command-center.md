@@ -15,12 +15,12 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | File | Responsibility |
 |------|---------------|
 | `commandcenter.go` | Main plugin struct, Init, NavigateTo, HandleMessage, Refresh, state management |
-| `cc_keys.go` | All key handling: `HandleKey`, sub-handlers for command tab, detail view, rich todo creation, quick todo entry, booking mode |
+| `cc_keys.go` | All key handling: `HandleKey`, sub-handlers for command tab, detail view, rich todo creation, quick todo entry, schedule modal |
 | `cc_keys_detail.go` | Detail view key handling: field editing, status/path selection, command input, training input, unmerge |
 | `cc_keys_wizard.go` | Task runner wizard: 3-step flow, path picker, AI refinement, review loop, launch |
 | `cc_keys_session.go` | Session viewer key handling: scroll, message input, join session |
 | `cc_messages.go` | Message handling for async results (Claude responses, refresh finished, DB writes) |
-| `cc_view.go` | Command center rendering: calendar panel, todo panel, warnings, suggestions, help overlay, detail view, booking UI |
+| `cc_view.go` | Command center rendering: calendar panel, todo panel, warnings, suggestions, help overlay, detail view, schedule modal UI |
 | `styles.go` | Local style/gradient types populated from `config.Palette` (avoids circular imports with tui) |
 | `refresh.go` | Background refresh command (finds and spawns `ai-cron` binary) |
 | `claude.go` | Background Claude CLI/LLM commands (edit, enrich, command, focus), prompt builders |
@@ -43,7 +43,11 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 - `detailView bool` — viewing a single todo's detail with edit input
 - `detailNotice string` — transient notice banner in detail view (auto-clears after 1s)
 - `addingTodoRich bool` — rich textarea for AI-powered todo creation
-- `bookingMode bool` — calendar event booking flow
+- `scheduleModalActive bool` — true when the schedule modal overlay is showing
+- `scheduleModalState string` — "picker" (choosing duration) or "booked" (acknowledgment after booking)
+- `scheduleModalCursor int` — selected index in the vertical duration list
+- `scheduleModalTodoID string` — ID of the todo being scheduled
+- `scheduleModalLastBooking string` — acknowledgment text after a successful booking (e.g. "Booked 30m at 2:30pm")
 - `ccExpanded bool` — expanded multi-column todo view
 - `triageFilter string` — active triage filter tab in expanded view (default: "todo")
 - `addingTodoQuick bool` — quick textarea for LLM-enriched todo creation
@@ -52,7 +56,6 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 - `wizardSelections map[string]wizardSelection` — per-todo wizard selections persisted across open/close
 - `undoStack []undoEntry` — stack of undo-able todo actions
 - `pendingLaunchTodo *db.Todo` — todo awaiting session navigation
-- `scheduleOfferMode bool` — true after starring a todo; prompts user to schedule time
 - `unstarConfirmMode bool` — true when unstarring a todo that has future calendar bookings; prompts user to release the calendar blocks
 - `unstarConfirmTodoID string` — ID of the todo awaiting unstar confirmation
 
@@ -80,8 +83,8 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `esc` | search | Clear search query and exit search mode |
 | `b` | normal | Toggle backlog (completed items) |
 | `f` | normal | Toggle focus on selected todo (focus = move to top; unfocus clears star+focus) |
-| `s` | normal | Toggle star on selected todo (star = starred+focused+accepted; unstar checks for calendar bookings) |
-| `S` | normal | Schedule calendar block for selected todo (enters booking mode; auto-stars if not already starred) |
+| `s` | normal | Toggle star on selected todo (star = starred+focused+accepted; opens schedule modal; unstar checks for calendar bookings) |
+| `S` | normal | Open schedule modal for selected todo (auto-stars if not already starred) |
 | `r` | normal | Manual refresh (spawns ai-cron) |
 | `enter` | normal | Open detail view for selected todo |
 | `o` | normal | Launch session for todo (by session_id, project_dir, or navigate to sessions) |
@@ -146,14 +149,28 @@ While a notice banner is showing (1s after complete/dismiss), all keys except `e
 
 Quick todo entry (`t`) opens a lightweight textarea. On submit, the text is sent to the LLM via `buildEnrichPrompt` which enriches the raw text into structured fields (title, due, who_waiting, effort, context, detail, project_dir, proposed_prompt). The LLM also checks for duplicates by returning a `merge_into` field — if a match is found, synthesis is triggered automatically. Todos created this way enter as `backlog` status directly (skip `new`).
 
-### Booking Mode
+### Schedule Modal
+
+A centered modal overlay rendered on top of the todo list/detail view. Replaces the old schedule offer flash message and horizontal booking picker with a vertical list of time slots.
 
 | Key | Context | Description |
 |-----|---------|-------------|
-| `left`/`h` | booking | Select shorter duration |
-| `right`/`l` | booking | Select longer duration |
-| `enter` | booking | Confirm booking and trigger refresh |
-| `esc` | booking | Cancel booking |
+| `up`/`k` | picker | Select shorter duration |
+| `down`/`j` | picker | Select longer duration |
+| `enter` | picker | Confirm booking and create calendar event |
+| `esc` | picker | Dismiss modal (todo stays starred, no booking) |
+| `S` | booked | Schedule another block (returns to picker) |
+| `esc` | booked | Dismiss modal |
+
+**States:**
+
+- **picker** — vertical list of durations (15m, 30m, 1h, 2h, 4h) with cursor navigation. Default cursor position is index 2 (1h).
+- **booked** — acknowledgment after a successful booking. Shows "Booked Xm at Y:YYpm" and offers S to schedule another block or Escape to dismiss.
+
+**Entry points:**
+
+- `s` key (star toggle) on an unstarred todo — stars the todo, then opens the schedule modal in picker state
+- `S` key from command tab or detail view — opens the schedule modal (auto-stars if not already starred)
 
 ## Event Bus
 
@@ -173,19 +190,29 @@ Todos have a `display_id` column (auto-incrementing integer) for stable, human-r
 
 ## Behavior
 
-### Schedule Offer Mode
+### Schedule Modal
 
-After a todo is starred (via the star key), it is also auto-accepted (status transitions from "new" to "backlog" via `AcceptTodo`, moving it from Inbox to Todo tab). Then `scheduleOfferMode` is set to `true` and a flash message appears:
+When a todo is starred (via `s` key on an unstarred todo), it is also auto-accepted (status transitions from "new" to "backlog" via `AcceptTodo`). Then the schedule modal opens immediately in **picker** state, showing a centered overlay with a vertical list of time slot durations.
 
-```
-★ <todo title> — Schedule time? S = yes, any key = skip
-```
+The `S` key from the command tab or detail view also opens the schedule modal (auto-starring the todo if not already starred).
 
-- `S` (while in offer mode) — exits offer mode and enters booking mode / duration picker for the starred todo
-- Any other key — exits offer mode and processes the key normally (pass-through)
-- Auto-dismisses after 3 seconds if no key is pressed
+**Picker state:**
 
-This gives the user a single-keystroke path from starring a todo to booking calendar time for it.
+- Vertical list: 15m, 30m, 1h, 2h, 4h
+- Cursor starts at index 2 (1h)
+- `j`/`down` moves cursor down, `k`/`up` moves cursor up
+- `enter` triggers `scheduleBlockCmd` to create a calendar event
+- `esc` dismisses modal without booking (todo stays starred)
+
+**Booked state (after successful booking):**
+
+- Shows acknowledgment: "Booked Xm at Y:YYpm"
+- `S` returns to picker state for scheduling another block
+- `esc` dismisses the modal
+
+**Rendering:**
+
+The modal is a centered lipgloss box with a border, overlaid on the existing view. It renders in `viewCommandTab` before returning the final view string. The modal intercepts all key input when active (checked early in `HandleKey`).
 
 ### Unstar Confirm Mode
 
