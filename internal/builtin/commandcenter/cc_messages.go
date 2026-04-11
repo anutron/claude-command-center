@@ -418,6 +418,8 @@ func (p *Plugin) handleClaudeEditFinished(msg claudeEditFinishedMsg) (bool, plug
 				updated.SessionID = existing.SessionID
 				updated.SessionSummary = existing.SessionSummary
 				updated.DisplayID = existing.DisplayID
+				updated.Focus = existing.Focus
+				updated.Starred = existing.Starred
 				p.cc.Todos[i] = updated
 				break
 			}
