@@ -63,7 +63,9 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 	rows, err := db.Query(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
-		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
+		session_summary, session_log_path, source_context, source_context_at,
+		COALESCE(focus, 0), COALESCE(starred, 0),
+		created_at, completed_at
 		FROM cc_todos WHERE deleted_at IS NULL ORDER BY sort_order ASC`)
 	if err != nil {
 		return nil, err
@@ -77,10 +79,12 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		var completedStr sql.NullString
 		var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionSummary, sessionLogPath sql.NullString
 		var sourceContext, sourceContextAt sql.NullString
+		var focus, starred int
 
 		err := rows.Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
 			&proposedPrompt, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt,
+			&focus, &starred,
 			&createdStr, &completedStr)
 		if err != nil {
 			return nil, err
@@ -100,6 +104,8 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		t.SessionLogPath = sessionLogPath.String
 		t.SourceContext = sourceContext.String
 		t.SourceContextAt = sourceContextAt.String
+		t.Focus = focus != 0
+		t.Starred = starred != 0
 		t.CreatedAt = ParseTime(createdStr)
 		if completedStr.Valid {
 			ct := ParseTime(completedStr.String)
@@ -457,14 +463,18 @@ func DBLoadTodoByID(db *sql.DB, id string) (*Todo, error) {
 	var completedStr sql.NullString
 	var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionSummary, sessionLogPath sql.NullString
 	var sourceContext, sourceContextAt sql.NullString
+	var focus, starred int
 
 	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
-		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
+		session_summary, session_log_path, source_context, source_context_at,
+		COALESCE(focus, 0), COALESCE(starred, 0),
+		created_at, completed_at
 		FROM cc_todos WHERE id = ? AND deleted_at IS NULL`, id).
 		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
 			&proposedPrompt, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt,
+			&focus, &starred,
 			&createdStr, &completedStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -487,6 +497,8 @@ func DBLoadTodoByID(db *sql.DB, id string) (*Todo, error) {
 	t.SessionLogPath = sessionLogPath.String
 	t.SourceContext = sourceContext.String
 	t.SourceContextAt = sourceContextAt.String
+	t.Focus = focus != 0
+	t.Starred = starred != 0
 	t.CreatedAt = ParseTime(createdStr)
 	if completedStr.Valid {
 		ct := ParseTime(completedStr.String)
@@ -501,14 +513,18 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	var completedStr sql.NullString
 	var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionSummary, sessionLogPath sql.NullString
 	var sourceContext, sourceContextAt sql.NullString
+	var focus, starred int
 
 	err := db.QueryRow(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
-		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
+		session_summary, session_log_path, source_context, source_context_at,
+		COALESCE(focus, 0), COALESCE(starred, 0),
+		created_at, completed_at
 		FROM cc_todos WHERE display_id = ? AND deleted_at IS NULL`, displayID).
 		Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
 			&proposedPrompt, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt,
+			&focus, &starred,
 			&createdStr, &completedStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -531,6 +547,8 @@ func DBLoadTodoByDisplayID(db *sql.DB, displayID int) (*Todo, error) {
 	t.SessionLogPath = sessionLogPath.String
 	t.SourceContext = sourceContext.String
 	t.SourceContextAt = sourceContextAt.String
+	t.Focus = focus != 0
+	t.Starred = starred != 0
 	t.CreatedAt = ParseTime(createdStr)
 	if completedStr.Valid {
 		ct := ParseTime(completedStr.String)
@@ -652,6 +670,44 @@ func DBIsEmpty(db *sql.DB) bool {
 // ---------------------------------------------------------------------------
 // Read methods -- Archived Sessions
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Read methods -- Todo bookings (focus & star scheduling)
+// ---------------------------------------------------------------------------
+
+// DBGetBookingsForTodo returns all bookings for a given todo ordered by start_time.
+func DBGetBookingsForTodo(db *sql.DB, todoID string) ([]TodoBooking, error) {
+	return dbQueryBookings(db, `SELECT id, todo_id, event_id, start_time, end_time, duration_min, created_at
+		FROM cc_todo_bookings WHERE todo_id = ? ORDER BY start_time ASC`, todoID)
+}
+
+// DBGetFutureBookingsForTodo returns only future bookings for a given todo.
+func DBGetFutureBookingsForTodo(db *sql.DB, todoID string) ([]TodoBooking, error) {
+	return dbQueryBookings(db, `SELECT id, todo_id, event_id, start_time, end_time, duration_min, created_at
+		FROM cc_todo_bookings WHERE todo_id = ? AND start_time > strftime('%Y-%m-%dT%H:%M:%SZ', 'now') ORDER BY start_time ASC`, todoID)
+}
+
+func dbQueryBookings(db *sql.DB, query string, args ...interface{}) ([]TodoBooking, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var bookings []TodoBooking
+	for rows.Next() {
+		var b TodoBooking
+		var startStr, endStr, createdStr string
+		if err := rows.Scan(&b.ID, &b.TodoID, &b.EventID, &startStr, &endStr, &b.DurationMin, &createdStr); err != nil {
+			return nil, err
+		}
+		b.StartTime = ParseTime(startStr)
+		b.EndTime = ParseTime(endStr)
+		b.CreatedAt = ParseTime(createdStr)
+		bookings = append(bookings, b)
+	}
+	return bookings, rows.Err()
+}
 
 // DBLoadArchivedSessions loads all archived sessions, most recent first.
 func DBLoadArchivedSessions(db *sql.DB) ([]ArchivedSession, error) {
