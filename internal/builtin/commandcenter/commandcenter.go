@@ -178,16 +178,16 @@ type Plugin struct {
 	// Key chord state: "g" prefix for Gmail-style shortcuts (e.g., "gi" = go inbox)
 	gPending bool
 
+	// Star / focus / schedule offer modes
+	scheduleOfferMode     bool   // after starring: intercepts next keypress (S=schedule, other=skip)
+	unstarConfirmMode     bool   // after unstarring with future bookings: intercepts y/n
+	unstarConfirmTodoID   string // which todo is pending unstar confirmation
+
 	// Merge source cursor for unmerge UX in detail view
 	mergeSourceCursor int
 
 	// Sub-view identifier (currently only "command")
 	subView string
-
-	// Focus & Star state
-	scheduleOfferMode    bool   // true when waiting for user to press S or skip after starring
-	unstarConfirmMode    bool   // true when waiting for y/n to confirm releasing calendar blocks
-	unstarConfirmTodoID  string // ID of the todo awaiting unstar confirmation
 
 	// Dimensions
 	width, height int
