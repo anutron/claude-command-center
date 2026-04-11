@@ -368,14 +368,15 @@ When a user completes (`x`), dismisses (`X`), or changes the status of a todo in
 
 - **Mechanism:** After the DB write succeeds, a `"data.refreshed"` notification is sent via `NotifyPeers` (provided in `plugin.Context`). This reaches all other TUI instances through the notify socket system.
 - **Receiving side:** Other instances already handle `"data.refreshed"` NotifyMsg by calling `loadCCFromDBCmd()`, which reloads all command center data from the shared SQLite database.
-- **Write cooldown:** After any `dbWriteCmd`, a 2-second cooldown suppresses `data.refreshed` reloads. This prevents a race where async DB writes haven't landed yet but a reload (from ai-cron refresh, peer notification, or self-notification) replaces in-memory state with stale DB data. The next stale check (>2s) picks up the final state.
-- **Scope:** Applies to `detailCompleteTodo`, `detailDismissTodo`, and status changes via `commitDetailFieldEdit`.
+- **Write cooldown:** After any `dbWriteCmd`, a 2-second cooldown suppresses DB reloads triggered by external events. This prevents a race where async DB writes have not landed yet but a reload replaces in-memory state with stale DB data. The next stale check (>2s) picks up the final state.
+- **Cooldown applies to ALL reload triggers:** `data.refreshed` NotifyMsg (peer/daemon notifications), `ccRefreshFinishedMsg` (ai-cron completion), and `TabViewMsg` (tab navigation). Any path that calls `loadCCFromDBCmd()` must respect the write cooldown.
+- **Scope:** Applies to `detailCompleteTodo`, `detailDismissTodo`, status changes via `commitDetailFieldEdit`, and all star/focus operations.
 
 ### Refresh (ai-cron)
 
 - Auto-refresh triggers when data is older than a threshold (tick-based)
 - Manual refresh via `r` key
-- Spawns `ai-cron` binary, then reloads from DB
+- Spawns `ai-cron` binary, then reloads from DB; reload respects write cooldown
 - Refresh binary located next to running executable, then falls back to PATH
 - **Incremental sync**: Granola and Slack sources check `cc_source_sync` for their last successful sync time and skip already-processed meetings/messages, reducing LLM calls
 - **Deterministic source_ref (Granola)**: Source refs use `{meeting_id}-{sha256(title)[:8]}` instead of LLM-generated values, making deduplication reliable
@@ -755,6 +756,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Unstar confirm `y` dispatches `releaseBookingsCmd` to delete Google Calendar events for the todo, then unsets `starred` in DB
 - Unstar confirm `n` unstars the todo in DB without touching calendar events
 - `f`, `s` operations call `notifyPeersCmd("data.refreshed")` for cross-instance sync
+- handleRefreshFinished respects write cooldown — skips DB reload if a dbWriteCmd was issued within last 2 seconds (prevents star/focus loss from stale reload after ai-cron completes)
 - Starred todos sort before non-starred todos within any filtered view
 - Starring an inbox item (status "new") auto-accepts it via AcceptTodo, moving it from Inbox to Todo tab
 - HandleMessage processes async results
