@@ -8,7 +8,8 @@
 
 - In scope: focus/star fields, home screen filter, focus triage tab, star/focus/schedule key bindings, booking tracking table, calendar cleanup on unstar
 - Not in scope: multi-day effort spreading, deadline-aware scheduling, hard caps on focus/star counts
-- Relies on: existing `findFreeSlot` and Google Calendar API integration in `internal/refresh/sources/calendar/actions.go`, existing booking duration picker UI
+- Relies on: existing `findFreeSlot` logic (relocated from `internal/refresh/sources/calendar/actions.go` to a shared package), existing booking duration picker UI, OAuth token source from config
+- Architecture decision: Calendar API calls happen directly from the TUI in background `tea.Cmd`s, NOT through ai-cron pending actions. This gives instant feedback for scheduling and unstar cleanup. The existing ai-cron booking flow via `cc_pending_actions` is removed.
 
 ## Stages
 
@@ -108,25 +109,35 @@ Wire up the `s`, `S`, and `f` keys. This replaces the existing `s` booking mode.
   - Add `unstarConfirmMode` state — after unstarring with future bookings, intercepts `y`/`n`
 - `internal/builtin/commandcenter/commandcenter.go`:
   - Add state fields: `scheduleOfferMode bool`, `unstarConfirmMode bool`, `unstarConfirmTodoID string`
-  - Update `handleBookingConfirm` (or rename) to store booking in `cc_todo_bookings` and auto-star if needed
   - Update `Init` hints to reflect new key bindings
 
-**Calendar event tracking:** When a booking is confirmed via `S` (or schedule offer), the `executePendingActions` flow in `internal/refresh/sources/calendar/actions.go` currently discards the event ID. Modify it to return created event IDs, and store them in `cc_todo_bookings`.
+### Stage 5b: Direct Calendar API from TUI
 
-Alternatively, since the TUI can't call Google Calendar directly (it goes through pending actions + ai-cron), the booking record may need to be written by the refresh binary after it creates the event. This requires:
+**Depends on:** Stage 5
 
-- `internal/refresh/sources/calendar/actions.go` — after successful `Events.Insert`, write the event ID + start time + duration to `cc_todo_bookings`
-- The DB handle is available in the refresh context
+Calendar scheduling and cleanup happen directly from the TUI via background `tea.Cmd`s, not through ai-cron.
 
-**Calendar cleanup on unstar:** When unstar is confirmed with cleanup:
+**New file: `internal/builtin/commandcenter/calendar.go`**
 
-- Query `cc_todo_bookings` for future events
-- Delete each from Google Calendar via API (this runs in a background tea.Cmd since it needs network access)
-- Remove records from `cc_todo_bookings`
+Owns all Calendar API interactions for the command center plugin:
 
-This cleanup cmd will need the OAuth token source. The existing `executePendingActions` pattern shows how to get a `gcal.Service` — follow the same approach with a new pending action type `"release_bookings"` processed by ai-cron.
+- `scheduleBlockCmd(todoID, title string, durationMinutes int)` — background `tea.Cmd` that:
+  1. Gets OAuth token source from config (same pattern as `internal/refresh/sources/calendar/calendar.go`)
+  2. Calls `findFreeSlot` (relocated or imported from calendar package)
+  3. Creates Google Calendar event via `Events.Insert`
+  4. Writes booking record to `cc_todo_bookings` with the returned event ID
+  5. Returns a message with the booked time for flash display
+- `releaseBookingsCmd(todoID string)` — background `tea.Cmd` that:
+  1. Queries `cc_todo_bookings` for future events for this todo
+  2. Deletes each from Google Calendar via `Events.Delete`
+  3. Removes records from `cc_todo_bookings`
+  4. Returns a message confirming cleanup
 
-**Done when:** Key handler tests from Stage 2 pass. Star/focus/schedule keys work end-to-end. Calendar events are created and tracked. Unstarring with bookings prompts and cleans up.
+**Relocate `findFreeSlot`:** Move from `internal/refresh/sources/calendar/actions.go` to a shared location (either export it from the calendar package, or extract to a small `internal/calendar/` utility package) so both ai-cron and the TUI can use it.
+
+**Remove old booking flow:** The `cc_pending_actions` booking type and `executePendingActions` in ai-cron are no longer needed for scheduling. Remove the pending action insertion from the old `s` key handler. If `cc_pending_actions` is used for other action types, keep the table but remove booking-specific code.
+
+**Done when:** Key handler tests from Stage 2 pass. `S` books a calendar event and shows instant confirmation. Unstar with cleanup deletes future events immediately. No more round-trip through ai-cron for scheduling.
 
 ### Stage 6: Integration and polish
 
