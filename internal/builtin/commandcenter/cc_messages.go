@@ -167,8 +167,9 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 		return false, plugin.NoopAction() // Let host also handle this
 
 	case plugin.TabViewMsg:
-		// Reload from DB if data is stale (>2s since last read).
-		if p.database != nil && time.Since(p.ccLastRead) > ccStaleThreshold {
+		// Reload from DB if data is stale (>2s since last read) and no
+		// recent writes (write cooldown prevents clobbering in-memory state).
+		if p.database != nil && time.Since(p.ccLastRead) > ccStaleThreshold && time.Since(p.ccLastWrite) > 2*time.Second {
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
 		}
 		return true, plugin.NoopAction()
@@ -331,7 +332,12 @@ func (p *Plugin) handleRefreshFinished(msg ccRefreshFinishedMsg) (bool, plugin.A
 		p.lastRefreshError = ""
 		p.publishEvent("data.refreshed", map[string]interface{}{"source": "ai-cron"})
 	}
-	if p.database != nil {
+	// Respect write cooldown: skip reload if a DB write happened within the
+	// last 2 seconds. In-memory state is authoritative during this window —
+	// a reload would race with in-flight writes and clobber the user's changes
+	// (e.g., starring a todo right before a refresh completes). The next stale
+	// check (TabViewMsg or tick) picks up the final state.
+	if p.database != nil && time.Since(p.ccLastWrite) > 2*time.Second {
 		return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
 	}
 	return true, plugin.NoopAction()

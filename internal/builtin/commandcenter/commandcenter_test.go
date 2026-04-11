@@ -931,6 +931,86 @@ func TestHandleMessageRefreshFinished(t *testing.T) {
 	}
 }
 
+func TestRefreshFinishedRespectsWriteCooldown(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.ccRefreshing = true
+
+	// Save initial todos to DB so loadCCFromDBCmd has something to read.
+	now := time.Now()
+	cc := &db.CommandCenter{
+		GeneratedAt: now,
+		Todos: []db.Todo{
+			{ID: "t1", Title: "First todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true, Focus: true},
+		},
+	}
+	if err := db.DBSaveRefreshResult(p.database, cc); err != nil {
+		t.Fatalf("DBSaveRefreshResult: %v", err)
+	}
+
+	// Simulate a recent DB write (e.g., user just starred a todo).
+	p.ccLastWrite = time.Now()
+
+	// Star the in-memory todo.
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == "t1" {
+			p.cc.Todos[i].Starred = true
+			p.cc.Todos[i].Focus = true
+		}
+	}
+
+	// handleRefreshFinished should skip reload because ccLastWrite is recent.
+	handled, action := p.HandleMessage(ccRefreshFinishedMsg{err: nil})
+	if !handled {
+		t.Error("ccRefreshFinishedMsg should be handled")
+	}
+	if action.TeaCmd != nil {
+		t.Error("handleRefreshFinished should NOT trigger loadCCFromDBCmd when ccLastWrite is recent (within 2s)")
+	}
+	if p.ccRefreshing {
+		t.Error("ccRefreshing should be false after refresh finished")
+	}
+
+	// In-memory stars should be preserved (no reload clobbered them).
+	found := p.cc.FindTodo("t1")
+	if found == nil {
+		t.Fatal("t1 not found in in-memory state")
+	}
+	if !found.Starred {
+		t.Error("starred should be preserved when refresh reload is skipped due to write cooldown")
+	}
+	if !found.Focus {
+		t.Error("focus should be preserved when refresh reload is skipped due to write cooldown")
+	}
+}
+
+func TestRefreshFinishedReloadsAfterCooldown(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.ccRefreshing = true
+
+	// Save todos to DB.
+	now := time.Now()
+	cc := &db.CommandCenter{
+		GeneratedAt: now,
+		Todos: []db.Todo{
+			{ID: "t1", Title: "Refreshed todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: now},
+		},
+	}
+	if err := db.DBSaveRefreshResult(p.database, cc); err != nil {
+		t.Fatalf("DBSaveRefreshResult: %v", err)
+	}
+
+	// Set ccLastWrite to >2 seconds ago (no recent writes).
+	p.ccLastWrite = time.Now().Add(-5 * time.Second)
+
+	handled, action := p.HandleMessage(ccRefreshFinishedMsg{err: nil})
+	if !handled {
+		t.Error("ccRefreshFinishedMsg should be handled")
+	}
+	if action.TeaCmd == nil {
+		t.Error("handleRefreshFinished should trigger loadCCFromDBCmd when no recent writes")
+	}
+}
+
 func TestDisplayContext(t *testing.T) {
 	tests := []struct {
 		input string
