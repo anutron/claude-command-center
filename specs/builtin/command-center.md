@@ -212,7 +212,7 @@ The `S` key from the command tab or detail view also opens the schedule modal (a
 
 **Rendering:**
 
-The modal is a centered lipgloss box with a border, overlaid on the existing view. It renders in `viewCommandTab` before returning the final view string. The modal intercepts all key input when active (checked early in `HandleKey`).
+The modal is a centered lipgloss box with a border, overlaid on the existing view. It renders in `viewCommandTab` before returning the final view string. The modal intercepts all key input when active (checked early in `HandleKey`). Unhandled keys return `ConsumedAction()` (not `NoopAction()`) to prevent the host from processing them (e.g., Tab switching host-level tabs while the modal is showing).
 
 ### Unstar Confirm Mode
 
