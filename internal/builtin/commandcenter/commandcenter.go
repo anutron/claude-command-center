@@ -634,6 +634,9 @@ func (p *Plugin) filteredTodos() []db.Todo {
 					result = append(result, t)
 				}
 			}
+		case "done":
+			// Done tab: show completed/dismissed items.
+			result = p.cc.CompletedTodos()
 		default:
 			result = allActive
 		}
@@ -669,6 +672,7 @@ func (p *Plugin) triageCounts() map[string]int {
 		"agents":  0,
 		"review":  0,
 		"all":     0,
+		"done":    0,
 	}
 	if p.cc == nil {
 		return counts
@@ -688,6 +692,10 @@ func (p *Plugin) triageCounts() map[string]int {
 		case db.StatusReview, db.StatusFailed:
 			counts["review"]++
 		}
+	}
+	// Done count from completed/dismissed items
+	if p.cc != nil {
+		counts["done"] = len(p.cc.CompletedTodos())
 	}
 	return counts
 }

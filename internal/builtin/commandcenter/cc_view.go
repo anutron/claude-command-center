@@ -873,6 +873,7 @@ func renderTabBar(s *ccStyles, activeFilter string, counts map[string]int, width
 		{"agents", "Agents"},
 		{"review", "Review"},
 		{"all", "All"},
+		{"done", "Done"},
 	}
 
 	var parts []string

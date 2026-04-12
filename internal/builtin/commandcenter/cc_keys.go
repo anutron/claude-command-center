@@ -14,7 +14,7 @@ import (
 )
 
 // triageFilterOrder defines the tab order for triage filters in expanded view.
-var triageFilterOrder = []string{"focus", "new", "backlog", "agents", "review", "all"}
+var triageFilterOrder = []string{"focus", "new", "backlog", "agents", "review", "all", "done"}
 
 // HandleKey handles key input and returns an action.
 func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
