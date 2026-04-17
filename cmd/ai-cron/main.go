@@ -141,14 +141,21 @@ func main() {
 		ContextRegistry: contextRegistry,
 	}
 
-	// Enable knowledge extraction if the knowledge plugin is enabled.
-	if cfg.PluginEnabled("knowledge") && !*noLLM {
-		opts.KnowledgeExtract = func(ctx context.Context, database *sql.DB, model llm.LLM, sourceRef, sourceType, content string, existingTopics []string) error {
-			_, err := knowledge.Extract(ctx, database, model, sourceRef, sourceType, content, existingTopics)
-			return err
+	// Enable knowledge extraction and analysis if the knowledge plugin is enabled.
+	if cfg.PluginEnabled("knowledge") {
+		if !*noLLM {
+			opts.KnowledgeExtract = func(ctx context.Context, database *sql.DB, model llm.LLM, sourceRef, sourceType, content string, existingTopics []string) error {
+				_, err := knowledge.Extract(ctx, database, model, sourceRef, sourceType, content, existingTopics)
+				return err
+			}
+			// Use Sonnet for knowledge extraction (same as routing LLM).
+			opts.KnowledgeLLM = routingLLM
 		}
-		// Use Sonnet for knowledge extraction (same as routing LLM).
-		opts.KnowledgeLLM = routingLLM
+		// Silence analysis runs after extraction (no LLM required).
+		bus := plugin.NewBus()
+		opts.SilenceAnalysis = func(database *sql.DB) error {
+			return knowledge.RunSilenceAnalysis(database, bus, knowledge.DefaultSilenceConfig())
+		}
 	}
 
 	if err := refresh.Run(opts); err != nil {

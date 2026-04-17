@@ -300,6 +300,22 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "x":
+		// Dismiss first active insight if any exist
+		if len(p.insights) > 0 {
+			insightID := p.insights[0].ID
+			// Write dismiss to DB synchronously (insights are lightweight)
+			if p.database != nil {
+				_ = db.DBDismissInsight(p.database, insightID)
+			}
+			// Remove from in-memory list
+			p.insights = p.insights[1:]
+			var cmds []tea.Cmd
+			cmds = append(cmds, tea.ClearScreen)
+			if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+				cmds = append(cmds, notifyCmd)
+			}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
+		}
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
 			todo := activeTodos[p.ccCursor]
 			p.undoStack = append(p.undoStack, undoEntry{

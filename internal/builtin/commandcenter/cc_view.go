@@ -625,6 +625,44 @@ func renderSuggestionBanner(s *ccStyles, suggestions *db.Suggestions, width int)
 	return s.PanelBorder.Width(width - 4).Render(content)
 }
 
+// renderInsightsSection renders the knowledge insights section.
+// Returns empty string when there are no active insights (section is hidden).
+func (p *Plugin) renderInsightsSection(width int) string {
+	if len(p.insights) == 0 {
+		return ""
+	}
+
+	s := &p.styles
+
+	header := s.SectionHeader.Render("INSIGHTS")
+
+	var lines []string
+	lines = append(lines, header)
+
+	for _, ins := range p.insights {
+		// Type label for distinguishability
+		var label string
+		switch ins.Type {
+		case "silence_alert":
+			label = lipgloss.NewStyle().Foreground(s.ColorYellow).Bold(true).Render("SILENCE")
+		case "drift_detection":
+			label = lipgloss.NewStyle().Foreground(s.ColorPurple).Bold(true).Render("DRIFT")
+		default:
+			label = lipgloss.NewStyle().Foreground(s.ColorMuted).Bold(true).Render(strings.ToUpper(ins.Type))
+		}
+
+		title := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(ins.Title)
+		body := lipgloss.NewStyle().Foreground(s.ColorMuted).Render(ins.Body)
+
+		line := fmt.Sprintf("  %s %s", label, title)
+		lines = append(lines, line)
+		lines = append(lines, fmt.Sprintf("    %s", body))
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, lines...)
+	return s.PanelBorder.Width(width - 4).Render(content)
+}
+
 // wrapText delegates to ui.WrapText.
 var wrapText = ui.WrapText
 
