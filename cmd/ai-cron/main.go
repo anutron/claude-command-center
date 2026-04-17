@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/automation"
+	"github.com/anutron/claude-command-center/internal/builtin/knowledge"
 	"github.com/anutron/claude-command-center/internal/config"
 	"github.com/anutron/claude-command-center/internal/daemon"
 	"github.com/anutron/claude-command-center/internal/db"
@@ -137,6 +139,16 @@ func main() {
 		LLM:             l,
 		RoutingLLM:      routingLLM,
 		ContextRegistry: contextRegistry,
+	}
+
+	// Enable knowledge extraction if the knowledge plugin is enabled.
+	if cfg.PluginEnabled("knowledge") && !*noLLM {
+		opts.KnowledgeExtract = func(ctx context.Context, database *sql.DB, model llm.LLM, sourceRef, sourceType, content string, existingTopics []string) error {
+			_, err := knowledge.Extract(ctx, database, model, sourceRef, sourceType, content, existingTopics)
+			return err
+		}
+		// Use Sonnet for knowledge extraction (same as routing LLM).
+		opts.KnowledgeLLM = routingLLM
 	}
 
 	if err := refresh.Run(opts); err != nil {

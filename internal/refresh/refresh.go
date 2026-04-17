@@ -15,15 +15,23 @@ import (
 	"github.com/anutron/claude-command-center/internal/llm"
 )
 
+// KnowledgeExtractFn is the function signature for knowledge extraction.
+// It is called for each todo with source_context populated after the
+// source-context fetch step. The function receives the database, LLM,
+// source_ref, source type, content, and existing topic names.
+type KnowledgeExtractFn func(ctx context.Context, database *sql.DB, model llm.LLM, sourceRef, sourceType, content string, existingTopics []string) error
+
 // Options configures a refresh run.
 type Options struct {
-	Verbose         bool
-	DryRun          bool
-	DB              *sql.DB
-	Sources         []DataSource
-	LLM             llm.LLM // for extraction and suggestions (haiku)
-	RoutingLLM      llm.LLM // for routing and validation (sonnet) — falls back to LLM if nil
-	ContextRegistry *ContextRegistry
+	Verbose          bool
+	DryRun           bool
+	DB               *sql.DB
+	Sources          []DataSource
+	LLM              llm.LLM // for extraction and suggestions (haiku)
+	RoutingLLM       llm.LLM // for routing and validation (sonnet) — falls back to LLM if nil
+	ContextRegistry  *ContextRegistry
+	KnowledgeExtract KnowledgeExtractFn // knowledge extraction callback (nil = disabled)
+	KnowledgeLLM     llm.LLM            // Sonnet for knowledge extraction — falls back to RoutingLLM/LLM if nil
 }
 
 // Run performs a full data refresh: iterates DataSources in parallel,
@@ -151,6 +159,21 @@ func Run(opts Options) error {
 		}
 	}
 
+	// Knowledge extraction pass: process todos with source_context populated.
+	// Only processes narrative sources (granola, slack, gmail) -- not calendar or github.
+	if opts.KnowledgeExtract != nil && opts.DB != nil {
+		knowledgeLLM := opts.KnowledgeLLM
+		if knowledgeLLM == nil {
+			knowledgeLLM = opts.RoutingLLM
+		}
+		if knowledgeLLM == nil {
+			knowledgeLLM = opts.LLM
+		}
+		if knowledgeLLM != nil {
+			runKnowledgeExtraction(ctx, opts.DB, knowledgeLLM, merged.Todos, opts.KnowledgeExtract, opts.Verbose)
+		}
+	}
+
 	merged.Warnings = warnings
 	merged.GeneratedAt = time.Now()
 
@@ -245,6 +268,69 @@ func dedupTodos(ctx context.Context, l llm.LLM, database *sql.DB, todos []db.Tod
 		todos = append(todos, synth)
 	}
 	return todos
+}
+
+// narrativeSources are the source types that contain narrative content
+// suitable for knowledge extraction (transcripts, threads, emails).
+var narrativeSources = map[string]bool{
+	"granola": true,
+	"slack":   true,
+	"gmail":   true,
+}
+
+// runKnowledgeExtraction iterates over todos with source_context populated
+// and calls the extraction function for each. Errors are logged but do not
+// block other todos or the rest of the pipeline.
+func runKnowledgeExtraction(ctx context.Context, database *sql.DB, model llm.LLM, todos []db.Todo, extractFn KnowledgeExtractFn, verbose bool) {
+	// Collect existing topic names for dedup guidance.
+	existingTopics := loadExistingTopicNames(database)
+
+	processed := 0
+	for _, t := range todos {
+		if t.SourceContext == "" {
+			continue
+		}
+		if !narrativeSources[t.Source] {
+			continue
+		}
+		if t.SourceRef == "" {
+			continue
+		}
+
+		if err := extractFn(ctx, database, model, t.SourceRef, t.Source, t.SourceContext, existingTopics); err != nil {
+			log.Printf("knowledge extraction for %s/%s: %v", t.Source, t.SourceRef, err)
+			continue
+		}
+		processed++
+
+		// Refresh topic names after each extraction so subsequent extractions
+		// can see newly created topics for dedup.
+		existingTopics = loadExistingTopicNames(database)
+	}
+
+	if verbose && processed > 0 {
+		log.Printf("knowledge: extracted artifacts from %d source items", processed)
+	}
+}
+
+// loadExistingTopicNames queries all topic names from the knowledge_topics table.
+// Returns an empty slice if the table doesn't exist or the query fails.
+func loadExistingTopicNames(database *sql.DB) []string {
+	rows, err := database.Query("SELECT name FROM knowledge_topics")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 func logSourceResult(name string, r *SourceResult) {
