@@ -175,7 +175,7 @@ A centered modal overlay rendered on top of the todo list/detail view. Replaces 
 ## Event Bus
 
 - Publishes: `todo.completed`, `todo.dismissed`, `todo.deferred`, `todo.promoted`, `pending.todo`
-- Subscribes to lifecycle messages: `TabViewMsg`, `ReturnMsg`, `NotifyMsg`, `LaunchMsg`
+- Subscribes to: lifecycle messages (`TabViewMsg`, `ReturnMsg`, `NotifyMsg`, `LaunchMsg`), `knowledge.insights.updated`
 
 ## Migrations
 
@@ -257,6 +257,29 @@ Responses:
 4. Warning bar when data is stale or services are unreachable
 5. Help overlay toggled with `?`
 6. Expanded multi-column view when scrolling past visible todos. Rows per column use `(viewHeight - 6) / 2` where `viewHeight = height - 14` (TUI chrome) and 6 accounts for expanded-view chrome (header, tabBar, 2 blanks, hints, footer). This ensures the 2-column layout never overflows the terminal height. Left/right arrows paginate when at column edges. A triage filter tab bar appears below the header.
+
+### Knowledge insights section
+
+When the knowledge plugin is enabled, the Command Center renders an "Insights" section in the morning view displaying active (non-dismissed) insights from `knowledge_surfaced_insights`.
+
+#### Data loading
+
+- Subscribes to `knowledge.insights.updated` events in `Init`
+- On event, triggers a re-query of `knowledge_surfaced_insights` and re-renders
+- Query: select rows where `dismissed_at IS NULL`, ordered by `priority ASC` (lower number = higher priority)
+
+#### Rendering
+
+- The insights section appears below the focus suggestion and above the todo list
+- Each insight shows its title and body text
+- Silence alerts and drift detection insights are visually distinguishable (e.g., different icons or labels)
+- When no active insights exist, the section is hidden (not rendered as an empty section)
+
+#### Dismiss key
+
+- `x` while an insight is selected updates `dismissed_at` to now on that row
+- The dismissed insight is removed from the rendered list immediately
+- The dismiss write notifies peer instances via `NotifyPeers` (same pattern as todo mutations)
 
 ### Todo Lifecycle
 
@@ -920,3 +943,11 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Session summary: `- ` bullet lines render with indented bullet character without raw `- ` prefix
 - Session summary: inline backtick content renders with muted style, backtick delimiters stripped
 - Session summary: plain text and empty lines preserved as-is
+- Knowledge insights: active insights appear in the morning view when `knowledge_surfaced_insights` has non-dismissed rows
+- Knowledge insights: insights section is hidden when no active insights exist
+- Knowledge insights: `knowledge.insights.updated` event triggers re-query and re-render
+- Knowledge insights: dismiss key (`x`) on a selected insight sets `dismissed_at` and removes it from the view
+- Knowledge insights: dismissed insight does not reappear after re-query
+- Knowledge insights: silence alerts and drift detection insights render with distinguishable labels
+- Knowledge insights: insights are ordered by priority (lower number first)
+- Knowledge insights: dismiss notifies peer instances via `NotifyPeers`
