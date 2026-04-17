@@ -25,6 +25,11 @@ type KnowledgeExtractFn func(ctx context.Context, database *sql.DB, model llm.LL
 // It is called after knowledge extraction completes (no LLM required).
 type SilenceAnalysisFn func(database *sql.DB) error
 
+// DriftDetectionFn is the function signature for drift detection analysis.
+// It is called after silence analysis completes, using Sonnet to detect
+// when Aaron's positions have shifted.
+type DriftDetectionFn func(ctx context.Context, database *sql.DB) error
+
 // Options configures a refresh run.
 type Options struct {
 	Verbose          bool
@@ -37,6 +42,7 @@ type Options struct {
 	KnowledgeExtract KnowledgeExtractFn // knowledge extraction callback (nil = disabled)
 	KnowledgeLLM     llm.LLM            // Sonnet for knowledge extraction — falls back to RoutingLLM/LLM if nil
 	SilenceAnalysis  SilenceAnalysisFn   // silence alert analysis callback (nil = disabled)
+	DriftDetection   DriftDetectionFn    // drift detection callback (nil = disabled)
 }
 
 // Run performs a full data refresh: iterates DataSources in parallel,
@@ -184,6 +190,14 @@ func Run(opts Options) error {
 	if opts.SilenceAnalysis != nil && opts.DB != nil {
 		if err := opts.SilenceAnalysis(opts.DB); err != nil {
 			log.Printf("silence analysis: %v", err)
+		}
+	}
+
+	// Drift detection pass: runs after silence analysis, uses Sonnet
+	// to detect when Aaron's positions have shifted.
+	if opts.DriftDetection != nil && opts.DB != nil {
+		if err := opts.DriftDetection(ctx, opts.DB); err != nil {
+			log.Printf("drift detection: %v", err)
 		}
 	}
 

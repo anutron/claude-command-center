@@ -35,7 +35,7 @@ See `specs/core/datasource.md` for full details. Each source implements `Name()`
 10. **Dedup pass**: After routing, `dedupTodos` processes merge suggestions. For each todo where routing set `merge_into`, the system checks veto history via `WerePreviouslyMergedAndVetoed`, then synthesizes combined todos via LLM (see Todo Synthesis below).
 11. **Fetch source context**: For todos with a `source_ref`, fetch raw source content (transcripts, threads, PR comments) via `ContextRegistry` and cache in `source_context`/`source_context_at` columns.
 12. **Knowledge extraction** (when knowledge plugin is enabled): For each todo with a populated `source_context` (Granola, Slack, Gmail), call the knowledge extraction function to identify topics, decisions, positions, and open threads. Write artifacts to the knowledge tables. See `specs/core/knowledge-extraction.md`.
-13. **Insight analysis** (when knowledge plugin is enabled): Run silence detection and drift detection over the knowledge tables. Write results to `knowledge_surfaced_insights`. Publish `knowledge.insights.updated` event if insights changed. See `specs/core/knowledge-analysis.md`.
+13. **Insight analysis** (when knowledge plugin is enabled): Run silence detection via `SilenceAnalysis` callback, then drift detection via `DriftDetection` callback over the knowledge tables. Each callback writes results to `knowledge_surfaced_insights`. The drift detection callback uses Sonnet to evaluate Aaron's recent positions. Publish `knowledge.insights.updated` event if insights changed. See `specs/core/knowledge-analysis.md`.
 14. Save merged state to SQLite via `db.DBSaveRefreshResult(opts.DB, merged)` (or print to stdout if DryRun)
 
 ## Types

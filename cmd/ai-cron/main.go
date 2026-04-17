@@ -156,6 +156,14 @@ func main() {
 		opts.SilenceAnalysis = func(database *sql.DB) error {
 			return knowledge.RunSilenceAnalysis(database, bus, knowledge.DefaultSilenceConfig())
 		}
+		// Drift detection runs after silence analysis, uses Sonnet.
+		driftLLM := routingLLM
+		if driftLLM == nil {
+			driftLLM = l
+		}
+		opts.DriftDetection = func(ctx context.Context, database *sql.DB) error {
+			return knowledge.RunDriftDetection(ctx, database, driftLLM, bus)
+		}
 	}
 
 	if err := refresh.Run(opts); err != nil {

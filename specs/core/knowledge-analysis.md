@@ -101,10 +101,11 @@ The prompt asks Sonnet to return a JSON array:
 
 For each position where Sonnet identifies drift:
 
-1. Generate a deterministic insight ID from the position ID (e.g., `sha256("drift:" + position_id)[:16]`)
-2. Write an insight with type `drift_detection`
+1. Generate a deterministic insight ID from the position ID (format: `drift-position-{position_id}`)
+2. Write an insight with type `drift_detection`, priority 40 (higher than silence alerts at 50)
 3. Title: "Position may have shifted: {position text truncated}"
 4. Body: Original position, evidence of shift, what it may have shifted to
+5. `source_refs`: JSON array containing the position ID
 
 #### Accuracy mitigations
 
@@ -115,7 +116,7 @@ For each position where Sonnet identifies drift:
 
 #### Frequency
 
-Drift detection runs once per refresh cycle (not per source item). It evaluates all qualifying positions in a single Sonnet call (or batched calls if the position count is large).
+Drift detection runs once per refresh cycle (not per source item). Each qualifying position is evaluated in its own Sonnet call with position-specific evidence (newer decisions and positions on the same topic). Positions with no newer evidence on their topic are skipped without an LLM call.
 
 #### Removal
 
