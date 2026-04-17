@@ -552,6 +552,17 @@ type SessionRecord struct {
 	EndedAt      string `json:"ended_at,omitempty"`
 }
 
+// KnowledgeInsight represents a surfaced insight from the knowledge layer.
+type KnowledgeInsight struct {
+	ID         string  `json:"id"`
+	Type       string  `json:"type"`       // "silence_alert", "drift_detection"
+	Title      string  `json:"title"`
+	Body       string  `json:"body"`
+	Priority   int     `json:"priority"`
+	SurfacedAt string  `json:"surfaced_at"`
+	DismissedAt *string `json:"dismissed_at,omitempty"`
+}
+
 // PathEntry holds full metadata for a learned path row.
 type PathEntry struct {
 	Path        string    `json:"path"`

@@ -21,6 +21,10 @@ import (
 // source_ref, source type, content, and existing topic names.
 type KnowledgeExtractFn func(ctx context.Context, database *sql.DB, model llm.LLM, sourceRef, sourceType, content string, existingTopics []string) error
 
+// SilenceAnalysisFn is the function signature for silence analysis.
+// It is called after knowledge extraction completes (no LLM required).
+type SilenceAnalysisFn func(database *sql.DB) error
+
 // Options configures a refresh run.
 type Options struct {
 	Verbose          bool
@@ -32,6 +36,7 @@ type Options struct {
 	ContextRegistry  *ContextRegistry
 	KnowledgeExtract KnowledgeExtractFn // knowledge extraction callback (nil = disabled)
 	KnowledgeLLM     llm.LLM            // Sonnet for knowledge extraction — falls back to RoutingLLM/LLM if nil
+	SilenceAnalysis  SilenceAnalysisFn   // silence alert analysis callback (nil = disabled)
 }
 
 // Run performs a full data refresh: iterates DataSources in parallel,
@@ -171,6 +176,14 @@ func Run(opts Options) error {
 		}
 		if knowledgeLLM != nil {
 			runKnowledgeExtraction(ctx, opts.DB, knowledgeLLM, merged.Todos, opts.KnowledgeExtract, opts.Verbose)
+		}
+	}
+
+	// Silence analysis pass: runs after extraction, no LLM required.
+	// Scans knowledge tables for topics/threads that have gone quiet.
+	if opts.SilenceAnalysis != nil && opts.DB != nil {
+		if err := opts.SilenceAnalysis(opts.DB); err != nil {
+			log.Printf("silence analysis: %v", err)
 		}
 	}
 

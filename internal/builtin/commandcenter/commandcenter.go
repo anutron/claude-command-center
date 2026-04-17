@@ -190,6 +190,9 @@ type Plugin struct {
 	// Merge source cursor for unmerge UX in detail view
 	mergeSourceCursor int
 
+	// Knowledge insights
+	insights []db.KnowledgeInsight
+
 	// Sub-view identifier (currently only "command")
 	subView string
 
@@ -414,6 +417,12 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 				p.logger.Info("commandcenter", "config.saved event received")
 			}
 		})
+		p.bus.Subscribe("knowledge.insights.updated", func(e plugin.Event) {
+			// Re-query insights from DB on update
+			if p.database != nil {
+				p.insights = db.DBLoadActiveInsights(p.database)
+			}
+		})
 	}
 
 	// Load CC from DB
@@ -433,6 +442,9 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 			}
 		}
 		p.ccLastRead = time.Now()
+
+		// Load knowledge insights (best-effort; table may not exist)
+		p.insights = db.DBLoadActiveInsights(p.database)
 	}
 
 	return nil
@@ -872,7 +884,18 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		return lipgloss.Place(viewWidth, viewHeight, lipgloss.Left, lipgloss.Top, view)
 	}
 
+	// Reload insights from DB on each render (cheap query, keeps view fresh).
+	if p.database != nil {
+		p.insights = db.DBLoadActiveInsights(p.database)
+	}
+
+	insightsSection := p.renderInsightsSection(viewWidth)
+
 	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.ccRefreshing, p.lastRefreshError, p.filteredTodos(), p.triageCounts(), p.cfg.Agent.MaxConcurrent)
+
+	if insightsSection != "" {
+		view = lipgloss.JoinVertical(lipgloss.Left, insightsSection, "", view)
+	}
 
 	if p.claudeLoading {
 		elapsed := time.Since(p.claudeLoadingAt).Truncate(time.Second)

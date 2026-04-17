@@ -728,3 +728,45 @@ func DBLoadArchivedSessions(db *sql.DB) ([]ArchivedSession, error) {
 	}
 	return sessions, rows.Err()
 }
+
+// ---------------------------------------------------------------------------
+// Knowledge insights
+// ---------------------------------------------------------------------------
+
+// DBLoadActiveInsights returns non-dismissed insights ordered by priority (lower = higher priority).
+// Returns an empty slice (not nil) if the table does not exist or no rows match.
+func DBLoadActiveInsights(database *sql.DB) []KnowledgeInsight {
+	rows, err := database.Query(
+		`SELECT id, type, title, body, priority, surfaced_at
+		 FROM knowledge_surfaced_insights
+		 WHERE dismissed_at IS NULL
+		 ORDER BY priority ASC`,
+	)
+	if err != nil {
+		// Table may not exist if knowledge plugin is not enabled
+		return nil
+	}
+	defer rows.Close()
+
+	var insights []KnowledgeInsight
+	for rows.Next() {
+		var ins KnowledgeInsight
+		if err := rows.Scan(&ins.ID, &ins.Type, &ins.Title, &ins.Body, &ins.Priority, &ins.SurfacedAt); err != nil {
+			continue
+		}
+		insights = append(insights, ins)
+	}
+	if insights == nil {
+		insights = []KnowledgeInsight{}
+	}
+	return insights
+}
+
+// DBDismissInsight sets dismissed_at to now for the given insight ID.
+func DBDismissInsight(database *sql.DB, insightID string) error {
+	_, err := database.Exec(
+		`UPDATE knowledge_surfaced_insights SET dismissed_at = datetime('now') WHERE id = ?`,
+		insightID,
+	)
+	return err
+}

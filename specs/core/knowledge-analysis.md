@@ -47,7 +47,7 @@ Not every old topic or thread triggers an alert. An item must meet qualifying co
 
 For each qualifying item that exceeds its silence threshold:
 
-1. Generate a deterministic insight ID from the underlying artifact ID and type (e.g., `sha256("silence:" + artifact_id)[:16]`)
+1. Generate a deterministic insight ID from the underlying artifact ID and type (format: `silence-topic-{topic_id}` or `silence-thread-{thread_id}`)
 2. Check if an insight with this ID already exists in `knowledge_surfaced_insights`
 3. If it exists and is not dismissed: update `surfaced_at` to now (keeps it fresh)
 4. If it exists and is dismissed: leave it alone (user explicitly dismissed it)
