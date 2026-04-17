@@ -13,6 +13,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// Compile-time check that Plugin implements plugin.Plugin.
+var _ plugin.Plugin = (*Plugin)(nil)
+
 // Plugin implements plugin.Plugin for the knowledge layer.
 type Plugin struct {
 	database *sql.DB
@@ -34,15 +37,20 @@ func (p *Plugin) Init(ctx plugin.Context) error {
 	p.cfg = ctx.Config
 	p.bus = ctx.Bus
 	p.llm = ctx.LLM
+
+	// Run plugin-owned table migrations.
+	if err := plugin.RunMigrations(ctx.DB, p.Slug(), p.Migrations()); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (p *Plugin) Shutdown() {}
 
 // Migrations returns the knowledge plugin's table migrations.
-// Stub: returns nil – Stage 3 will implement the real migrations.
 func (p *Plugin) Migrations() []plugin.Migration {
-	return nil
+	return knowledgeMigrations()
 }
 
 func (p *Plugin) View(width, height, frame int) string { return "" }

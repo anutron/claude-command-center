@@ -10,6 +10,7 @@ import (
 
 	"github.com/anutron/claude-command-center/internal/agent"
 	"github.com/anutron/claude-command-center/internal/builtin/commandcenter"
+	"github.com/anutron/claude-command-center/internal/builtin/knowledge"
 	"github.com/anutron/claude-command-center/internal/builtin/prs"
 	"github.com/anutron/claude-command-center/internal/builtin/sessions"
 	"github.com/anutron/claude-command-center/internal/builtin/settings"
@@ -129,12 +130,14 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	sessPlug := &sessions.Plugin{}
 	ccPlug := commandcenter.New()
 	prsPlug := &prs.Plugin{}
+	knowledgePlug := knowledge.New()
 
 	// Build registry with all plugins.
 	registry := plugin.NewRegistry()
 	registry.Register(ccPlug)
 	registry.Register(sessPlug)
 	registry.Register(prsPlug)
+	registry.Register(knowledgePlug)
 	for _, ep := range extPlugins {
 		registry.Register(ep)
 	}
@@ -158,6 +161,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	_ = sessPlug.Init(ctx)
 	_ = ccPlug.Init(ctx)
 	_ = prsPlug.Init(ctx)
+	_ = knowledgePlug.Init(ctx)
 	_ = settingsPlug.Init(ctx)
 
 	// Build the full tab list (allTabs); rebuildTabs filters to visible.
@@ -193,7 +197,7 @@ func NewModel(database *sql.DB, cfg *config.Config, bus plugin.EventBus, logger 
 	allTabs = append(allTabs, tabEntry{label: "Settings", plugin: settingsPlug, route: "settings", ownerSlug: "settings"})
 
 	// Collect all unique plugins for shutdown.
-	allPlugins := []plugin.Plugin{sessPlug, ccPlug, prsPlug, settingsPlug}
+	allPlugins := []plugin.Plugin{sessPlug, ccPlug, prsPlug, knowledgePlug, settingsPlug}
 	allPlugins = append(allPlugins, extPlugins...)
 
 	m := Model{
