@@ -37,20 +37,10 @@ After this step we have:
 
 ## Step 2: Read unread messages
 
-The CLI is topic-scoped. On the orchestrator side, the current topic already resolves correctly. On the worker side, point the CLI at a throwaway topic for this call:
+Pass `--orchestrator` explicitly. On the orchestrator side the flag is redundant (the topic would resolve it anyway), but using it uniformly keeps the recipe identical on both sides:
 
 ```bash
-# Orchestrator side
-if [[ "$TOPIC" == ORCHESTRATE:* ]]; then
-  ccc orchestrator inbox list --unread --to "$RECIPIENT" --json
-else
-  # Worker side
-  TMPTOPICS=$(mktemp -d)
-  printf '%s' "ORCHESTRATE: $ORCH_NAME" > "$TMPTOPICS/sess.txt"
-  CCC_SESSION_TOPICS_DIR="$TMPTOPICS" CCC_SESSION_ID="sess" \
-    ccc orchestrator inbox list --unread --to "$RECIPIENT" --json
-  rm -rf "$TMPTOPICS"
-fi
+ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --unread --to "$RECIPIENT" --json
 ```
 
 ## Step 3: Render the messages
@@ -77,11 +67,9 @@ After rendering, ask:
 
 Defaults:
 
-- **yes** → `ccc orchestrator inbox mark-read --to "$RECIPIENT"` (advances cursor to the highest existing id)
+- **yes** → `ccc orchestrator inbox mark-read --orchestrator "$ORCH_NAME" --to "$RECIPIENT"` (advances cursor to the highest existing id)
 - **no** → leave the cursor alone
-- **up-to N** → `ccc orchestrator inbox mark-read --to "$RECIPIENT" --up-to N`
-
-Use the same topic-env trick from Step 2 when running these on the worker side.
+- **up-to N** → `ccc orchestrator inbox mark-read --orchestrator "$ORCH_NAME" --to "$RECIPIENT" --up-to N`
 
 ## Step 5: Suggest follow-ups (optional)
 

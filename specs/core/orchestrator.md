@@ -185,13 +185,15 @@ Documented in detail in `specs/core/cli.md`. At a glance:
 
 - `ccc orchestrator paste-header --thread <n>` — emit the standardized "PASTE INTO" block. Retained for skills that still want a clipboard transport.
 
-- `ccc orchestrator inbox send --to <recipient> --kind <kind> --body <text> [--from <sender>] [--topic <t>] [--project <p>] [--branch <b>] [--worktree <w>] [--session-id <id>]` — append a message to the current orchestrator's inbox. Sender defaults to `orchestrator`. Recipient `*` broadcasts.
+- `ccc orchestrator inbox send [--orchestrator <name>] --to <recipient> --kind <kind> --body <text> [--from <sender>] [--topic <t>] [--project <p>] [--branch <b>] [--worktree <w>] [--session-id <id>]` — append a message to an orchestrator's inbox. Sender defaults to `orchestrator`. Recipient `*` broadcasts.
 
-- `ccc orchestrator inbox list [--to <recipient>] [--from <sender>] [--kind <kind>] [--unread] [--json] [--all]` — list inbox messages, optionally filtered. `--unread` requires `--to` and reads `cursors.json` to filter to messages with id greater than the recipient's cursor. Default output is one human-readable line per message; `--json` emits a JSON array.
+- `ccc orchestrator inbox list [--orchestrator <name>] [--to <recipient>] [--from <sender>] [--kind <kind>] [--unread] [--json] [--all]` — list inbox messages, optionally filtered. `--unread` requires `--to` and reads `cursors.json` to filter to messages with id greater than the recipient's cursor. Default output is one human-readable line per message; `--json` emits a JSON array.
 
-- `ccc orchestrator inbox mark-read --to <recipient> [--up-to <id>]` — set the recipient's cursor in `cursors.json`. With no `--up-to`, sets it to the highest existing message id.
+- `ccc orchestrator inbox mark-read [--orchestrator <name>] --to <recipient> [--up-to <id>]` — set the recipient's cursor in `cursors.json`. With no `--up-to`, sets it to the highest existing message id.
 
 - `ccc orchestrator inbox resolve-role [--worktree <path>] [--project <path>] [--json]` — search active orchestrators for a thread whose `worktree`/`project` matches and return `<orchestrator>:<role>`. With `--json`, returns an array of matches.
+
+The `--orchestrator <name>` flag overrides session-topic resolution on the three inbox verbs that touch a single orchestrator's state. Worker sessions (whose topic is the worker topic, not `ORCHESTRATE: ...`) pass it explicitly so the CLI does not need to consult the session topic. When the flag is omitted, the CLI falls back to topic resolution as usual.
 
 - `ccc orchestrator complete` — mark current orchestrator complete.
 
@@ -247,3 +249,5 @@ The orchestrator name is resolved from the current session topic (`ORCHESTRATE: 
 - `inbox resolve-role --worktree W` returns the single `<orchestrator>:<role>` whose thread `worktree` equals `W`. If multiple match, all are returned in `--json` form. If none match, exits cleanly with empty output.
 - `inbox resolve-role --project P` falls back to thread `project` when `worktree` is empty.
 - Reading `inbox.jsonl` when the file does not yet exist returns an empty list, not an error.
+- `inbox send/list/mark-read --orchestrator <name>` succeeds without an `ORCHESTRATE:` session topic. The flag overrides topic resolution.
+- When `--orchestrator` is omitted and no session topic is set, the same verbs fail with a clear error pointing at both remediation paths (set a topic OR pass the flag).

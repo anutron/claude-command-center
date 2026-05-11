@@ -82,22 +82,19 @@ FROM_SESSION="${CCC_SESSION_ID:-$SESSION_ID}"
 
 ## Step 5: Send the message
 
-The CLI is topic-scoped, so point it at a temporary `ORCHESTRATE:` topic for this invocation only:
+Worker sessions don't have an `ORCHESTRATE:` topic, so pass `--orchestrator` explicitly:
 
 ```bash
-TMPTOPICS=$(mktemp -d)
-printf '%s' "ORCHESTRATE: $ORCH_NAME" > "$TMPTOPICS/sess.txt"
-CCC_SESSION_TOPICS_DIR="$TMPTOPICS" CCC_SESSION_ID="sess" \
-  ccc orchestrator inbox send \
-    --to orchestrator \
-    --from "$ROLE" \
-    --kind "$KIND" \
-    --project "$PROJECT" \
-    --branch "$BRANCH" \
-    --worktree "$WORKTREE" \
-    --session-id "$FROM_SESSION" \
-    --body "$MESSAGE_BODY"
-rm -rf "$TMPTOPICS"
+ccc orchestrator inbox send \
+  --orchestrator "$ORCH_NAME" \
+  --to orchestrator \
+  --from "$ROLE" \
+  --kind "$KIND" \
+  --project "$PROJECT" \
+  --branch "$BRANCH" \
+  --worktree "$WORKTREE" \
+  --session-id "$FROM_SESSION" \
+  --body "$MESSAGE_BODY"
 ```
 
 ## Step 6: Confirm to the user

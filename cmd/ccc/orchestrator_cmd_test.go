@@ -224,6 +224,57 @@ func TestRunOrchInbox_SendRequiresFields(t *testing.T) {
 	}
 }
 
+func TestRunOrchInbox_OrchestratorFlagBypassesTopic(t *testing.T) {
+	// Set up orchestrator "alpha" but leave session topic empty — simulating
+	// a worker session that wants to talk to alpha without faking a topic.
+	root := withOrchestratorTopic(t, "")
+	// Create the orchestrator directly via the package.
+	if err := os.MkdirAll(filepath.Join(root, "alpha"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Set a topic temporarily for the init call, then clear it.
+	topicFile := filepath.Join(os.Getenv("CCC_SESSION_TOPICS_DIR"), "test-sess.txt")
+	if err := os.WriteFile(topicFile, []byte("ORCHESTRATE: alpha"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runOrchestrator([]string{"init", "--project", "/proj"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(topicFile); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without topic AND without --orchestrator, send should fail.
+	if err := runOrchestrator([]string{"inbox", "send", "--to", "a", "--kind", "handoff", "--body", "x"}); err == nil {
+		t.Fatal("expected failure without topic and without --orchestrator")
+	}
+
+	// With --orchestrator alpha, send should succeed.
+	if err := runOrchestrator([]string{"inbox", "send", "--orchestrator", "alpha", "--to", "a", "--kind", "handoff", "--body", "via flag"}); err != nil {
+		t.Fatalf("send with --orchestrator: %v", err)
+	}
+
+	// list with --orchestrator should see the message.
+	r, w, _ := os.Pipe()
+	old := os.Stdout
+	os.Stdout = w
+	if err := runOrchestrator([]string{"inbox", "list", "--orchestrator", "alpha", "--to", "a", "--json"}); err != nil {
+		t.Fatalf("list with --orchestrator: %v", err)
+	}
+	w.Close()
+	os.Stdout = old
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	if !strings.Contains(string(buf[:n]), "via flag") {
+		t.Errorf("list did not return message sent via --orchestrator: %s", string(buf[:n]))
+	}
+
+	// mark-read with --orchestrator should work too.
+	if err := runOrchestrator([]string{"inbox", "mark-read", "--orchestrator", "alpha", "--to", "a"}); err != nil {
+		t.Fatalf("mark-read with --orchestrator: %v", err)
+	}
+}
+
 func TestRunOrchInbox_ResolveRoleMatchesWorktree(t *testing.T) {
 	withOrchestratorTopic(t, "alpha")
 	if err := runOrchestrator([]string{"init", "--project", "/proj"}); err != nil {

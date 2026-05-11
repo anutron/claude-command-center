@@ -73,10 +73,12 @@ func printOrchInboxUsage() {
 	fmt.Fprintln(os.Stderr, "Usage: ccc orchestrator inbox <verb> [flags]")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Verbs:")
-	fmt.Fprintln(os.Stderr, "  send --to R --kind K --body T [--from S] [--topic T] [--project P] [--branch B] [--worktree W] [--session-id ID]")
-	fmt.Fprintln(os.Stderr, "  list [--to R] [--from S] [--kind K] [--unread] [--all] [--json]")
-	fmt.Fprintln(os.Stderr, "  mark-read --to R [--up-to N]")
+	fmt.Fprintln(os.Stderr, "  send [--orchestrator N] --to R --kind K --body T [--from S] [--topic T] [--project P] [--branch B] [--worktree W] [--session-id ID]")
+	fmt.Fprintln(os.Stderr, "  list [--orchestrator N] [--to R] [--from S] [--kind K] [--unread] [--all] [--json]")
+	fmt.Fprintln(os.Stderr, "  mark-read [--orchestrator N] --to R [--up-to N]")
 	fmt.Fprintln(os.Stderr, "  resolve-role [--worktree W] [--project P] [--json]")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "  --orchestrator overrides session-topic resolution. Workers without an ORCHESTRATE: topic should pass it explicitly.")
 }
 
 // resolveName resolves the orchestrator name from the current session topic
@@ -84,9 +86,20 @@ func printOrchInboxUsage() {
 func resolveName() (string, error) {
 	name, err := orchestrator.ResolveFromTopic()
 	if err != nil {
-		return "", fmt.Errorf("orchestrator: %w (set topic with `/set-topic ORCHESTRATE: <name>`)", err)
+		return "", fmt.Errorf("orchestrator: %w (set topic with `/set-topic ORCHESTRATE: <name>` or pass --orchestrator <name>)", err)
 	}
 	return name, nil
+}
+
+// resolveNameOrFlag returns the explicit name if non-empty, otherwise falls
+// back to session-topic resolution. Used by inbox subcommands so workers
+// (whose session topic is not ORCHESTRATE:...) can pass --orchestrator
+// instead of faking a topic via env vars.
+func resolveNameOrFlag(explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	return resolveName()
 }
 
 // readBody returns body verbatim if not equal to "-", otherwise reads stdin.
@@ -495,6 +508,7 @@ func runOrchInbox(args []string) error {
 
 func runOrchInboxSend(args []string) error {
 	fs := flag.NewFlagSet("orchestrator inbox send", flag.ContinueOnError)
+	orchName := fs.String("orchestrator", "", "Orchestrator name (overrides session topic; required when invoked from a worker session)")
 	to := fs.String("to", "", "Recipient role or 'orchestrator' (required)")
 	from := fs.String("from", "", "Sender (default: 'orchestrator' if topic is ORCHESTRATE:..., else required)")
 	kind := fs.String("kind", "", "Message kind (handoff|checkin|update|question|paste-back) (required)")
@@ -520,7 +534,7 @@ func runOrchInboxSend(args []string) error {
 	if err != nil {
 		return err
 	}
-	name, err := resolveName()
+	name, err := resolveNameOrFlag(*orchName)
 	if err != nil {
 		return err
 	}
@@ -548,6 +562,7 @@ func runOrchInboxSend(args []string) error {
 
 func runOrchInboxList(args []string) error {
 	fs := flag.NewFlagSet("orchestrator inbox list", flag.ContinueOnError)
+	orchName := fs.String("orchestrator", "", "Orchestrator name (overrides session topic)")
 	to := fs.String("to", "", "Filter: recipient")
 	from := fs.String("from", "", "Filter: sender")
 	kind := fs.String("kind", "", "Filter: kind")
@@ -561,7 +576,7 @@ func runOrchInboxList(args []string) error {
 	if *unread && *to == "" {
 		return fmt.Errorf("--unread requires --to")
 	}
-	name, err := resolveName()
+	name, err := resolveNameOrFlag(*orchName)
 	if err != nil {
 		return err
 	}
@@ -604,6 +619,7 @@ func runOrchInboxList(args []string) error {
 
 func runOrchInboxMarkRead(args []string) error {
 	fs := flag.NewFlagSet("orchestrator inbox mark-read", flag.ContinueOnError)
+	orchName := fs.String("orchestrator", "", "Orchestrator name (overrides session topic)")
 	to := fs.String("to", "", "Recipient whose cursor to advance (required)")
 	upTo := fs.Int64("up-to", 0, "Specific id to set cursor to (default: highest existing message id)")
 	if err := fs.Parse(args); err != nil {
@@ -612,7 +628,7 @@ func runOrchInboxMarkRead(args []string) error {
 	if *to == "" {
 		return fmt.Errorf("--to is required")
 	}
-	name, err := resolveName()
+	name, err := resolveNameOrFlag(*orchName)
 	if err != nil {
 		return err
 	}

@@ -43,24 +43,10 @@ After this step you have `$ORCH_NAME` and `$ROLE`.
 
 ## Step 2: Read the pending handoff
 
-Inbox CLI calls are topic-scoped — they read the current orchestrator from the session topic. Since this worker session does not have an `ORCHESTRATE:` topic, set one up just for the CLI calls via env vars:
+Worker sessions don't have an `ORCHESTRATE:` topic, so pass `--orchestrator` explicitly. No env-var trick needed.
 
 ```bash
-TMPTOPICS=$(mktemp -d)
-printf '%s' "ORCHESTRATE: $ORCH_NAME" > "$TMPTOPICS/sess.txt"
-export CCC_SESSION_TOPICS_DIR_BACKUP="$CCC_SESSION_TOPICS_DIR"
-export CCC_SESSION_ID_BACKUP="$CCC_SESSION_ID"
-export CCC_SESSION_TOPICS_DIR="$TMPTOPICS"
-export CCC_SESSION_ID="sess"
-# remember to restore after the CLI calls below
-```
-
-(Restore the env vars at the end of the skill, and `rm -rf "$TMPTOPICS"`.)
-
-Now read the handoff:
-
-```bash
-ccc orchestrator inbox list --to "$ROLE" --kind handoff --json
+ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --to "$ROLE" --kind handoff --json
 ```
 
 From the JSON array, pick the message with the highest `id` whose `from == "orchestrator"`. That's the latest handoff.
@@ -82,12 +68,7 @@ Compare current pwd / branch to the handoff's `project` / `branch` / `worktree`.
 
 ## Step 4: Set the session topic
 
-Restore the real session env first so we're writing to the worker's actual topic:
-
 ```bash
-export CCC_SESSION_TOPICS_DIR="$CCC_SESSION_TOPICS_DIR_BACKUP"
-export CCC_SESSION_ID="$CCC_SESSION_ID_BACKUP"
-
 SESSION_ID="${CCC_SESSION_ID:-$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)}"
 if [ -z "$SESSION_ID" ]; then
   echo "Could not resolve session ID — /orchestrate needs a Claude session"
@@ -101,8 +82,6 @@ If a topic is already set on this session and it differs, ask before overwriting
 
 ## Step 5: Write the checkin
 
-Switch back to the orchestrator topic env for the CLI call, then restore:
-
 ```bash
 PROJECT=$(pwd)
 BRANCH=$(git branch --show-current 2>/dev/null || echo "")
@@ -115,24 +94,22 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   fi
 fi
 
-CCC_SESSION_TOPICS_DIR="$TMPTOPICS" CCC_SESSION_ID="sess" \
-  ccc orchestrator inbox send \
-    --to orchestrator \
-    --from "$ROLE" \
-    --kind checkin \
-    --project "$PROJECT" \
-    --branch "$BRANCH" \
-    --worktree "$WORKTREE" \
-    --session-id "$SESSION_ID" \
-    --body "Picked up handoff. Topic set to \"$WORKER_TOPIC\". Ready to start."
+ccc orchestrator inbox send \
+  --orchestrator "$ORCH_NAME" \
+  --to orchestrator \
+  --from "$ROLE" \
+  --kind checkin \
+  --project "$PROJECT" \
+  --branch "$BRANCH" \
+  --worktree "$WORKTREE" \
+  --session-id "$SESSION_ID" \
+  --body "Picked up handoff. Topic set to \"$WORKER_TOPIC\". Ready to start."
 ```
 
 ## Step 6: Mark the handoff read
 
 ```bash
-CCC_SESSION_TOPICS_DIR="$TMPTOPICS" CCC_SESSION_ID="sess" \
-  ccc orchestrator inbox mark-read --to "$ROLE" --up-to "$HANDOFF_ID"
-rm -rf "$TMPTOPICS"
+ccc orchestrator inbox mark-read --orchestrator "$ORCH_NAME" --to "$ROLE" --up-to "$HANDOFF_ID"
 ```
 
 ## Step 7: Summarize and hand control back to the user
@@ -153,6 +130,6 @@ Do **not** start executing the task in this turn. The user will tell you when to
 
 ## Notes
 
-- **The orchestrator's CLI is topic-scoped.** All `ccc orchestrator inbox` calls require an `ORCHESTRATE: <name>` topic to resolve the current orchestrator. The worker's own topic is the worker topic (e.g. `wave-0b`), so for inbox calls we temporarily point `CCC_SESSION_TOPICS_DIR` at a throwaway topic file. This avoids overwriting the worker's session topic.
+- **Pass `--orchestrator $ORCH_NAME` to every inbox call.** Worker sessions have their own topic (the worker topic, e.g. `wave-0b`), not `ORCHESTRATE: ...`. The flag bypasses topic resolution so we never have to fake one.
 - **No clipboard handling here.** This is the inbox-based version of the workflow. The clipboard `PASTE INTO` flow has been retired in favor of durable, queryable messages.
 - **Don't include secrets or large file dumps in the checkin body.** Keep it a short status sentence. The orchestrator already has the task body.
