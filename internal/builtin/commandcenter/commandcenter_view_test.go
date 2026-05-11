@@ -1301,8 +1301,11 @@ func TestView_CalendarEventDurationOnSameLine(t *testing.T) {
 	}
 
 	now := time.Now()
-	// Create an event that starts in the future (so it's not "past")
-	eventStart := time.Date(now.Year(), now.Month(), now.Day(), 14, 0, 0, 0, now.Location())
+	// Create an event that starts in the future (so it's not "past").
+	// Use a time relative to `now` so the test is stable regardless of when it runs:
+	// in the afternoon, renderCalendarColumn calls upcomingEvents() which filters out
+	// events whose End is not after now.
+	eventStart := now.Add(1 * time.Hour)
 	eventEnd := eventStart.Add(90 * time.Minute)
 
 	p.cc = &db.CommandCenter{
