@@ -615,12 +615,6 @@ func (p *Plugin) filteredTodos() []db.Todo {
 					result = append(result, t)
 				}
 			}
-		case "todo":
-			for _, t := range allActive {
-				if t.Status == db.StatusBacklog {
-					result = append(result, t)
-				}
-			}
 		case "new":
 			for _, t := range allActive {
 				if t.Status == db.StatusNew {
@@ -678,7 +672,6 @@ func (p *Plugin) filteredTodos() []db.Todo {
 func (p *Plugin) triageCounts() map[string]int {
 	counts := map[string]int{
 		"focus":   0,
-		"todo":    0,
 		"new":     0,
 		"backlog": 0,
 		"agents":  0,
