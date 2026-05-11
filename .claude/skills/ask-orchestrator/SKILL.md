@@ -1,20 +1,20 @@
 ---
 name: ask-orchestrator
-description: From a working session, prepare a clipboard handoff to the orchestrator session. Detects local context (project, branch, session id) and copies a structured "HANDOFF TO ORCHESTRATOR" block. Use when stuck on a decision the orchestrator should weigh in on, or when the orchestrator should know about a status change.
+description: From a worker session, send a message (question, status update, or freeform note) to the orchestrator coordinating this work. Writes directly to the orchestrator's inbox — no clipboard handoff. Use when stuck on a decision, when status changes, or when the orchestrator should know something.
 ---
 
 # Ask Orchestrator
 
-Used from a **working session** (not from the orchestrator itself). Prepares a clipboard block that the user pastes into their orchestrator terminal so the orchestrator can decide, log, or coordinate.
+Used from a **working session** (not from the orchestrator itself). Writes a message to the orchestrator's `inbox.jsonl` so it shows up in the orchestrator's next `/check-messages`.
 
 ## Arguments
 
-- `$ARGUMENTS` — optional question or context to send. If omitted, ask the user what they want the orchestrator to know.
+- `$ARGUMENTS` — optional message body. If omitted, ask the user what they want to send.
 
 ## Step 1: Confirm we're not already in the orchestrator
 
 ```bash
-SESSION_ID=$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)
+SESSION_ID="${CCC_SESSION_ID:-$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)}"
 TOPIC=""
 if [ -n "$SESSION_ID" ]; then
   TOPIC=$(cat ~/.claude/session-topics/${SESSION_ID}.txt 2>/dev/null)
@@ -24,11 +24,11 @@ echo "topic: $TOPIC"
 
 If `$TOPIC` starts with `ORCHESTRATE: `, the user is invoking this from inside the orchestrator session. Tell them:
 
-> You're already in the orchestrator (`<topic>`). `/ask-orchestrator` is meant for worker sessions. Use the orchestrator CLI directly here.
+> You're already in the orchestrator (`<topic>`). `/ask-orchestrator` is meant for worker sessions. Use `/check-messages` or `ccc orchestrator inbox send` directly here.
 
 Then stop.
 
-## Step 2: Get the question
+## Step 2: Get the message body
 
 If `$ARGUMENTS` is non-empty, use it. Otherwise ask:
 
@@ -36,62 +36,76 @@ If `$ARGUMENTS` is non-empty, use it. Otherwise ask:
 
 Wait for the answer.
 
-## Step 3: Gather local context
+Also classify the message kind:
+
+- **question** — explicit request for a decision or input
+- **update** — status change, progress note, "FYI"
+- **checkin** — first contact / restart-of-session announce
+
+If unclear, default to `update`.
+
+## Step 3: Resolve which orchestrator + role this terminal belongs to
+
+```bash
+PWD_NOW=$(pwd)
+ccc orchestrator inbox resolve-role --worktree "$PWD_NOW" --project "$PWD_NOW" --json
+```
+
+- **Empty array** — no thread exists for this worktree. Either we're not registered yet, or there's no orchestrator coordinating this work. Ask the user:
+
+  > I can't find an orchestrator thread for this worktree. Active orchestrators:
+  > <listed via `ccc orchestrator list --json`>
+  >
+  > Which orchestrator should I send this to? (And what role name should I claim?)
+
+- **Exactly one entry** — use it directly.
+
+- **Multiple entries** — show the list and let the user pick.
+
+After this step you have `$ORCH_NAME` and `$ROLE`.
+
+## Step 4: Gather local context
 
 ```bash
 PROJECT=$(pwd)
 BRANCH=$(git branch --show-current 2>/dev/null || echo "")
-REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
+WORKTREE=""
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  TOPLEVEL=$(git rev-parse --show-toplevel)
+  COMMON=$(git rev-parse --git-common-dir 2>/dev/null)
+  if [ -n "$COMMON" ] && [ "$(dirname "$COMMON")" != "$TOPLEVEL" ]; then
+    WORKTREE="$TOPLEVEL"
+  fi
+fi
+FROM_SESSION="${CCC_SESSION_ID:-$SESSION_ID}"
 ```
 
-Decide on a "from-session-id" the orchestrator can reference. Prefer `$CCC_SESSION_ID` (set by ccc when launching) if present, otherwise fall back to `$SESSION_ID` (the one resolved in Step 1 from the topic file).
+## Step 5: Send the message
 
-## Step 4: Find the destination orchestrator
+The CLI is topic-scoped, so point it at a temporary `ORCHESTRATE:` topic for this invocation only:
 
 ```bash
-ccc orchestrator list --json 2>/dev/null
+TMPTOPICS=$(mktemp -d)
+printf '%s' "ORCHESTRATE: $ORCH_NAME" > "$TMPTOPICS/sess.txt"
+CCC_SESSION_TOPICS_DIR="$TMPTOPICS" CCC_SESSION_ID="sess" \
+  ccc orchestrator inbox send \
+    --to orchestrator \
+    --from "$ROLE" \
+    --kind "$KIND" \
+    --project "$PROJECT" \
+    --branch "$BRANCH" \
+    --worktree "$WORKTREE" \
+    --session-id "$FROM_SESSION" \
+    --body "$MESSAGE_BODY"
+rm -rf "$TMPTOPICS"
 ```
 
-Parse the JSON.
+## Step 6: Confirm to the user
 
-- **Zero active orchestrators**: Tell the user there's no orchestrator running. Print the handoff block to the screen anyway so they can save it, and suggest:
-  > No orchestrator is active. Start one with `/orchestrator <name>` in another terminal, then re-run this command.
-- **One active orchestrator**: Use its name as the destination. Skip to Step 5.
-- **Multiple active**: Show the list and ask the user to pick by name.
-
-## Step 5: Build the handoff block
-
-Emit (and copy to clipboard) a block of this exact shape:
-
-```
-─── HANDOFF TO ORCHESTRATOR: <orchestrator-name> ───
-  From session: <from-session-id>
-  Project: <PROJECT>
-  Repo:    <REPO>
-  Branch:  <BRANCH>
-  Topic:   <TOPIC or "(none)">
-  ────────────────────────────────────────────────
-  Question / context:
-  <the question text>
-
-  Recent context (optional, only if the user pre-provided it):
-  <recent context, e.g., what they were working on>
-```
-
-Copy it to the clipboard:
-
-```bash
-printf '%s' "$BLOCK" | pbcopy
-```
-
-## Step 6: Tell the user what to do
-
-> Copied a handoff block to your clipboard for orchestrator `<name>`. Switch to that terminal and paste. The orchestrator will register or update the thread and respond.
-
-If there were zero orchestrators active in Step 4, just print the block to the screen with the suggestion to start one.
+> Sent to orchestrator `<orch>` as role `<role>` (kind=<kind>). They'll see it next time they run `/check-messages`.
 
 ## Notes
 
-- **This is human-mediated messaging.** There is no programmatic delivery. The user copies and pastes between terminals. A future version may add a worker-side hook that delivers messages on the next prompt submit, but v1 is clipboard-only.
-- **Don't auto-update local state.** Don't run any `ccc` commands that mutate orchestrator state — that's the orchestrator's job. This skill only reads (`list --json`) and prepares the clipboard.
-- **Don't include credentials, secrets, or large file contents in the block.** Treat it like a Slack message to your orchestrator persona — the body is human-readable summary, not raw output.
+- **No clipboard.** v2 of the orchestrator workflow uses the inbox directly. Messages are durable and re-readable.
+- **Don't include credentials or large file dumps in the body.** Treat the body like a short Slack message — summary, not raw output.
+- **This skill only writes.** Decisions, thread mutations, and resolutions belong to the orchestrator side. Don't run any other `ccc orchestrator` mutation here.

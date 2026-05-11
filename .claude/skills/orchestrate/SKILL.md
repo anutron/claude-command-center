@@ -1,185 +1,158 @@
 ---
 name: orchestrate
-description: From a fresh worker session, intake an orchestrator handoff. Parses the PASTE INTO block, sets the session topic, and copies a "checkin" handoff back to clipboard so the orchestrator can register this session as a thread. Use right after pasting an orchestrator handoff into a new session.
+description: From a fresh worker session, claim an orchestrator-assigned role and intake its handoff. Reads the role's pending handoff from the orchestrator's inbox, sets the worker's session topic, and writes a checkin back to the inbox. Use right after opening a worker terminal in the target worktree.
 user_invocable: true
 ---
 
 # Orchestrate (worker intake)
 
-The bookend on the worker side of an orchestrator -> worker handoff. Used when:
+The bookend on the worker side of an orchestrator → worker handoff. Used when:
 
-- The orchestrator session ran something like `/handoff <task>` (or emitted a `paste-header` block) and put a payload on your clipboard.
-- You opened a new terminal in the right project/worktree and pasted the payload.
-- You want to register this session with the orchestrator without typing the full `/ask-orchestrator give me a checkin ...` ceremony.
+- The orchestrator session has written one or more handoff messages to its inbox, each addressed to a role name like `a`, `b`, or `wave-0b`.
+- The user has opened a fresh worker terminal in the target worktree.
+- The user types `/orchestrate <role>` (or just `/orchestrate` if role resolution by worktree finds a single match).
 
 `/orchestrate` does three things:
 
-1. Parses the PASTE INTO block from the handoff payload.
-2. Sets the session topic to the `ccc topic` value the orchestrator expects.
-3. Generates a "checkin" HANDOFF TO ORCHESTRATOR block on your clipboard so you can paste it back to the orchestrator terminal.
+1. Finds the right orchestrator + handoff message for this role.
+2. Sets the session topic to whatever the orchestrator declared as the worker topic.
+3. Writes a `checkin` message back to the inbox with this terminal's project/branch/worktree/session-id.
 
-It does **not** start executing the task. After running it, paste the checkin to the orchestrator, then tell Claude "go" (or whatever) to begin the actual work.
+It does **not** start executing the task. After it runs, the orchestrator's next `/check-messages` (or `ccc orchestrator inbox list --unread --to orchestrator`) will see the checkin. When the user says "go," begin the actual work.
 
 ## Arguments
 
-- `$ARGUMENTS` — optional. May be (a) the entire pasted handoff content, or (b) a free-form instruction like "go" or "start". If args contain a `PASTE INTO:` line, treat them as the handoff payload.
+- `$ARGUMENTS` — optional role name (`a`, `wave-0b`, etc.). If omitted, the skill tries to infer the role by resolving the current worktree against active orchestrators' threads.
 
-## Step 1: Locate the handoff payload
-
-Try sources in this order. Stop at the first one that contains a line matching `PASTE INTO:`:
-
-1. **`$ARGUMENTS`** — if it contains `PASTE INTO:`, use it.
-2. **Recent conversation** — scan the previous 1–2 user messages for a block containing `PASTE INTO:`. Use the matching block.
-3. **Clipboard** — last resort:
-
-   ```bash
-   pbpaste
-   ```
-
-   If the clipboard contains `PASTE INTO:`, use it.
-
-If none of the three sources contain a PASTE INTO block, tell the user:
-
-> I can't find an orchestrator handoff to intake. Paste the orchestrator's PASTE INTO block (and instructions) and re-run `/orchestrate`, or pass the content as args.
-
-Then stop.
-
-## Step 2: Parse the PASTE INTO block
-
-Extract these fields from the block (regex on the lines):
-
-- **Thread name** — the value after `PASTE INTO:` on the header line (between the dashes)
-- **Project** — `Project:  <path>`
-- **Worktree** — `Worktree: <path>` (may be `(none)`)
-- **Expected topic** — `ccc topic: "<text>"` (the quoted value)
-
-Also capture everything below the PASTE INTO block as the **task body** — that's the actual work the orchestrator wants done. You'll summarize it for the user in Step 6.
-
-If any required field is missing (thread name, expected topic), abort and ask the user to re-paste.
-
-## Step 3: Sanity-check the local environment
+## Step 1: Resolve which orchestrator and role this terminal belongs to
 
 ```bash
 PWD_NOW=$(pwd)
-BRANCH_NOW=$(git branch --show-current 2>/dev/null || echo "")
+ccc orchestrator inbox resolve-role --worktree "$PWD_NOW" --project "$PWD_NOW" --json
 ```
 
-Compare to the parsed Project / Worktree:
+The output is a JSON array of `{orchestrator, role, project, worktree}` entries.
 
-- If `Worktree` is set and not `(none)` and `$PWD_NOW` is not under that worktree path → warn the user that they may be in the wrong directory. Ask whether to proceed.
-- If `Worktree` is unset and `$PWD_NOW` is not under `Project` → warn similarly.
-- Otherwise proceed silently.
+- **If `$ARGUMENTS` was provided**, filter to entries with matching `role`. If exactly one matches, use it. If none match, ask the user whether to proceed anyway (orchestrator may not have created the thread yet); they can paste the orchestrator name explicitly.
+- **If `$ARGUMENTS` was empty**, the array determines the action:
+  - Empty array → ask the user for the orchestrator name and role.
+  - Exactly one entry → use it.
+  - Multiple entries → show the list and ask which one.
 
-Don't `cd` for the user — surface the mismatch so they can decide.
+After this step you have `$ORCH_NAME` and `$ROLE`.
+
+## Step 2: Read the pending handoff
+
+Inbox CLI calls are topic-scoped — they read the current orchestrator from the session topic. Since this worker session does not have an `ORCHESTRATE:` topic, set one up just for the CLI calls via env vars:
+
+```bash
+TMPTOPICS=$(mktemp -d)
+printf '%s' "ORCHESTRATE: $ORCH_NAME" > "$TMPTOPICS/sess.txt"
+export CCC_SESSION_TOPICS_DIR_BACKUP="$CCC_SESSION_TOPICS_DIR"
+export CCC_SESSION_ID_BACKUP="$CCC_SESSION_ID"
+export CCC_SESSION_TOPICS_DIR="$TMPTOPICS"
+export CCC_SESSION_ID="sess"
+# remember to restore after the CLI calls below
+```
+
+(Restore the env vars at the end of the skill, and `rm -rf "$TMPTOPICS"`.)
+
+Now read the handoff:
+
+```bash
+ccc orchestrator inbox list --to "$ROLE" --kind handoff --json
+```
+
+From the JSON array, pick the message with the highest `id` whose `from == "orchestrator"`. That's the latest handoff.
+
+If no handoff message exists for this role, tell the user:
+
+> No handoff message for role `<role>` in orchestrator `<orch>`. The orchestrator may not have written one yet, or this role may already have been intook by a previous session. Want me to check for unread messages instead?
+
+Extract from the chosen message:
+
+- `body` — the task description
+- `topic` — the worker topic to set (may be empty)
+- `project`, `branch`, `worktree` — target metadata
+- `id` — needed later for `mark-read`
+
+## Step 3: Sanity-check the local environment
+
+Compare current pwd / branch to the handoff's `project` / `branch` / `worktree`. If there's a mismatch, surface it as a warning and ask whether to proceed — never `cd` for the user.
 
 ## Step 4: Set the session topic
 
-Write the topic file directly (same pattern as `orchestrator` and `set-topic`):
+Restore the real session env first so we're writing to the worker's actual topic:
 
 ```bash
-SESSION_ID=$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)
+export CCC_SESSION_TOPICS_DIR="$CCC_SESSION_TOPICS_DIR_BACKUP"
+export CCC_SESSION_ID="$CCC_SESSION_ID_BACKUP"
+
+SESSION_ID="${CCC_SESSION_ID:-$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)}"
 if [ -z "$SESSION_ID" ]; then
   echo "Could not resolve session ID — /orchestrate needs a Claude session"
   exit 1
 fi
-printf '%s' "$EXPECTED_TOPIC" > ~/.claude/session-topics/${SESSION_ID}.txt
+WORKER_TOPIC="${HANDOFF_TOPIC:-$ROLE}"
+printf '%s' "$WORKER_TOPIC" > ~/.claude/session-topics/${SESSION_ID}.txt
 ```
 
-Use the parsed `ccc topic` value verbatim — that's what the orchestrator expects to see.
+If a topic is already set on this session and it differs, ask before overwriting.
 
-If a topic is already set on this session and it differs from the expected topic, ask before overwriting:
+## Step 5: Write the checkin
 
-> A topic is already set: `<existing>`. The orchestrator expects `<expected>`. Overwrite?
-
-## Step 5: Find the owning orchestrator
-
-Scan orchestrator state files for the thread name:
-
-```bash
-for STATE in ~/.claude/orchestrators/*/state.md; do
-  if grep -qF "## $THREAD_NAME" "$STATE"; then
-    echo "$(basename "$(dirname "$STATE")")"
-  fi
-done
-```
-
-- **Exactly one match** — use that orchestrator name.
-- **Multiple matches** — show the user the list (with `started_at` from each `state.md` frontmatter) and ask which one.
-- **No match** — the orchestrator hasn't registered this thread yet. Ask the user to confirm the orchestrator name; default to the result of `ccc orchestrator list --json` (single active) or prompt to pick.
-
-## Step 6: Build the checkin handoff and copy to clipboard
-
-Gather local context:
+Switch back to the orchestrator topic env for the CLI call, then restore:
 
 ```bash
 PROJECT=$(pwd)
-REPO=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git branch --show-current 2>/dev/null || echo "")
 WORKTREE=""
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   TOPLEVEL=$(git rev-parse --show-toplevel)
-  COMMON_DIR=$(git rev-parse --git-common-dir 2>/dev/null)
-  if [ -n "$COMMON_DIR" ] && [ "$(dirname "$COMMON_DIR")" != "$TOPLEVEL" ]; then
+  COMMON=$(git rev-parse --git-common-dir 2>/dev/null)
+  if [ -n "$COMMON" ] && [ "$(dirname "$COMMON")" != "$TOPLEVEL" ]; then
     WORKTREE="$TOPLEVEL"
   fi
 fi
-FROM_SESSION="${CCC_SESSION_ID:-$SESSION_ID}"
+
+CCC_SESSION_TOPICS_DIR="$TMPTOPICS" CCC_SESSION_ID="sess" \
+  ccc orchestrator inbox send \
+    --to orchestrator \
+    --from "$ROLE" \
+    --kind checkin \
+    --project "$PROJECT" \
+    --branch "$BRANCH" \
+    --worktree "$WORKTREE" \
+    --session-id "$SESSION_ID" \
+    --body "Picked up handoff. Topic set to \"$WORKER_TOPIC\". Ready to start."
 ```
 
-Compose the checkin block:
-
-```
-─── HANDOFF TO ORCHESTRATOR: <orchestrator-name> ───
-  Type:       checkin (starting work)
-  Thread:     <thread-name>
-  From session: <from-session>
-  Project:    <project>
-  Repo:       <repo>
-  Branch:     <branch>
-  Worktree:   <worktree or "(none)">
-  Status:     starting
-  ────────────────────────────────────────────────
-  Picked up the handoff and set topic to "<expected-topic>". Beginning work
-  now. Will report back when blocked, when a decision is needed, or on
-  completion.
-
-  Suggested orchestrator action:
-    ccc orchestrator thread add \
-      --name "<thread-name>" \
-      --project "<project>" \
-      --branch "<branch>" \
-      --session-id "<from-session>" \
-      --worktree "<worktree>" \
-      --status "in-progress"
-    (or thread set-status if the thread already exists)
-```
-
-Copy to clipboard:
+## Step 6: Mark the handoff read
 
 ```bash
-printf '%s' "$BLOCK" | pbcopy
+CCC_SESSION_TOPICS_DIR="$TMPTOPICS" CCC_SESSION_ID="sess" \
+  ccc orchestrator inbox mark-read --to "$ROLE" --up-to "$HANDOFF_ID"
+rm -rf "$TMPTOPICS"
 ```
-
-If `pbcopy` fails or isn't available, print the block to the screen and tell the user to copy manually.
 
 ## Step 7: Summarize and hand control back to the user
 
 Print a tight summary:
 
-- **Topic set:** `<expected-topic>`
-- **Orchestrator:** `<name>`
-- **Thread:** `<thread-name>`
-- **Task (one sentence):** distilled from the task body
-- **Clipboard:** checkin block ready to paste back to the orchestrator
+- **Orchestrator:** `<orch>`
+- **Role:** `<role>`
+- **Topic set:** `<worker-topic>`
+- **Task (one sentence):** distilled from the handoff body
+- **Checkin sent.**
 
 Then:
 
-> Paste the checkin into the `<orchestrator-name>` terminal. When you're ready to start the actual work, say "go" (or describe how you'd like to proceed) and I'll dive in.
+> Checkin is in the orchestrator's inbox. When you're ready to start the work, say "go" (or describe how you'd like to proceed) and I'll dive in.
 
-Do **not** start executing the task in this turn. The user will tell you when to begin — they may want to paste the checkin first so the orchestrator registers the thread, or they may want to adjust scope before starting.
+Do **not** start executing the task in this turn. The user will tell you when to begin.
 
 ## Notes
 
-- **Read-only on orchestrator state.** This skill never mutates orchestrator files. It reads `state.md` to find the owning orchestrator and emits a clipboard block — registering the thread is the orchestrator's job.
-- **Session topic is the contract.** The orchestrator's `paste-header` declares the expected topic. We honor that exactly so future `/ask-orchestrator` calls from this session land on the right thread.
-- **Don't include secrets or large file dumps in the checkin.** It's a short status message, not a payload. The orchestrator already has the task text from its own side.
+- **The orchestrator's CLI is topic-scoped.** All `ccc orchestrator inbox` calls require an `ORCHESTRATE: <name>` topic to resolve the current orchestrator. The worker's own topic is the worker topic (e.g. `wave-0b`), so for inbox calls we temporarily point `CCC_SESSION_TOPICS_DIR` at a throwaway topic file. This avoids overwriting the worker's session topic.
+- **No clipboard handling here.** This is the inbox-based version of the workflow. The clipboard `PASTE INTO` flow has been retired in favor of durable, queryable messages.
+- **Don't include secrets or large file dumps in the checkin body.** Keep it a short status sentence. The orchestrator already has the task body.

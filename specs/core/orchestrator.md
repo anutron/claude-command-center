@@ -10,7 +10,9 @@ This spec describes the file layout, identity model, and CLI surface that backs 
 
 ## Scope of v1
 
-Communication between an orchestrator session and its working sessions is **clipboard-mediated**. The orchestrator skill emits a "PASTE INTO" block; the user copies it into the relevant terminal. There is no programmatic message delivery between sessions. A future version may add hook-based messaging.
+Communication between an orchestrator session and its working sessions is **file-mediated via a per-orchestrator inbox** (`inbox.jsonl`). The orchestrator writes a handoff message addressed to a role; the user opens a worker terminal in the right worktree and runs `/orchestrate <role>`; the worker reads its message from the inbox and writes a checkin back. Notification is still human-mediated — the orchestrator tells the user which window to switch to — but the message payload itself is durable on disk and re-readable after the clipboard is gone.
+
+The clipboard-based `PASTE INTO` flow from earlier drafts is retained at the CLI level (`paste-header`) but is no longer the primary transport. New skills target the inbox.
 
 In v1, an orchestrator session can only see the orchestrator it owns. There is no cross-orchestrator dashboard. The CCC TUI does not have an orchestrator tab.
 
@@ -26,6 +28,10 @@ In v1, an orchestrator session can only see the orchestrator it owns. There is n
 
 - **Identity by topic** — an orchestrator session is identified by setting its session topic to `ORCHESTRATE: <name>`. CLI subcommands resolve "which orchestrator is this session" by reading the session topic file and stripping the prefix.
 
+- **Role** — a short handle (`a`, `b`, `c`, `wave-0b`, etc.) the orchestrator assigns to a worker. Role names are also thread names — there is no separate role concept. A worker terminal claims a role by running `/orchestrate <role>`. Once claimed, the role is bound to the worker's project/branch/worktree/session-id via the thread record.
+
+- **Inbox** — the append-only `inbox.jsonl` file inside an orchestrator's directory. Every cross-session message (orchestrator-to-worker handoffs, worker-to-orchestrator checkins, freeform updates and questions) is a line in this file. Replaces the clipboard as the durable transport.
+
 ## Storage
 
 All orchestrator state lives on disk under `~/.claude/orchestrators/<name>/`. There is no database involvement. Files are the source of truth.
@@ -40,7 +46,11 @@ Each orchestrator's directory holds:
 
 - **`log.sh`** — small append logger script created at init time. Mirrors the `/interview` skill's logger pattern. Invoked by the orchestrator skill to capture discussion turns.
 
-The CLI is responsible for keeping `state.md` well-formed when it mutates sections. A user editing `state.md` by hand is supported but at their own risk.
+- **`inbox.jsonl`** — append-only newline-delimited JSON. Each line is one message between the orchestrator and a worker (in either direction). Source of truth for cross-session communication.
+
+- **`cursors.json`** — per-recipient read cursor. Maps recipient (`orchestrator` or a role name) to the highest message id that recipient has acknowledged. Used to compute "unread for me." Mutated in place; safe to delete (everything becomes unread again).
+
+The CLI is responsible for keeping `state.md` well-formed when it mutates sections. A user editing `state.md` by hand is supported but at their own risk. Inbox files are documented enough that the user can grep/tail them by hand without ceremony.
 
 ### state.md format
 
@@ -79,17 +89,54 @@ completed_at:
 
 Question IDs are short identifiers (`Q1`, `Q2`, ...) assigned at add time, used by `question resolve`.
 
+### inbox.jsonl format
+
+One JSON object per line. Required fields: `id`, `ts`, `from`, `to`, `kind`, `body`. Optional fields carry handoff/checkin metadata.
+
+```jsonl
+{"id":1,"ts":"2026-05-10T16:30:00Z","from":"orchestrator","to":"a","kind":"handoff","body":"Migrate the cache layer to Redis. See branch notes.","topic":"redis-cache","project":"/Users/aaron/src/app","branch":"feat/redis","worktree":"/Users/aaron/src/app/.claude/worktrees/redis"}
+{"id":2,"ts":"2026-05-10T16:32:14Z","from":"a","to":"orchestrator","kind":"checkin","body":"Picked up. Starting now.","project":"/Users/aaron/src/app/.claude/worktrees/redis","branch":"feat/redis","session_id":"abc-123"}
+{"id":3,"ts":"2026-05-10T16:45:01Z","from":"a","to":"orchestrator","kind":"update","body":"Stage 1 done, stage 2 in progress."}
+```
+
+Field reference:
+
+- **`id`** — monotonic positive integer scoped to this orchestrator. Assigned by the CLI at append time as `max(existing_ids) + 1`. Used by cursors.
+- **`ts`** — RFC3339 UTC timestamp.
+- **`from`** — `orchestrator` or a role name. Identifies sender.
+- **`to`** — `orchestrator` or a role name. Identifies recipient.
+- **`kind`** — one of `handoff`, `checkin`, `update`, `question`, `paste-back`. Freeform additions are allowed; readers should not fail on unknown kinds.
+- **`body`** — the message text. May be multi-line (newlines escaped per JSON).
+- **`topic`** — optional. For `handoff` messages, the session topic the worker should set when claiming the role.
+- **`project`**, **`branch`**, **`worktree`**, **`session_id`** — optional metadata. Handoffs typically carry `project`/`branch`/`worktree` (the target). Checkins typically carry the worker's resolved `project`/`branch`/`worktree`/`session_id`.
+
+### cursors.json format
+
+```json
+{
+  "orchestrator": 12,
+  "a": 5,
+  "b": 7
+}
+```
+
+Maps recipient → highest message id that recipient has marked read. A message with `to == R` and `id > cursors[R]` is unread for recipient R. Cursors for senders are not tracked.
+
 ## Thread registration
 
 A thread comes into existence one of three ways. In all cases, the **orchestrator session** is what calls `ccc orchestrator thread add` — the worker session never registers itself.
 
-1. **Proactive.** "I'm about to spin up a postgres-migration worker." Add a thread with `status=planning` and no session ID. Bind the session ID later when the worker exists.
+1. **Proactive with inbox handoff (default).** The orchestrator decides "I want a worker named `a` to do X." It calls `thread add` with a role name (`a`) and target project/branch/worktree, then `inbox send --to a --kind handoff` with the task body and target topic. The user opens a terminal in the target worktree and runs `/orchestrate a`. The worker reads the handoff and writes a checkin back via `inbox send --to orchestrator --kind checkin --from a` with its resolved project/branch/session-id. The orchestrator's next `inbox list` or `/check-messages` invocation sees the checkin and patches the thread with the worker's metadata.
 
-2. **Reactive (clipboard handoff arrives).** A worker uses `/ask-orchestrator` to put a "HANDOFF TO ORCHESTRATOR" block on the clipboard. The block carries the worker's CCC session ID, project, branch, and the question. The user pastes it into the orchestrator session; the orchestrator skill creates or updates a thread with that metadata. **Most common first-attach moment.**
+2. **Reactive (worker reaches out first).** A worker uses `/ask-orchestrator` to write a question or checkin to the inbox of an existing orchestrator. The orchestrator sees it on next `/check-messages` and, if no thread exists for that role, creates one.
 
 3. **Adoptive.** "I already have a session running on `feature/auth` — track it." The orchestrator skill queries CCC for active sessions and creates a thread with the session ID pre-filled.
 
 There is no separate "attach" step — binding a session ID after the fact is just a thread update.
+
+### Role resolution from worktree
+
+A worker terminal opened in a worktree that already maps to an existing thread (because a previous session for that role checked in earlier) can look up its own role without being told. `ccc orchestrator inbox resolve-role --worktree <path>` scans active orchestrators' threads for one whose `worktree` (or `project`) matches and returns `<orchestrator>:<role>`. This lets a fresh session in the same worktree run `/check-messages` and pick up where the previous one left off without re-typing the role name.
 
 ## Lifecycle
 
@@ -136,7 +183,15 @@ Documented in detail in `specs/core/cli.md`. At a glance:
 
 - `ccc orchestrator overlap-check --project <p> [--themes <t>]` — list non-complete orchestrators whose project or themes overlap. JSON output.
 
-- `ccc orchestrator paste-header --thread <n>` — emit the standardized "PASTE INTO" block.
+- `ccc orchestrator paste-header --thread <n>` — emit the standardized "PASTE INTO" block. Retained for skills that still want a clipboard transport.
+
+- `ccc orchestrator inbox send --to <recipient> --kind <kind> --body <text> [--from <sender>] [--topic <t>] [--project <p>] [--branch <b>] [--worktree <w>] [--session-id <id>]` — append a message to the current orchestrator's inbox. Sender defaults to `orchestrator`. Recipient `*` broadcasts.
+
+- `ccc orchestrator inbox list [--to <recipient>] [--from <sender>] [--kind <kind>] [--unread] [--json] [--all]` — list inbox messages, optionally filtered. `--unread` requires `--to` and reads `cursors.json` to filter to messages with id greater than the recipient's cursor. Default output is one human-readable line per message; `--json` emits a JSON array.
+
+- `ccc orchestrator inbox mark-read --to <recipient> [--up-to <id>]` — set the recipient's cursor in `cursors.json`. With no `--up-to`, sets it to the highest existing message id.
+
+- `ccc orchestrator inbox resolve-role [--worktree <path>] [--project <path>] [--json]` — search active orchestrators for a thread whose `worktree`/`project` matches and return `<orchestrator>:<role>`. With `--json`, returns an array of matches.
 
 - `ccc orchestrator complete` — mark current orchestrator complete.
 
@@ -179,3 +234,16 @@ The orchestrator name is resolved from the current session topic (`ORCHESTRATE: 
 - All mutators preserve sections they don't touch (e.g. `decision add` does not disturb `# Threads`).
 - Reading `state.md` after every mutator round-trip yields the same logical state.
 - Hand-editing `state.md` between mutations is tolerated as long as section headers are intact.
+
+### Inbox
+
+- `inbox send` appends a well-formed JSON line to `inbox.jsonl` with a monotonic `id` and current UTC `ts`.
+- Sequential `inbox send` calls produce strictly increasing `id` values within a single orchestrator.
+- `inbox list` returns messages in append order.
+- `inbox list --to a --unread` returns only messages with `to == "a"` and `id > cursors["a"]`.
+- `inbox list --to a --unread` also includes messages with `to == "*"` (broadcast) when their id exceeds the cursor.
+- `inbox mark-read --to a` without `--up-to` sets `cursors["a"]` to the highest existing message id and makes subsequent `--unread` queries empty until new messages arrive.
+- `inbox mark-read --to a --up-to 5` sets `cursors["a"]` to `5` exactly.
+- `inbox resolve-role --worktree W` returns the single `<orchestrator>:<role>` whose thread `worktree` equals `W`. If multiple match, all are returned in `--json` form. If none match, exits cleanly with empty output.
+- `inbox resolve-role --project P` falls back to thread `project` when `worktree` is empty.
+- Reading `inbox.jsonl` when the file does not yet exist returns an empty list, not an error.

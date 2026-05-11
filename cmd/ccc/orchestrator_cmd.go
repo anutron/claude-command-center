@@ -35,6 +35,8 @@ func runOrchestrator(args []string) error {
 		return runOrchOverlapCheck(rest)
 	case "paste-header":
 		return runOrchPasteHeader(rest)
+	case "inbox":
+		return runOrchInbox(rest)
 	case "complete":
 		return runOrchComplete(rest)
 	case "list":
@@ -62,8 +64,19 @@ func printOrchestratorUsage() {
 	fmt.Fprintln(os.Stderr, "  question resolve --id Q1 [--note T]    Resolve a question")
 	fmt.Fprintln(os.Stderr, "  overlap-check [--project P] [--themes T] List active orchestrators that overlap (JSON)")
 	fmt.Fprintln(os.Stderr, "  paste-header --thread N                Emit the standardized PASTE INTO block")
+	fmt.Fprintln(os.Stderr, "  inbox send|list|mark-read|resolve-role Inbox operations (see `ccc orchestrator inbox` for details)")
 	fmt.Fprintln(os.Stderr, "  complete                               Mark the current orchestrator complete")
 	fmt.Fprintln(os.Stderr, "  list [--all] [--json]                  List orchestrators (active by default)")
+}
+
+func printOrchInboxUsage() {
+	fmt.Fprintln(os.Stderr, "Usage: ccc orchestrator inbox <verb> [flags]")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Verbs:")
+	fmt.Fprintln(os.Stderr, "  send --to R --kind K --body T [--from S] [--topic T] [--project P] [--branch B] [--worktree W] [--session-id ID]")
+	fmt.Fprintln(os.Stderr, "  list [--to R] [--from S] [--kind K] [--unread] [--all] [--json]")
+	fmt.Fprintln(os.Stderr, "  mark-read --to R [--up-to N]")
+	fmt.Fprintln(os.Stderr, "  resolve-role [--worktree W] [--project P] [--json]")
 }
 
 // resolveName resolves the orchestrator name from the current session topic
@@ -451,6 +464,188 @@ func runOrchList(args []string) error {
 		}
 		fmt.Printf("%-30s  %-10s  threads=%-2d  project=%s  started=%s\n",
 			o.Name, o.Status, len(o.Threads), o.Project, started)
+	}
+	return nil
+}
+
+// ----- inbox subcommands -----
+
+func runOrchInbox(args []string) error {
+	if len(args) == 0 {
+		printOrchInboxUsage()
+		return fmt.Errorf("orchestrator inbox: subcommand required (send | list | mark-read | resolve-role)")
+	}
+	switch args[0] {
+	case "send":
+		return runOrchInboxSend(args[1:])
+	case "list":
+		return runOrchInboxList(args[1:])
+	case "mark-read":
+		return runOrchInboxMarkRead(args[1:])
+	case "resolve-role":
+		return runOrchInboxResolveRole(args[1:])
+	case "-h", "--help", "help":
+		printOrchInboxUsage()
+		return nil
+	default:
+		printOrchInboxUsage()
+		return fmt.Errorf("orchestrator inbox: unknown subcommand %q", args[0])
+	}
+}
+
+func runOrchInboxSend(args []string) error {
+	fs := flag.NewFlagSet("orchestrator inbox send", flag.ContinueOnError)
+	to := fs.String("to", "", "Recipient role or 'orchestrator' (required)")
+	from := fs.String("from", "", "Sender (default: 'orchestrator' if topic is ORCHESTRATE:..., else required)")
+	kind := fs.String("kind", "", "Message kind (handoff|checkin|update|question|paste-back) (required)")
+	body := fs.String("body", "", "Message body (required, or '-' for stdin)")
+	topic := fs.String("topic", "", "Worker topic to set (handoff only)")
+	project := fs.String("project", "", "Project path (optional)")
+	branch := fs.String("branch", "", "Branch (optional)")
+	worktree := fs.String("worktree", "", "Worktree path (optional)")
+	sessionID := fs.String("session-id", "", "CCC session ID (optional)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *to == "" {
+		return fmt.Errorf("--to is required")
+	}
+	if *kind == "" {
+		return fmt.Errorf("--kind is required")
+	}
+	if *body == "" {
+		return fmt.Errorf("--body is required")
+	}
+	text, err := readBody(*body)
+	if err != nil {
+		return err
+	}
+	name, err := resolveName()
+	if err != nil {
+		return err
+	}
+	sender := *from
+	if sender == "" {
+		sender = orchestrator.RecipientOrchestrator
+	}
+	id, err := orchestrator.AppendMessage(name, orchestrator.Message{
+		From:      sender,
+		To:        *to,
+		Kind:      *kind,
+		Body:      text,
+		Topic:     *topic,
+		Project:   *project,
+		Branch:    *branch,
+		Worktree:  *worktree,
+		SessionID: *sessionID,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Message %d sent (to=%s kind=%s)\n", id, *to, *kind)
+	return nil
+}
+
+func runOrchInboxList(args []string) error {
+	fs := flag.NewFlagSet("orchestrator inbox list", flag.ContinueOnError)
+	to := fs.String("to", "", "Filter: recipient")
+	from := fs.String("from", "", "Filter: sender")
+	kind := fs.String("kind", "", "Filter: kind")
+	unread := fs.Bool("unread", false, "Only messages newer than recipient's cursor (requires --to)")
+	all := fs.Bool("all", false, "Ignored — kept for symmetry with `orchestrator list`")
+	asJSON := fs.Bool("json", false, "Emit JSON instead of human-readable lines")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	_ = *all
+	if *unread && *to == "" {
+		return fmt.Errorf("--unread requires --to")
+	}
+	name, err := resolveName()
+	if err != nil {
+		return err
+	}
+	msgs, err := orchestrator.ListMessages(name)
+	if err != nil {
+		return err
+	}
+	var cursor int64
+	if *unread {
+		cursor, err = orchestrator.ReadCursor(name, *to)
+		if err != nil {
+			return err
+		}
+	}
+	filtered := orchestrator.FilterMessages(msgs, orchestrator.MessageFilter{
+		To: *to, From: *from, Kind: *kind, Unread: *unread,
+	}, cursor)
+	if *asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if filtered == nil {
+			filtered = []orchestrator.Message{}
+		}
+		return enc.Encode(filtered)
+	}
+	if len(filtered) == 0 {
+		fmt.Println("(no messages)")
+		return nil
+	}
+	for _, m := range filtered {
+		ts := m.TS.Format("2006-01-02 15:04")
+		body := strings.ReplaceAll(m.Body, "\n", " ")
+		if len(body) > 80 {
+			body = body[:77] + "..."
+		}
+		fmt.Printf("#%-3d  %s  %s -> %-12s [%s]  %s\n", m.ID, ts, m.From, m.To, m.Kind, body)
+	}
+	return nil
+}
+
+func runOrchInboxMarkRead(args []string) error {
+	fs := flag.NewFlagSet("orchestrator inbox mark-read", flag.ContinueOnError)
+	to := fs.String("to", "", "Recipient whose cursor to advance (required)")
+	upTo := fs.Int64("up-to", 0, "Specific id to set cursor to (default: highest existing message id)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *to == "" {
+		return fmt.Errorf("--to is required")
+	}
+	name, err := resolveName()
+	if err != nil {
+		return err
+	}
+	if err := orchestrator.SetCursor(name, *to, *upTo); err != nil {
+		return err
+	}
+	final, _ := orchestrator.ReadCursor(name, *to)
+	fmt.Printf("Cursor for %q set to %d\n", *to, final)
+	return nil
+}
+
+func runOrchInboxResolveRole(args []string) error {
+	fs := flag.NewFlagSet("orchestrator inbox resolve-role", flag.ContinueOnError)
+	worktree := fs.String("worktree", "", "Worktree path to match")
+	project := fs.String("project", "", "Project path to match (fallback)")
+	asJSON := fs.Bool("json", false, "Emit JSON array of matches")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	matches, err := orchestrator.ResolveRole(*worktree, *project)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		if matches == nil {
+			matches = []orchestrator.RoleMatch{}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(matches)
+	}
+	for _, m := range matches {
+		fmt.Printf("%s:%s\n", m.Orchestrator, m.Role)
 	}
 	return nil
 }

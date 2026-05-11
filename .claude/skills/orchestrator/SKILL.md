@@ -83,34 +83,73 @@ If this is a fresh orchestrator (no threads, decisions, or questions), tell the 
 
 ## Step 5: Run the orchestration loop
 
-Act as the user's coordination partner. The user will tell you about working sessions, ask for advice on which to focus on, share decisions to log, surface blockers, and accept clipboard handoffs from working sessions (pasted "HANDOFF TO ORCHESTRATOR" blocks from `/ask-orchestrator`).
+Act as the user's coordination partner. The user will tell you about working sessions, ask for advice on which to focus on, share decisions to log, surface blockers, and check the inbox for messages from working sessions.
 
-When the user pastes a HANDOFF block, parse it for `From session: <id>`, `Project:`, `Branch:`, `Topic:`, and the question. Then:
+### Sending a handoff to a new worker
 
-1. Decide whether to add a new thread or update an existing one. If the topic in the block matches an existing thread name, update it. If new, ask the user to confirm a thread name (default to the topic) and run:
+When the user wants to spin up a new worker (e.g. "let's do a, b, and c in worktrees"):
 
-```bash
-ccc orchestrator thread add \
-  --name "<thread-name>" \
-  --project "<project>" \
-  --branch "<branch>" \
-  --session-id "<from-session-id>" \
-  --status "awaiting-user"
-```
+1. Pick role names with the user (`a`, `b`, `c`, or descriptive labels). Roles are also thread names.
+2. Add a thread per role with the target project/branch/worktree:
 
-2. Discuss the question with the user. When a decision is made, log it:
+   ```bash
+   ccc orchestrator thread add \
+     --name "<role>" \
+     --project "<worktree-path-or-project-path>" \
+     --branch "<branch>" \
+     --worktree "<worktree-path>" \
+     --status "planning"
+   ```
 
-```bash
-ccc orchestrator decision add --body "<text>" --thread "<thread-name>"
-```
+3. Write a handoff message to the inbox for each role:
 
-3. If the orchestrator is going to pass guidance back to the worker, emit a paste-back block:
+   ```bash
+   ccc orchestrator inbox send \
+     --to "<role>" \
+     --kind handoff \
+     --topic "<worker-topic>" \
+     --project "<worktree-path>" \
+     --branch "<branch>" \
+     --worktree "<worktree-path>" \
+     --body "<task description, files to read, constraints>"
+   ```
 
-```bash
-ccc orchestrator paste-header --thread "<thread-name>"
-```
+4. Tell the user which terminal to switch to and what to type:
 
-Then add the actual instruction text the user should paste into the worker terminal under that header.
+   > Open a worker terminal in `<worktree-path>` and run `/orchestrate <role>`.
+
+### Receiving messages from workers
+
+To see what workers have sent back, run `/check-messages` (or `ccc orchestrator inbox list --unread --to orchestrator`). When a worker checkin or update arrives:
+
+1. If a thread for that role doesn't yet exist, create one. If it does, update its status:
+
+   ```bash
+   ccc orchestrator thread set-status --name "<role>" --status "in-progress" --reason "checked in"
+   ```
+
+2. Discuss the worker's question or update with the user. When a decision is made, log it:
+
+   ```bash
+   ccc orchestrator decision add --body "<text>" --thread "<role>"
+   ```
+
+3. To pass guidance back to the worker, send another inbox message:
+
+   ```bash
+   ccc orchestrator inbox send \
+     --to "<role>" \
+     --kind update \
+     --body "<decision or instruction>"
+   ```
+
+   Tell the user: "Switch to the `<role>` worker terminal and run `/check-messages`." The worker will see the new message.
+
+4. Mark the worker's messages read once handled:
+
+   ```bash
+   ccc orchestrator inbox mark-read --to orchestrator
+   ```
 
 ## State change capture
 
