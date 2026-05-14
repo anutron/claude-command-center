@@ -58,7 +58,7 @@ The CLI is responsible for keeping `state.md` well-formed when it mutates sectio
 ---
 name: postgres-migration
 status: active
-project: ~/Personal/sherlock
+project: ~/projects/example
 started_at: 2026-05-09T15:00:00Z
 completed_at:
 ---
@@ -68,7 +68,7 @@ completed_at:
 ## postgres-migration
 - role: postgres
 - status: in-flight
-- project: ~/Personal/sherlock
+- project: ~/projects/example
 - branch: feature/postgres
 - worktree:
 - session-id: abc-123

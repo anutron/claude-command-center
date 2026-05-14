@@ -34,9 +34,9 @@ func TestNativeLogPath(t *testing.T) {
 		},
 		{
 			name:       "deep nested path",
-			projectDir: "/Users/aaron/Personal/claude-command-center",
+			projectDir: "/opt/a/b/c",
 			sessionID:  "sess-456",
-			wantSuffix: filepath.Join(".claude", "projects", "-Users-aaron-Personal-claude-command-center", "sess-456.jsonl"),
+			wantSuffix: filepath.Join(".claude", "projects", "-opt-a-b-c", "sess-456.jsonl"),
 		},
 		{
 			name:       "root-level path",
@@ -65,19 +65,19 @@ func TestNativeLogPath(t *testing.T) {
 
 func TestBUG122_NativeLogPathLeadingDash(t *testing.T) {
 	// BUG-122: NativeLogPath must produce a leading dash in the encoded project
-	// directory name. Claude CLI encodes "/Users/aaron/Personal/project" as
-	// "-Users-aaron-Personal-project" (leading dash from the root slash).
-	// Without the leading dash, the session viewer cannot find log files.
-	got := NativeLogPath("/Users/aaron/Personal/project", "test-session")
+	// directory name. Claude CLI encodes "/tmp/proj" as "-tmp-proj"
+	// (leading dash from the root slash). Without the leading dash, the
+	// session viewer cannot find log files.
+	got := NativeLogPath("/tmp/proj", "test-session")
 
 	// The encoded directory component must start with a dash.
-	if !strings.Contains(got, "-Users-aaron-Personal-project") {
+	if !strings.Contains(got, "-tmp-proj") {
 		t.Errorf("BUG-122 regression: NativeLogPath output missing leading dash in encoded path\n  got: %s", got)
 	}
 
 	// Make sure it does NOT contain the version without the leading dash
-	// (i.e., "projects/Users-aaron-Personal-project" would be wrong).
-	if strings.Contains(got, "projects/Users-aaron-Personal-project") {
+	// (i.e., "projects/tmp-proj" would be wrong).
+	if strings.Contains(got, "projects/tmp-proj") {
 		t.Errorf("BUG-122 regression: encoded path lacks leading dash\n  got: %s", got)
 	}
 }

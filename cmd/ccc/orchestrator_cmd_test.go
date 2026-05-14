@@ -92,14 +92,14 @@ func TestRunOrchFullFlow(t *testing.T) {
 
 func TestRunOrchOverlapCheck_EmitsJSON(t *testing.T) {
 	withOrchestratorTopic(t, "alpha")
-	if err := runOrchestrator([]string{"init", "--project", "/Users/aaron/Personal/sherlock"}); err != nil {
+	if err := runOrchestrator([]string{"init", "--project", "/tmp/proj-a"}); err != nil {
 		t.Fatal(err)
 	}
 	// overlap-check writes JSON to stdout — capture by redirecting.
 	r, w, _ := os.Pipe()
 	old := os.Stdout
 	os.Stdout = w
-	err := runOrchestrator([]string{"overlap-check", "--project", "/Users/aaron/Personal/sherlock"})
+	err := runOrchestrator([]string{"overlap-check", "--project", "/tmp/proj-a"})
 	w.Close()
 	os.Stdout = old
 	if err != nil {

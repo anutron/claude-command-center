@@ -277,13 +277,13 @@ func TestList_FiltersCompleted(t *testing.T) {
 
 func TestOverlapCheck_ProjectSubstring(t *testing.T) {
 	withTempRoot(t)
-	if err := Init("alpha", "/Users/aaron/Personal/sherlock"); err != nil {
+	if err := Init("alpha", "/tmp/proj-a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Init("beta", "/Users/aaron/Personal/other"); err != nil {
+	if err := Init("beta", "/tmp/proj-b"); err != nil {
 		t.Fatal(err)
 	}
-	matches, err := OverlapCheck("/Users/aaron/Personal/sherlock", nil)
+	matches, err := OverlapCheck("/tmp/proj-a", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

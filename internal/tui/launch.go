@@ -59,7 +59,7 @@ func resolveSessionDir(sessionID, fallbackDir string) string {
 		candidate := filepath.Join(projectsDir, e.Name(), sessionFile)
 		if _, err := os.Stat(candidate); err == nil {
 			// Found the session file. Reverse the project-path encoding:
-			// "-Users-aaron-Personal-proj" → "/Users/aaron/Personal/proj"
+			// "-tmp-proj" → "/tmp/proj"
 			projectPath := strings.ReplaceAll(e.Name(), "-", "/")
 			// The encoding replaces "/" with "-", so the first char becomes "/"
 			// because the leading "-" maps to a leading "/".
