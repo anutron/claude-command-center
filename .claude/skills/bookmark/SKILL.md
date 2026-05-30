@@ -16,11 +16,13 @@ If `$ARGUMENTS` is provided, also creates a todo in the Command Center so the bo
 ## Context
 
 - Project: !`pwd`
-- Repo: !`basename $(git rev-parse --show-toplevel 2>/dev/null) 2>/dev/null || basename $(pwd)`
-- Branch: !`git branch --show-current 2>/dev/null || echo "not a git repo"`
-- Claude sessions dir: !`echo ~/.claude/projects/$(pwd | sed 's|/|-|g')`
-- Is worktree: !`git rev-parse --git-common-dir 2>/dev/null | grep -q '\.git$' && echo "no" || echo "yes"`
-- Main repo: !`git worktree list 2>/dev/null | head -1 | awk '{print $1}'`
+- Repo: !`~/.claude/bin/bookmark-context.sh repo`
+- Branch: !`~/.claude/bin/bookmark-context.sh branch`
+- Claude sessions dir: !`~/.claude/bin/bookmark-context.sh sessions-dir`
+- Is worktree: !`~/.claude/bin/bookmark-context.sh is-worktree`
+- Main repo: !`~/.claude/bin/bookmark-context.sh main-repo`
+
+The helper script lives at `ccc/.claude/home/bin/bookmark-context.sh` and is symlinked into `~/.claude/bin/`. If it's missing, run `/setup` (or recreate the symlink) — the inline `$(...)` form would otherwise trigger Claude Code's static-analysis permission prompts.
 
 ## Instructions
 
