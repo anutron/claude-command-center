@@ -324,6 +324,17 @@ func (p *Plugin) startAuthFlowForDatasource() tea.Cmd {
 		return nil
 	}
 
+	// Fall back to the environment when the form was left blank, mirroring the
+	// Slack token path: the OAuth client ID/secret can be supplied via
+	// $GOOGLE_CLIENT_ID / $GOOGLE_CLIENT_SECRET (e.g. from 1Password) instead of
+	// being typed into the form.
+	if strings.TrimSpace(creds.ClientID) == "" {
+		creds.ClientID = strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID"))
+	}
+	if strings.TrimSpace(creds.ClientSecret) == "" {
+		creds.ClientSecret = strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_SECRET"))
+	}
+
 	// Validate credentials before launching OAuth flow.
 	if err := auth.ValidateClientCredentials(creds.ClientID); err != nil {
 		p.flashMessage = "Invalid credentials: " + err.Error()

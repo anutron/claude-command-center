@@ -890,13 +890,33 @@ func (p *Plugin) saveSlackToken() tea.Cmd {
 	p.pendingSlackToken = nil
 	p.pendingAuthSlug = ""
 
-	if tok == nil || tok.Token == "" {
+	tokenValue := ""
+	if tok != nil {
+		tokenValue = strings.TrimSpace(tok.Token)
+	}
+
+	if tokenValue == "" {
+		// An empty submission is valid when the token is supplied via the
+		// environment ($SLACK_TOKEN / $SLACK_BOT_TOKEN). Nothing to persist —
+		// just enable the source and re-check so the env token is picked up.
+		if envSet("SLACK_TOKEN", "SLACK_BOT_TOKEN") {
+			p.cfg.Slack.Enabled = true
+			_ = config.Save(p.cfg, true)
+			p.flashMessage = "Using Slack token from environment"
+			p.flashMessageAt = time.Now()
+			p.publishConfigSaved("slack")
+			p.rebuildNav()
+			return func() tea.Msg {
+				result := p.validateDataSourceResult(slug, true)
+				return datasourceRecheckResult{Slug: slug, Result: result, Live: true}
+			}
+		}
 		p.flashMessage = "No token provided"
 		p.flashMessageAt = time.Now()
 		return nil
 	}
 
-	p.cfg.Slack.Token = strings.TrimSpace(tok.Token)
+	p.cfg.Slack.Token = tokenValue
 	p.cfg.Slack.Enabled = true
 	if err := config.Save(p.cfg, true); err != nil {
 		p.flashMessage = "Failed to save token: " + err.Error()

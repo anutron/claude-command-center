@@ -162,9 +162,22 @@ When no existing credentials are found, only the single "Authenticate" option ap
 
 ### Slack Token
 
-The Slack integration uses a **user token** (`xoxp-`), not a bot token. The token form says "Slack User Token" with "Starts with xoxp-". Config supports both `token` (preferred) and `bot_token` (backwards compat) fields. Env vars: `SLACK_TOKEN` and `SLACK_BOT_TOKEN`.
+The Slack integration uses a **user token** (`xoxp-`), not a bot token. The token form says "Slack User Token" with "Starts with xoxp-". Config supports both `token` (preferred) and `bot_token` (backwards compat) fields. Env vars: `SLACK_TOKEN` (preferred) and `SLACK_BOT_TOKEN` (deprecated).
+
+**Token can be supplied via the environment instead of saved to config.** The preferred way to provide the token is the `SLACK_TOKEN` env var (e.g. sourced from 1Password via `secret SLACK_TOKEN`), so the secret never lands in plaintext `config.yaml`. The token form reflects this:
+
+- The form **Description** tells the user the token can be supplied via `SLACK_TOKEN` (e.g. `secret SLACK_TOKEN`) instead of being saved here.
+- `Validate()` **allows an empty value** when `SLACK_TOKEN` or `SLACK_BOT_TOKEN` is already set in the environment, so the user can skip pasting. When neither env var is set, a non-empty value is still required.
 
 The Slack refresh source gracefully degrades: if `conversations.list` fails with `missing_scope`, it falls back to `search.messages` (which only requires `search:read`).
+
+### Google OAuth client credentials
+
+The Google credential form (`newClientCredForm`, used by Calendar and Gmail) collects a Client ID and Client Secret that feed the OAuth browser flow. As with Slack, these can be supplied via the environment instead of typed into the form:
+
+- The form **Description** points the user at the `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` env vars (e.g. `secret GOOGLE_CLIENT_ID`).
+- `Validate()` on each field **allows an empty value** when the matching env var (`GOOGLE_CLIENT_ID` for Client ID, `GOOGLE_CLIENT_SECRET` for Client Secret) is set; otherwise the field is required.
+- The OAuth flow (`startAuthFlowForDatasource`) **falls back to `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`** when the submitted form values are empty, so an env-only configuration completes authentication without writing the credentials into the form.
 
 ### Daemon (agent-daemon)
 

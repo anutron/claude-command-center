@@ -26,6 +26,27 @@ func assertViewNotContains(t *testing.T, view, substr string) {
 	}
 }
 
+// --- Auth form env-hint view tests ---
+
+// TestView_SlackTokenFormShowsEnvHint renders the actual Slack token form and
+// asserts the rendered output tells the user the token can come from the
+// SLACK_TOKEN env var instead of being saved into plaintext config.
+func TestView_SlackTokenFormShowsEnvHint(t *testing.T) {
+	form, _ := newSlackTokenForm(nil)
+	form.Init()
+	out := form.View()
+	assertViewContains(t, out, "SLACK_TOKEN")
+}
+
+// TestView_ClientCredFormShowsEnvHint renders the Google client-credential form
+// and asserts it surfaces the GOOGLE_CLIENT_ID env-var path.
+func TestView_ClientCredFormShowsEnvHint(t *testing.T) {
+	form, _ := newClientCredForm(nil)
+	form.Init()
+	out := form.View()
+	assertViewContains(t, out, "GOOGLE_CLIENT_ID")
+}
+
 // --- Appearance view tests ---
 
 func TestView_BannerToggleKeepsTabBar(t *testing.T) {

@@ -103,7 +103,7 @@ func buildContextRegistry() *refresh.ContextRegistry {
 	// Slack needs bot token from config
 	cfg, err := config.Load()
 	if err == nil {
-		if token := cfg.Slack.EffectiveToken(); token != "" {
+		if token := config.ResolveSlackToken(cfg); token != "" {
 			registry.Register("slack", slacksrc.NewContextFetcher(token))
 		}
 		registry.Register("gmail", gmailsrc.NewContextFetcher(cfg.Gmail))

@@ -118,7 +118,7 @@ func main() {
 		calendarsrc.New(cfg.Calendar.Enabled, calendarIDs, nil),
 		gmailsrc.New(cfg.Gmail, l),
 		githubsrc.New(cfg.GitHub.Enabled, cfg.GitHub.Repos, cfg.GitHub.Username, cfg.GitHub.IsTrackMyPRs()),
-		slacksrc.New(cfg.Slack.Enabled, cfg.Slack.EffectiveToken(), cfg.UserFirstName, l, database),
+		slacksrc.New(cfg.Slack.Enabled, config.ResolveSlackToken(cfg), cfg.UserFirstName, l, database),
 		granolasrc.New(cfg.Granola.Enabled, l, database),
 	}
 
@@ -126,7 +126,7 @@ func main() {
 	contextRegistry := refresh.NewContextRegistry()
 	contextRegistry.Register("granola", granolasrc.NewContextFetcher())
 	contextRegistry.Register("github", githubsrc.NewContextFetcher())
-	if token := cfg.Slack.EffectiveToken(); token != "" {
+	if token := config.ResolveSlackToken(cfg); token != "" {
 		contextRegistry.Register("slack", slacksrc.NewContextFetcher(token))
 	}
 	contextRegistry.Register("gmail", gmailsrc.NewContextFetcher(cfg.Gmail))

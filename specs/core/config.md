@@ -186,7 +186,20 @@ Validates that external service credentials are present and parseable. Used by t
 - `ValidateGmail()`: checks that `~/.gmail-mcp/work.json` exists and is valid JSON
 - `ValidateGranola()`: checks that `~/Library/Application Support/Granola/stored-accounts.json` exists
 
-`LoadSlackToken()` precedence: Config `Token` > Config `BotToken` (deprecated) > `$SLACK_TOKEN` > `$SLACK_BOT_TOKEN` (deprecated).
+### Slack Token Resolution (single source of precedence)
+
+`ResolveSlackToken(cfg *Config)` is the single resolver for the Slack token. Precedence: config `Token` > config `BotToken` (deprecated) > `$SLACK_TOKEN` > `$SLACK_BOT_TOKEN` (deprecated). It accepts an already-loaded config (no redundant disk read) and tolerates a nil config.
+
+- `LoadSlackToken()` is a convenience wrapper: it calls `Load()` then delegates to `ResolveSlackToken(cfg)`. Used by validation and the settings UI.
+- **Every token-consuming path uses this same precedence**, including the environment fallback. The data-fetch paths — `ai-cron` (`slacksrc.New` and the Slack context fetcher), the in-daemon `runRefresh`, and the TUI todo context registry — call `ResolveSlackToken(cfg)` rather than `cfg.Slack.EffectiveToken()`. This is required: `EffectiveToken()` reads config only, so before this change a token supplied purely via `$SLACK_TOKEN` validated as present in the settings UI but was invisible to the actual refresh. `EffectiveToken()` remains as the config-only primitive that `ResolveSlackToken` consults first.
+
+This lets the token live exclusively in the environment (e.g. exported from 1Password via `secret SLACK_TOKEN`) with no value in `config.yaml`.
+
+### Refresh delivery and the daemon
+
+The detached daemon (`daemon-internal`, see daemon spec) is the primary background refresh path. It is launched by `ccc`, inherits `ccc`'s environment (so `$SLACK_TOKEN` reaches it when `ccc` is launched from a shell that exported it), fetches the token once at startup via `ResolveSlackToken`, holds it in memory, and refreshes on its interval — surviving TUI exit.
+
+The crontab `ai-cron` entry (see Crontab Schedule below) is a redundant alternative refresh path that runs in a minimal, non-interactive environment. It cannot see `$SLACK_TOKEN` exported in an interactive shell, and writing the token into the sourced `~/.config/ccc/.env` would defeat the purpose of keeping it out of plaintext files. The crontab path is therefore **deprecated in favor of the daemon** for token-bearing sources; environments that want the env-only Slack token should rely on the daemon and not install the crontab schedule.
 
 **Note on placeholder detection:** OAuth client ID placeholder detection (rejecting values like "placeholder", "test", "CLIENT_ID") lives in `internal/auth/flow.go`, not in the config package. See the auth spec for details.
 
@@ -194,7 +207,7 @@ Validates that external service credentials are present and parseable. Used by t
 
 Sensitive files are written with restricted permissions to prevent local information disclosure:
 
-- **`config.yaml`** and **`config.yaml.bak`**: `0o600` — contains Slack token in plaintext
+- **`config.yaml`** and **`config.yaml.bak`**: `0o600` — may contain a Slack token in plaintext if one was saved via the settings form. Prefer supplying the token via `$SLACK_TOKEN` (e.g. from 1Password) so no secret is written here; see Slack Token Resolution above.
 - **`mcp.json`** (`~/.claude/mcp.json`): `0o600` — contains MCP server configuration
 - **Database directory** (`~/.config/ccc/data/`): `0o700` — DB contains calendar events, email subjects, meeting transcripts
 - **Socket directory**: `0o700` — unix socket allows sending notify events to the TUI
@@ -230,6 +243,12 @@ Note: Go OAuth token files (`token.json`) already use `0o600`. The Gmail MCP Typ
 - ValidateCalendar: errors when credentials missing
 - ValidateGitHub: errors when gh CLI not authenticated
 - ValidateSlack: errors when no token available
+- ResolveSlackToken_ConfigTokenWins: config Token takes precedence over BotToken and env
+- ResolveSlackToken_ConfigBotTokenFallback: config BotToken used when Token empty
+- ResolveSlackToken_EnvSlackToken: `$SLACK_TOKEN` used when config has no token (the fetch-path gap this fixes)
+- ResolveSlackToken_EnvBotTokenFallback: `$SLACK_BOT_TOKEN` used when config empty and `$SLACK_TOKEN` unset
+- ResolveSlackToken_NilConfig: nil config falls straight through to env vars without panicking
+- ResolveSlackToken_AllEmpty: returns empty string when neither config nor env supplies a token
 - ValidateGmail: errors when missing, errors when malformed, succeeds when valid
 - ValidateGranola: errors when accounts missing
 - IsScheduleInstalled: does not panic when no crontab
