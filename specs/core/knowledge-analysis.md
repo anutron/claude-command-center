@@ -10,7 +10,7 @@ Runs two analysis passes over the knowledge tables during refresh to detect patt
   - `db` (*sql.DB) – database connection for reading knowledge tables and writing insights
   - `llm` (llm.LLM) – Sonnet model (used by drift detection only)
   - `bus` (plugin.EventBus) – for publishing `knowledge.insights.updated` events
-  - Configuration: silence thresholds, drift detection enabled/disabled
+  - Configuration: silence alerts enabled/disabled, silence thresholds, drift detection enabled/disabled
 - **Outputs**: Rows in `knowledge_surfaced_insights`; `knowledge.insights.updated` events on the bus
 - **Dependencies**: Knowledge tables populated by extraction, LLM (Sonnet) for drift detection
 
@@ -30,6 +30,14 @@ Both passes are skipped when the knowledge plugin is disabled.
 ### Silence alerts
 
 Scans `knowledge_topics` and `knowledge_open_threads` for items that have gone quiet despite being previously active.
+
+#### Configuration
+
+The silence alert pass is gated by the `knowledge.silence_alerts` config flag:
+
+- When the flag is unset (omitted), silence alerts are **enabled** – the historical default.
+- When the flag is set to `false`, the silence alert pass is skipped entirely: no new silence-alert insights are written and existing ones are left untouched (not removed). Extraction and drift detection still run normally.
+- Disabling silence alerts does not affect drift detection or extraction.
 
 #### Thresholds
 
@@ -151,6 +159,12 @@ Drift insights whose underlying position has been explicitly superseded (a newer
 
 - Custom topic threshold (e.g., 5 days) fires alerts sooner than the default 10 days
 - Custom thread threshold (e.g., 3 days) fires alerts sooner than the default 7 days
+
+### Silence alerts – enable/disable configuration
+
+- When `knowledge.silence_alerts` is unset, the silence alert pass runs (default enabled)
+- When `knowledge.silence_alerts` is `false`, the silence alert pass is not wired into the refresh pipeline and no silence-alert insights are written
+- Disabling silence alerts does not affect drift detection or extraction
 
 ### Drift detection – happy path
 

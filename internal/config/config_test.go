@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -528,6 +530,42 @@ func TestAgentConfig_SandboxDefaults(t *testing.T) {
 	cfg.Agent.TodoWriteLearnedPaths = &f
 	if cfg.Agent.TodoWriteLearnedPathsEnabled() {
 		t.Error("TodoWriteLearnedPaths should be false when explicitly set")
+	}
+}
+
+func TestKnowledgeConfig_SilenceAlertsDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	// Unset flag defaults to enabled (historical default).
+	if !cfg.SilenceAlertsEnabled() {
+		t.Error("SilenceAlerts should default to enabled when unset")
+	}
+
+	// Explicit false disables.
+	f := false
+	cfg.Knowledge.SilenceAlerts = &f
+	if cfg.SilenceAlertsEnabled() {
+		t.Error("SilenceAlerts should be disabled when explicitly set to false")
+	}
+
+	// Explicit true keeps it enabled.
+	tr := true
+	cfg.Knowledge.SilenceAlerts = &tr
+	if !cfg.SilenceAlertsEnabled() {
+		t.Error("SilenceAlerts should be enabled when explicitly set to true")
+	}
+}
+
+func TestKnowledgeConfig_SilenceAlertsYAMLRoundTrip(t *testing.T) {
+	data := []byte("name: test\nknowledge:\n  silence_alerts: false\n")
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Knowledge.SilenceAlerts == nil {
+		t.Fatal("silence_alerts should be parsed, got nil")
+	}
+	if cfg.SilenceAlertsEnabled() {
+		t.Error("silence_alerts: false should disable silence alerts")
 	}
 }
 

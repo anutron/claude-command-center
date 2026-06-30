@@ -152,9 +152,13 @@ func main() {
 			opts.KnowledgeLLM = routingLLM
 		}
 		// Silence analysis runs after extraction (no LLM required).
+		// Gated behind knowledge.silence_alerts (default enabled); when disabled
+		// the pass is left unwired so no silence-alert insights are written.
 		bus := plugin.NewBus()
-		opts.SilenceAnalysis = func(database *sql.DB) error {
-			return knowledge.RunSilenceAnalysis(database, bus, knowledge.DefaultSilenceConfig())
+		if cfg.SilenceAlertsEnabled() {
+			opts.SilenceAnalysis = func(database *sql.DB) error {
+				return knowledge.RunSilenceAnalysis(database, bus, knowledge.DefaultSilenceConfig())
+			}
 		}
 		// Drift detection runs after silence analysis, uses Sonnet.
 		driftLLM := routingLLM

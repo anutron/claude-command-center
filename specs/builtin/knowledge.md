@@ -190,6 +190,7 @@ On first run after the knowledge plugin is enabled (detected by checking `knowle
 
 - Knowledge plugin can be enabled/disabled via config (when disabled, extraction and analysis passes are skipped)
 - Drift detection can be independently disabled via config without affecting silence alerts or extraction
+- Silence alerts can be independently disabled via the `knowledge.silence_alerts` flag (default enabled) without affecting drift detection or extraction
 - Silence alert thresholds are configurable (default: 10 days for topics, 7 days for open threads)
 
 ## Test Cases

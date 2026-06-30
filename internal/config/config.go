@@ -38,6 +38,7 @@ type Config struct {
 	Automations     []AutomationConfig     `yaml:"automations,omitempty"`
 	Refresh         RefreshConfig          `yaml:"refresh"`
 	Daemon          DaemonConfig           `yaml:"daemon"`
+	Knowledge       KnowledgeConfig        `yaml:"knowledge,omitempty"`
 
 	// DisabledPlugins lists slugs of built-in plugins the user has turned off.
 	// e.g. ["sessions", "commandcenter"]
@@ -238,6 +239,24 @@ func (a *AgentConfig) TodoWriteLearnedPathsEnabled() bool {
 type DaemonConfig struct {
 	RefreshInterval  string `yaml:"refresh_interval"`  // default "5m"
 	SessionRetention string `yaml:"session_retention"` // default "7d"
+}
+
+// KnowledgeConfig controls the knowledge plugin's analysis passes.
+type KnowledgeConfig struct {
+	// SilenceAlerts toggles the silence-alert analysis pass (surfacing topics
+	// and threads that have gone quiet). When nil (omitted), silence alerts are
+	// enabled — the historical default. Set to false to disable just this pass
+	// while leaving knowledge extraction and drift detection running.
+	SilenceAlerts *bool `yaml:"silence_alerts,omitempty"`
+}
+
+// SilenceAlertsEnabled reports whether the knowledge silence-alert pass should
+// run. Defaults to true unless explicitly disabled in config.
+func (c *Config) SilenceAlertsEnabled() bool {
+	if c.Knowledge.SilenceAlerts == nil {
+		return true
+	}
+	return *c.Knowledge.SilenceAlerts
 }
 
 // RefreshConfig controls ai-cron behavior.
