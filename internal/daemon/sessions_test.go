@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -65,6 +66,37 @@ func TestRegisterAndListSessions(t *testing.T) {
 	}
 	if sessions[0].State != "active" {
 		t.Fatalf("expected active, got %s", sessions[0].State)
+	}
+}
+
+func TestListSessionsPrunesDeadSessions(t *testing.T) {
+	_, client, _ := startTestDaemon(t)
+
+	// Run a short-lived process so we have a PID that is guaranteed dead.
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	deadPID := cmd.ProcessState.Pid()
+
+	if err := client.RegisterSession(daemon.RegisterSessionParams{
+		SessionID: "sess-dead",
+		PID:       deadPID,
+		Project:   "/tmp/proj",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// No refresh is triggered; ListSessions alone must prune.
+	sessions, err := client.ListSessions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(sessions))
+	}
+	if sessions[0].State != "ended" {
+		t.Fatalf("expected dead session to be ended, got %s", sessions[0].State)
 	}
 }
 

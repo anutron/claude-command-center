@@ -199,13 +199,7 @@ func runDaemonInternal() error {
 	}
 	defer database.Close()
 
-	// Parse refresh interval from daemon config.
-	interval := 5 * time.Minute
-	if cfg.Daemon.RefreshInterval != "" {
-		if d, err := time.ParseDuration(cfg.Daemon.RefreshInterval); err == nil && d >= 1*time.Minute {
-			interval = d
-		}
-	}
+	interval := daemonRefreshInterval(cfg)
 
 	// llmReport will be wired to the daemon server's LLM activity buffer
 	// after the server is created (see below).
@@ -291,6 +285,22 @@ func runDaemonInternal() error {
 
 	fmt.Printf("Daemon serving on %s (interval: %s)\n", socketPath(), interval)
 	return srv.Serve()
+}
+
+// daemonRefreshInterval returns the daemon's periodic refresh interval.
+// Zero means periodic refresh is disabled (refresh.enabled: false); the
+// refresh loop does not start a ticker in that case.
+func daemonRefreshInterval(cfg *config.Config) time.Duration {
+	if !cfg.RefreshEnabled() {
+		return 0
+	}
+	interval := 5 * time.Minute
+	if cfg.Daemon.RefreshInterval != "" {
+		if d, err := time.ParseDuration(cfg.Daemon.RefreshInterval); err == nil && d >= 1*time.Minute {
+			interval = d
+		}
+	}
+	return interval
 }
 
 // runRefresh builds data sources, runs a refresh cycle, and then executes

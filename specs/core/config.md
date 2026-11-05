@@ -94,8 +94,8 @@ Controls the CCC daemon process (background service):
 
 ### RefreshConfig
 
-Controls `ai-cron` behavior:
-- `Enabled`: defaults to true when omitted (nil = true, for backwards compatibility). `RefreshEnabled()` accessor handles the nil check.
+Controls periodic refresh (`ai-cron` and the daemon's refresh loop):
+- `Enabled`: defaults to true when omitted (nil = true, for backwards compatibility). `RefreshEnabled()` accessor handles the nil check. When false, the daemon runs no periodic refresh (see daemon spec, Refresh Loop) and the command center does not trigger timed refreshes.
 - `Model`: LLM model for ai-cron prompt generation. Empty string = use CLI default.
 
 ### DisabledPlugins

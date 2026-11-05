@@ -43,7 +43,6 @@ type Server struct {
 	runner       agent.Runner
 	governed     *agent.GovernedRunner // non-nil when budget governance is enabled
 	paused       atomic.Bool           // when true, refresh and agent launches are blocked
-	topicWatcher *topicWatcher
 	llmActivity  *llmActivityBuffer
 }
 
@@ -102,13 +101,6 @@ func (s *Server) Serve() error {
 	s.mu.Unlock()
 
 	s.refresh.start()
-
-	// Start watching ~/.claude/session-topics/ for topic file changes.
-	s.topicWatcher = newTopicWatcher(s.registry, 3*time.Second)
-	s.topicWatcher.onUpdate = func() {
-		s.Broadcast(Event{Type: "session.updated"})
-	}
-	s.topicWatcher.start()
 
 	// Clean up orphaned agent cost rows from previous daemon instances.
 	// Any row still marked "running" has no live process — the daemon that
@@ -182,9 +174,6 @@ func (s *Server) monitorBinaryStaleness() {
 func (s *Server) Shutdown() {
 	if s.runner != nil {
 		s.runner.Shutdown()
-	}
-	if s.topicWatcher != nil {
-		s.topicWatcher.shutdown()
 	}
 	s.refresh.stop()
 	s.cancel()
@@ -287,6 +276,7 @@ func (s *Server) dispatch(req *RPCRequest) (interface{}, *RPCError) {
 		return map[string]bool{"ok": true}, nil
 
 	case "ListSessions":
+		s.registry.pruneDead()
 		sessions := s.registry.list()
 		return sessions, nil
 

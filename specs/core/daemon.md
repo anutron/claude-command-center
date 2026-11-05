@@ -103,10 +103,12 @@ The session registry tracks terminal sessions (Claude Code instances) with an in
 - `RegisterSession(session_id, pid, project, worktree_path)` — Creates a new session. Resolves git remote URL and branch from the project directory (best-effort, via `git -C`). Persists to `cc_sessions` table.
 - `UpdateSession(session_id, topic)` — Updates mutable fields (currently only topic). Errors if session not found.
 - `EndSession(session_id)` — Marks an active session as `ended` with a timestamp. No-op if the session is already ended or archived. Errors if session not found.
-- `ListSessions()` — Returns all non-archived sessions from the in-memory map.
+- `ListSessions()` — Prunes dead sessions (see below), then returns all non-archived sessions from the in-memory map.
 - `ArchiveSession(session_id)` — Marks a session as `archived`. Only allowed for sessions in `ended` state; errors if session is still `active`.
 
-**Dead session pruning:** After each successful refresh, `pruneDead()` iterates active sessions and checks PID liveness via `kill(pid, 0)`. Dead processes are marked `ended` with a timestamp.
+**Dead session pruning:** On every `ListSessions` call and after each successful refresh, `pruneDead()` iterates active sessions and checks PID liveness via `kill(pid, 0)`. Dead processes are marked `ended` with a timestamp. Pruning on `ListSessions` keeps the session list accurate even when periodic refresh is disabled.
+
+**Topics:** Session topics change only through the `UpdateSession` RPC. The daemon does not poll or watch `~/.claude/session-topics/` (a previous 3-second watcher re-read every file in that ever-growing directory and was removed for its idle CPU cost).
 
 **Persistence across restarts:** On startup, `newSessionRegistry` loads all non-archived sessions from the database into the in-memory map.
 
@@ -115,6 +117,8 @@ The session registry tracks terminal sessions (Claude Code instances) with an in
 ### Refresh Loop
 
 The refresh loop runs a configurable function at a configurable interval (default 5 minutes, minimum 1 minute).
+
+- **Disable switch:** When `refresh.enabled` is `false` in config, the daemon starts with no periodic refresh (interval 0) — no data sources, LLM suggestion calls, or automations run on a timer. The on-demand `Refresh` RPC still works. The setting is read once at daemon startup; changing it requires a daemon restart.
 
 - **Tick-driven:** A `time.Ticker` fires at the configured interval
 - **Pause-aware:** If `paused` is true, the tick is skipped
@@ -348,6 +352,8 @@ The `make install` target automatically restarts any running daemon after instal
 - Ping the daemon, receive `{"ok": true}`
 - Register a session, list sessions, verify it appears
 - Update a session topic, list sessions, verify the topic changed
+- Register a session whose PID is dead, list sessions, verify it is returned as `ended` (no refresh needed)
+- `refresh.enabled: false` → daemon refresh interval is 0 (no periodic refresh); omitted or `true` → configured interval (default 5m)
 - Trigger refresh, verify `data.refreshed` event is received by subscriber
 - Launch an agent, verify `agent.started` event is broadcast
 - Stop an agent, verify `agent.stopped` event is broadcast
